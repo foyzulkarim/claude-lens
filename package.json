@@ -2,6 +2,9 @@
   "name": "claude-usage-dashboard",
   "version": "1.0.0",
   "private": true,
+  "bin": {
+    "claude-lens": "server.js"
+  },
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js"
