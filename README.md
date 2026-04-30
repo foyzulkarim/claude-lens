@@ -17,7 +17,17 @@ A local dashboard for visualizing your [Claude Code](https://claude.ai/code) usa
 - Node.js 18+
 - Claude Code installed (data lives in `~/.claude`)
 
-## Setup
+## Quick start
+
+No install needed — run directly from GitHub:
+
+```bash
+npx github:foyzulkarim/claude-lens
+```
+
+Then open [http://localhost:3456](http://localhost:3456). Defaults to `~/.claude` if `CLAUDE_DIR` is not set.
+
+## Local setup
 
 ```bash
 git clone https://github.com/foyzulkarim/claude-lens.git
@@ -27,8 +37,6 @@ cp .env.example .env
 ```
 
 Edit `.env` and set `CLAUDE_DIR` to your Claude data directory (defaults to `~/.claude`).
-
-## Run
 
 ```bash
 node server.js
