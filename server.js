@@ -218,6 +218,7 @@ app.get("/api/daily-costs", async (req, res) => {
           cacheRead: d.cacheRead,
           cacheCreate: d.cacheCreate,
           cost: Math.round(cost * 100) / 100,
+          models: d.models,
         };
       });
 
@@ -242,9 +243,17 @@ app.get("/api/daily-costs", async (req, res) => {
         cacheRead: 0,
         cacheCreate: 0,
         cost: 0,
+        models: {},
       },
     );
     totals.cost = Math.round(totals.cost * 100) / 100;
+
+    // Merge all models into totals
+    for (const d of days) {
+      for (const [model, count] of Object.entries(d.models || {})) {
+        totals.models[model] = (totals.models[model] || 0) + count;
+      }
+    }
 
     res.json({ days, totals, rates: RATES });
   } catch (err) {
@@ -322,6 +331,7 @@ function parseDailyCosts(filePath, daily) {
             messages: 0,
             toolCalls: 0,
             sessions: new Set(),
+            models: {},
           };
         }
 
@@ -338,6 +348,10 @@ function parseDailyCosts(filePath, daily) {
           daily[day].output += usage.output_tokens || 0;
           daily[day].cacheRead += usage.cache_read_input_tokens || 0;
           daily[day].cacheCreate += usage.cache_creation_input_tokens || 0;
+
+          // Track model usage
+          const model = obj.message.model || "unknown";
+          daily[day].models[model] = (daily[day].models[model] || 0) + 1;
 
           const content = obj.message.content;
           if (Array.isArray(content)) {

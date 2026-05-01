@@ -409,7 +409,23 @@
         return { hitRate, saved };
       }
 
-      function panel(data, isToday) {
+      function topModelsCard(models, cls) {
+        if (!models || Object.keys(models).length === 0) return '';
+        const sorted = Object.entries(models).sort((a, b) => b[1] - a[1]).slice(0, 3);
+        return `
+        <div class="top-models" style="margin-top:12px;padding-top:12px;border-top:1px solid #21262d">
+          <div class="metric-label" style="margin-bottom:8px">Top Models</div>
+          ${sorted.map(([model, count], i) => `
+            <div style="display:flex;align-items:center;gap:8px;padding:4px 0">
+              <span class="model-rank" style="font-size:0.65rem;color:#8b949e;min-width:16px">${i + 1}.</span>
+              <span class="model-name" style="font-size:0.75rem;color:#d2a8ff;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${model}</span>
+              <span class="model-count" style="font-size:0.7rem;color:#8b949e">${fmt(count)} responses</span>
+            </div>
+          `).join('')}
+        </div>`;
+      }
+
+      function panel(data, isToday, models) {
         const cls = isToday ? 'today' : 'alltime';
         const badge = isToday ? 'Today' : 'All Time';
         const date = isToday ? today : (days.length ? `Since ${days[0].date}` : '');
@@ -458,11 +474,12 @@
               <div class="metric-value">${fmt(data.output)}</div>
             </div>
           </div>
+          ${topModelsCard(models, cls)}
         </div>`;
       }
 
       const todayPanel = todayData
-        ? panel(todayData, true)
+        ? panel(todayData, true, todayData.models)
         : `<div class="summary-panel today">
             <div class="panel-header">
               <span class="panel-badge">Today</span>
@@ -471,7 +488,7 @@
             <div class="metric" style="padding:10px"><div class="metric-label">No activity yet</div></div>
           </div>`;
 
-      const allTimePanel = panel(totals, false);
+      const allTimePanel = panel(totals, false, totals.models);
 
       container.innerHTML = `<div class="summary-grid">${todayPanel}${allTimePanel}</div>`;
     }
