@@ -305,6 +305,23 @@
       padding: 2px 8px;
       border-radius: 4px;
       font-size: 0.7rem;
+      border: 1px solid transparent;
+    }
+    .project-badge.clickable {
+      cursor: pointer;
+      transition: background 0.1s ease, color 0.1s ease, border-color 0.1s ease;
+    }
+    .project-badge.clickable:hover {
+      background: var(--accent-strong);
+      color: var(--accent-on);
+      border-color: var(--accent-strong);
+    }
+    .project-badge.clickable:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+    .project-badge.no-match {
+      opacity: 0.6;
     }
     .bar-container {
       display: flex;
@@ -818,6 +835,181 @@
     </div>
   </div>
 
+  <div id="help-overlay" class="help-overlay" role="dialog" aria-modal="true" aria-labelledby="help-title" hidden>
+    <div class="help-modal">
+      <div class="help-modal-header">
+        <h2 id="help-title">claude-lens — guide &amp; metric reference</h2>
+        <button id="help-close" class="help-close-btn" type="button" aria-label="Close help">Close (Esc)</button>
+      </div>
+      <div class="help-modal-body" id="help-body">
+        <p>This dashboard reads files written by the Claude Code CLI on your machine and shows what you've been doing — sessions, prompts, tool usage, and estimated cost. Everything is local: nothing on this page is sent to a server.</p>
+
+        <div class="help-toc">
+          <strong>On this page</strong>
+          <ol>
+            <li><a href="#h-data">Where the data comes from</a></li>
+            <li><a href="#h-summary">Today vs All-Time panels</a></li>
+            <li><a href="#h-cache">Cache Performance</a></li>
+            <li><a href="#h-daily">Daily Cost &amp; Cache table</a></li>
+            <li><a href="#h-tools">Tool Calls</a></li>
+            <li><a href="#h-projects">Project Activity</a></li>
+            <li><a href="#h-history">Prompt History</a></li>
+            <li><a href="#h-cost">How cost is calculated</a></li>
+            <li><a href="#h-tokens">Token types explained</a></li>
+            <li><a href="#h-tz">Timezone &amp; date bucketing</a></li>
+            <li><a href="#h-prefs">Theme &amp; time format</a></li>
+            <li><a href="#h-faq">FAQ &amp; limitations</a></li>
+          </ol>
+        </div>
+
+        <div class="help-section" id="h-data">
+          <h3>1. Where the data comes from</h3>
+          <p>claude-lens auto-detects your Claude Code data directory (<code>CLAUDE_DIR</code>) and reads four kinds of files. The active path is shown in the header.</p>
+          <table class="help-table">
+            <thead><tr><th>File / folder</th><th>What it contains</th><th>Used for</th></tr></thead>
+            <tbody>
+              <tr><td><code>history.jsonl</code></td><td>Every prompt you've submitted with timestamp, project, and session ID</td><td>Prompt History, Project Activity</td></tr>
+              <tr><td><code>projects/&lt;encoded&gt;/&lt;sessionId&gt;.jsonl</code></td><td>Per-message records: token usage, tool calls, model used</td><td>Tool Calls, Daily Cost, Summary panels</td></tr>
+              <tr><td><code>sessions/*.json</code></td><td>Session metadata files</td><td>Exposed via API (not currently rendered)</td></tr>
+              <tr><td><code>stats-cache.json</code></td><td>Claude Code's internal cached stats</td><td>Returned via API for completeness</td></tr>
+            </tbody>
+          </table>
+          <p>Auto-detect order: <code>CLAUDE_DIR</code> env var → <code>~/.claude</code> → platform-specific paths (Windows <code>%APPDATA%\Claude</code>, macOS <code>~/Library/Application Support/Claude</code>, Linux <code>$XDG_CONFIG_HOME/claude</code>). The first directory containing any of <code>projects/</code>, <code>history.jsonl</code>, <code>sessions/</code>, or <code>stats-cache.json</code> wins.</p>
+        </div>
+
+        <div class="help-section" id="h-summary">
+          <h3>2. Today vs All-Time panels</h3>
+          <p>Two side-by-side cards at the top. <em>Today</em> is your local date (see Timezone below). <em>All Time</em> is the sum across every day on disk.</p>
+          <h4>Top row</h4>
+          <ul>
+            <li><strong>Sessions</strong> — distinct <code>sessionId</code> values that produced any user message that day. Sessions that span midnight are counted in each day they touched.</li>
+            <li><strong>Messages</strong> — number of user messages (your prompts and tool-result turns) on that day.</li>
+            <li><strong>Tool Calls</strong> — number of <code>tool_use</code> blocks emitted by the assistant that day.</li>
+            <li><strong>Cache Hit</strong> — share of input tokens that came from cache reads (see <a href="#h-cache">Cache Performance</a>). Color-coded: green &gt; 80%, amber &gt; 50%, pink otherwise.</li>
+          </ul>
+          <h4>Bottom row</h4>
+          <ul>
+            <li><strong>Est. Cost</strong> — sum of input + output + cache-read + cache-write tokens multiplied by the configured rates.</li>
+            <li><strong>Saved</strong> — estimated savings vs a no-cache baseline (see <a href="#h-cache">Cache Performance</a>).</li>
+            <li><strong>Cache Read</strong> — total tokens served from cache that day.</li>
+            <li><strong>Output Tokens</strong> — total tokens the model generated that day.</li>
+          </ul>
+          <h4>Top Models</h4>
+          <p>Lists the top three models by number of assistant responses (not tokens). Useful for spotting which Claude variant is doing most of the work.</p>
+        </div>
+
+        <div class="help-section" id="h-cache">
+          <h3>3. Cache Performance</h3>
+          <p>Anthropic's <em>prompt caching</em> lets long prefixes (system prompt, instructions, files re-read every turn) be billed at a discount on subsequent turns: you pay full price the first time (a <em>cache write</em>) and a tenth of input price thereafter (a <em>cache read</em>).</p>
+          <h4>Cache Hit Rate</h4>
+          <div class="help-formula">hitRate = cacheRead / (input + cacheRead + cacheCreate) × 100</div>
+          <p>The fraction of all input tokens that came from cache reads. Higher is better. A long-running session with stable context typically reaches 90%+.</p>
+          <h4>Cost With Cache vs Cost Without Cache</h4>
+          <div class="help-formula">costWithoutCache = (allInput × $5/M) + (output × $25/M)</div>
+          <div class="help-formula">saved = costWithoutCache − actualCost</div>
+          <p>"Without cache" treats every cached input token as if you paid full input price for it. "Cache Savings" is the difference.</p>
+          <div class="help-callout"><strong>Caveat:</strong> the no-cache baseline hard-codes Bedrock ap-southeast-2 rates ($5/M input, $25/M output). If you set <code>RATE_INPUT</code> / <code>RATE_OUTPUT</code> for Anthropic API pricing in <code>.env</code>, your <em>actual</em> cost reflects that, but the "Saved" column still compares against $5/M — so the savings number understates reality on the Anthropic API.</div>
+        </div>
+
+        <div class="help-section" id="h-daily">
+          <h3>4. Daily Cost &amp; Cache table</h3>
+          <p>One row per day in your local timezone. Columns:</p>
+          <table class="help-table">
+            <tbody>
+              <tr><td><strong>Date</strong></td><td>Local date (YYYY-MM-DD).</td></tr>
+              <tr><td><strong>Msgs</strong></td><td>User messages that day.</td></tr>
+              <tr><td><strong>Tools</strong></td><td>Tool-call invocations that day.</td></tr>
+              <tr><td><strong>Sess</strong></td><td>Distinct sessions touched that day.</td></tr>
+              <tr><td><strong>Cache Read</strong></td><td>Tokens served from cache (cheap).</td></tr>
+              <tr><td><strong>Cache Write</strong></td><td>Tokens written into the cache (expensive — ~25% premium over input).</td></tr>
+              <tr><td><strong>Hit Rate</strong></td><td>Per-day cache hit rate. Same formula as the summary panel.</td></tr>
+              <tr><td><strong>Est. Cost</strong></td><td>Per-day total: input + output + cache-read + cache-write at configured rates. The bar visualizes relative spend across days.</td></tr>
+              <tr><td><strong>Saved</strong></td><td>Per-day savings vs the no-cache baseline.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="help-section" id="h-tools">
+          <h3>5. Tool Calls</h3>
+          <p>Counts every <code>tool_use</code> block the assistant emitted across all projects, then sorts by frequency. Click any tool row to drill in: the most recent 200 calls are shown with the relevant arguments (Bash command, file path, Grep pattern, etc.) and a timestamp.</p>
+          <p>The detail panel includes an <strong>Export</strong> button that downloads all calls (not just the first 200) as a plain-text file — useful for grep'ing through your own command history.</p>
+        </div>
+
+        <div class="help-section" id="h-projects">
+          <h3>6. Project Activity</h3>
+          <p>Aggregated from <code>history.jsonl</code>. Rows are sorted by message count (most active first):</p>
+          <ul>
+            <li><strong>Project</strong> — short name + full encoded path (Claude Code stores projects as URL-encoded directory names).</li>
+            <li><strong>Messages</strong> — total prompts you've submitted in that project, ever.</li>
+            <li><strong>Sessions</strong> — distinct sessions in that project.</li>
+            <li><strong>Last Active</strong> — most recent prompt timestamp.</li>
+          </ul>
+        </div>
+
+        <div class="help-section" id="h-history">
+          <h3>7. Prompt History</h3>
+          <p>Every prompt you've ever sent, newest first. Use the project tabs to filter. Each row shows time, project, the prompt text (hover for the full message), and the first 8 characters of the session ID.</p>
+        </div>
+
+        <div class="help-section" id="h-cost">
+          <h3>8. How cost is calculated</h3>
+          <p>The server multiplies aggregated token counts by per-million-token rates configured in <code>.env</code>:</p>
+          <div class="help-formula">cost = input × RATE_INPUT + output × RATE_OUTPUT + cacheRead × RATE_CACHE_READ + cacheCreate × RATE_CACHE_CREATE</div>
+          <p>(All RATE values are USD per 1,000,000 tokens.)</p>
+          <table class="help-table">
+            <thead><tr><th>Variable</th><th>Default (Bedrock)</th><th>Anthropic API equivalent</th></tr></thead>
+            <tbody>
+              <tr><td><code>RATE_INPUT</code></td><td>$5.00</td><td>$15.00</td></tr>
+              <tr><td><code>RATE_OUTPUT</code></td><td>$25.00</td><td>$75.00</td></tr>
+              <tr><td><code>RATE_CACHE_READ</code></td><td>$0.50</td><td>$1.50</td></tr>
+              <tr><td><code>RATE_CACHE_CREATE</code></td><td>$6.25</td><td>$18.75</td></tr>
+            </tbody>
+          </table>
+          <p>Override any of these in <code>.env</code> and restart the server. Costs are <em>estimates</em>; the authoritative number is on your bill.</p>
+        </div>
+
+        <div class="help-section" id="h-tokens">
+          <h3>9. Token types explained</h3>
+          <ul>
+            <li><strong>Input tokens</strong> — fresh tokens you sent that weren't cached. Most expensive per token.</li>
+            <li><strong>Output tokens</strong> — tokens the model generated. Most expensive overall.</li>
+            <li><strong>Cache create (cache write)</strong> — input tokens being placed into the cache for later reuse. Charged at ~125% of input price (a one-time premium).</li>
+            <li><strong>Cache read</strong> — input tokens served from cache. Charged at ~10% of input price.</li>
+          </ul>
+          <p>Sums of these come from <code>message.usage</code> on each assistant turn in the project JSONL files.</p>
+        </div>
+
+        <div class="help-section" id="h-tz">
+          <h3>10. Timezone &amp; date bucketing</h3>
+          <p>All daily aggregations bucket by your <em>local</em> date (your system's IANA timezone, shown in the header). A turn at 11:30 PM local on Monday is on Monday's row even if UTC says it's already Tuesday.</p>
+          <p>Individual timestamps in tables (Last Active, Prompt History) are rendered with <code>toLocaleString</code>, also in your system timezone.</p>
+        </div>
+
+        <div class="help-section" id="h-prefs">
+          <h3>11. Theme &amp; time format</h3>
+          <ul>
+            <li><strong>Theme</strong> (🌙 / ☀️) — light/dark toggle. Defaults to your OS preference, persisted in <code>localStorage</code>.</li>
+            <li><strong>Time format</strong> (12h / 24h) — toggles between 24-hour and AM/PM display for all timestamps. Persisted in <code>localStorage</code>; switching re-renders without re-fetching data.</li>
+          </ul>
+        </div>
+
+        <div class="help-section" id="h-faq">
+          <h3>12. FAQ &amp; limitations</h3>
+          <h4>Is anything sent to the network?</h4>
+          <p>No. The server is Express on <code>localhost:3456</code> and reads files from disk. The HTML page only talks to that server. There are no analytics, no telemetry, no outbound calls.</p>
+          <h4>Why does my cost look different from my Anthropic / AWS bill?</h4>
+          <p>The numbers are computed from the rates you set in <code>.env</code>. They don't account for free tiers, prepay credits, region-specific pricing, or invoicing rounding. Treat them as a directional estimate.</p>
+          <h4>Why doesn't the page auto-refresh?</h4>
+          <p>It doesn't yet. Reload the page to pull the latest data. Files on disk update as Claude Code runs.</p>
+          <h4>I see "No Claude data directory found"</h4>
+          <p>Either Claude Code hasn't been run yet, or the data is somewhere unusual. Set <code>CLAUDE_DIR</code> in <code>.env</code> to the right path. The error banner lists every path the auto-detector tried.</p>
+          <h4>Port 3456 is in use</h4>
+          <p>Another instance of <code>claude-lens</code> is already running. Stop it, or change the <code>PORT</code> constant in <code>server.js</code>.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
     // === Theme handling ===
     const THEME_KEY = 'claude-lens-theme';
@@ -840,6 +1032,37 @@
       const next = current === 'dark' ? 'light' : 'dark';
       localStorage.setItem(THEME_KEY, next);
       applyTheme(next);
+    });
+
+    // === Help drawer ===
+    const helpOverlay = document.getElementById('help-overlay');
+    const helpBody = document.getElementById('help-body');
+    function openHelp() {
+      helpOverlay.hidden = false;
+      helpOverlay.classList.add('open');
+      const closeBtn = document.getElementById('help-close');
+      if (closeBtn) closeBtn.focus();
+    }
+    function closeHelp() {
+      helpOverlay.classList.remove('open');
+      helpOverlay.hidden = true;
+    }
+    document.getElementById('help-toggle').addEventListener('click', openHelp);
+    document.getElementById('help-close').addEventListener('click', closeHelp);
+    helpOverlay.addEventListener('click', (e) => {
+      if (e.target === helpOverlay) closeHelp();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !helpOverlay.hidden) closeHelp();
+    });
+    // Smooth-scroll TOC links to sections within the modal body
+    helpBody.addEventListener('click', (e) => {
+      const a = e.target.closest('a[href^="#"]');
+      if (!a) return;
+      const target = helpBody.querySelector(a.getAttribute('href'));
+      if (!target) return;
+      e.preventDefault();
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
 
     // === Time format handling ===
@@ -1269,7 +1492,7 @@
       const tbody = document.getElementById('projects-body');
       tbody.innerHTML = projects.map(p => `
         <tr>
-          <td><span class="project-badge">${escapeHtml(p.shortName)}</span><br><span class="session-id">${escapeHtml(p.name)}</span></td>
+          <td><span class="project-badge clickable" role="button" tabindex="0" data-project="${escapeHtml(p.name)}" title="Filter Prompt History by ${escapeHtml(p.name)}">${escapeHtml(p.shortName)}</span><br><span class="session-id">${escapeHtml(p.name)}</span></td>
           <td>${fmt(p.messages)}</td>
           <td>${fmt(p.sessions)}</td>
           <td>${fmtDateTime(p.lastSeen)}</td>
@@ -1293,7 +1516,7 @@
         tbody.innerHTML = filtered.map(h => `
           <tr>
             <td style="white-space:nowrap">${fmtDateTime(h.timestamp)}</td>
-            <td><span class="project-badge">${escapeHtml(shortProject(h.project))}</span></td>
+            <td><span class="project-badge clickable" role="button" tabindex="0" data-project="${escapeHtml(h.project || '')}" title="Filter by ${escapeHtml(h.project || '')}">${escapeHtml(shortProject(h.project))}</span></td>
             <td class="prompt-text" title="${(h.display || '').replace(/"/g, '&quot;')}">${escapeHtml(h.display || '')}</td>
             <td class="session-id">${escapeHtml((h.sessionId || '').slice(0, 8))}</td>
           </tr>
@@ -1360,6 +1583,36 @@
       div.textContent = str == null ? '' : String(str);
       return div.innerHTML;
     }
+
+    // Clicking any project badge filters the Prompt History to that project
+    // and scrolls the view down so the user lands on the filtered table.
+    function activateProjectFilter(project) {
+      const tabsEl = document.getElementById('history-tabs');
+      if (!tabsEl) return false;
+      const tab = tabsEl.querySelector(`.tab[data-project="${CSS.escape(project)}"]`);
+      const target = tab || tabsEl.querySelector('.tab[data-project="all"]');
+      if (!target) return false;
+      target.click();
+      tabsEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return Boolean(tab);
+    }
+
+    document.addEventListener('click', (e) => {
+      const badge = e.target.closest('.project-badge.clickable');
+      if (!badge) return;
+      const project = badge.dataset.project;
+      if (!project) return;
+      activateProjectFilter(project);
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      const badge = e.target.closest('.project-badge.clickable');
+      if (!badge) return;
+      e.preventDefault();
+      const project = badge.dataset.project;
+      if (project) activateProjectFilter(project);
+    });
 
     load();
   </script>
