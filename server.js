@@ -1553,8 +1553,11 @@ function parseJsonlForTools(filePath, projDir, toolCounts, toolsByProject, tools
 }
 
 // Parse a JSONL file and collect typed user prompts
-// Skips tool-result entries (content is an array) and Claude Code's
+// Skips tool-result entries (array of tool_result blocks) and Claude Code's
 // system-injected user messages (command stdout/stderr, hook output).
+// Multimodal turns (text + image) arrive as a content-block array — pull
+// the text blocks out and join them. Pure tool-result arrays have no text
+// blocks, so they fall out naturally below.
 function parsePromptsFromProject(filePath, entries) {
   return new Promise((resolve) => {
     const stream = fs.createReadStream(filePath, { encoding: "utf8" });
@@ -1564,8 +1567,20 @@ function parsePromptsFromProject(filePath, entries) {
       try {
         const obj = JSON.parse(line);
         if (obj.type !== "user" || !obj.message) return;
-        const content = obj.message.content;
-        if (typeof content !== "string") return;
+        const raw = obj.message.content;
+        let content;
+        if (typeof raw === "string") {
+          content = raw;
+        } else if (Array.isArray(raw)) {
+          content = raw
+            .filter((b) => b && b.type === "text" && typeof b.text === "string")
+            .map((b) => b.text)
+            .join("\n")
+            .trim();
+          if (!content) return;
+        } else {
+          return;
+        }
         const trimmed = content.trim();
         if (!trimmed) return;
         if (
