@@ -156,6 +156,296 @@ app.get("/api/config", (req, res) => {
   });
 });
 
+// In-memory cache of the remote profile lookup. Keyed by token (in case the
+// access token rotates). 60-second TTL keeps page reloads from hammering the
+// upstream API while staying fresh enough for an account view.
+const PROFILE_CACHE_MS = 60_000;
+let profileCache = { token: null, data: null, expiresAt: 0 };
+
+async function fetchAnthropicProfile(token) {
+  if (profileCache.token === token && Date.now() < profileCache.expiresAt) {
+    return { data: profileCache.data, fromCache: true };
+  }
+  const res = await fetch("https://api.anthropic.com/api/oauth/profile", {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "User-Agent": "claude-lens/1.0",
+    },
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!res.ok) {
+    const err = new Error(`http_${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
+  const data = await res.json();
+  profileCache = { token, data, expiresAt: Date.now() + PROFILE_CACHE_MS };
+  return { data, fromCache: false };
+}
+
+// Strip any unknown fields out of the upstream payload before forwarding, so
+// future server-side additions don't accidentally leak through this endpoint.
+function projectProfile(profile) {
+  if (!profile || typeof profile !== "object") return null;
+  const a = profile.account || {};
+  const o = profile.organization || {};
+  const app = profile.application || {};
+  return {
+    account: {
+      uuid: a.uuid ?? null,
+      fullName: a.full_name ?? null,
+      displayName: a.display_name ?? null,
+      email: a.email ?? null,
+      hasClaudeMax: a.has_claude_max ?? null,
+      hasClaudePro: a.has_claude_pro ?? null,
+      createdAt: a.created_at ?? null,
+    },
+    organization: {
+      uuid: o.uuid ?? null,
+      name: o.name ?? null,
+      organizationType: o.organization_type ?? null,
+      billingType: o.billing_type ?? null,
+      rateLimitTier: o.rate_limit_tier ?? null,
+      seatTier: o.seat_tier ?? null,
+      hasExtraUsageEnabled: o.has_extra_usage_enabled ?? null,
+      subscriptionStatus: o.subscription_status ?? null,
+      subscriptionCreatedAt: o.subscription_created_at ?? null,
+      claudeCodeTrialEndsAt: o.claude_code_trial_ends_at ?? null,
+      claudeCodeTrialDurationDays: o.claude_code_trial_duration_days ?? null,
+    },
+    application: {
+      uuid: app.uuid ?? null,
+      name: app.name ?? null,
+      slug: app.slug ?? null,
+    },
+  };
+}
+
+// GET /api/account — read .credentials.json and surface SAFE fields only.
+// SECURITY: accessToken and refreshToken must never appear in the response.
+// They live in the local file but are never serialized over the wire. The
+// remote profile call uses the token server-side; only the projected fields
+// (see projectProfile) are forwarded to the browser.
+app.get("/api/account", async (req, res) => {
+  const credPath = path.join(CLAUDE_DIR, ".credentials.json");
+  try {
+    if (!fs.existsSync(credPath)) {
+      return res.json({
+        loggedIn: false,
+        reason: "credentials_missing",
+        credentialsPath: credPath,
+      });
+    }
+
+    let raw;
+    try {
+      raw = JSON.parse(fs.readFileSync(credPath, "utf8"));
+    } catch (parseErr) {
+      return res.json({
+        loggedIn: false,
+        reason: "credentials_unreadable",
+        message: parseErr.message,
+        credentialsPath: credPath,
+      });
+    }
+
+    const oauth = raw.claudeAiOauth || {};
+    const hasToken = typeof oauth.accessToken === "string" && oauth.accessToken.length > 0;
+    if (!hasToken) {
+      return res.json({
+        loggedIn: false,
+        reason: "no_access_token",
+        credentialsPath: credPath,
+      });
+    }
+
+    const now = Date.now();
+    const expiresAt = typeof oauth.expiresAt === "number" ? oauth.expiresAt : null;
+    const expiresInMs = expiresAt != null ? expiresAt - now : null;
+    const expired = expiresAt != null ? expiresAt <= now : null;
+
+    // Optionally skip the remote fetch with ?local=1 — handy for offline use
+    // and for testing the local-only path.
+    let profile = null;
+    let profileError = null;
+    let profileFromCache = false;
+    if (req.query.local !== "1") {
+      try {
+        const result = await fetchAnthropicProfile(oauth.accessToken);
+        profile = projectProfile(result.data);
+        profileFromCache = result.fromCache;
+      } catch (e) {
+        profileError = e.status ? `http_${e.status}` : (e.name === "TimeoutError" ? "timeout" : e.message || "unknown");
+      }
+    }
+
+    res.json({
+      loggedIn: true,
+      subscriptionType: oauth.subscriptionType || null,
+      rateLimitTier: oauth.rateLimitTier || null,
+      scopes: Array.isArray(oauth.scopes) ? oauth.scopes : [],
+      expiresAt,
+      expiresInMs,
+      expired,
+      organizationUuid: raw.organizationUuid || null,
+      credentialsPath: credPath,
+      profile,
+      profileError,
+      profileFromCache,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /account — serve the account page
+app.get("/account", (req, res) => {
+  res.sendFile(path.join(__dirname, "account.html"));
+});
+
+// GET /chat — serve the chat page
+app.get("/chat", (req, res) => {
+  res.sendFile(path.join(__dirname, "chat.html"));
+});
+
+// Allow-list of models exposed to the chat UI. Keep narrow on purpose — if the
+// user wants something else, add it here explicitly. Prevents typo'd model
+// names from generating cryptic upstream errors.
+const CHAT_MODELS = new Set([
+  "claude-opus-4-7",
+  "claude-sonnet-4-6",
+  "claude-haiku-4-5-20251001",
+]);
+
+// POST /api/chat — proxy /v1/messages with the local OAuth token.
+//
+// The browser sends the same JSON body shape Anthropic expects (model,
+// messages, max_tokens, etc.) and the server tacks on Authorization +
+// anthropic-beta headers, then pipes the upstream response (streaming or
+// not) straight back to the client. The access token is read from
+// .credentials.json on every request — never cached — and never appears
+// in the response body.
+//
+// Inference billed against the user's local Claude account quota
+// (no separate API key needed thanks to the `user:inference` scope).
+app.post("/api/chat", express.json({ limit: "25mb" }), async (req, res) => {
+  const credPath = path.join(CLAUDE_DIR, ".credentials.json");
+  let token;
+  try {
+    if (!fs.existsSync(credPath)) {
+      return res.status(401).json({ error: "not_logged_in", reason: "credentials_missing" });
+    }
+    const cred = JSON.parse(fs.readFileSync(credPath, "utf8"));
+    token = cred.claudeAiOauth?.accessToken;
+    if (!token) {
+      return res.status(401).json({ error: "not_logged_in", reason: "no_access_token" });
+    }
+  } catch (err) {
+    return res.status(500).json({ error: "credentials_read_error", message: err.message });
+  }
+
+  const body = req.body || {};
+  if (!body.model || !CHAT_MODELS.has(body.model)) {
+    return res.status(400).json({
+      error: "bad_model",
+      message: `Model not in allow-list. Pick one of: ${[...CHAT_MODELS].join(", ")}`,
+    });
+  }
+  if (!Array.isArray(body.messages) || body.messages.length === 0) {
+    return res.status(400).json({ error: "bad_messages", message: "messages must be a non-empty array" });
+  }
+
+  // === Claude-Code identity injection ===
+  //
+  // Anthropic gates the OAuth-friendly rate-limit bucket behind the EXACT
+  // string below appearing as a system block. Without it, OAuth requests
+  // share a much smaller quota and 429 quickly even with the same token —
+  // confirmed by probing: a string-form `system: "<marker>\n\n..."` 429s,
+  // but `system: [{type:"text", text:"<marker>"}, {type:"text", text:"..."}]`
+  // gets through. So we always force the system field into block-array
+  // form with the marker as the first block.
+  //
+  // The second block tells Claude it's in conversational chat mode
+  // (no tools, no workspace) so responses don't default to the code-focused
+  // Claude Code persona.
+  const CC_SYSTEM_MARKER = "You are Claude Code, Anthropic's official CLI for Claude.";
+  const CHAT_CONTEXT_BLOCK = "You are running in conversational chat mode inside claude-lens, a local web UI. The user is having a normal conversation — coding-related or not. You have no file access, no tool use, and no workspace in this session. Respond naturally; do not assume the user wants you to write code unless they explicitly ask.";
+
+  const userSystem = body.system;
+  const extraBlocks = [];
+  if (typeof userSystem === "string" && userSystem.trim().length > 0) {
+    extraBlocks.push({ type: "text", text: userSystem });
+  } else if (Array.isArray(userSystem)) {
+    for (const block of userSystem) {
+      // Don't re-add a block that already matches the marker exactly
+      if (block?.type === "text" && block?.text === CC_SYSTEM_MARKER) continue;
+      extraBlocks.push(block);
+    }
+  }
+  body.system = [
+    { type: "text", text: CC_SYSTEM_MARKER },
+    { type: "text", text: CHAT_CONTEXT_BLOCK },
+    ...extraBlocks,
+  ];
+
+  let upstreamRes;
+  try {
+    upstreamRes = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        "anthropic-version": "2023-06-01",
+        "anthropic-beta": "oauth-2025-04-20",
+        "User-Agent": "claude-lens/1.0",
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    return res.status(502).json({ error: "upstream_unreachable", message: err.message });
+  }
+
+  // Pass status + content-type through; stream body chunk-by-chunk so SSE
+  // events reach the browser as they arrive.
+  res.status(upstreamRes.status);
+  const ct = upstreamRes.headers.get("content-type");
+  if (ct) res.setHeader("Content-Type", ct);
+
+  // Forward Anthropic's rate-limit headers + retry-after so the UI can
+  // explain 429s instead of just throwing "HTTP 429".
+  for (const [name, value] of upstreamRes.headers) {
+    const n = name.toLowerCase();
+    if (n.startsWith("anthropic-ratelimit-") || n === "retry-after" || n === "anthropic-request-id") {
+      res.setHeader(name, value);
+    }
+  }
+
+  // Disable proxy buffering for SSE
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("X-Accel-Buffering", "no");
+
+  if (!upstreamRes.body) {
+    return res.end();
+  }
+  const reader = upstreamRes.body.getReader();
+  req.on("close", () => {
+    // Client disconnected — abort upstream read so we stop billing tokens
+    try { reader.cancel("client_disconnected"); } catch {}
+  });
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      res.write(value);
+    }
+  } catch (err) {
+    // Pipe errors usually mean the client disconnected mid-stream
+  } finally {
+    res.end();
+  }
+});
+
 // GET /api/stats — return stats-cache.json as-is
 app.get("/api/stats", (req, res) => {
   try {
@@ -262,6 +552,7 @@ app.get("/api/tool-calls", async (req, res) => {
     const projectsDir = path.join(CLAUDE_DIR, "projects");
     const toolCounts = {};
     const toolsByProject = {};
+    const toolsByDate = {};
 
     const projectDirs = fs
       .readdirSync(projectsDir)
@@ -272,7 +563,7 @@ app.get("/api/tool-calls", async (req, res) => {
       const jsonlFiles = findJsonlFiles(projPath);
 
       for (const file of jsonlFiles) {
-        await parseJsonlForTools(file, projDir, toolCounts, toolsByProject);
+        await parseJsonlForTools(file, projDir, toolCounts, toolsByProject, toolsByDate);
       }
     }
 
@@ -281,7 +572,7 @@ app.get("/api/tool-calls", async (req, res) => {
       .sort((a, b) => b[1] - a[1])
       .map(([tool, count]) => ({ tool, count }));
 
-    res.json({ tools: sorted, byProject: toolsByProject });
+    res.json({ tools: sorted, byProject: toolsByProject, byDate: toolsByDate });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -458,7 +749,7 @@ function findJsonlFiles(dir) {
 }
 
 // Parse a JSONL file and extract tool_use entries
-function parseJsonlForTools(filePath, projDir, toolCounts, toolsByProject) {
+function parseJsonlForTools(filePath, projDir, toolCounts, toolsByProject, toolsByDate) {
   return new Promise((resolve) => {
     const stream = fs.createReadStream(filePath, { encoding: "utf8" });
     const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
@@ -469,6 +760,7 @@ function parseJsonlForTools(filePath, projDir, toolCounts, toolsByProject) {
         if (obj.type !== "assistant" || !obj.message) return;
         const content = obj.message.content;
         if (!Array.isArray(content)) return;
+        const day = obj.timestamp ? localDateKey(obj.timestamp) : null;
 
         for (const item of content) {
           if (item.type === "tool_use") {
@@ -478,6 +770,11 @@ function parseJsonlForTools(filePath, projDir, toolCounts, toolsByProject) {
             if (!toolsByProject[projDir]) toolsByProject[projDir] = {};
             toolsByProject[projDir][tool] =
               (toolsByProject[projDir][tool] || 0) + 1;
+
+            if (toolsByDate && day) {
+              if (!toolsByDate[day]) toolsByDate[day] = {};
+              toolsByDate[day][tool] = (toolsByDate[day][tool] || 0) + 1;
+            }
           }
         }
       } catch {

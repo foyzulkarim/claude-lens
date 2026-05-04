@@ -1,0 +1,1984 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chat · Claude Code Usage Dashboard</title>
+  <style>
+    :root[data-theme="dark"] {
+      --bg: #0d1117;
+      --bg-elevated: #161b22;
+      --bg-sunken: #0d1117;
+      --border: #21262d;
+      --border-strong: #30363d;
+      --text: #c9d1d9;
+      --text-strong: #f0f6fc;
+      --text-muted: #8b949e;
+      --text-faint: #484f58;
+      --accent: #58a6ff;
+      --accent-strong: #388bfd;
+      --accent-on: #ffffff;
+      --green: #7ee787;
+      --amber: #d29922;
+      --red: #da3633;
+      --red-strong: #f85149;
+      --info: #79c0ff;
+      --purple: #d2a8ff;
+      --user-bubble: #1f2937;
+      --user-bubble-text: #c9d1d9;
+      --assistant-bubble: #161b22;
+      --code-bg: #0d1117;
+    }
+    :root[data-theme="light"] {
+      --bg: #ffffff;
+      --bg-elevated: #f6f8fa;
+      --bg-sunken: #ffffff;
+      --border: #d0d7de;
+      --border-strong: #afb8c1;
+      --text: #1f2328;
+      --text-strong: #1f2328;
+      --text-muted: #656d76;
+      --text-faint: #8c959f;
+      --accent: #0969da;
+      --accent-strong: #0969da;
+      --accent-on: #ffffff;
+      --green: #1a7f37;
+      --amber: #9a6700;
+      --red: #cf222e;
+      --red-strong: #d1242f;
+      --info: #0969da;
+      --purple: #8250df;
+      --user-bubble: #ddf4ff;
+      --user-bubble-text: #1f2328;
+      --assistant-bubble: #f6f8fa;
+      --code-bg: #eaeef2;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', Consolas, monospace;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      transition: background 0.15s ease, color 0.15s ease;
+      display: flex;
+      flex-direction: column;
+      padding: 20px;
+    }
+
+    .header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 12px;
+      flex-shrink: 0;
+    }
+    .header-left { min-width: 0; flex: 1; }
+    h1 { font-size: 1.4rem; color: var(--accent); margin-bottom: 6px; }
+    .nav { display: flex; gap: 4px; margin-top: 4px; }
+    .nav a {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      text-decoration: none;
+      padding: 4px 10px;
+      border: 1px solid transparent;
+      border-radius: 6px;
+    }
+    .nav a:hover { color: var(--accent); border-color: var(--border); }
+    .nav a.active {
+      color: var(--accent-on);
+      background: var(--accent-strong);
+      border-color: var(--accent-strong);
+    }
+    .header-right { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+    .icon-btn {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 6px 10px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.8rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .icon-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .icon-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Toolbar */
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+      flex-shrink: 0;
+    }
+    .toolbar label {
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .toolbar select {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 5px 10px;
+      font-family: inherit;
+      font-size: 0.78rem;
+    }
+    .toolbar select:focus { outline: none; border-color: var(--accent); }
+    .toolbar .meta {
+      margin-left: auto;
+      font-size: 0.7rem;
+      color: var(--text-faint);
+    }
+    .toolbar .meta strong { color: var(--text-muted); }
+    .toolbar .quota {
+      display: flex;
+      gap: 4px;
+    }
+    .quota-pill {
+      font-size: 0.65rem;
+      padding: 3px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--bg-elevated);
+      color: var(--text-muted);
+      font-variant-numeric: tabular-nums;
+      cursor: help;
+    }
+    .quota-pill.green { color: var(--green); border-color: var(--green); }
+    .quota-pill.amber { color: var(--amber); border-color: var(--amber); }
+    .quota-pill.red { color: var(--red-strong); border-color: var(--red); background: rgb(from var(--red) r g b / 0.08); }
+
+    /* Banner for not logged in */
+    .login-banner {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--red);
+      border-radius: 6px;
+      padding: 12px 16px;
+      margin-bottom: 16px;
+      font-size: 0.85rem;
+    }
+    .login-banner h3 { color: var(--red-strong); font-size: 0.85rem; margin-bottom: 6px; }
+    .login-banner code {
+      background: var(--bg-sunken);
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-size: 0.75rem;
+      border: 1px solid var(--border);
+    }
+
+    /* Thread */
+    .thread {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 4px 16px 0;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 0;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border-strong) transparent;
+    }
+    .thread::-webkit-scrollbar { width: 8px; }
+    .thread::-webkit-scrollbar-track { background: transparent; }
+    .thread::-webkit-scrollbar-thumb {
+      background: var(--border-strong);
+      border-radius: 4px;
+    }
+    .thread::-webkit-scrollbar-button { display: none; height: 0; width: 0; }
+    .thread-empty {
+      color: var(--text-faint);
+      font-style: italic;
+      text-align: center;
+      padding: 40px 20px;
+    }
+    .thread-empty .hint {
+      font-size: 0.78rem;
+      margin-top: 8px;
+    }
+    .msg {
+      display: flex;
+      flex-direction: column;
+      max-width: 85%;
+      gap: 4px;
+    }
+    .msg.user { align-self: flex-end; align-items: flex-end; }
+    .msg.assistant { align-self: flex-start; align-items: flex-start; }
+    .msg.system { align-self: center; max-width: 100%; }
+    .msg .role {
+      font-size: 0.6rem;
+      color: var(--text-faint);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 0 4px;
+    }
+    .msg .bubble {
+      padding: 10px 14px;
+      border-radius: 10px;
+      font-size: 0.85rem;
+      line-height: 1.55;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      overflow-wrap: anywhere;
+    }
+    .msg.user .bubble {
+      background: var(--user-bubble);
+      color: var(--user-bubble-text);
+      border-top-right-radius: 2px;
+    }
+    .msg.assistant .bubble {
+      background: var(--assistant-bubble);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-top-left-radius: 2px;
+    }
+    .msg.system .bubble {
+      background: transparent;
+      border: 1px dashed var(--border);
+      color: var(--text-muted);
+      font-size: 0.78rem;
+    }
+    .msg.error .bubble {
+      background: var(--bg-elevated);
+      border: 1px solid var(--red);
+      border-left: 4px solid var(--red);
+      color: var(--text);
+      font-size: 0.78rem;
+    }
+    .msg .bubble code {
+      background: var(--code-bg);
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-size: 0.78rem;
+      border: 1px solid var(--border);
+    }
+    .msg .bubble pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin: 6px 0;
+      font-size: 0.78rem;
+      overflow-x: auto;
+      white-space: pre;
+    }
+    .msg .bubble pre code {
+      background: transparent;
+      border: none;
+      padding: 0;
+      font-size: inherit;
+    }
+    .msg .bubble strong { color: var(--text-strong); font-weight: 700; }
+    .msg .bubble em { color: var(--purple); font-style: italic; }
+    .msg .footer {
+      font-size: 0.62rem;
+      color: var(--text-faint);
+      padding: 0 4px;
+    }
+    .typing {
+      display: inline-block;
+      width: 6px;
+      height: 1em;
+      background: var(--accent);
+      margin-left: 2px;
+      vertical-align: text-bottom;
+      animation: blink 1s steps(2, start) infinite;
+    }
+    @keyframes blink { to { visibility: hidden; } }
+
+    /* === Composer === */
+    .composer {
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 10px 10px 10px 14px;
+      background: var(--bg-elevated);
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .composer.drag-over {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgb(from var(--accent) r g b / 0.2);
+    }
+    .composer-row {
+      display: flex;
+      gap: 8px;
+      align-items: flex-end;
+    }
+    .composer-attachments {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      padding: 2px 0 4px;
+    }
+    .composer-attachments[hidden] { display: none; }
+    .attachment-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 6px 4px 4px;
+      background: var(--bg-sunken);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 0.7rem;
+      color: var(--text);
+      max-width: 220px;
+    }
+    .attachment-chip.error {
+      border-color: var(--red);
+      background: rgb(from var(--red) r g b / 0.08);
+    }
+    .attachment-chip .chip-thumb {
+      width: 28px;
+      height: 28px;
+      border-radius: 4px;
+      object-fit: cover;
+      flex-shrink: 0;
+      background: var(--bg-elevated);
+    }
+    .attachment-chip .chip-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 4px;
+      flex-shrink: 0;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.62rem;
+      color: var(--text-muted);
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .attachment-chip .chip-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 0;
+    }
+    .attachment-chip .chip-size {
+      color: var(--text-faint);
+      font-size: 0.62rem;
+      flex-shrink: 0;
+    }
+    .attachment-chip .chip-remove {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.95rem;
+      line-height: 1;
+      padding: 0 2px;
+      flex-shrink: 0;
+    }
+    .attachment-chip .chip-remove:hover { color: var(--red-strong); }
+    .composer-icon-btn {
+      flex-shrink: 0;
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+    }
+    .composer-icon-btn:hover { color: var(--accent); border-color: var(--border); background: var(--bg-sunken); }
+    .composer-icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .composer-icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .composer-icon-btn svg { width: 18px; height: 18px; }
+    /* On past user turns, show the chips inline inside the bubble */
+    .msg .bubble-attachments {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-bottom: 6px;
+    }
+    .msg .bubble-attachments .attachment-chip {
+      background: rgb(from var(--text-strong) r g b / 0.06);
+    }
+
+    /* === Settings drawer === */
+    .settings-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.55);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      padding: 20px;
+    }
+    :root[data-theme="light"] .settings-overlay { background: rgba(31, 35, 40, 0.4); }
+    .settings-overlay.open { display: flex; }
+    .settings-modal {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-strong);
+      border-radius: 10px;
+      width: 100%;
+      max-width: 540px;
+      max-height: 90vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+    }
+    .settings-header {
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .settings-header h2 {
+      color: var(--accent);
+      font-size: 1rem;
+      margin: 0;
+    }
+    .settings-close-btn {
+      background: var(--bg-sunken);
+      border: 1px solid var(--border-strong);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 4px 10px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.75rem;
+    }
+    .settings-close-btn:hover { color: var(--accent); border-color: var(--accent); }
+    .settings-body {
+      padding: 16px 20px;
+      overflow-y: auto;
+      font-size: 0.82rem;
+      color: var(--text);
+    }
+    .settings-section { margin-bottom: 18px; }
+    .settings-section h3 {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 8px;
+      font-weight: 700;
+    }
+    .settings-field { margin-bottom: 12px; }
+    .settings-field label {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.78rem;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+    .settings-field .help {
+      font-size: 0.66rem;
+      color: var(--text-faint);
+      line-height: 1.4;
+      margin-top: 4px;
+    }
+    .settings-field .value-tag {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      font-variant-numeric: tabular-nums;
+    }
+    .settings-field input[type="number"],
+    .settings-field input[type="text"],
+    .settings-field textarea {
+      width: 100%;
+      background: var(--bg-sunken);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-family: inherit;
+      font-size: 0.78rem;
+    }
+    .settings-field textarea {
+      resize: vertical;
+      min-height: 70px;
+      line-height: 1.45;
+    }
+    .settings-field input:focus,
+    .settings-field textarea:focus { outline: none; border-color: var(--accent); }
+    .settings-field input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+    }
+    .settings-field .row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .settings-field .row input[type="checkbox"] {
+      accent-color: var(--accent);
+    }
+    .settings-field .row.gap-top { margin-top: 4px; }
+    .settings-field .row .row-label {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+    }
+    .settings-footer {
+      padding: 10px 20px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+    .settings-footer button {
+      background: var(--bg-sunken);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 5px 12px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.75rem;
+    }
+    .settings-footer button:hover { color: var(--accent); border-color: var(--accent); }
+    .settings-footer .reset-link {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      text-decoration: underline;
+      padding: 0;
+      font-size: 0.7rem;
+    }
+    .settings-footer .reset-link:hover { color: var(--red-strong); }
+    .settings-info-table {
+      width: 100%;
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      border-collapse: collapse;
+    }
+    .settings-info-table td {
+      padding: 3px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .settings-info-table td:last-child {
+      text-align: right;
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* === History drawer === */
+    .history-list { display: flex; flex-direction: column; gap: 4px; }
+    .history-list .empty {
+      color: var(--text-faint);
+      font-style: italic;
+      text-align: center;
+      padding: 24px 0;
+    }
+    .history-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg-sunken);
+      cursor: pointer;
+      transition: border-color 0.15s ease, background 0.15s ease;
+    }
+    .history-row:hover { border-color: var(--accent); }
+    .history-row.active {
+      border-color: var(--accent-strong);
+      background: rgb(from var(--accent) r g b / 0.08);
+    }
+    .history-row .row-main {
+      flex: 1;
+      min-width: 0;
+    }
+    .history-row .row-title {
+      font-size: 0.78rem;
+      color: var(--text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .history-row.active .row-title { color: var(--text-strong); font-weight: 700; }
+    .history-row .row-meta {
+      font-size: 0.65rem;
+      color: var(--text-faint);
+      margin-top: 2px;
+      font-variant-numeric: tabular-nums;
+    }
+    .history-row .row-delete {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      line-height: 1;
+      padding: 2px 6px;
+      border-radius: 4px;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .history-row .row-delete:hover {
+      color: var(--red-strong);
+      border-color: var(--red);
+    }
+    .composer:focus-within {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgb(from var(--accent) r g b / 0.15);
+    }
+    .composer textarea {
+      flex: 1;
+      resize: none;
+      border: none;
+      outline: none;
+      background: transparent;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 0.88rem;
+      line-height: 1.5;
+      min-height: 24px;
+      max-height: 240px;
+      padding: 6px 0;
+      /* thin scrollbar without Windows up/down buttons */
+      scrollbar-width: thin;
+      scrollbar-color: var(--border-strong) transparent;
+    }
+    .composer textarea::-webkit-scrollbar { width: 6px; }
+    .composer textarea::-webkit-scrollbar-track { background: transparent; }
+    .composer textarea::-webkit-scrollbar-thumb {
+      background: var(--border-strong);
+      border-radius: 3px;
+    }
+    .composer textarea::-webkit-scrollbar-button { display: none; height: 0; width: 0; }
+    .composer textarea::placeholder { color: var(--text-faint); }
+    .composer textarea:focus { outline: none; }
+
+    /* Round icon-only send/stop button */
+    .send-btn {
+      flex-shrink: 0;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border: none;
+      background: var(--accent-strong);
+      color: var(--accent-on);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      transition: background 0.15s ease, transform 0.1s ease;
+    }
+    .send-btn:hover:not(:disabled) { background: var(--accent); }
+    .send-btn:active:not(:disabled) { transform: translateY(1px); }
+    .send-btn:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+    .send-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    .send-btn svg {
+      width: 18px;
+      height: 18px;
+      display: block;
+    }
+    /* Hide whichever icon doesn't match the current state */
+    .send-btn .icon-stop { display: none; }
+    .send-btn.is-stop { background: var(--red); }
+    .send-btn.is-stop:hover:not(:disabled) { background: var(--red-strong); }
+    .send-btn.is-stop .icon-send { display: none; }
+    .send-btn.is-stop .icon-stop { display: block; }
+
+    .composer-hint {
+      font-size: 0.65rem;
+      color: var(--text-faint);
+      margin-top: 4px;
+      text-align: right;
+      flex-shrink: 0;
+    }
+
+    @media (max-width: 640px) {
+      body { padding: 12px; }
+      .header { flex-direction: column; align-items: stretch; gap: 10px; }
+      .header-right { justify-content: flex-end; }
+      h1 { font-size: 1.15rem; }
+      .toolbar .meta { margin-left: 0; flex-basis: 100%; }
+      .msg { max-width: 95%; }
+      .msg .bubble { font-size: 0.82rem; padding: 8px 12px; }
+      .composer { padding: 8px 8px 8px 12px; border-radius: 12px; }
+      .send-btn { width: 32px; height: 32px; }
+      .send-btn svg { width: 16px; height: 16px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-left">
+      <h1>Chat</h1>
+      <nav class="nav" aria-label="Primary">
+        <a href="/">Dashboard</a>
+        <a href="/account">Account</a>
+        <a href="/chat" class="active">Chat</a>
+      </nav>
+    </div>
+    <div class="header-right">
+      <button id="history-btn" class="icon-btn" type="button" title="Browse past conversations">
+        <span aria-hidden="true">🕘</span>
+        <span>History</span>
+      </button>
+      <button id="new-chat-btn" class="icon-btn" type="button" title="Start a new conversation">
+        <span aria-hidden="true">+</span>
+        <span>New chat</span>
+      </button>
+      <button id="theme-toggle" class="icon-btn" type="button" aria-label="Toggle theme">
+        <span id="theme-icon">🌙</span>
+        <span id="theme-label">Dark</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <label for="model-select">Model</label>
+    <select id="model-select">
+      <option value="claude-opus-4-7">Opus 4.7 — most capable</option>
+      <option value="claude-sonnet-4-6">Sonnet 4.6 — balanced</option>
+      <option value="claude-haiku-4-5-20251001" selected>Haiku 4.5 — fastest</option>
+    </select>
+    <button id="settings-btn" class="icon-btn" type="button" title="Advanced settings" aria-label="Open advanced settings">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+      <span>Settings</span>
+    </button>
+    <div class="meta" id="usage-meta">
+      <strong>0</strong> input · <strong>0</strong> output tokens this conversation
+    </div>
+    <div class="quota" id="quota-meta" aria-live="polite"></div>
+  </div>
+
+  <div id="login-banner-slot"></div>
+
+  <div id="thread" class="thread">
+    <div class="thread-empty">
+      Type a message below to start a conversation.
+      <div class="hint">Inference is billed against your local Claude account quota.</div>
+    </div>
+  </div>
+
+  <div class="composer" id="composer">
+    <div class="composer-attachments" id="composer-attachments" hidden></div>
+    <div class="composer-row">
+      <button id="attach-btn" class="composer-icon-btn" type="button" title="Attach images, PDFs, or text files (or paste / drag-drop)" aria-label="Attach files">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+        </svg>
+      </button>
+      <input type="file" id="file-input" hidden multiple accept="image/jpeg,image/png,image/gif,image/webp,application/pdf,text/plain,text/markdown,text/csv,application/json,.md,.txt,.csv,.json,.log,.yml,.yaml,.xml,.html,.css,.js,.ts,.py,.go,.java,.rs,.c,.cpp,.h,.sh">
+      <textarea id="composer-input" placeholder="Send a message — Enter to send, Shift+Enter for newline" rows="1" autofocus></textarea>
+      <button id="send-btn" class="send-btn" type="button" aria-label="Send message" title="Send (Enter)">
+        <svg class="icon-send" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="12" y1="19" x2="12" y2="5"/>
+          <polyline points="5 12 12 5 19 12"/>
+        </svg>
+        <svg class="icon-stop" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <rect x="6" y="6" width="12" height="12" rx="2"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+  <div class="composer-hint">Conversation persisted in this browser only · paste, drop, or click 📎 to attach.</div>
+
+  <div id="settings-overlay" class="settings-overlay" role="dialog" aria-modal="true" aria-labelledby="settings-title" hidden>
+    <div class="settings-modal">
+      <div class="settings-header">
+        <h2 id="settings-title">Advanced settings</h2>
+        <button id="settings-close" class="settings-close-btn" type="button" aria-label="Close settings">Close (Esc)</button>
+      </div>
+      <div class="settings-body">
+
+        <div class="settings-section">
+          <h3>Output</h3>
+          <div class="settings-field">
+            <label for="setting-max-tokens">
+              Max output tokens
+              <span class="value-tag" id="setting-max-tokens-value">4096</span>
+            </label>
+            <input type="range" id="setting-max-tokens" min="256" max="16384" step="128" value="4096">
+            <div class="help">Hard cap on the model's response length. Higher values let it write longer answers but also raise the worst-case cost per turn.</div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h3>Sampling</h3>
+          <div class="settings-field">
+            <label for="setting-temperature">
+              Temperature
+              <span class="value-tag" id="setting-temperature-value">default</span>
+            </label>
+            <input type="range" id="setting-temperature" min="0" max="1" step="0.05" value="-1">
+            <div class="row gap-top">
+              <input type="checkbox" id="setting-temperature-enabled">
+              <label for="setting-temperature-enabled" class="row-label">Override (otherwise the API default is used)</label>
+            </div>
+            <div class="help">0 = deterministic / focused, 1 = creative. Leave unchecked to let Anthropic pick the default.</div>
+          </div>
+          <div class="settings-field">
+            <label for="setting-top-p">
+              Top P
+              <span class="value-tag" id="setting-top-p-value">default</span>
+            </label>
+            <input type="range" id="setting-top-p" min="0" max="1" step="0.05" value="-1">
+            <div class="row gap-top">
+              <input type="checkbox" id="setting-top-p-enabled">
+              <label for="setting-top-p-enabled" class="row-label">Override (nucleus sampling cutoff)</label>
+            </div>
+            <div class="help">Most users won't touch this. Don't override both temperature and top_p simultaneously.</div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h3>Conversation</h3>
+          <div class="settings-field">
+            <label for="setting-history-budget">
+              History budget
+              <span class="value-tag" id="setting-history-budget-value">All turns</span>
+            </label>
+            <input type="range" id="setting-history-budget" min="0" max="40" step="1" value="0">
+            <div class="help">How many of the most recent turns to include in each request. <strong>0 = send all history</strong> (default). Lower values shrink the prompt, lower cost, and reduce risk of bumping into the model's 200k-token context window — but the assistant loses earlier context.</div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h3>System prompt</h3>
+          <div class="settings-field">
+            <label for="setting-system">Custom system addendum</label>
+            <textarea id="setting-system" placeholder="e.g. Always answer in Bengali. Be terse."></textarea>
+            <div class="help">Appended <em>after</em> the load-bearing Claude-Code identity block on the server. Don't try to override that block — it's required by Anthropic's OAuth quota policy.</div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h3>Model facts</h3>
+          <table class="settings-info-table">
+            <tbody>
+              <tr><td>Context window (all current Claude models)</td><td>200,000 tokens</td></tr>
+              <tr><td>Per-image limit</td><td>~5 MB · 8000 × 8000 px</td></tr>
+              <tr><td>Per-PDF limit</td><td>~32 MB · 100 pages</td></tr>
+              <tr><td>Server JSON limit (configurable)</td><td>25 MB</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+      <div class="settings-footer">
+        <button type="button" class="reset-link" id="settings-reset">Reset to defaults</button>
+        <button type="button" id="settings-save">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="history-overlay" class="settings-overlay" role="dialog" aria-modal="true" aria-labelledby="history-title" hidden>
+    <div class="settings-modal">
+      <div class="settings-header">
+        <h2 id="history-title">Conversations</h2>
+        <button id="history-close" class="settings-close-btn" type="button" aria-label="Close history">Close (Esc)</button>
+      </div>
+      <div class="settings-body">
+        <div class="history-list" id="history-list">
+          <div class="empty">No saved conversations yet.</div>
+        </div>
+      </div>
+      <div class="settings-footer">
+        <button type="button" class="reset-link" id="history-clear-all">Delete all conversations</button>
+        <button type="button" id="history-new">+ New chat</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // === Theme ===
+    const THEME_KEY = 'claude-lens-theme';
+    function getInitialTheme() {
+      const saved = localStorage.getItem(THEME_KEY);
+      if (saved === 'light' || saved === 'dark') return saved;
+      return globalThis.matchMedia && globalThis.matchMedia('(prefers-color-scheme: light)').matches
+        ? 'light' : 'dark';
+    }
+    function applyTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme);
+      const icon = document.getElementById('theme-icon');
+      const label = document.getElementById('theme-label');
+      if (icon) icon.textContent = theme === 'dark' ? '🌙' : '☀️';
+      if (label) label.textContent = theme === 'dark' ? 'Dark' : 'Light';
+    }
+    applyTheme(getInitialTheme());
+    document.getElementById('theme-toggle').addEventListener('click', () => {
+      const current = document.documentElement.getAttribute('data-theme') || 'dark';
+      const next = current === 'dark' ? 'light' : 'dark';
+      localStorage.setItem(THEME_KEY, next);
+      applyTheme(next);
+    });
+
+    // === Helpers ===
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str == null ? '' : String(str);
+      return div.innerHTML;
+    }
+
+    function formatResetTime(unixSec) {
+      const t = Number(unixSec) * 1000;
+      if (!Number.isFinite(t)) return String(unixSec);
+      const delta = t - Date.now();
+      if (delta <= 0) return 'now';
+      const min = Math.floor(delta / 60000);
+      const hr = Math.floor(min / 60);
+      const day = Math.floor(hr / 24);
+      const abs = new Date(t).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: false });
+      if (day >= 1) return `in ${day}d ${hr % 24}h (${new Date(t).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })} ${abs})`;
+      if (hr >= 1) return `in ${hr}h ${min % 60}m (${abs})`;
+      return `in ${min}m (${abs})`;
+    }
+
+    // Update the quota indicator in the toolbar from a response's headers.
+    // Called after every successful chat call AND on a probe at page load.
+    function updateQuotaFromHeaders(headers) {
+      const u5 = headers.get('anthropic-ratelimit-unified-5h-utilization');
+      const u7 = headers.get('anthropic-ratelimit-unified-7d-utilization');
+      const reset5 = headers.get('anthropic-ratelimit-unified-5h-reset');
+      const reset7 = headers.get('anthropic-ratelimit-unified-7d-reset');
+      const el = document.getElementById('quota-meta');
+      if (!el) return;
+      if (u5 == null && u7 == null) {
+        el.innerHTML = '';
+        return;
+      }
+      const pct5 = u5 != null ? Math.round(Number.parseFloat(u5) * 100) : null;
+      const pct7 = u7 != null ? Math.round(Number.parseFloat(u7) * 100) : null;
+      const cls = (pct) => pct == null ? '' : pct >= 90 ? 'red' : pct >= 70 ? 'amber' : 'green';
+      const reset5Lbl = reset5 ? formatResetTime(reset5) : '';
+      const reset7Lbl = reset7 ? formatResetTime(reset7) : '';
+      el.innerHTML = `
+        <span class="quota-pill ${cls(pct5)}" title="5-hour quota resets ${escapeHtml(reset5Lbl)}">5h: ${pct5}%</span>
+        <span class="quota-pill ${cls(pct7)}" title="7-day quota resets ${escapeHtml(reset7Lbl)}">7d: ${pct7}%</span>
+      `;
+    }
+
+    // Friendly errors for the most common upstream failures, with rate-limit
+    // headers extracted from the proxied response when present.
+    function buildHttpError(res, body) {
+      let parsed = null;
+      try { parsed = JSON.parse(body); } catch {}
+      const errType = parsed?.error?.type;
+      const errMsg = parsed?.error?.message;
+      const modelLabel = modelSelect.options[modelSelect.selectedIndex]?.text || modelSelect.value;
+
+      if (res.status === 429 || errType === 'rate_limit_error') {
+        const retryAfter = res.headers.get('retry-after');
+        const reset5h = res.headers.get('anthropic-ratelimit-unified-5h-reset');
+        const reset7d = res.headers.get('anthropic-ratelimit-unified-7d-reset');
+        const util5h = res.headers.get('anthropic-ratelimit-unified-5h-utilization');
+        const util7d = res.headers.get('anthropic-ratelimit-unified-7d-utilization');
+        const claim = res.headers.get('anthropic-ratelimit-unified-representative-claim');
+        const lines = [
+          `Rate limit hit on ${modelLabel}.`,
+          'Your Claude Max plan tracks usage in a unified 5-hour and 7-day window across all models. Opus and Sonnet burn through the quota much faster than Haiku per token.',
+        ];
+        if (claim) lines.push(`Window that’s blocking: ${claim.replace('_', ' ')}.`);
+        if (util5h) lines.push(`5-hour utilization: ${(parseFloat(util5h) * 100).toFixed(0)}%.`);
+        if (util7d) lines.push(`7-day utilization: ${(parseFloat(util7d) * 100).toFixed(0)}%.`);
+        if (retryAfter) {
+          lines.push(`Retry after: ~${retryAfter}s.`);
+        } else if (reset5h) {
+          lines.push(`5-hour limit resets: ${formatResetTime(reset5h)}.`);
+        }
+        if (reset7d) lines.push(`7-day limit resets: ${formatResetTime(reset7d)}.`);
+        lines.push('Tip: switch to Haiku 4.5 to keep working — it consumes far less of the same quota.');
+        return new Error(lines.join('\n'));
+      }
+      if (res.status === 401) {
+        return new Error('Authentication failed. The OAuth token may have expired — try `claude /logout` then `claude /login`.');
+      }
+      if (res.status === 403) {
+        return new Error('Forbidden. Your token does not have inference access for this model.');
+      }
+      if (res.status === 502 || res.status === 503 || res.status === 504) {
+        return new Error(`Anthropic API is temporarily unavailable (${res.status}). Try again in a moment.`);
+      }
+      if (errType && errMsg) {
+        return new Error(`${errType}: ${errMsg}`);
+      }
+      return new Error(`HTTP ${res.status}: ${(body || '').slice(0, 300)}`);
+    }
+
+    // Tiny markdown subset: ```code blocks```, `inline code`, **bold**, *italic*.
+    // Anything more elaborate isn't worth the bytes for now.
+    function renderMarkdown(text) {
+      if (text == null) return '';
+      // Split into code-block / non-code segments so we don't mangle ** inside code.
+      const parts = [];
+      let i = 0;
+      const re = /```(\w+)?\n?([\s\S]*?)```/g;
+      let m;
+      while ((m = re.exec(text)) !== null) {
+        if (m.index > i) parts.push({ type: 'text', value: text.slice(i, m.index) });
+        parts.push({ type: 'code', lang: m[1] || '', value: m[2] });
+        i = m.index + m[0].length;
+      }
+      if (i < text.length) parts.push({ type: 'text', value: text.slice(i) });
+
+      return parts.map(p => {
+        if (p.type === 'code') {
+          return `<pre><code${p.lang ? ` class="lang-${escapeHtml(p.lang)}"` : ''}>${escapeHtml(p.value)}</code></pre>`;
+        }
+        let s = escapeHtml(p.value);
+        // inline code first (so ** inside ` doesn't trigger)
+        s = s.replace(/`([^`\n]+)`/g, (_, c) => `<code>${c}</code>`);
+        s = s.replace(/\*\*([^*\n]+)\*\*/g, (_, c) => `<strong>${c}</strong>`);
+        s = s.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, (_, pre, c) => `${pre}<em>${c}</em>`);
+        return s;
+      }).join('');
+    }
+
+    // === Settings ===
+    const SETTINGS_KEY = 'claude-lens-chat-settings';
+    const DEFAULT_SETTINGS = {
+      maxTokens: 4096,
+      temperatureEnabled: false,
+      temperature: 0.7,
+      topPEnabled: false,
+      topP: 0.95,
+      historyBudget: 0,   // 0 means "all"
+      systemPrompt: '',
+    };
+    function loadSettings() {
+      try {
+        const raw = JSON.parse(localStorage.getItem(SETTINGS_KEY) || 'null');
+        if (raw && typeof raw === 'object') return { ...DEFAULT_SETTINGS, ...raw };
+      } catch { /* ignore */ }
+      return { ...DEFAULT_SETTINGS };
+    }
+    function saveSettings(s) {
+      try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch { /* ignore */ }
+    }
+    let settings = loadSettings();
+
+    // === Attachments (per-send only — never persisted) ===
+    // Each item: { id, name, size, mimeType, kind: 'image'|'document'|'text', dataB64?: string, text?: string, error?: string }
+    let attachments = [];
+    const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+    const MAX_PDF_BYTES = 32 * 1024 * 1024;
+    const MAX_TEXT_BYTES = 1 * 1024 * 1024;
+    const TEXT_EXTENSIONS = new Set(['md','txt','csv','json','log','yml','yaml','xml','html','css','js','ts','py','go','java','rs','c','cpp','h','sh']);
+
+    function classifyFile(file) {
+      const mt = (file.type || '').toLowerCase();
+      const ext = (file.name.split('.').pop() || '').toLowerCase();
+      if (mt.startsWith('image/')) {
+        if (!['image/jpeg','image/png','image/gif','image/webp'].includes(mt)) {
+          return { kind: 'image', mimeType: mt, error: `Unsupported image type ${mt} — use jpeg, png, gif, or webp` };
+        }
+        return { kind: 'image', mimeType: mt };
+      }
+      if (mt === 'application/pdf' || ext === 'pdf') {
+        return { kind: 'document', mimeType: 'application/pdf' };
+      }
+      if (mt.startsWith('text/') || mt === 'application/json' || TEXT_EXTENSIONS.has(ext)) {
+        return { kind: 'text', mimeType: mt || 'text/plain' };
+      }
+      return { kind: 'unsupported', mimeType: mt, error: `Unsupported file type — drop images, PDFs, or text files` };
+    }
+
+    function fileToBase64(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = String(reader.result || '');
+          const comma = result.indexOf(',');
+          resolve(comma >= 0 ? result.slice(comma + 1) : result);
+        };
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function fileToText(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(reader.error);
+        reader.readAsText(file);
+      });
+    }
+
+    function fmtBytes(n) {
+      if (n < 1024) return n + ' B';
+      if (n < 1024 * 1024) return (n / 1024).toFixed(0) + ' KB';
+      return (n / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    const MODEL_DISPLAY = {
+      'claude-opus-4-7': 'Opus 4.7',
+      'claude-sonnet-4-6': 'Sonnet 4.6',
+      'claude-haiku-4-5-20251001': 'Haiku 4.5',
+    };
+    function modelDisplayName(id) {
+      if (!id) return '';
+      return MODEL_DISPLAY[id] || id;
+    }
+    function fmtTimeShort(ts) {
+      if (!ts) return '';
+      const d = new Date(ts);
+      if (Number.isNaN(d.getTime())) return '';
+      return d.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: false });
+    }
+
+    async function addFiles(files) {
+      const list = Array.from(files || []);
+      for (const f of list) {
+        const c = classifyFile(f);
+        const id = 'att-' + Math.random().toString(36).slice(2, 9);
+        const att = { id, name: f.name, size: f.size, mimeType: c.mimeType, kind: c.kind };
+        if (c.error) {
+          att.error = c.error;
+          attachments.push(att);
+          continue;
+        }
+        try {
+          if (c.kind === 'image') {
+            if (f.size > MAX_IMAGE_BYTES) {
+              att.error = `Image too large (${fmtBytes(f.size)}, max ${fmtBytes(MAX_IMAGE_BYTES)})`;
+            } else {
+              att.dataB64 = await fileToBase64(f);
+              att.previewUrl = `data:${att.mimeType};base64,${att.dataB64}`;
+            }
+          } else if (c.kind === 'document') {
+            if (f.size > MAX_PDF_BYTES) {
+              att.error = `PDF too large (${fmtBytes(f.size)}, max ${fmtBytes(MAX_PDF_BYTES)})`;
+            } else {
+              att.dataB64 = await fileToBase64(f);
+            }
+          } else if (c.kind === 'text') {
+            if (f.size > MAX_TEXT_BYTES) {
+              att.error = `Text file too large (${fmtBytes(f.size)}, max ${fmtBytes(MAX_TEXT_BYTES)})`;
+            } else {
+              att.text = await fileToText(f);
+            }
+          }
+        } catch (err) {
+          att.error = `Read failed: ${err.message || err}`;
+        }
+        attachments.push(att);
+      }
+      renderAttachments();
+    }
+
+    function renderAttachments() {
+      const wrap = document.getElementById('composer-attachments');
+      if (!wrap) return;
+      if (attachments.length === 0) {
+        wrap.hidden = true;
+        wrap.innerHTML = '';
+        return;
+      }
+      wrap.hidden = false;
+      wrap.innerHTML = attachments.map(a => {
+        const thumb = a.previewUrl
+          ? `<img class="chip-thumb" src="${escapeHtml(a.previewUrl)}" alt="">`
+          : `<span class="chip-icon">${escapeHtml(a.kind === 'document' ? 'PDF' : a.kind === 'text' ? 'TXT' : '?')}</span>`;
+        const title = a.error ? a.error : `${a.name} · ${fmtBytes(a.size)}`;
+        return `
+          <div class="attachment-chip${a.error ? ' error' : ''}" data-id="${a.id}" title="${escapeHtml(title)}">
+            ${thumb}
+            <span class="chip-name">${escapeHtml(a.name)}</span>
+            <span class="chip-size">${escapeHtml(a.error ? '!' : fmtBytes(a.size))}</span>
+            <button class="chip-remove" type="button" aria-label="Remove ${escapeHtml(a.name)}" data-remove="${a.id}">×</button>
+          </div>`;
+      }).join('');
+    }
+
+    document.getElementById('composer-attachments').addEventListener('click', (e) => {
+      const removeId = e.target.dataset.remove;
+      if (!removeId) return;
+      attachments = attachments.filter(a => a.id !== removeId);
+      renderAttachments();
+    });
+
+    document.getElementById('attach-btn').addEventListener('click', () => {
+      document.getElementById('file-input').click();
+    });
+    document.getElementById('file-input').addEventListener('change', (e) => {
+      addFiles(e.target.files);
+      e.target.value = '';
+    });
+
+    // Drag-and-drop on the composer
+    const composerEl = document.getElementById('composer');
+    let dragDepth = 0;
+    composerEl.addEventListener('dragenter', (e) => {
+      if (!e.dataTransfer || !e.dataTransfer.types.includes('Files')) return;
+      e.preventDefault();
+      dragDepth++;
+      composerEl.classList.add('drag-over');
+    });
+    composerEl.addEventListener('dragover', (e) => {
+      if (!e.dataTransfer || !e.dataTransfer.types.includes('Files')) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    });
+    composerEl.addEventListener('dragleave', () => {
+      dragDepth = Math.max(0, dragDepth - 1);
+      if (dragDepth === 0) composerEl.classList.remove('drag-over');
+    });
+    composerEl.addEventListener('drop', (e) => {
+      if (!e.dataTransfer || !e.dataTransfer.files || e.dataTransfer.files.length === 0) return;
+      e.preventDefault();
+      dragDepth = 0;
+      composerEl.classList.remove('drag-over');
+      addFiles(e.dataTransfer.files);
+    });
+
+    // Paste images directly from clipboard
+    document.addEventListener('paste', (e) => {
+      // Only intercept when the composer textarea has focus
+      if (document.activeElement && document.activeElement.id !== 'composer-input') return;
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      const files = [];
+      for (const it of items) {
+        if (it.kind === 'file') {
+          const f = it.getAsFile();
+          if (f) files.push(f);
+        }
+      }
+      if (files.length > 0) {
+        e.preventDefault();
+        addFiles(files);
+      }
+    });
+
+    // === Conversation storage (multi-conv) ===
+    //
+    // localStorage layout:
+    //   claude-lens-chat-convs       → [{id, title, createdAt, updatedAt, messageCount}]  (index, sorted by updatedAt desc)
+    //   claude-lens-chat-conv-<id>   → [...messages]
+    //   claude-lens-chat-active-id   → string id of current conversation
+    //
+    // Legacy `claude-lens-chat-history` is migrated once into a new conversation
+    // on first run and then removed.
+    const LEGACY_HISTORY_KEY = 'claude-lens-chat-history';
+    const CONVS_KEY = 'claude-lens-chat-convs';
+    const ACTIVE_CONV_KEY = 'claude-lens-chat-active-id';
+    const CONV_PREFIX = 'claude-lens-chat-conv-';
+    const MODEL_KEY = 'claude-lens-chat-model';
+
+    function newId() {
+      return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
+    }
+
+    function loadConvIndex() {
+      try {
+        const raw = JSON.parse(localStorage.getItem(CONVS_KEY) || 'null');
+        if (Array.isArray(raw)) return raw;
+      } catch { /* ignore */ }
+      return [];
+    }
+    function saveConvIndex(arr) {
+      try { localStorage.setItem(CONVS_KEY, JSON.stringify(arr)); } catch { /* ignore */ }
+    }
+    function loadConv(id) {
+      if (!id) return [];
+      try {
+        const raw = JSON.parse(localStorage.getItem(CONV_PREFIX + id) || 'null');
+        return Array.isArray(raw) ? raw : [];
+      } catch { return []; }
+    }
+    function saveConv(id, msgs) {
+      try { localStorage.setItem(CONV_PREFIX + id, JSON.stringify(msgs || [])); } catch { /* ignore — quota */ }
+    }
+    function deleteConv(id) {
+      try { localStorage.removeItem(CONV_PREFIX + id); } catch { /* ignore */ }
+      const idx = loadConvIndex().filter(c => c.id !== id);
+      saveConvIndex(idx);
+    }
+
+    function deriveTitle(msgs) {
+      const firstUser = (msgs || []).find(m => m.role === 'user' && (m.content || '').trim());
+      if (!firstUser) {
+        const firstWithStubs = (msgs || []).find(m => m.role === 'user' && Array.isArray(m.attachmentStubs) && m.attachmentStubs.length);
+        if (firstWithStubs) return `📎 ${firstWithStubs.attachmentStubs.map(s => s.name).join(', ')}`.slice(0, 80);
+        return 'New conversation';
+      }
+      const text = String(firstUser.content || '').replaceAll(/\s+/g, ' ').trim();
+      return text.slice(0, 80) || 'New conversation';
+    }
+
+    function upsertConvMeta(id, msgs) {
+      const idx = loadConvIndex();
+      const now = new Date().toISOString();
+      const found = idx.find(c => c.id === id);
+      if (found) {
+        found.updatedAt = now;
+        found.messageCount = msgs.length;
+        // Re-derive title only while the conv is still untitled (1 msg or fewer).
+        if (msgs.length <= 2 || !found.title || found.title === 'New conversation') {
+          found.title = deriveTitle(msgs);
+        }
+      } else {
+        idx.push({
+          id,
+          title: deriveTitle(msgs),
+          createdAt: now,
+          updatedAt: now,
+          messageCount: msgs.length,
+        });
+      }
+      idx.sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+      saveConvIndex(idx);
+    }
+
+    function getActiveConvId() {
+      return localStorage.getItem(ACTIVE_CONV_KEY) || null;
+    }
+    function setActiveConvId(id) {
+      try { localStorage.setItem(ACTIVE_CONV_KEY, id); } catch { /* ignore */ }
+    }
+
+    // One-time migration: lift legacy single-history into a new conversation.
+    function migrateLegacyHistory() {
+      const idx = loadConvIndex();
+      const legacy = localStorage.getItem(LEGACY_HISTORY_KEY);
+      if (!legacy) return;
+      try {
+        const parsed = JSON.parse(legacy);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // Only migrate if there isn't already an existing conv with the same content
+          // (prevents double-migration on edge reloads). Use a simple length+first-msg key.
+          const id = newId();
+          saveConv(id, parsed);
+          upsertConvMeta(id, parsed);
+          if (idx.length === 0 || !getActiveConvId()) setActiveConvId(id);
+        }
+      } catch { /* ignore */ }
+      try { localStorage.removeItem(LEGACY_HISTORY_KEY); } catch { /* ignore */ }
+    }
+    migrateLegacyHistory();
+
+    let activeConvId = getActiveConvId();
+    if (!activeConvId) {
+      const idx = loadConvIndex();
+      if (idx.length > 0) {
+        activeConvId = idx[0].id;
+      } else {
+        activeConvId = newId();
+        upsertConvMeta(activeConvId, []);
+      }
+      setActiveConvId(activeConvId);
+    }
+
+    function saveHistory(msgs) {
+      saveConv(activeConvId, msgs);
+      upsertConvMeta(activeConvId, msgs);
+      // Refresh history drawer if open (lazy lookup — drawer DOM may not exist yet at boot).
+      const overlay = document.getElementById('history-overlay');
+      if (overlay && !overlay.hidden && typeof renderHistoryList === 'function') {
+        renderHistoryList();
+      }
+    }
+    function loadHistory() {
+      return loadConv(activeConvId);
+    }
+
+    let history = loadHistory();
+    let usageTotals = { input: 0, output: 0 };
+
+    const modelSelect = document.getElementById('model-select');
+    const savedModel = localStorage.getItem(MODEL_KEY);
+    if (savedModel) modelSelect.value = savedModel;
+    modelSelect.addEventListener('change', () => {
+      localStorage.setItem(MODEL_KEY, modelSelect.value);
+    });
+
+    const threadEl = document.getElementById('thread');
+    const inputEl = document.getElementById('composer-input');
+    const sendBtn = document.getElementById('send-btn');
+    const newChatBtn = document.getElementById('new-chat-btn');
+    const usageMeta = document.getElementById('usage-meta');
+
+    function updateUsage() {
+      usageMeta.innerHTML = `<strong>${usageTotals.input.toLocaleString()}</strong> input · <strong>${usageTotals.output.toLocaleString()}</strong> output tokens this conversation`;
+    }
+
+    function autoResize() {
+      inputEl.style.height = 'auto';
+      inputEl.style.height = Math.min(inputEl.scrollHeight, 240) + 'px';
+    }
+    inputEl.addEventListener('input', autoResize);
+
+    function scrollToBottom() {
+      threadEl.scrollTop = threadEl.scrollHeight;
+    }
+
+    function renderMessage(msg) {
+      const wrap = document.createElement('div');
+      wrap.className = `msg ${msg.role || 'system'}${msg.error ? ' error' : ''}`;
+      const role = document.createElement('div');
+      role.className = 'role';
+      role.textContent = msg.role === 'user' ? 'You' : msg.role === 'assistant' ? 'Claude' : (msg.role || '');
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble';
+      if (Array.isArray(msg.attachmentStubs) && msg.attachmentStubs.length > 0) {
+        const chips = document.createElement('div');
+        chips.className = 'bubble-attachments';
+        chips.innerHTML = msg.attachmentStubs.map(s => {
+          const icon = s.kind === 'image' ? 'IMG' : s.kind === 'document' ? 'PDF' : 'TXT';
+          const sizeLbl = typeof s.size === 'number' ? fmtBytes(s.size) : '';
+          return `<span class="attachment-chip" title="${escapeHtml(s.name)}${sizeLbl ? ' · ' + escapeHtml(sizeLbl) : ''} (not retained on reload)">
+            <span class="chip-icon">${icon}</span>
+            <span class="chip-name">${escapeHtml(s.name)}</span>
+            ${sizeLbl ? `<span class="chip-size">${escapeHtml(sizeLbl)}</span>` : ''}
+          </span>`;
+        }).join('');
+        bubble.appendChild(chips);
+      }
+      const textNode = document.createElement('div');
+      if (msg.role === 'assistant') {
+        textNode.innerHTML = renderMarkdown(msg.content || '');
+      } else {
+        textNode.textContent = msg.content || '';
+      }
+      bubble.appendChild(textNode);
+      wrap.appendChild(role);
+      wrap.appendChild(bubble);
+      // Auto-compose a footer for assistant messages from model + timestamp
+      let footerText = msg.footer || '';
+      if (!footerText && msg.role === 'assistant') {
+        const parts = [];
+        if (msg.model) parts.push(modelDisplayName(msg.model));
+        const t = fmtTimeShort(msg.timestamp);
+        if (t) parts.push(t);
+        footerText = parts.join(' · ');
+      }
+      if (footerText) {
+        const f = document.createElement('div');
+        f.className = 'footer';
+        f.textContent = footerText;
+        wrap.appendChild(f);
+      }
+      return wrap;
+    }
+
+    function renderAll() {
+      threadEl.innerHTML = '';
+      if (history.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'thread-empty';
+        empty.innerHTML = 'Type a message below to start a conversation.<div class="hint">Inference is billed against your local Claude account quota.</div>';
+        threadEl.appendChild(empty);
+        return;
+      }
+      for (const m of history) {
+        threadEl.appendChild(renderMessage(m));
+      }
+      scrollToBottom();
+    }
+
+    renderAll();
+    updateUsage();
+
+    // === Settings drawer ===
+    const settingsOverlay = document.getElementById('settings-overlay');
+    const settingsFields = {
+      maxTokens: document.getElementById('setting-max-tokens'),
+      maxTokensValue: document.getElementById('setting-max-tokens-value'),
+      temperature: document.getElementById('setting-temperature'),
+      temperatureValue: document.getElementById('setting-temperature-value'),
+      temperatureEnabled: document.getElementById('setting-temperature-enabled'),
+      topP: document.getElementById('setting-top-p'),
+      topPValue: document.getElementById('setting-top-p-value'),
+      topPEnabled: document.getElementById('setting-top-p-enabled'),
+      historyBudget: document.getElementById('setting-history-budget'),
+      historyBudgetValue: document.getElementById('setting-history-budget-value'),
+      systemPrompt: document.getElementById('setting-system'),
+    };
+
+    function syncSettingsToForm() {
+      settingsFields.maxTokens.value = settings.maxTokens;
+      settingsFields.maxTokensValue.textContent = settings.maxTokens.toLocaleString();
+      settingsFields.temperatureEnabled.checked = settings.temperatureEnabled;
+      settingsFields.temperature.value = settings.temperature;
+      settingsFields.temperatureValue.textContent = settings.temperatureEnabled ? settings.temperature.toFixed(2) : 'default';
+      settingsFields.topPEnabled.checked = settings.topPEnabled;
+      settingsFields.topP.value = settings.topP;
+      settingsFields.topPValue.textContent = settings.topPEnabled ? settings.topP.toFixed(2) : 'default';
+      settingsFields.historyBudget.value = settings.historyBudget;
+      settingsFields.historyBudgetValue.textContent = settings.historyBudget === 0
+        ? 'All turns' : `Last ${settings.historyBudget} turn${settings.historyBudget === 1 ? '' : 's'}`;
+      settingsFields.systemPrompt.value = settings.systemPrompt || '';
+    }
+
+    function readFormToSettings() {
+      settings.maxTokens = Number.parseInt(settingsFields.maxTokens.value, 10) || DEFAULT_SETTINGS.maxTokens;
+      settings.temperatureEnabled = settingsFields.temperatureEnabled.checked;
+      settings.temperature = Number.parseFloat(settingsFields.temperature.value);
+      if (!Number.isFinite(settings.temperature) || settings.temperature < 0) settings.temperature = DEFAULT_SETTINGS.temperature;
+      settings.topPEnabled = settingsFields.topPEnabled.checked;
+      settings.topP = Number.parseFloat(settingsFields.topP.value);
+      if (!Number.isFinite(settings.topP) || settings.topP < 0) settings.topP = DEFAULT_SETTINGS.topP;
+      settings.historyBudget = Number.parseInt(settingsFields.historyBudget.value, 10) || 0;
+      settings.systemPrompt = settingsFields.systemPrompt.value || '';
+      saveSettings(settings);
+      syncSettingsToForm();
+    }
+
+    function openSettings() {
+      syncSettingsToForm();
+      settingsOverlay.hidden = false;
+      settingsOverlay.classList.add('open');
+      document.getElementById('settings-close').focus();
+    }
+    function closeSettings() {
+      settingsOverlay.classList.remove('open');
+      settingsOverlay.hidden = true;
+      inputEl.focus();
+    }
+
+    document.getElementById('settings-btn').addEventListener('click', openSettings);
+    document.getElementById('settings-close').addEventListener('click', closeSettings);
+    document.getElementById('settings-save').addEventListener('click', closeSettings);
+    document.getElementById('settings-reset').addEventListener('click', () => {
+      settings = { ...DEFAULT_SETTINGS };
+      saveSettings(settings);
+      syncSettingsToForm();
+    });
+    settingsOverlay.addEventListener('click', (e) => {
+      if (e.target === settingsOverlay) closeSettings();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !settingsOverlay.hidden) closeSettings();
+    });
+    // Live-update on every input
+    for (const id of ['setting-max-tokens','setting-temperature','setting-temperature-enabled','setting-top-p','setting-top-p-enabled','setting-history-budget','setting-system']) {
+      document.getElementById(id).addEventListener('input', readFormToSettings);
+      document.getElementById(id).addEventListener('change', readFormToSettings);
+    }
+
+    // === Sending ===
+    let inFlight = null;  // { abortController, assistantNode, assistantBubble, partialText }
+
+    function setSending(sending) {
+      sendBtn.classList.toggle('is-stop', sending);
+      sendBtn.setAttribute('aria-label', sending ? 'Stop generating' : 'Send message');
+      sendBtn.title = sending ? 'Stop' : 'Send (Enter)';
+    }
+
+    // Build the content blocks Anthropic expects from the user's text + attachments.
+    // Returns either a plain string (text-only, the simpler form Anthropic also accepts)
+    // or an array of typed blocks when there are attachments.
+    function buildUserContent(text, atts) {
+      const usable = atts.filter(a => !a.error);
+      if (usable.length === 0) return text;
+
+      const blocks = [];
+      for (const a of usable) {
+        if (a.kind === 'image') {
+          blocks.push({
+            type: 'image',
+            source: { type: 'base64', media_type: a.mimeType, data: a.dataB64 },
+          });
+        } else if (a.kind === 'document') {
+          blocks.push({
+            type: 'document',
+            source: { type: 'base64', media_type: 'application/pdf', data: a.dataB64 },
+          });
+        } else if (a.kind === 'text') {
+          // Inline text files into a text block with a small header so the model
+          // knows where the file content ends.
+          blocks.push({
+            type: 'text',
+            text: `--- ${a.name} ---\n${a.text}\n--- end of ${a.name} ---`,
+          });
+        }
+      }
+      blocks.push({ type: 'text', text });
+      return blocks;
+    }
+
+    function attachmentStubsFor(atts) {
+      return atts.filter(a => !a.error).map(a => ({
+        name: a.name, kind: a.kind, size: a.size, mimeType: a.mimeType,
+      }));
+    }
+
+    async function send() {
+      if (inFlight) {
+        inFlight.abortController.abort();
+        return;
+      }
+      const text = inputEl.value.trim();
+      const usableAtts = attachments.filter(a => !a.error);
+      if (!text && usableAtts.length === 0) return;
+      // Don't let attachment errors slip through silently
+      const erroredAtts = attachments.filter(a => a.error);
+      if (erroredAtts.length > 0 && !confirm(`${erroredAtts.length} attachment(s) have errors and will be skipped. Send anyway?`)) {
+        return;
+      }
+
+      // Add user message — the API form (with blocks) lives only on the wire;
+      // history stores plain text + a stub list (so reload doesn't keep base64 around).
+      const userMsg = {
+        role: 'user',
+        content: text,
+        attachmentStubs: attachmentStubsFor(usableAtts),
+      };
+      history.push(userMsg);
+      saveHistory(history);
+      threadEl.querySelector('.thread-empty')?.remove();
+      threadEl.appendChild(renderMessage(userMsg));
+
+      // Build the wire form for THIS turn (latest user message uses block content)
+      const turnContent = buildUserContent(text, attachments);
+
+      // Reset composer state
+      inputEl.value = '';
+      autoResize();
+      attachments = [];
+      renderAttachments();
+      scrollToBottom();
+
+      // Add empty assistant message that we'll fill in as tokens arrive
+      const assistantMsg = { role: 'assistant', content: '' };
+      const assistantNode = renderMessage(assistantMsg);
+      const assistantBubble = assistantNode.querySelector('.bubble');
+      const cursor = document.createElement('span');
+      cursor.className = 'typing';
+      assistantBubble.appendChild(cursor);
+      threadEl.appendChild(assistantNode);
+      scrollToBottom();
+
+      const abortController = new AbortController();
+      inFlight = { abortController, assistantNode, assistantBubble, partialText: '', assistantMsg };
+      setSending(true);
+
+      // Snapshot the model used for this turn so changing the dropdown
+      // mid-stream doesn't mislabel the response.
+      const turnModel = modelSelect.value;
+      inFlight.assistantMsg.model = turnModel;
+      inFlight.assistantMsg.timestamp = new Date().toISOString();
+
+      try {
+        // Build API messages: history minus the just-pushed user msg, then
+        // append the wire-form turn (which carries the attachment blocks).
+        let prior = history
+          .slice(0, -1)
+          .filter(m => m.role === 'user' || m.role === 'assistant')
+          .map(m => ({ role: m.role, content: m.content || '' }));
+        if (settings.historyBudget > 0) {
+          prior = prior.slice(-settings.historyBudget);
+        }
+        const apiMessages = [...prior, { role: 'user', content: turnContent }];
+
+        const body = {
+          model: turnModel,
+          max_tokens: settings.maxTokens,
+          stream: true,
+          messages: apiMessages,
+        };
+        if (settings.temperatureEnabled) body.temperature = settings.temperature;
+        if (settings.topPEnabled) body.top_p = settings.topP;
+        if (settings.systemPrompt && settings.systemPrompt.trim()) body.system = settings.systemPrompt;
+
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: abortController.signal,
+          body: JSON.stringify(body),
+        });
+
+        if (!res.ok) {
+          const errBody = await res.text();
+          updateQuotaFromHeaders(res.headers);
+          throw buildHttpError(res, errBody);
+        }
+        updateQuotaFromHeaders(res.headers);
+
+        await readSseStream(res, (event, data) => {
+          if (event === 'content_block_delta' && data.delta?.type === 'text_delta') {
+            inFlight.partialText += data.delta.text || '';
+            inFlight.assistantMsg.content = inFlight.partialText;
+            assistantBubble.innerHTML = renderMarkdown(inFlight.partialText);
+            assistantBubble.appendChild(cursor);
+            scrollToBottom();
+          } else if (event === 'message_start' && data.message?.usage) {
+            usageTotals.input += data.message.usage.input_tokens || 0;
+          } else if (event === 'message_delta' && data.usage) {
+            usageTotals.output += data.usage.output_tokens || 0;
+            updateUsage();
+          }
+        });
+
+        // Final render without cursor
+        assistantBubble.innerHTML = renderMarkdown(inFlight.partialText);
+        const finalAssistant = {
+          role: 'assistant',
+          content: inFlight.partialText,
+          model: turnModel,
+          timestamp: inFlight.assistantMsg.timestamp,
+        };
+        history.push(finalAssistant);
+        // Append the auto-generated footer to the in-DOM node too
+        const footerEl = document.createElement('div');
+        footerEl.className = 'footer';
+        const footerParts = [modelDisplayName(finalAssistant.model)];
+        const ts = fmtTimeShort(finalAssistant.timestamp);
+        if (ts) footerParts.push(ts);
+        footerEl.textContent = footerParts.join(' · ');
+        assistantNode.appendChild(footerEl);
+        saveHistory(history);
+      } catch (err) {
+        // Remove the in-progress assistant bubble; replace with error
+        assistantNode.remove();
+        const errorMsg = {
+          role: 'assistant',
+          content: err.name === 'AbortError'
+            ? '(stopped by user)'
+            : `Error: ${err.message}`,
+          error: err.name !== 'AbortError',
+        };
+        history.push(errorMsg);
+        saveHistory(history);
+        threadEl.appendChild(renderMessage(errorMsg));
+      } finally {
+        inFlight = null;
+        setSending(false);
+        inputEl.focus();
+      }
+    }
+
+    // Parse Anthropic-style SSE: blocks separated by \n\n, each with "event: X" and "data: {json}".
+    async function readSseStream(response, onEvent) {
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let idx;
+        while ((idx = buffer.indexOf('\n\n')) !== -1) {
+          const block = buffer.slice(0, idx);
+          buffer = buffer.slice(idx + 2);
+          let event = '';
+          let data = '';
+          for (const line of block.split('\n')) {
+            if (line.startsWith('event:')) event = line.slice(6).trim();
+            else if (line.startsWith('data:')) data += line.slice(5).trim();
+          }
+          if (event && data) {
+            try { onEvent(event, JSON.parse(data)); } catch {}
+          }
+        }
+      }
+    }
+
+    sendBtn.addEventListener('click', send);
+    inputEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        send();
+      }
+    });
+
+    function startNewChat() {
+      if (inFlight) inFlight.abortController.abort();
+      // Persist the current conv before switching (no-op if already saved).
+      saveConv(activeConvId, history);
+      // Clean up empty / orphaned convs in the index so they don't accumulate.
+      const idx = loadConvIndex().filter(c => c.messageCount > 0 || c.id === activeConvId);
+      saveConvIndex(idx);
+      // If the current conv is itself empty, reuse it instead of allocating a new id.
+      if (history.length === 0) {
+        inputEl.focus();
+        return;
+      }
+      activeConvId = newId();
+      setActiveConvId(activeConvId);
+      upsertConvMeta(activeConvId, []);
+      history = [];
+      usageTotals = { input: 0, output: 0 };
+      updateUsage();
+      renderAll();
+      inputEl.focus();
+    }
+    newChatBtn.addEventListener('click', startNewChat);
+
+    // === History drawer ===
+    const historyOverlay = document.getElementById('history-overlay');
+    const historyListEl = document.getElementById('history-list');
+
+    function fmtConvDate(iso) {
+      if (!iso) return '';
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return '';
+      const today = new Date();
+      const sameDay = d.toDateString() === today.toDateString();
+      if (sameDay) return d.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: false });
+      const sameYear = d.getFullYear() === today.getFullYear();
+      return d.toLocaleDateString('en-AU', sameYear
+        ? { day: 'numeric', month: 'short' }
+        : { day: 'numeric', month: 'short', year: 'numeric' });
+    }
+
+    function renderHistoryList() {
+      const idx = loadConvIndex();
+      if (idx.length === 0) {
+        historyListEl.innerHTML = '<div class="empty">No saved conversations yet.</div>';
+        return;
+      }
+      historyListEl.innerHTML = idx.map(c => {
+        const active = c.id === activeConvId ? ' active' : '';
+        const meta = `${fmtConvDate(c.updatedAt)} · ${c.messageCount || 0} msg${(c.messageCount || 0) === 1 ? '' : 's'}`;
+        return `
+          <div class="history-row${active}" data-conv-id="${escapeHtml(c.id)}">
+            <div class="row-main">
+              <div class="row-title">${escapeHtml(c.title || 'New conversation')}</div>
+              <div class="row-meta">${escapeHtml(meta)}</div>
+            </div>
+            <button class="row-delete" type="button" data-delete-id="${escapeHtml(c.id)}" aria-label="Delete conversation" title="Delete">×</button>
+          </div>`;
+      }).join('');
+    }
+
+    function switchToConv(id) {
+      if (id === activeConvId) {
+        closeHistory();
+        return;
+      }
+      if (inFlight) inFlight.abortController.abort();
+      // Persist current before switching
+      saveConv(activeConvId, history);
+      activeConvId = id;
+      setActiveConvId(id);
+      history = loadHistory();
+      usageTotals = { input: 0, output: 0 };
+      updateUsage();
+      renderAll();
+      closeHistory();
+      inputEl.focus();
+    }
+
+    function deleteConvFromUi(id) {
+      const idx = loadConvIndex();
+      const target = idx.find(c => c.id === id);
+      const label = target ? (target.title || 'this conversation') : 'this conversation';
+      if (!confirm(`Delete "${label}"? This cannot be undone.`)) return;
+      deleteConv(id);
+      if (id === activeConvId) {
+        // Switch to the most recent remaining conv, or create a fresh empty one.
+        const remaining = loadConvIndex();
+        if (remaining.length > 0) {
+          activeConvId = remaining[0].id;
+          setActiveConvId(activeConvId);
+          history = loadHistory();
+        } else {
+          activeConvId = newId();
+          setActiveConvId(activeConvId);
+          upsertConvMeta(activeConvId, []);
+          history = [];
+        }
+        usageTotals = { input: 0, output: 0 };
+        updateUsage();
+        renderAll();
+      }
+      renderHistoryList();
+    }
+
+    function openHistory() {
+      renderHistoryList();
+      historyOverlay.hidden = false;
+      historyOverlay.classList.add('open');
+      document.getElementById('history-close').focus();
+    }
+    function closeHistory() {
+      historyOverlay.classList.remove('open');
+      historyOverlay.hidden = true;
+    }
+
+    document.getElementById('history-btn').addEventListener('click', openHistory);
+    document.getElementById('history-close').addEventListener('click', closeHistory);
+    document.getElementById('history-new').addEventListener('click', () => {
+      closeHistory();
+      startNewChat();
+    });
+    document.getElementById('history-clear-all').addEventListener('click', () => {
+      const idx = loadConvIndex();
+      if (idx.length === 0) return;
+      if (!confirm(`Delete all ${idx.length} conversation${idx.length === 1 ? '' : 's'}? This cannot be undone.`)) return;
+      for (const c of idx) {
+        try { localStorage.removeItem(CONV_PREFIX + c.id); } catch { /* ignore */ }
+      }
+      saveConvIndex([]);
+      activeConvId = newId();
+      setActiveConvId(activeConvId);
+      upsertConvMeta(activeConvId, []);
+      history = [];
+      usageTotals = { input: 0, output: 0 };
+      updateUsage();
+      renderAll();
+      renderHistoryList();
+    });
+    historyOverlay.addEventListener('click', (e) => {
+      if (e.target === historyOverlay) closeHistory();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !historyOverlay.hidden) closeHistory();
+    });
+    historyListEl.addEventListener('click', (e) => {
+      const deleteId = e.target.dataset.deleteId;
+      if (deleteId) {
+        e.stopPropagation();
+        deleteConvFromUi(deleteId);
+        return;
+      }
+      const row = e.target.closest('.history-row');
+      if (!row) return;
+      const id = row.dataset.convId;
+      if (id) switchToConv(id);
+    });
+
+    // === Login check on load ===
+    fetch('/api/account?local=1').then(r => r.json()).then(data => {
+      if (!data.loggedIn) {
+        document.getElementById('login-banner-slot').innerHTML = `
+          <div class="login-banner">
+            <h3>Not signed in to Claude</h3>
+            <p>The chat feature uses your local Claude account quota. Sign in by running
+            <code>claude /login</code> in a terminal, then reload this page.</p>
+          </div>`;
+        sendBtn.disabled = true;
+        inputEl.disabled = true;
+        inputEl.placeholder = 'Sign in to send messages…';
+      }
+    }).catch(() => {});
+  </script>
+</body>
+</html>

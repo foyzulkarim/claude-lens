@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Account · Claude Code Usage Dashboard</title>
+  <style>
+    :root[data-theme="dark"] {
+      --bg: #0d1117;
+      --bg-elevated: #161b22;
+      --bg-sunken: #0d1117;
+      --border: #21262d;
+      --border-strong: #30363d;
+      --text: #c9d1d9;
+      --text-strong: #f0f6fc;
+      --text-muted: #8b949e;
+      --text-faint: #484f58;
+      --accent: #58a6ff;
+      --accent-strong: #388bfd;
+      --accent-on: #ffffff;
+      --green: #7ee787;
+      --amber: #d29922;
+      --pink: #f778ba;
+      --info: #79c0ff;
+      --purple: #d2a8ff;
+      --red: #da3633;
+      --red-strong: #f85149;
+      --badge-bg: #1f2937;
+      --badge-text: #79c0ff;
+    }
+    :root[data-theme="light"] {
+      --bg: #ffffff;
+      --bg-elevated: #f6f8fa;
+      --bg-sunken: #ffffff;
+      --border: #d0d7de;
+      --border-strong: #afb8c1;
+      --text: #1f2328;
+      --text-strong: #1f2328;
+      --text-muted: #656d76;
+      --text-faint: #8c959f;
+      --accent: #0969da;
+      --accent-strong: #0969da;
+      --accent-on: #ffffff;
+      --green: #1a7f37;
+      --amber: #9a6700;
+      --pink: #bf3989;
+      --info: #0969da;
+      --purple: #8250df;
+      --red: #cf222e;
+      --red-strong: #d1242f;
+      --badge-bg: #ddf4ff;
+      --badge-text: #0969da;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', Consolas, monospace;
+      background: var(--bg);
+      color: var(--text);
+      padding: 24px;
+      line-height: 1.5;
+      transition: background 0.15s ease, color 0.15s ease;
+    }
+    .header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 24px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 12px;
+    }
+    .header-left { min-width: 0; flex: 1; }
+    h1 {
+      font-size: 1.4rem;
+      color: var(--accent);
+      margin-bottom: 6px;
+    }
+    .nav { display: flex; gap: 4px; margin-top: 4px; }
+    .nav a {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      text-decoration: none;
+      padding: 4px 10px;
+      border: 1px solid transparent;
+      border-radius: 6px;
+    }
+    .nav a:hover { color: var(--accent); border-color: var(--border); }
+    .nav a.active {
+      color: var(--accent-on);
+      background: var(--accent-strong);
+      border-color: var(--accent-strong);
+    }
+    .header-right {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    .theme-toggle {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 6px 10px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.8rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .theme-toggle:hover { border-color: var(--accent); color: var(--accent); }
+
+    h2 {
+      font-size: 1rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 12px;
+    }
+    .section { margin-bottom: 28px; }
+
+    /* Status hero */
+    .status-hero {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px 24px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+    .status-hero.logged-in { border-left: 4px solid var(--green); }
+    .status-hero.logged-out { border-left: 4px solid var(--red); }
+    .status-hero .dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .status-hero.logged-in .dot { background: var(--green); box-shadow: 0 0 0 4px rgba(126, 231, 135, 0.15); }
+    .status-hero.logged-out .dot { background: var(--red); box-shadow: 0 0 0 4px rgba(218, 54, 51, 0.15); }
+    .status-hero .label {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 2px;
+    }
+    .status-hero .text {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--text-strong);
+    }
+    .status-hero .subtext {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+      word-break: break-word;
+    }
+    .status-hero.logged-in .text { color: var(--green); }
+    .status-hero.logged-out .text { color: var(--red-strong); }
+
+    /* Plan badges row */
+    .plan-badges {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-top: 6px;
+    }
+    .plan-badge {
+      font-size: 0.65rem;
+      padding: 3px 8px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 700;
+    }
+    .plan-badge.on { background: var(--accent-strong); color: var(--accent-on); }
+    .plan-badge.off { background: var(--bg-sunken); color: var(--text-faint); border: 1px solid var(--border); }
+
+    /* Field grid */
+    .field-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 12px;
+    }
+    .field {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 16px;
+      min-width: 0;
+    }
+    .field .field-label {
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 6px;
+    }
+    .field .field-value {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--text-strong);
+      word-break: break-word;
+    }
+    .field .field-value.green { color: var(--green); }
+    .field .field-value.amber { color: var(--amber); }
+    .field .field-value.red { color: var(--red-strong); }
+    .field .field-value.muted { color: var(--text-muted); font-weight: 400; font-size: 0.85rem; }
+    .field .field-value.mono-id {
+      font-family: inherit;
+      font-size: 0.78rem;
+      font-weight: 400;
+      color: var(--text);
+      word-break: break-all;
+    }
+    .field .field-sub {
+      font-size: 0.7rem;
+      color: var(--text-faint);
+      margin-top: 4px;
+      font-weight: 400;
+    }
+    .field-value .pill {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+    .field-value .pill.green { background: var(--green); }
+    .field-value .pill.red { background: var(--red); }
+
+    .scope-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .scope-chip {
+      font-size: 0.7rem;
+      padding: 3px 8px;
+      background: var(--badge-bg);
+      color: var(--badge-text);
+      border-radius: 4px;
+    }
+
+    .reason-banner {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--amber);
+      border-radius: 6px;
+      padding: 12px 16px;
+      margin-bottom: 24px;
+      font-size: 0.85rem;
+    }
+    .reason-banner h3 {
+      color: var(--amber);
+      font-size: 0.85rem;
+      margin-bottom: 6px;
+    }
+    .reason-banner.error { border-left-color: var(--red); }
+    .reason-banner.error h3 { color: var(--red-strong); }
+    .reason-banner code {
+      background: var(--bg-sunken);
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-size: 0.75rem;
+      border: 1px solid var(--border);
+      word-break: break-all;
+    }
+    .reason-banner p { color: var(--text-muted); margin-top: 4px; }
+
+    .footnote {
+      font-size: 0.7rem;
+      color: var(--text-faint);
+      margin-top: 24px;
+      padding: 12px 16px;
+      border: 1px dashed var(--border);
+      border-radius: 6px;
+    }
+    .footnote strong { color: var(--text-muted); }
+    .footnote code {
+      background: var(--bg-sunken);
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-size: 0.7rem;
+      border: 1px solid var(--border);
+      word-break: break-all;
+    }
+
+    .loading { color: var(--text-faint); font-style: italic; }
+
+    @media (max-width: 640px) {
+      body { padding: 12px; }
+      .header { flex-direction: column; align-items: stretch; gap: 10px; }
+      .header-right { justify-content: flex-end; }
+      h1 { font-size: 1.15rem; }
+      .status-hero { padding: 16px; gap: 12px; }
+      .status-hero .text { font-size: 0.95rem; }
+      .field { padding: 12px; }
+      .field .field-value { font-size: 0.9rem; }
+      .field-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-left">
+      <h1>Account</h1>
+      <nav class="nav" aria-label="Primary">
+        <a href="/">Dashboard</a>
+        <a href="/account" class="active">Account</a>
+        <a href="/chat">Chat</a>
+      </nav>
+    </div>
+    <div class="header-right">
+      <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">
+        <span id="theme-icon">🌙</span>
+        <span id="theme-label">Dark</span>
+      </button>
+    </div>
+  </div>
+
+  <div id="content">
+    <div class="loading">Loading account info…</div>
+  </div>
+
+  <script>
+    // Theme handling
+    const THEME_KEY = 'claude-lens-theme';
+    function getInitialTheme() {
+      const saved = localStorage.getItem(THEME_KEY);
+      if (saved === 'light' || saved === 'dark') return saved;
+      return globalThis.matchMedia && globalThis.matchMedia('(prefers-color-scheme: light)').matches
+        ? 'light' : 'dark';
+    }
+    function applyTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme);
+      const icon = document.getElementById('theme-icon');
+      const label = document.getElementById('theme-label');
+      if (icon) icon.textContent = theme === 'dark' ? '🌙' : '☀️';
+      if (label) label.textContent = theme === 'dark' ? 'Dark' : 'Light';
+    }
+    applyTheme(getInitialTheme());
+    document.getElementById('theme-toggle').addEventListener('click', () => {
+      const current = document.documentElement.getAttribute('data-theme') || 'dark';
+      const next = current === 'dark' ? 'light' : 'dark';
+      localStorage.setItem(THEME_KEY, next);
+      applyTheme(next);
+    });
+
+    // Helpers
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str == null ? '' : String(str);
+      return div.innerHTML;
+    }
+
+    function formatDuration(ms) {
+      if (ms == null || !Number.isFinite(ms)) return '—';
+      const abs = Math.abs(ms);
+      const sec = Math.floor(abs / 1000);
+      const min = Math.floor(sec / 60);
+      const hr = Math.floor(min / 60);
+      const day = Math.floor(hr / 24);
+      if (day >= 1) return `${day}d ${hr % 24}h`;
+      if (hr >= 1) return `${hr}h ${min % 60}m`;
+      if (min >= 1) return `${min}m ${sec % 60}s`;
+      return `${sec}s`;
+    }
+
+    function formatAbsolute(ts) {
+      if (ts == null) return '—';
+      try {
+        return new Date(ts).toLocaleString('en-AU', {
+          day: 'numeric', month: 'short', year: 'numeric',
+          hour: '2-digit', minute: '2-digit', hour12: false,
+        });
+      } catch { return String(ts); }
+    }
+
+    function relativeFromNow(ts) {
+      if (ts == null) return '—';
+      const t = typeof ts === 'number' ? ts : Date.parse(ts);
+      if (!Number.isFinite(t)) return '—';
+      const diff = Date.now() - t;
+      const past = diff >= 0;
+      const txt = formatDuration(Math.abs(diff));
+      return past ? `${txt} ago` : `in ${txt}`;
+    }
+
+    function reasonText(reason) {
+      switch (reason) {
+        case 'credentials_missing':
+          return 'No credentials file found in your Claude data directory. Run `claude /login` to authenticate.';
+        case 'credentials_unreadable':
+          return 'Found a credentials file but couldn\'t parse it. The file may be corrupted.';
+        case 'no_access_token':
+          return 'Credentials file is present but contains no access token.';
+        default:
+          return 'Not currently signed in to Claude.';
+      }
+    }
+
+    function profileErrorText(err) {
+      if (!err) return null;
+      if (err === 'timeout') return 'The remote profile call timed out (8s). Are you offline?';
+      if (err === 'http_401') return 'Anthropic API rejected the access token. It may have expired — try `claude /logout` then `claude /login`.';
+      if (err === 'http_403') return 'Anthropic API returned 403 Forbidden. The token may not have the user:profile scope.';
+      if (err.startsWith && err.startsWith('http_')) return `Anthropic API returned ${err.replace('http_', '')}.`;
+      return `Couldn't fetch profile from Anthropic API: ${err}`;
+    }
+
+    function fieldCard(label, value, opts = {}) {
+      const { sub, valueClass = '', mono = false, title = '' } = opts;
+      const valClass = mono ? `mono-id ${valueClass}` : valueClass;
+      const safeVal = value == null || value === '' ? '<span class="muted">—</span>' : escapeHtml(value);
+      return `
+        <div class="field">
+          <div class="field-label">${escapeHtml(label)}</div>
+          <div class="field-value ${valClass}"${title ? ` title="${escapeHtml(title)}"` : ''}>${safeVal}</div>
+          ${sub ? `<div class="field-sub">${escapeHtml(sub)}</div>` : ''}
+        </div>`;
+    }
+
+    function planBadges(account) {
+      const badges = [];
+      const max = !!(account && account.hasClaudeMax);
+      const pro = !!(account && account.hasClaudePro);
+      badges.push(`<span class="plan-badge ${max ? 'on' : 'off'}">Claude Max ${max ? '✓' : '—'}</span>`);
+      badges.push(`<span class="plan-badge ${pro ? 'on' : 'off'}">Claude Pro ${pro ? '✓' : '—'}</span>`);
+      return `<div class="plan-badges">${badges.join('')}</div>`;
+    }
+
+    function renderLoggedOut(data) {
+      const banner = `
+        <div class="reason-banner">
+          <h3>Not signed in</h3>
+          <p>${escapeHtml(reasonText(data.reason))}</p>
+          ${data.credentialsPath ? `<p>Looked at: <code>${escapeHtml(data.credentialsPath)}</code></p>` : ''}
+        </div>`;
+
+      const hero = `
+        <div class="status-hero logged-out">
+          <div class="dot"></div>
+          <div>
+            <div class="label">Status</div>
+            <div class="text">Not signed in</div>
+          </div>
+        </div>`;
+
+      document.getElementById('content').innerHTML = hero + banner;
+    }
+
+    function renderLoggedIn(data) {
+      const p = data.profile || {};
+      const a = p.account || {};
+      const o = p.organization || {};
+      const app = p.application || {};
+
+      // Hero — name + email + plan badges
+      const heroName = a.fullName || a.displayName || '(name unavailable)';
+      const heroEmail = a.email || '';
+      const hero = `
+        <div class="status-hero logged-in">
+          <div class="dot"></div>
+          <div style="min-width:0;flex:1">
+            <div class="label">Signed in as</div>
+            <div class="text">${escapeHtml(heroName)}</div>
+            ${heroEmail ? `<div class="subtext">${escapeHtml(heroEmail)}</div>` : ''}
+            ${planBadges(a)}
+          </div>
+        </div>`;
+
+      // Profile error banner (when remote fetch failed)
+      const profileErrBanner = data.profileError ? `
+        <div class="reason-banner">
+          <h3>Couldn't load remote profile</h3>
+          <p>${escapeHtml(profileErrorText(data.profileError) || data.profileError)}</p>
+          <p>Showing local-only data below. The token expiry and scopes are still accurate.</p>
+        </div>` : '';
+
+      // === You ===
+      const youSection = `
+        <div class="section">
+          <h2>You</h2>
+          <div class="field-grid">
+            ${fieldCard('Full name', a.fullName)}
+            ${fieldCard('Display name', a.displayName)}
+            ${fieldCard('Email', a.email)}
+            ${fieldCard('Member since', a.createdAt ? formatAbsolute(a.createdAt) : null, {
+              sub: a.createdAt ? relativeFromNow(a.createdAt) : null
+            })}
+            ${fieldCard('Account UUID', a.uuid, { mono: true })}
+          </div>
+        </div>`;
+
+      // === Plan & Subscription ===
+      const subStatus = o.subscriptionStatus;
+      const trialActive = o.claudeCodeTrialEndsAt && Date.parse(o.claudeCodeTrialEndsAt) > Date.now();
+
+      const planSection = `
+        <div class="section">
+          <h2>Plan &amp; Subscription</h2>
+          <div class="field-grid">
+            ${fieldCard('Organization', o.name)}
+            ${fieldCard('Organization type', o.organizationType)}
+            ${fieldCard('Subscription status', subStatus, {
+              valueClass: subStatus === 'active' ? 'green' : 'amber'
+            })}
+            ${fieldCard('Billing', o.billingType)}
+            ${fieldCard('Rate-limit tier', o.rateLimitTier || data.rateLimitTier)}
+            ${fieldCard('Seat tier', o.seatTier)}
+            ${fieldCard('Extra usage', o.hasExtraUsageEnabled === true ? 'Enabled' : (o.hasExtraUsageEnabled === false ? 'Disabled' : null), {
+              valueClass: o.hasExtraUsageEnabled ? 'green' : ''
+            })}
+            ${fieldCard('Subscribed since', o.subscriptionCreatedAt ? formatAbsolute(o.subscriptionCreatedAt) : null, {
+              sub: o.subscriptionCreatedAt ? relativeFromNow(o.subscriptionCreatedAt) : null
+            })}
+            ${fieldCard('Claude Code trial', trialActive
+              ? `Active until ${formatAbsolute(o.claudeCodeTrialEndsAt)}`
+              : (o.claudeCodeTrialEndsAt ? `Ended ${formatAbsolute(o.claudeCodeTrialEndsAt)}` : 'No trial'),
+              { valueClass: trialActive ? 'green' : 'muted' }
+            )}
+            ${fieldCard('Trial duration', o.claudeCodeTrialDurationDays != null ? `${o.claudeCodeTrialDurationDays} days` : null)}
+            ${fieldCard('Organization UUID', o.uuid || data.organizationUuid, { mono: true })}
+          </div>
+        </div>`;
+
+      // === Application ===
+      const appSection = `
+        <div class="section">
+          <h2>Application</h2>
+          <div class="field-grid">
+            ${fieldCard('Name', app.name)}
+            ${fieldCard('Slug', app.slug)}
+            ${fieldCard('Application UUID', app.uuid, { mono: true })}
+          </div>
+        </div>`;
+
+      // === OAuth Token ===
+      const expired = data.expired === true;
+      const expClass = expired ? 'red' : (data.expiresInMs != null && data.expiresInMs < 60 * 60 * 1000 ? 'amber' : 'green');
+      const expText = expired
+        ? `Expired ${formatDuration(-data.expiresInMs)} ago`
+        : `Expires in ${formatDuration(data.expiresInMs)}`;
+
+      const scopesHtml = (data.scopes || []).length
+        ? `<div class="scope-list">${data.scopes.map(s => `<span class="scope-chip">${escapeHtml(s)}</span>`).join('')}</div>`
+        : '<div class="loading">no scopes recorded</div>';
+
+      const tokenSection = `
+        <div class="section">
+          <h2>OAuth Token</h2>
+          <div class="field-grid">
+            <div class="field">
+              <div class="field-label">Token expiry</div>
+              <div class="field-value ${expClass}">${escapeHtml(expText)}</div>
+              <div class="field-sub" title="${escapeHtml(formatAbsolute(data.expiresAt))}">${escapeHtml(formatAbsolute(data.expiresAt))}</div>
+            </div>
+            <div class="field">
+              <div class="field-label">Subscription type (local)</div>
+              <div class="field-value">${escapeHtml(data.subscriptionType || '—')}</div>
+              <div class="field-sub">from .credentials.json</div>
+            </div>
+            <div class="field" style="grid-column: 1 / -1">
+              <div class="field-label">Scopes</div>
+              ${scopesHtml}
+            </div>
+          </div>
+        </div>`;
+
+      // === Privacy footer ===
+      const cacheNote = data.profileFromCache ? ' (served from 60s cache)' : '';
+      const footnote = `
+        <div class="footnote">
+          <strong>Privacy:</strong> profile data is fetched server-side from
+          <code>https://api.anthropic.com/api/oauth/profile</code>${escapeHtml(cacheNote)}
+          using the access token in your local
+          <code>${escapeHtml(data.credentialsPath || '')}</code>.
+          The token never leaves the server — only the projected fields above
+          (full name, email, plan, organization, application) are forwarded
+          to the browser. <code>accessToken</code> and <code>refreshToken</code>
+          are explicitly excluded.
+        </div>`;
+
+      document.getElementById('content').innerHTML =
+        hero + profileErrBanner + youSection + planSection + appSection + tokenSection + footnote;
+    }
+
+    async function load() {
+      try {
+        const res = await fetch('/api/account');
+        if (!res.ok) {
+          document.getElementById('content').innerHTML =
+            `<div class="reason-banner error"><h3>Error</h3><p>Server returned ${res.status} ${res.statusText}</p></div>`;
+          return;
+        }
+        const data = await res.json();
+        if (data.loggedIn) {
+          renderLoggedIn(data);
+        } else {
+          renderLoggedOut(data);
+        }
+      } catch (err) {
+        document.getElementById('content').innerHTML =
+          `<div class="reason-banner error"><h3>Error</h3><p>${escapeHtml(err.message)}</p></div>`;
+      }
+    }
+
+    load();
+  </script>
+</body>
+</html>

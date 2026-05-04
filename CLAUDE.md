@@ -6,12 +6,14 @@ Guidance for Claude Code when working in this repository.
 
 `claude-lens` is a small local dashboard (single Express server + single static HTML page) that visualizes Claude Code usage data. It reads files written by the Claude Code CLI inside the user's Claude data directory and renders sessions, prompts, tool calls, daily costs, and cache performance in the browser.
 
-There is no build step, no framework, no database. The whole product is two files: [server.js](server.js) and [index.html](index.html).
+There is no build step, no framework, no database. The whole product is a few files: [server.js](server.js), [index.html](index.html), [account.html](account.html), and [chat.html](chat.html).
 
 ## Architecture
 
-- **[server.js](server.js)** — Express server on port `3456`. Detects the Claude data directory, reads JSON / JSONL files from disk, and exposes JSON APIs. Serves `index.html` as a static asset.
+- **[server.js](server.js)** — Express server on port `3456`. Detects the Claude data directory, reads JSON / JSONL files from disk, exposes JSON APIs, and proxies inference calls to Anthropic. Serves `index.html` as a static asset; `account.html` and `chat.html` via explicit routes.
 - **[index.html](index.html)** — Single-page dashboard. Plain HTML/CSS/JS, no bundler. Fetches JSON from the API endpoints and renders tables/cards. Uses CSS custom properties for light/dark theming, persisted in `localStorage`.
+- **[account.html](account.html)** — Account / login-status page. Renders the safe fields returned by `/api/account` (login state, plan, token expiry, scopes, profile, organization, application). Linked from the top nav.
+- **[chat.html](chat.html)** — Chat page. Streaming conversation with the user's account models via `POST /api/chat`. Conversation persisted in `localStorage` (browser-only). Linked from the top nav.
 - **[.env.example](.env.example)** — Template for `.env`. Configures `CLAUDE_DIR` and pricing rates.
 
 ### Data sources read from `CLAUDE_DIR`
@@ -21,11 +23,18 @@ There is no build step, no framework, no database. The whole product is two file
 | `stats-cache.json`      | `/api/stats`                           |
 | `history.jsonl`         | `/api/history`, `/api/projects`        |
 | `sessions/*.json`       | `/api/sessions`                        |
-| `projects/**/*.jsonl`   | `/api/tool-calls`, `/api/tool-details/:tool`, `/api/daily-costs` |
+| `projects/**/*.jsonl`   | `/api/tool-calls`, `/api/tool-details/:tool`, `/api/daily-costs`, `/api/history` |
+| `.credentials.json`     | `/api/account` (safe fields only — see below) |
 
 ### API endpoints
 
 - `GET /api/config` — runtime config: detected `claudeDir`, `source` (env / home / appdata / xdg / etc.), `valid`, full `candidates` list, `platform`. The UI uses this to show the active path and to render an error banner if no valid dir was found.
+- `GET /api/account` — Claude login state. Local fields: `loggedIn`, `subscriptionType`, `rateLimitTier`, `scopes[]`, `expiresAt`, `expiresInMs`, `expired`, `organizationUuid`, `credentialsPath`. Also calls `https://api.anthropic.com/api/oauth/profile` server-side with the local access token and merges the response into a `profile` field with three sub-objects: `account` (uuid, fullName, displayName, email, hasClaudeMax, hasClaudePro, createdAt), `organization` (uuid, name, organizationType, billingType, rateLimitTier, seatTier, hasExtraUsageEnabled, subscriptionStatus, subscriptionCreatedAt, claudeCodeTrialEndsAt, claudeCodeTrialDurationDays), and `application` (uuid, name, slug). Remote response is cached in memory for 60s. `?local=1` skips the network call. **Never returns `accessToken` or `refreshToken`** — see security rule below.
+- `GET /account` — serves `account.html`.
+- `GET /chat` — serves `chat.html`.
+- `POST /api/chat` — proxies `https://api.anthropic.com/v1/messages` using the local OAuth token. Body: `{model, messages, max_tokens, stream?, ...}` (passes through to Anthropic). Adds `Authorization: Bearer <token>` and `anthropic-beta: oauth-2025-04-20` server-side; the token never reaches the browser. The model field is allow-listed against `CHAT_MODELS` (`claude-opus-4-7`, `claude-sonnet-4-6`, `claude-haiku-4-5-20251001`) — extending the allow-list is intentional, not automatic. Streaming responses are piped chunk-by-chunk so SSE events (`message_start`, `content_block_delta`, `message_stop`, etc.) reach the browser as they arrive. If the client disconnects mid-stream the upstream read is cancelled to stop billing tokens. Inference is billed against the user's local Claude account quota. Anthropic's rate-limit headers (`anthropic-ratelimit-unified-5h-*`, `anthropic-ratelimit-unified-7d-*`, `retry-after`, `anthropic-request-id`) are forwarded so the UI can show 5h/7d utilization pills and decode 429s into actionable errors.
+
+  **Critical: the system-block marker.** Anthropic gates the OAuth-friendly rate-limit bucket behind the exact string `"You are Claude Code, Anthropic's official CLI for Claude."` appearing as a system block. Without it, requests using the same token fall into a much tighter quota and 429 quickly — the CLI works fine because it sends this marker; raw OAuth proxies don't, which looks like "Opus / Sonnet are rate-limited" but isn't. Probing established that the check is per-block: `system: "<marker>\n\n..."` (string form with extra content) **fails**, but `system: [{type:"text", text:"<marker>"}, {type:"text", text:"..."}]` (block-array form) **passes**. So the proxy *always* injects `[{type:"text", text: CC_SYSTEM_MARKER}, {type:"text", text: CHAT_CONTEXT_BLOCK}, ...userBlocks]`. Don't refactor this away — it's a load-bearing workaround for an undocumented Anthropic policy. If a future contributor sees Opus/Sonnet 429ing while Haiku works, this is the first place to look.
 - `GET /api/stats` — returns `stats-cache.json` as-is.
 - `GET /api/history` — flattened entries from `history.jsonl`.
 - `GET /api/sessions` — array of session JSONs.
@@ -53,6 +62,7 @@ A directory is considered valid if it contains any of: `projects/`, `history.jso
 - **No build step.** Don't introduce TypeScript, bundlers, or frameworks. Edit `index.html` directly.
 - **No CSS frameworks.** Styling lives in the `<style>` block in `index.html`. Use the existing CSS custom properties (`--bg`, `--text`, `--accent`, etc.) so light and dark themes both work — never hardcode hex colors in new UI.
 - **Escape user-rendered strings.** Anything that originates from disk (project names, prompts, tool inputs, file paths) must go through `escapeHtml()` before being inserted into HTML, even when it "looks safe."
+- **Never expose secrets over HTTP.** `.credentials.json` contains `accessToken` and `refreshToken` — these must never appear in any API response, log line, error message, or HTML rendered output. The `/api/account` handler reads the file and returns *only* a fixed allow-list of fields. The remote profile fetch (`fetchAnthropicProfile`) sends the token to `api.anthropic.com` server-side; the response is then passed through `projectProfile()`, an explicit allow-list mapper that copies only the fields we want and ignores anything else. **Always use the projection pattern when forwarding upstream API data** — never spread `{...upstream}` into a response, since future Anthropic schema changes could leak new fields you didn't review. Same rule for any future credential-shaped data.
 - **Read errors must not crash the server.** API handlers wrap disk I/O in `try/catch` and return `{ error }` with a 5xx status. Keep that pattern.
 - **Don't break the no-arg/`npx` flow.** The README advertises `npx github:foyzulkarim/claude-lens`. The server must run with zero configuration when `~/.claude` exists.
 - **Keep README in sync.** Whenever a user-visible feature changes (new env var, new endpoint, new UI section, behavior change in auto-detect), update [README.md](README.md) in the same change.

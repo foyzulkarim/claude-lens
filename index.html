@@ -83,6 +83,28 @@
       color: var(--accent);
       margin-bottom: 6px;
     }
+    .nav {
+      display: flex;
+      gap: 4px;
+      margin: 0 0 8px;
+    }
+    .nav a {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      text-decoration: none;
+      padding: 4px 10px;
+      border: 1px solid transparent;
+      border-radius: 6px;
+    }
+    .nav a:hover {
+      color: var(--accent);
+      border-color: var(--border);
+    }
+    .nav a.active {
+      color: var(--accent-on);
+      background: var(--accent-strong);
+      border-color: var(--accent-strong);
+    }
     .config-line {
       font-size: 0.72rem;
       color: var(--text-muted);
@@ -413,6 +435,22 @@
       gap: 10px;
       margin-bottom: 12px;
     }
+    #global-filter-section {
+      margin-bottom: 16px;
+    }
+    #global-filter-bar {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      margin-bottom: 0;
+    }
+    #global-filter-meta {
+      margin-left: auto;
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
     .filter-bar .filter-label {
       font-size: 0.65rem;
       color: var(--text-muted);
@@ -690,6 +728,39 @@
       .config-line .config-path { font-size: 0.65rem; }
     }
 
+    /* === Token usage cards === */
+    .token-usage-intro {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: 6px;
+      padding: 10px 14px;
+      margin-bottom: 14px;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+    .token-usage-intro strong { color: var(--text-strong); }
+    .token-usage-intro a {
+      color: var(--accent);
+      text-decoration: none;
+      white-space: nowrap;
+    }
+    .token-usage-intro a:hover { text-decoration: underline; }
+    .card .value.pink-text { color: var(--pink); }
+    .card .value.blue-text { color: var(--info); }
+    .card .value.amber-text { color: var(--amber); }
+    .card .value.green-text { color: var(--green); }
+    .token-desc {
+      font-size: 0.65rem;
+      color: var(--text-faint);
+      margin-top: 4px;
+      line-height: 1.35;
+    }
+    .token-dot.pink { color: var(--pink); }
+    .token-dot.blue { color: var(--info); }
+    .token-dot.amber { color: var(--amber); }
+
     /* === Help drawer === */
     .help-overlay {
       position: fixed;
@@ -846,6 +917,11 @@
   <div class="header">
     <div class="header-left">
       <h1>Claude Code Usage Dashboard</h1>
+      <nav class="nav" aria-label="Primary">
+        <a href="/" class="active">Dashboard</a>
+        <a href="/account">Account</a>
+        <a href="/chat">Chat</a>
+      </nav>
       <div class="config-line" id="config-line">
         <span class="loading">Detecting Claude data directory…</span>
       </div>
@@ -867,8 +943,39 @@
 
   <div id="error-container"></div>
 
+  <div class="section" id="global-filter-section">
+    <div class="filter-bar" id="global-filter-bar">
+      <span class="filter-label">Date</span>
+      <div class="chips" id="date-chips" role="group" aria-label="Date range">
+        <button class="chip active" type="button" data-range="all">All time</button>
+        <button class="chip" type="button" data-range="today">Today</button>
+        <button class="chip" type="button" data-range="yesterday">Yesterday</button>
+        <button class="chip" type="button" data-range="7d">Last 7 days</button>
+        <button class="chip" type="button" data-range="30d">Last 30 days</button>
+      </div>
+      <span class="filter-divider" aria-hidden="true"></span>
+      <div class="date-range">
+        <input type="date" id="date-from" aria-label="From date">
+        <span class="date-sep">—</span>
+        <input type="date" id="date-to" aria-label="To date">
+      </div>
+      <span class="filter-meta" id="global-filter-meta"></span>
+    </div>
+  </div>
+
   <div id="summary-section" class="section">
     <div class="loading">Loading...</div>
+  </div>
+
+  <div class="section" id="token-usage-section">
+    <h2>Token Usage</h2>
+    <div class="token-usage-intro">
+      A <strong>token</strong> is roughly 3–4 characters of text (about ¾ of an English word). Every Claude request consumes tokens in four categories — each billed at a different rate. Hover any card for details, or
+      <a href="#" id="help-tokens-link">open the full guide →</a>
+    </div>
+    <div id="token-cards" class="cards">
+      <div class="card"><div class="label">Loading...</div></div>
+    </div>
   </div>
 
   <div class="section">
@@ -908,22 +1015,6 @@
 
   <div class="section">
     <h2>Prompt History</h2>
-    <div class="filter-bar">
-      <span class="filter-label">Date</span>
-      <div class="chips" id="date-chips" role="group" aria-label="Date range">
-        <button class="chip active" type="button" data-range="all">All time</button>
-        <button class="chip" type="button" data-range="today">Today</button>
-        <button class="chip" type="button" data-range="yesterday">Yesterday</button>
-        <button class="chip" type="button" data-range="7d">Last 7 days</button>
-        <button class="chip" type="button" data-range="30d">Last 30 days</button>
-      </div>
-      <span class="filter-divider" aria-hidden="true"></span>
-      <div class="date-range">
-        <input type="date" id="date-from" aria-label="From date">
-        <span class="date-sep">—</span>
-        <input type="date" id="date-to" aria-label="To date">
-      </div>
-    </div>
     <div class="tabs" id="history-tabs"></div>
     <div class="filter-meta" id="history-meta"></div>
     <div class="table-wrap">
@@ -959,6 +1050,7 @@
             <li><a href="#h-history">Prompt History</a></li>
             <li><a href="#h-cost">How cost is calculated</a></li>
             <li><a href="#h-tokens">Token types explained</a></li>
+            <li><a href="#h-filter">Date filter (global)</a></li>
             <li><a href="#h-tz">Timezone &amp; date bucketing</a></li>
             <li><a href="#h-prefs">Theme &amp; time format</a></li>
             <li><a href="#h-faq">FAQ &amp; limitations</a></li>
@@ -1073,23 +1165,95 @@
 
         <div class="help-section" id="h-tokens">
           <h3>9. Token types explained</h3>
+
+          <h4>What is a token?</h4>
+          <p>A <strong>token</strong> is the unit Claude reads and writes. Roughly speaking, one token is 3–4 characters of English text — about ¾ of a word. The word "tokenization" is two tokens; the sentence "Hello, world!" is about four. Code, punctuation, and non-English text often use more tokens per character. <em>Everything you send and everything Claude generates is counted in tokens, and tokens are the unit of billing.</em></p>
+
+          <h4>One request, four kinds of tokens</h4>
+          <p>Every assistant turn reports a <code>usage</code> object with four counters. claude-lens sums these across all your project JSONL files.</p>
+          <table class="help-table">
+            <thead><tr><th>Token type</th><th>What it is</th><th>Default Bedrock price</th><th>Relative cost</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><strong>Input</strong> <span class="token-dot pink" aria-hidden="true">●</span></td>
+                <td>Fresh content you sent that wasn't already in the prompt cache (your latest message + any uncached context).</td>
+                <td>$5.00 / 1M</td>
+                <td>1× (baseline)</td>
+              </tr>
+              <tr>
+                <td><strong>Output</strong></td>
+                <td>Every token the model generated in its reply, including assistant text and tool-call arguments.</td>
+                <td>$25.00 / 1M</td>
+                <td>~5× input</td>
+              </tr>
+              <tr>
+                <td><strong>Cache Read</strong> <span class="token-dot blue" aria-hidden="true">●</span></td>
+                <td>Input tokens served from prompt cache instead of being processed fresh. The cache is what makes long conversations cheap.</td>
+                <td>$0.50 / 1M</td>
+                <td>~0.1× input</td>
+              </tr>
+              <tr>
+                <td><strong>Cache Write</strong> <span class="token-dot amber" aria-hidden="true">●</span></td>
+                <td>Input tokens being <em>stored into</em> the cache for later reuse. Paid once when the cache entry is created.</td>
+                <td>$6.25 / 1M</td>
+                <td>~1.25× input</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <h4>How they appear on your bill</h4>
+          <p>Total cost for a turn is roughly:</p>
+          <div class="help-formula">cost = input×$5 + output×$25 + cacheRead×$0.50 + cacheWrite×$6.25  (per 1M)</div>
+          <p>For Claude Code's typical workload — long, repeated context with many turns per session — cache reads dominate input volume, which is why the Cache Hit Rate matters so much. A 90% hit rate effectively cuts your input cost by ~9× compared to no caching.</p>
+
+          <h4>Why "Cache Write" is more expensive than "Input"</h4>
+          <p>Anthropic charges a one-time ~25% premium to write tokens into the cache. After that, every reuse costs only ~10% of the input rate. Net result over many turns: a big win — but the very first turn of a new session looks more expensive than the rest.</p>
+
+          <h4>Where claude-lens reads these from</h4>
+          <p>The numbers come from <code>message.usage</code> on each assistant message in <code>projects/&lt;project&gt;/&lt;sessionId&gt;.jsonl</code>:</p>
           <ul>
-            <li><strong>Input tokens</strong> — fresh tokens you sent that weren't cached. Most expensive per token.</li>
-            <li><strong>Output tokens</strong> — tokens the model generated. Most expensive overall.</li>
-            <li><strong>Cache create (cache write)</strong> — input tokens being placed into the cache for later reuse. Charged at ~125% of input price (a one-time premium).</li>
-            <li><strong>Cache read</strong> — input tokens served from cache. Charged at ~10% of input price.</li>
+            <li><code>input_tokens</code> → Input</li>
+            <li><code>output_tokens</code> → Output</li>
+            <li><code>cache_read_input_tokens</code> → Cache Read</li>
+            <li><code>cache_creation_input_tokens</code> → Cache Write</li>
           </ul>
-          <p>Sums of these come from <code>message.usage</code> on each assistant turn in the project JSONL files.</p>
+
+          <h4>Practical tips</h4>
+          <ul>
+            <li><strong>Long sessions are cheap, not expensive.</strong> Once your project context is cached, each new turn is mostly cache reads + output.</li>
+            <li><strong>Restarting kills your cache.</strong> A fresh session starts with cache writes again. If the cache hit rate is consistently low, look for whether something is invalidating the cache between turns (e.g. file content changes, model switch).</li>
+            <li><strong>Output is what you really pay for.</strong> If you're trying to cut cost, shorter responses help more than shorter prompts.</li>
+            <li><strong>Tokens ≠ characters.</strong> A 100k-token context window is not 100,000 characters — it's roughly 75,000 words.</li>
+          </ul>
+        </div>
+
+        <div class="help-section" id="h-filter">
+          <h3>10. Date filter (global)</h3>
+          <p>The chip bar at the top of the page (<em>All time / Today / Yesterday / Last 7 days / Last 30 days</em>, plus a custom from–to range) scopes <strong>every</strong> section below it.</p>
+          <h4>What it filters</h4>
+          <ul>
+            <li><strong>"Range" summary panel</strong> — sessions, messages, tool calls, cost, cache hit rate, output and cache-read tokens are all computed for the active range. The "Today" panel always shows today regardless of the filter, so you keep that quick reference even when looking at a wider window.</li>
+            <li><strong>Token Usage cards</strong> — main values reflect the range; "Today: …" sub-line is unchanged.</li>
+            <li><strong>Cache Performance</strong> — hit rate, cost-with-cache, cost-without-cache, and savings are recomputed.</li>
+            <li><strong>Daily Cost &amp; Cache</strong> — only days inside the range are listed; totals row sums those rows only.</li>
+            <li><strong>Tool Calls</strong> — counts are summed from per-day tool buckets returned by <code>/api/tool-calls</code>. If you see an "all time" note here, your server hasn't been restarted since the byDate field was added — restart it to enable filtering.</li>
+            <li><strong>Project Activity</strong> — re-derived from filtered Prompt History so messages/sessions/last-active reflect the range.</li>
+            <li><strong>Prompt History</strong> — rows scoped to the range; the project tabs still work on top of that.</li>
+          </ul>
+          <h4>Persistence</h4>
+          <p>Your selection is saved to <code>localStorage</code> as <code>claude-lens-date-filter</code>. Relative ranges ("last 7 days") re-resolve from <em>now</em> on each page load — they aren't frozen at the moment you chose them.</p>
+          <h4>Custom range</h4>
+          <p>Typing into the from/to inputs activates custom mode and clears the chip selection. Clearing both inputs falls back to <em>All time</em>. Inputs are inclusive on both ends in your local timezone.</p>
         </div>
 
         <div class="help-section" id="h-tz">
-          <h3>10. Timezone &amp; date bucketing</h3>
+          <h3>11. Timezone &amp; date bucketing</h3>
           <p>All daily aggregations bucket by your <em>local</em> date (your system's IANA timezone, shown in the header). A turn at 11:30 PM local on Monday is on Monday's row even if UTC says it's already Tuesday.</p>
           <p>Individual timestamps in tables (Last Active, Prompt History) are rendered with <code>toLocaleString</code>, also in your system timezone.</p>
         </div>
 
         <div class="help-section" id="h-prefs">
-          <h3>11. Theme &amp; time format</h3>
+          <h3>12. Theme &amp; time format</h3>
           <ul>
             <li><strong>Theme</strong> (🌙 / ☀️) — light/dark toggle. Defaults to your OS preference, persisted in <code>localStorage</code>.</li>
             <li><strong>Time format</strong> (12h / 24h) — toggles between 24-hour and AM/PM display for all timestamps. Persisted in <code>localStorage</code>; switching re-renders without re-fetching data.</li>
@@ -1097,7 +1261,7 @@
         </div>
 
         <div class="help-section" id="h-faq">
-          <h3>12. FAQ &amp; limitations</h3>
+          <h3>13. FAQ &amp; limitations</h3>
           <h4>Is anything sent to the network?</h4>
           <p>No. The server is Express on <code>localhost:3456</code> and reads files from disk. The HTML page only talks to that server. There are no analytics, no telemetry, no outbound calls.</p>
           <h4>Why does my cost look different from my Anthropic / AWS bill?</h4>
@@ -1152,6 +1316,14 @@
     }
     document.getElementById('help-toggle').addEventListener('click', openHelp);
     document.getElementById('help-close').addEventListener('click', closeHelp);
+    document.getElementById('help-tokens-link').addEventListener('click', (e) => {
+      e.preventDefault();
+      openHelp();
+      requestAnimationFrame(() => {
+        const target = helpBody.querySelector('#h-tokens');
+        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
     helpOverlay.addEventListener('click', (e) => {
       if (e.target === helpOverlay) closeHelp();
     });
@@ -1189,6 +1361,13 @@
 
     // === Formatters ===
     const fmt = (n) => n != null ? n.toLocaleString() : '—';
+    const fmtTokens = (n) => {
+      if (n == null) return '—';
+      if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B';
+      if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+      if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k';
+      return n.toLocaleString();
+    };
     const fmtDate = (ts) => {
       if (!ts) return '—';
       const d = new Date(ts);
@@ -1212,6 +1391,172 @@
       const d = String(date.getDate()).padStart(2, '0');
       return `${y}-${m}-${d}`;
     };
+
+    // === Date filter (global) ===
+    const DATE_FILTER_KEY = 'claude-lens-date-filter';
+    let dateFilter = (() => {
+      try {
+        const raw = JSON.parse(localStorage.getItem(DATE_FILTER_KEY) || 'null');
+        if (raw && typeof raw.mode === 'string') return raw;
+      } catch { /* ignore */ }
+      return { mode: 'all' };
+    })();
+
+    const startOfLocalDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    const parseTs = (ts) => typeof ts === 'number' ? ts : Date.parse(ts);
+
+    // Returns { from, to } in ms, or null for "all".
+    function dateRangeMs() {
+      if (!dateFilter || dateFilter.mode === 'all') return null;
+      const now = new Date();
+      const startToday = startOfLocalDay(now);
+      const DAY = 86400000;
+      if (dateFilter.mode === 'today') return { from: startToday, to: startToday + DAY - 1 };
+      if (dateFilter.mode === 'yesterday') return { from: startToday - DAY, to: startToday - 1 };
+      if (dateFilter.mode === '7d') return { from: startToday - 6 * DAY, to: startToday + DAY - 1 };
+      if (dateFilter.mode === '30d') return { from: startToday - 29 * DAY, to: startToday + DAY - 1 };
+      if (dateFilter.mode === 'custom') {
+        const from = dateFilter.from ? startOfLocalDay(new Date(dateFilter.from + 'T00:00:00')) : -Infinity;
+        const to = dateFilter.to ? startOfLocalDay(new Date(dateFilter.to + 'T00:00:00')) + DAY - 1 : Infinity;
+        return { from, to };
+      }
+      return null;
+    }
+
+    function describeDateFilter() {
+      if (!dateFilter || dateFilter.mode === 'all') return 'All time';
+      if (dateFilter.mode === 'today') return 'Today';
+      if (dateFilter.mode === 'yesterday') return 'Yesterday';
+      if (dateFilter.mode === '7d') return 'Last 7 days';
+      if (dateFilter.mode === '30d') return 'Last 30 days';
+      if (dateFilter.mode === 'custom') {
+        const f = dateFilter.from || '…';
+        const t = dateFilter.to || '…';
+        return `${f} → ${t}`;
+      }
+      return '';
+    }
+
+    // Whether a YYYY-MM-DD local-date string falls within the active range.
+    function dateStringInRange(dateStr, range) {
+      if (!range) return true;
+      const t = startOfLocalDay(new Date(dateStr + 'T00:00:00'));
+      return t >= range.from && t <= range.to;
+    }
+
+    function filterDays(days, range) {
+      if (!range) return days || [];
+      return (days || []).filter(d => dateStringInRange(d.date, range));
+    }
+
+    // Re-aggregate per-day cost rows into the same totals shape the server returns.
+    function totalsFromDays(days) {
+      const totals = { messages: 0, toolCalls: 0, sessions: 0, input: 0, output: 0, cacheRead: 0, cacheCreate: 0, cost: 0, models: {} };
+      for (const d of days) {
+        totals.messages += d.messages || 0;
+        totals.toolCalls += d.toolCalls || 0;
+        totals.sessions += d.sessions || 0;
+        totals.input += d.input || 0;
+        totals.output += d.output || 0;
+        totals.cacheRead += d.cacheRead || 0;
+        totals.cacheCreate += d.cacheCreate || 0;
+        totals.cost += d.cost || 0;
+        for (const [m, c] of Object.entries(d.models || {})) {
+          totals.models[m] = (totals.models[m] || 0) + c;
+        }
+      }
+      totals.cost = Math.round(totals.cost * 100) / 100;
+      return totals;
+    }
+
+    function filterHistory(history, range) {
+      if (!range) return history || [];
+      return (history || []).filter(h => {
+        const t = parseTs(h.timestamp);
+        return Number.isFinite(t) && t >= range.from && t <= range.to;
+      });
+    }
+
+    function projectsFromHistory(history) {
+      const map = {};
+      for (const h of history) {
+        const proj = h.project || 'unknown';
+        if (!map[proj]) map[proj] = { name: proj, shortName: (proj.split('/').pop() || proj), messages: 0, sessions: new Set(), firstSeen: null, lastSeen: null };
+        map[proj].messages++;
+        if (h.sessionId) map[proj].sessions.add(h.sessionId);
+        const ts = h.timestamp;
+        if (ts && (!map[proj].firstSeen || ts < map[proj].firstSeen)) map[proj].firstSeen = ts;
+        if (ts && (!map[proj].lastSeen || ts > map[proj].lastSeen)) map[proj].lastSeen = ts;
+      }
+      return Object.values(map).map(p => ({ ...p, sessions: p.sessions.size })).sort((a, b) => b.messages - a.messages);
+    }
+
+    // Sum tool counts within range using server-supplied byDate buckets.
+    // Returns { tools, supported } — supported=false when the server is older
+    // and didn't ship byDate, so the UI can fall back to all-time counts.
+    function filterToolData(toolData, range) {
+      if (!toolData) return { tools: [], supported: true };
+      if (!range) return { tools: toolData.tools || [], supported: true };
+      if (!toolData.byDate) return { tools: toolData.tools || [], supported: false };
+      const counts = {};
+      for (const [date, byTool] of Object.entries(toolData.byDate)) {
+        if (!dateStringInRange(date, range)) continue;
+        for (const [tool, c] of Object.entries(byTool)) {
+          counts[tool] = (counts[tool] || 0) + c;
+        }
+      }
+      const tools = Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([tool, count]) => ({ tool, count }));
+      return { tools, supported: true };
+    }
+
+    // === Filter UI wiring ===
+    function refreshFilterUI() {
+      const chipsEl = document.getElementById('date-chips');
+      const fromEl = document.getElementById('date-from');
+      const toEl = document.getElementById('date-to');
+      const metaEl = document.getElementById('global-filter-meta');
+      if (!chipsEl) return;
+      chipsEl.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+      if (dateFilter.mode === 'custom') {
+        if (fromEl) fromEl.value = dateFilter.from || '';
+        if (toEl) toEl.value = dateFilter.to || '';
+      } else {
+        const target = chipsEl.querySelector(`.chip[data-range="${dateFilter.mode}"]`);
+        if (target) target.classList.add('active');
+        if (fromEl) fromEl.value = '';
+        if (toEl) toEl.value = '';
+      }
+      if (metaEl) metaEl.textContent = describeDateFilter();
+    }
+
+    function setDateFilter(next) {
+      dateFilter = next;
+      try { localStorage.setItem(DATE_FILTER_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+      refreshFilterUI();
+      if (globalThis._lastData) rerenderAll(globalThis._lastData);
+    }
+
+    document.getElementById('date-chips').addEventListener('click', (e) => {
+      const chip = e.target.closest('.chip');
+      if (!chip) return;
+      setDateFilter({ mode: chip.dataset.range });
+    });
+
+    function onCustomDateChange() {
+      const fromEl = document.getElementById('date-from');
+      const toEl = document.getElementById('date-to');
+      const fromVal = fromEl ? fromEl.value : '';
+      const toVal = toEl ? toEl.value : '';
+      if (!fromVal && !toVal) {
+        setDateFilter({ mode: 'all' });
+      } else {
+        setDateFilter({ mode: 'custom', from: fromVal || null, to: toVal || null });
+      }
+    }
+    document.getElementById('date-from').addEventListener('change', onCustomDateChange);
+    document.getElementById('date-to').addEventListener('change', onCustomDateChange);
+
+    refreshFilterUI();
 
     function renderConfig(cfg) {
       const el = document.getElementById('config-line');
@@ -1291,23 +1636,102 @@
     }
 
     function rerenderAll({ stats, history, toolData, projects, costData }) {
-      if (costData) renderSummary(costData, stats);
-      if (costData) renderDailyCosts(costData);
-      if (toolData) renderTools(toolData);
-      if (projects) renderProjects(projects);
-      if (history) renderHistory(history);
+      const range = dateRangeMs();
+      const filteredDays = costData ? filterDays(costData.days, range) : [];
+      const filteredCostTotals = totalsFromDays(filteredDays);
+      const filteredHistory = filterHistory(history, range);
+      const filteredToolResult = filterToolData(toolData, range);
+
+      const ctx = {
+        range,
+        rangeLabel: describeDateFilter(),
+        rangeIsAll: !range,
+      };
+
+      if (costData) renderSummary(costData, filteredDays, filteredCostTotals, ctx, stats);
+      if (costData) renderTokenUsage(costData, filteredCostTotals, ctx);
+      if (costData) renderDailyCosts(costData, filteredDays, filteredCostTotals, ctx);
+      if (toolData) renderTools(filteredToolResult, ctx);
+      if (history) renderProjects(filteredHistory, projects, ctx);
+      if (history) renderHistory(history, filteredHistory, ctx);
       const last = globalThis._lastToolCalls;
       if (last && document.querySelector('.tool-detail-panel')) {
         loadToolDetails(last.toolName);
       }
     }
 
-    function renderSummary(costData, stats) {
-      const container = document.getElementById('summary-section');
-      const totals = costData.totals || {};
-      const days = costData.days || [];
+    function renderTokenUsage(costData, filteredTotals, ctx) {
+      const totals = filteredTotals || costData.totals || {};
       const today = localDateKey();
-      const todayData = days.find(d => d.date === today);
+      const todayData = (costData.days || []).find(d => d.date === today)
+        || { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 };
+      const rangeLabel = ctx && ctx.rangeIsAll ? 'All time' : (ctx ? ctx.rangeLabel : 'All time');
+
+      const tokenCard = (label, value, todayVal, desc, colorClass, tooltip) => `
+        <div class="card" title="${escapeHtml(tooltip)}">
+          <div class="label">${label}</div>
+          <div class="value ${colorClass}" title="${(value || 0).toLocaleString()} tokens">${fmtTokens(value || 0)}</div>
+          <div class="sub">Today: ${fmtTokens(todayVal || 0)}</div>
+          <div class="token-desc">${desc}</div>
+        </div>`;
+
+      const grandTotal = (totals.input || 0) + (totals.output || 0) + (totals.cacheRead || 0) + (totals.cacheCreate || 0);
+      const totalCard = `
+        <div class="card" title="Sum of input + output + cache read + cache write across the active date range.">
+          <div class="label">Total Tokens</div>
+          <div class="value" title="${grandTotal.toLocaleString()} tokens">${fmtTokens(grandTotal)}</div>
+          <div class="sub">${escapeHtml(rangeLabel)}</div>
+          <div class="token-desc">Sum of all four categories</div>
+        </div>`;
+
+      document.getElementById('token-cards').innerHTML = [
+        tokenCard(
+          'Input',
+          totals.input,
+          todayData.input,
+          'Fresh tokens you sent',
+          'pink-text',
+          'Uncached input tokens — text you sent that wasn’t already in the prompt cache. Billed at full input price (default $5 per 1M for Bedrock).',
+        ),
+        tokenCard(
+          'Output',
+          totals.output,
+          todayData.output,
+          'Tokens the model generated',
+          '',
+          'Output tokens — every word the model produced. Most expensive token type (default $25 per 1M for Bedrock, ~5× input price).',
+        ),
+        tokenCard(
+          'Cache Read',
+          totals.cacheRead,
+          todayData.cacheRead,
+          'Reused from cache (cheap)',
+          'blue-text',
+          'Cache reads — input tokens served from the prompt cache. Billed at ~10% of input price (default $0.50 per 1M). Higher = more savings.',
+        ),
+        tokenCard(
+          'Cache Write',
+          totals.cacheCreate,
+          todayData.cacheCreate,
+          'Stored to cache (one-time premium)',
+          'amber-text',
+          'Cache writes (cache_creation) — input tokens being placed into the cache for later reuse. One-time ~25% premium over input price (default $6.25 per 1M).',
+        ),
+        totalCard,
+      ].join('');
+    }
+
+    function renderSummary(costData, filteredDays, filteredTotals, ctx, stats) {
+      const container = document.getElementById('summary-section');
+      const allDays = costData.days || [];
+      const today = localDateKey();
+      const todayData = allDays.find(d => d.date === today);
+      const rangeIsAll = ctx ? ctx.rangeIsAll : true;
+      const rangeLabel = ctx ? ctx.rangeLabel : 'All time';
+      const rangeBadge = rangeIsAll ? 'All Time' : 'Range';
+      const rangeDate = rangeIsAll
+        ? (allDays.length ? `Since ${allDays[0].date}` : '')
+        : rangeLabel;
 
       function calcMetrics(d) {
         const allInput = d.input + d.cacheRead + d.cacheCreate;
@@ -1335,8 +1759,8 @@
 
       function panel(data, isToday, models) {
         const cls = isToday ? 'today' : 'alltime';
-        const badge = isToday ? 'Today' : 'All Time';
-        const date = isToday ? today : (days.length ? `Since ${days[0].date}` : '');
+        const badge = isToday ? 'Today' : rangeBadge;
+        const date = isToday ? today : rangeDate;
         const m = calcMetrics(data);
 
         return `
@@ -1396,8 +1820,17 @@
             <div class="metric" style="padding:10px"><div class="metric-label">No activity yet</div></div>
           </div>`;
 
-      const allTimePanel = panel(totals, false, totals.models);
-      container.innerHTML = `<div class="summary-grid">${todayPanel}${allTimePanel}</div>`;
+      const rangeHasData = (filteredTotals && (filteredTotals.messages || filteredTotals.toolCalls || filteredTotals.cost));
+      const rangePanel = rangeHasData
+        ? panel(filteredTotals, false, filteredTotals.models)
+        : `<div class="summary-panel alltime">
+            <div class="panel-header">
+              <span class="panel-badge">${escapeHtml(rangeBadge)}</span>
+              <span class="panel-date">${escapeHtml(rangeDate)}</span>
+            </div>
+            <div class="metric" style="padding:10px"><div class="metric-label">No activity in this range</div></div>
+          </div>`;
+      container.innerHTML = `<div class="summary-grid">${todayPanel}${rangePanel}</div>`;
     }
 
     function card(label, value, sub) {
@@ -1408,11 +1841,14 @@
       </div>`;
     }
 
-    function renderDailyCosts(data) {
+    function renderDailyCosts(data, filteredDays, filteredTotals, ctx) {
       const container = document.getElementById('daily-costs');
-      const { days, totals } = data;
-      if (!days || !days.length) {
-        container.innerHTML = '<div class="loading">No cost data found</div>';
+      const days = filteredDays && filteredDays.length ? filteredDays : [];
+      const totals = filteredTotals || data.totals || {};
+      const rangeLabel = ctx ? ctx.rangeLabel : 'All time';
+      if (!days.length) {
+        container.innerHTML = `<div class="loading">No cost data for ${escapeHtml(rangeLabel)}</div>`;
+        document.getElementById('cache-cards').innerHTML = '';
         return;
       }
 
@@ -1488,11 +1924,17 @@
       `;
     }
 
-    function renderTools(data) {
-      const tools = data.tools || [];
+    function renderTools(result, ctx) {
+      const tools = (result && result.tools) || [];
+      const supported = !result || result.supported !== false;
       const container = document.getElementById('tool-calls');
+      const rangeLabel = ctx ? ctx.rangeLabel : 'All time';
+      const isAll = ctx ? ctx.rangeIsAll : true;
+      const note = !supported && !isAll
+        ? `<div class="cost-note">Tool counts shown for <strong>all time</strong> — your server is older than this UI and didn't return per-day tool buckets. Restart it to enable date-filtered tool counts.</div>`
+        : '';
       if (!tools.length) {
-        container.innerHTML = '<div class="loading">No tool calls found</div>';
+        container.innerHTML = `<div class="loading">No tool calls in ${escapeHtml(rangeLabel)}</div>${note}`;
         return;
       }
       const max = tools[0].count;
@@ -1510,6 +1952,7 @@
 
       container.innerHTML = `
         <table class="tool-table"><tbody id="tool-table-body">${rows}</tbody></table>
+        ${note}
         <div id="tool-detail-container"></div>
       `;
 
@@ -1591,8 +2034,16 @@
       container.appendChild(panel);
     }
 
-    function renderProjects(projects) {
+    function renderProjects(filteredHistory, projectsApi, ctx) {
       const tbody = document.getElementById('projects-body');
+      const rangeLabel = ctx ? ctx.rangeLabel : 'All time';
+      const projects = (filteredHistory && filteredHistory.length)
+        ? projectsFromHistory(filteredHistory)
+        : (ctx && ctx.rangeIsAll ? (projectsApi || []) : []);
+      if (!projects.length) {
+        tbody.innerHTML = `<tr><td colspan="4" class="loading">No projects active in ${escapeHtml(rangeLabel)}</td></tr>`;
+        return;
+      }
       tbody.innerHTML = projects.map(p => `
         <tr>
           <td><span class="project-badge clickable" role="button" tabindex="0" data-project="${escapeHtml(p.name)}" title="Filter Prompt History by ${escapeHtml(p.name)}">${escapeHtml(p.shortName)}</span><br><span class="session-id">${escapeHtml(p.name)}</span></td>
@@ -1603,138 +2054,60 @@
       `).join('');
     }
 
-    function renderHistory(history) {
-      const allProjects = [...new Set(history.map(h => h.project))];
+    let historyProjectFilter = 'all';
+
+    function renderHistory(rawHistory, filteredHistory, ctx) {
       const tabsEl = document.getElementById('history-tabs');
       const tbody = document.getElementById('history-table-body');
-      const dateChipsEl = document.getElementById('date-chips');
-      const dateFromEl = document.getElementById('date-from');
-      const dateToEl = document.getElementById('date-to');
       const metaEl = document.getElementById('history-meta');
+      const rangeLabel = ctx ? ctx.rangeLabel : 'All time';
 
-      tabsEl.innerHTML = `<button class="tab active" data-project="all">All</button>` +
-        allProjects.map(p =>
-          `<button class="tab" data-project="${escapeHtml(p)}">${escapeHtml(shortProject(p))}</button>`
-        ).join('');
-
-      let projectFilter = 'all';
-      let dateFilter = { mode: 'all' };
-
-      const parseTs = (ts) => typeof ts === 'number' ? ts : Date.parse(ts);
-      const startOfLocalDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-
-      function getDateRange() {
-        if (dateFilter.mode === 'all') return null;
-        const now = new Date();
-        if (dateFilter.mode === 'today') {
-          const start = startOfLocalDay(now);
-          return { from: start, to: start + 86400000 - 1 };
-        }
-        if (dateFilter.mode === 'yesterday') {
-          const start = startOfLocalDay(now) - 86400000;
-          return { from: start, to: start + 86400000 - 1 };
-        }
-        if (dateFilter.mode === '7d') {
-          return { from: Date.now() - 7 * 86400000, to: Date.now() };
-        }
-        if (dateFilter.mode === '30d') {
-          return { from: Date.now() - 30 * 86400000, to: Date.now() };
-        }
-        if (dateFilter.mode === 'custom') {
-          const from = dateFilter.from
-            ? startOfLocalDay(new Date(dateFilter.from + 'T00:00:00'))
-            : -Infinity;
-          const to = dateFilter.to
-            ? startOfLocalDay(new Date(dateFilter.to + 'T00:00:00')) + 86400000 - 1
-            : Infinity;
-          return { from, to };
-        }
-        return null;
+      const allProjects = [...new Set((rawHistory || []).map(h => h.project))];
+      // Drop selected project if it no longer exists in source data
+      if (historyProjectFilter !== 'all' && !allProjects.includes(historyProjectFilter)) {
+        historyProjectFilter = 'all';
       }
 
-      function describeDateFilter() {
-        if (dateFilter.mode === 'all') return 'all dates';
-        if (dateFilter.mode === 'today') return 'today';
-        if (dateFilter.mode === 'yesterday') return 'yesterday';
-        if (dateFilter.mode === '7d') return 'last 7 days';
-        if (dateFilter.mode === '30d') return 'last 30 days';
-        if (dateFilter.mode === 'custom') {
-          const f = dateFilter.from || '…';
-          const t = dateFilter.to || '…';
-          return `${f} → ${t}`;
-        }
-        return '';
-      }
+      tabsEl.innerHTML = `<button class="tab${historyProjectFilter === 'all' ? ' active' : ''}" data-project="all">All</button>` +
+        allProjects.map(p => {
+          const active = p === historyProjectFilter ? ' active' : '';
+          return `<button class="tab${active}" data-project="${escapeHtml(p)}">${escapeHtml(shortProject(p))}</button>`;
+        }).join('');
 
-      function render() {
-        let filtered = history;
-        if (projectFilter !== 'all') {
-          filtered = filtered.filter(h => h.project === projectFilter);
-        }
-        const range = getDateRange();
-        if (range) {
-          filtered = filtered.filter(h => {
-            const t = parseTs(h.timestamp);
-            return Number.isFinite(t) && t >= range.from && t <= range.to;
-          });
-        }
+      function renderRows() {
+        const dateScoped = filteredHistory || rawHistory || [];
+        const projScoped = historyProjectFilter === 'all'
+          ? dateScoped
+          : dateScoped.filter(h => h.project === historyProjectFilter);
 
-        const projDesc = projectFilter === 'all' ? 'all projects' : shortProject(projectFilter);
-        metaEl.innerHTML = `Showing <strong>${fmt(filtered.length)}</strong> of ${fmt(history.length)} prompts · ${escapeHtml(describeDateFilter())} · ${escapeHtml(projDesc)}`;
+        const projDesc = historyProjectFilter === 'all' ? 'all projects' : shortProject(historyProjectFilter);
+        const totalCount = (rawHistory || []).length;
+        metaEl.innerHTML = `Showing <strong>${fmt(projScoped.length)}</strong> of ${fmt(totalCount)} prompts · ${escapeHtml(rangeLabel)} · ${escapeHtml(projDesc)}`;
 
-        if (filtered.length === 0) {
+        if (projScoped.length === 0) {
           tbody.innerHTML = `<tr><td colspan="4" class="loading">No prompts match the current filters</td></tr>`;
           return;
         }
 
-        tbody.innerHTML = filtered.map(h => `
+        tbody.innerHTML = projScoped.map(h => `
           <tr>
             <td style="white-space:nowrap">${fmtDateTime(h.timestamp)}</td>
             <td><span class="project-badge clickable" role="button" tabindex="0" data-project="${escapeHtml(h.project || '')}" title="Filter by ${escapeHtml(h.project || '')}">${escapeHtml(shortProject(h.project))}</span></td>
-            <td class="prompt-text" title="${(h.display || '').replace(/"/g, '&quot;')}">${escapeHtml(h.display || '')}</td>
+            <td class="prompt-text" title="${(h.display || '').replaceAll('"', '&quot;')}">${escapeHtml(h.display || '')}</td>
             <td class="session-id">${escapeHtml((h.sessionId || '').slice(0, 8))}</td>
           </tr>
         `).join('');
       }
 
-      tabsEl.addEventListener('click', (e) => {
+      tabsEl.onclick = (e) => {
         if (!e.target.classList.contains('tab')) return;
         tabsEl.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
         e.target.classList.add('active');
-        projectFilter = e.target.dataset.project;
-        render();
-      });
+        historyProjectFilter = e.target.dataset.project;
+        renderRows();
+      };
 
-      // Preset chip selects a date range; clears any custom from/to inputs.
-      dateChipsEl.addEventListener('click', (e) => {
-        const chip = e.target.closest('.chip');
-        if (!chip) return;
-        dateChipsEl.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
-        chip.classList.add('active');
-        dateFilter = { mode: chip.dataset.range };
-        if (dateFromEl) dateFromEl.value = '';
-        if (dateToEl) dateToEl.value = '';
-        render();
-      });
-
-      // Typing in either date input switches to custom mode (chips deactivate).
-      function onDateInputChange() {
-        const fromVal = dateFromEl.value;
-        const toVal = dateToEl.value;
-        if (!fromVal && !toVal) {
-          // Empty inputs — fall back to whichever chip is active, default 'all'
-          const activeChip = dateChipsEl.querySelector('.chip.active');
-          dateFilter = { mode: activeChip ? activeChip.dataset.range : 'all' };
-        } else {
-          dateChipsEl.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
-          dateFilter = { mode: 'custom', from: fromVal || null, to: toVal || null };
-        }
-        render();
-      }
-      if (dateFromEl) dateFromEl.addEventListener('change', onDateInputChange);
-      if (dateToEl) dateToEl.addEventListener('change', onDateInputChange);
-
-      render();
+      renderRows();
     }
 
     function exportToolCalls() {
