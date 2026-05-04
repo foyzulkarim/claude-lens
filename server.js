@@ -9,11 +9,125 @@ const readline = require("readline");
 
 const app = express();
 const PORT = 3456;
-const CLAUDE_DIR = process.env.CLAUDE_DIR || path.join(os.homedir(), ".claude");
 
-if (!fs.existsSync(CLAUDE_DIR)) {
-  console.error(`CLAUDE_DIR "${CLAUDE_DIR}" does not exist. Set CLAUDE_DIR in .env or ensure ~/.claude exists.`);
-  process.exit(1);
+function isValidClaudeDir(dir) {
+  if (!dir || !fs.existsSync(dir)) return false;
+  try {
+    if (!fs.statSync(dir).isDirectory()) return false;
+  } catch {
+    return false;
+  }
+  return (
+    fs.existsSync(path.join(dir, "projects")) ||
+    fs.existsSync(path.join(dir, "history.jsonl")) ||
+    fs.existsSync(path.join(dir, "sessions")) ||
+    fs.existsSync(path.join(dir, "stats-cache.json"))
+  );
+}
+
+function detectClaudeDir() {
+  const candidates = [];
+
+  if (process.env.CLAUDE_DIR) {
+    candidates.push({ path: process.env.CLAUDE_DIR, source: "env" });
+  }
+
+  candidates.push({
+    path: path.join(os.homedir(), ".claude"),
+    source: "home",
+  });
+
+  const platformCandidates = [];
+  if (process.platform === "win32") {
+    if (process.env.APPDATA) {
+      platformCandidates.push(
+        { path: path.join(process.env.APPDATA, "Claude"), source: "appdata" },
+        { path: path.join(process.env.APPDATA, ".claude"), source: "appdata" },
+      );
+    }
+    if (process.env.LOCALAPPDATA) {
+      platformCandidates.push({
+        path: path.join(process.env.LOCALAPPDATA, "Claude"),
+        source: "localappdata",
+      });
+    }
+    if (process.env.USERPROFILE) {
+      platformCandidates.push({
+        path: path.join(process.env.USERPROFILE, ".claude"),
+        source: "userprofile",
+      });
+    }
+  } else if (process.platform === "darwin") {
+    platformCandidates.push({
+      path: path.join(os.homedir(), "Library", "Application Support", "Claude"),
+      source: "macos-app-support",
+    });
+  } else {
+    const xdg = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
+    platformCandidates.push({ path: path.join(xdg, "claude"), source: "xdg" });
+  }
+  candidates.push(...platformCandidates);
+
+  // Deduplicate by resolved path
+  const seen = new Set();
+  const unique = [];
+  for (const c of candidates) {
+    const resolved = path.resolve(c.path);
+    if (seen.has(resolved)) continue;
+    seen.add(resolved);
+    unique.push({ ...c, path: resolved });
+  }
+
+  for (const cand of unique) {
+    if (isValidClaudeDir(cand.path)) {
+      return { ...cand, valid: true, candidates: unique };
+    }
+  }
+
+  // Nothing valid — return best-effort (env or home) so error pages can show it
+  const fallback = unique[0] || {
+    path: path.join(os.homedir(), ".claude"),
+    source: "home",
+  };
+  return { ...fallback, valid: false, candidates: unique };
+}
+
+function getTimezoneInfo() {
+  const name = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  const offsetMin = -new Date().getTimezoneOffset();
+  const sign = offsetMin >= 0 ? "+" : "-";
+  const abs = Math.abs(offsetMin);
+  const hh = String(Math.floor(abs / 60)).padStart(2, "0");
+  const mm = String(abs % 60).padStart(2, "0");
+  return { name, offset: `${sign}${hh}:${mm}` };
+}
+
+function localDateKey(isoTs) {
+  const d = new Date(isoTs);
+  if (Number.isNaN(d.getTime())) return null;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+const detected = detectClaudeDir();
+const CLAUDE_DIR = detected.path;
+const CLAUDE_DIR_SOURCE = detected.source;
+const CLAUDE_DIR_VALID = detected.valid;
+
+if (CLAUDE_DIR_VALID) {
+  if (CLAUDE_DIR_SOURCE === "env") {
+    console.log(`[claude-lens] Using CLAUDE_DIR from env: ${CLAUDE_DIR}`);
+  } else {
+    console.log(`[claude-lens] Auto-detected CLAUDE_DIR: ${CLAUDE_DIR} (${CLAUDE_DIR_SOURCE})`);
+  }
+} else {
+  console.warn(
+    `[claude-lens] No valid Claude data directory found. Tried:\n` +
+      detected.candidates.map((c) => `  - ${c.path} (${c.source})`).join("\n") +
+      `\nServer will start anyway — set CLAUDE_DIR in .env to point to your data directory.`,
+  );
 }
 
 const RATES = {
@@ -24,6 +138,23 @@ const RATES = {
 };
 
 app.use(express.static(__dirname));
+
+// GET /api/config — runtime config so the UI can show the active data dir
+app.get("/api/config", (req, res) => {
+  res.json({
+    claudeDir: CLAUDE_DIR,
+    source: CLAUDE_DIR_SOURCE,
+    valid: CLAUDE_DIR_VALID,
+    candidates: detected.candidates.map((c) => ({
+      path: c.path,
+      source: c.source,
+      exists: fs.existsSync(c.path),
+      valid: isValidClaudeDir(c.path),
+    })),
+    platform: process.platform,
+    timezone: getTimezoneInfo(),
+  });
+});
 
 // GET /api/stats — return stats-cache.json as-is
 app.get("/api/stats", (req, res) => {
@@ -320,7 +451,8 @@ function parseDailyCosts(filePath, daily) {
         const obj = JSON.parse(line);
         const ts = obj.timestamp;
         if (!ts) return;
-        const day = ts.slice(0, 10);
+        const day = localDateKey(ts);
+        if (!day) return;
 
         if (!daily[day]) {
           daily[day] = {

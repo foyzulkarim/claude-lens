@@ -5,24 +5,147 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Claude Code Usage Dashboard</title>
   <style>
+    /* === Theme tokens === */
+    :root[data-theme="dark"] {
+      --bg: #0d1117;
+      --bg-elevated: #161b22;
+      --bg-sunken: #0d1117;
+      --border: #21262d;
+      --border-strong: #30363d;
+      --text: #c9d1d9;
+      --text-strong: #f0f6fc;
+      --text-muted: #8b949e;
+      --text-faint: #484f58;
+      --accent: #58a6ff;
+      --accent-strong: #388bfd;
+      --accent-on: #ffffff;
+      --green: #7ee787;
+      --amber: #d29922;
+      --pink: #f778ba;
+      --info: #79c0ff;
+      --purple: #d2a8ff;
+      --purple-hover: #e2c5ff;
+      --red: #da3633;
+      --red-strong: #f85149;
+      --badge-bg: #1f2937;
+      --badge-text: #79c0ff;
+      --row-hover: #161b22;
+      --shadow: 0 1px 0 rgba(0,0,0,0.1);
+    }
+    :root[data-theme="light"] {
+      --bg: #ffffff;
+      --bg-elevated: #f6f8fa;
+      --bg-sunken: #ffffff;
+      --border: #d0d7de;
+      --border-strong: #afb8c1;
+      --text: #1f2328;
+      --text-strong: #1f2328;
+      --text-muted: #656d76;
+      --text-faint: #8c959f;
+      --accent: #0969da;
+      --accent-strong: #0969da;
+      --accent-on: #ffffff;
+      --green: #1a7f37;
+      --amber: #9a6700;
+      --pink: #bf3989;
+      --info: #0969da;
+      --purple: #8250df;
+      --purple-hover: #6639ba;
+      --red: #cf222e;
+      --red-strong: #d1242f;
+      --badge-bg: #ddf4ff;
+      --badge-text: #0969da;
+      --row-hover: #f6f8fa;
+      --shadow: 0 1px 0 rgba(31,35,40,0.04);
+    }
+
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', Consolas, monospace;
-      background: #0d1117;
-      color: #c9d1d9;
+      background: var(--bg);
+      color: var(--text);
       padding: 24px;
       line-height: 1.5;
+      transition: background 0.15s ease, color 0.15s ease;
     }
-    h1 {
-      font-size: 1.4rem;
-      color: #58a6ff;
+    .header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
       margin-bottom: 24px;
-      border-bottom: 1px solid #21262d;
+      border-bottom: 1px solid var(--border);
       padding-bottom: 12px;
     }
+    .header-left { min-width: 0; flex: 1; }
+    h1 {
+      font-size: 1.4rem;
+      color: var(--accent);
+      margin-bottom: 6px;
+    }
+    .config-line {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .config-line .config-path {
+      color: var(--text);
+      word-break: break-all;
+    }
+    .config-line .source-badge {
+      font-size: 0.6rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 2px 6px;
+      border-radius: 3px;
+      background: var(--badge-bg);
+      color: var(--badge-text);
+      font-weight: 600;
+    }
+    .config-line .source-badge.invalid {
+      background: var(--red);
+      color: var(--accent-on);
+    }
+    .header-right {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    .theme-toggle {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 6px 10px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.8rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+    .theme-toggle:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .theme-toggle:active {
+      background: var(--bg-sunken);
+      transform: translateY(1px);
+    }
+    .theme-toggle:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+    .theme-toggle svg { width: 14px; height: 14px; }
+
     h2 {
       font-size: 1rem;
-      color: #8b949e;
+      color: var(--text-muted);
       text-transform: uppercase;
       letter-spacing: 0.05em;
       margin-bottom: 12px;
@@ -34,22 +157,22 @@
       margin-bottom: 32px;
     }
     .card {
-      background: #161b22;
-      border: 1px solid #21262d;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
       border-radius: 8px;
       padding: 16px;
       min-width: 0;
     }
     .card .label {
       font-size: 0.75rem;
-      color: #8b949e;
+      color: var(--text-muted);
       text-transform: uppercase;
       letter-spacing: 0.05em;
     }
     .card .value {
       font-size: 1.6rem;
       font-weight: 700;
-      color: #f0f6fc;
+      color: var(--text-strong);
       margin-top: 4px;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -57,7 +180,7 @@
     }
     .card .sub {
       font-size: 0.7rem;
-      color: #484f58;
+      color: var(--text-faint);
       margin-top: 2px;
     }
     .summary-grid {
@@ -67,13 +190,13 @@
       margin-bottom: 32px;
     }
     .summary-panel {
-      background: #161b22;
-      border: 1px solid #21262d;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
       border-radius: 10px;
       padding: 20px;
     }
     .summary-panel.today {
-      border-color: #388bfd;
+      border-color: var(--accent-strong);
       border-width: 2px;
     }
     .summary-panel .panel-header {
@@ -91,16 +214,16 @@
       border-radius: 4px;
     }
     .summary-panel.today .panel-badge {
-      background: #388bfd;
-      color: #fff;
+      background: var(--accent-strong);
+      color: var(--accent-on);
     }
     .summary-panel.alltime .panel-badge {
-      background: #30363d;
-      color: #8b949e;
+      background: var(--border-strong);
+      color: var(--text-muted);
     }
     .summary-panel .panel-date {
       font-size: 0.75rem;
-      color: #484f58;
+      color: var(--text-faint);
     }
     .metric-grid {
       display: grid;
@@ -110,11 +233,12 @@
     .metric {
       padding: 10px;
       border-radius: 6px;
-      background: #0d1117;
+      background: var(--bg-sunken);
+      border: 1px solid var(--border);
     }
     .metric .metric-label {
       font-size: 0.65rem;
-      color: #8b949e;
+      color: var(--text-muted);
       text-transform: uppercase;
       letter-spacing: 0.04em;
       margin-bottom: 4px;
@@ -122,23 +246,23 @@
     .metric .metric-value {
       font-size: 1.3rem;
       font-weight: 700;
-      color: #f0f6fc;
+      color: var(--text-strong);
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
-    .metric .metric-value.green { color: #7ee787; }
-    .metric .metric-value.blue { color: #79c0ff; }
-    .metric .metric-value.amber { color: #d29922; }
-    .metric .metric-value.pink { color: #f778ba; }
+    .metric .metric-value.green { color: var(--green); }
+    .metric .metric-value.blue { color: var(--info); }
+    .metric .metric-value.amber { color: var(--amber); }
+    .metric .metric-value.pink { color: var(--pink); }
     .metric .metric-sub {
       font-size: 0.6rem;
-      color: #484f58;
+      color: var(--text-faint);
       margin-top: 2px;
     }
     .summary-divider {
       border: none;
-      border-top: 1px solid #21262d;
+      border-top: 1px solid var(--border);
       margin: 14px 0;
     }
     .section {
@@ -151,33 +275,33 @@
     }
     th {
       text-align: left;
-      color: #8b949e;
+      color: var(--text-muted);
       font-weight: 600;
       padding: 8px 12px;
-      border-bottom: 1px solid #21262d;
+      border-bottom: 1px solid var(--border);
       text-transform: uppercase;
       font-size: 0.7rem;
       letter-spacing: 0.05em;
     }
     td {
       padding: 6px 12px;
-      border-bottom: 1px solid #161b22;
+      border-bottom: 1px solid var(--border);
       vertical-align: top;
     }
     tr:hover td {
-      background: #161b22;
+      background: var(--row-hover);
     }
     .prompt-text {
       max-width: 500px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      color: #c9d1d9;
+      color: var(--text);
     }
     .project-badge {
       display: inline-block;
-      background: #1f2937;
-      color: #79c0ff;
+      background: var(--badge-bg);
+      color: var(--badge-text);
       padding: 2px 8px;
       border-radius: 4px;
       font-size: 0.7rem;
@@ -189,69 +313,107 @@
     }
     .bar {
       height: 16px;
-      background: #388bfd;
+      background: var(--accent-strong);
       border-radius: 3px;
       min-width: 2px;
     }
     .bar-count {
       font-size: 0.75rem;
-      color: #8b949e;
+      color: var(--text-muted);
       min-width: 40px;
     }
     .tool-name {
-      min-width: 100px;
+      width: 200px;
+      max-width: 200px;
       font-weight: 600;
-      color: #d2a8ff;
+      color: var(--purple);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
+    .tool-table {
+      table-layout: fixed;
+      width: 100%;
+    }
+    .tool-bar-cell {
+      width: auto;
+      overflow: hidden;
+    }
+    .tool-bar-cell .bar-container {
+      width: 100%;
+      overflow: hidden;
+    }
+    .tool-bar-cell .bar { max-width: calc(100% - 50px); }
     .loading {
-      color: #484f58;
+      color: var(--text-faint);
       font-style: italic;
     }
     .tabs {
       display: flex;
       gap: 4px;
       margin-bottom: 16px;
+      flex-wrap: wrap;
     }
     .tab {
       padding: 6px 14px;
-      background: #161b22;
-      border: 1px solid #21262d;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
       border-radius: 6px;
-      color: #8b949e;
+      color: var(--text-muted);
       cursor: pointer;
       font-size: 0.75rem;
       font-family: inherit;
+      transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+    }
+    .tab:hover {
+      background: var(--row-hover);
+      border-color: var(--border-strong);
+      color: var(--text);
+    }
+    .tab:active {
+      transform: translateY(1px);
+    }
+    .tab:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
     }
     .tab.active {
-      background: #388bfd;
-      color: #fff;
-      border-color: #388bfd;
+      background: var(--accent-strong);
+      color: var(--accent-on);
+      border-color: var(--accent-strong);
+    }
+    .tab.active:hover {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: var(--accent-on);
     }
     #history-table-body tr { cursor: default; }
     .session-id {
       font-size: 0.65rem;
-      color: #484f58;
+      color: var(--text-faint);
     }
-    .cost-total td { font-weight: 700; border-top: 2px solid #30363d; color: #f0f6fc; }
+    .cost-total td { font-weight: 700; border-top: 2px solid var(--border-strong); color: var(--text-strong); }
     .cost-value { text-align: right; font-variant-numeric: tabular-nums; }
     .cost-bar {
       height: 12px;
-      background: #da3633;
+      background: var(--red);
       border-radius: 2px;
       display: inline-block;
       vertical-align: middle;
     }
     .cost-note {
       font-size: 0.7rem;
-      color: #484f58;
+      color: var(--text-faint);
       margin-top: 8px;
     }
     .tool-row { cursor: pointer; }
-    .tool-row:hover .tool-name { color: #e2c5ff; }
-    .tool-row:hover .bar { background: #58a6ff; }
+    .tool-row td { transition: background 0.1s ease; }
+    .tool-row:hover .tool-name { color: var(--purple-hover); }
+    .tool-row:hover .bar { background: var(--accent); }
+    .tool-row:active td { background: var(--bg-sunken); }
     .tool-detail-panel {
-      background: #161b22;
-      border: 1px solid #21262d;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
       border-radius: 8px;
       margin-top: 12px;
       padding: 16px;
@@ -260,7 +422,7 @@
     }
     .tool-detail-panel h3 {
       font-size: 0.85rem;
-      color: #d2a8ff;
+      color: var(--purple);
       margin-bottom: 12px;
       display: flex;
       justify-content: space-between;
@@ -268,44 +430,181 @@
     }
     .tool-detail-panel .close-btn {
       background: none;
-      border: 1px solid #30363d;
-      color: #8b949e;
+      border: 1px solid var(--border-strong);
+      color: var(--text-muted);
       border-radius: 4px;
       padding: 2px 8px;
       cursor: pointer;
       font-family: inherit;
       font-size: 0.7rem;
+      transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
     }
-    .tool-detail-panel .close-btn:hover { color: #f0f6fc; border-color: #484f58; }
+    .tool-detail-panel .close-btn:hover { color: var(--text-strong); border-color: var(--text-faint); }
+    .tool-detail-panel .close-btn:active {
+      background: var(--bg-sunken);
+      transform: translateY(1px);
+    }
+    .tool-detail-panel .close-btn:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
     .detail-row {
       padding: 6px 0;
-      border-bottom: 1px solid #21262d;
+      border-bottom: 1px solid var(--border);
       font-size: 0.75rem;
     }
     .detail-row:last-child { border-bottom: none; }
     .detail-cmd {
-      color: #7ee787;
+      color: var(--green);
       font-size: 0.75rem;
       word-break: break-all;
     }
     .detail-desc {
-      color: #8b949e;
+      color: var(--text-muted);
       font-size: 0.7rem;
     }
     .detail-path {
-      color: #79c0ff;
+      color: var(--info);
       font-size: 0.75rem;
       word-break: break-all;
     }
     .detail-meta {
-      color: #484f58;
+      color: var(--text-faint);
       font-size: 0.65rem;
       margin-top: 2px;
+    }
+    .error-banner {
+      background: var(--bg-elevated);
+      border: 1px solid var(--red);
+      border-left: 4px solid var(--red);
+      border-radius: 6px;
+      padding: 12px 16px;
+      margin-bottom: 24px;
+      font-size: 0.8rem;
+      color: var(--text);
+    }
+    .error-banner h3 {
+      color: var(--red-strong);
+      font-size: 0.85rem;
+      margin-bottom: 6px;
+    }
+    .error-banner code {
+      background: var(--bg-sunken);
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-size: 0.75rem;
+      border: 1px solid var(--border);
+    }
+    .error-banner ul { margin-top: 8px; padding-left: 20px; }
+    .error-banner li { margin: 2px 0; color: var(--text-muted); }
+
+    /* Wide tables scroll horizontally instead of breaking the layout */
+    .table-wrap {
+      overflow-x: auto;
+      max-width: 100%;
+    }
+    .table-wrap table { min-width: max-content; }
+
+    /* === Responsive breakpoints === */
+    @media (max-width: 1100px) {
+      .summary-grid {
+        grid-template-columns: 1fr;
+        gap: 12px;
+      }
+    }
+
+    @media (max-width: 900px) {
+      body { padding: 16px; }
+      .metric-grid { grid-template-columns: repeat(2, 1fr); }
+      .summary-panel { padding: 16px; }
+      .cards { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+    }
+
+    @media (max-width: 640px) {
+      body { padding: 12px; line-height: 1.45; }
+      .header {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+      }
+      .header-right { justify-content: flex-end; }
+      h1 { font-size: 1.15rem; margin-bottom: 4px; }
+      h2 { font-size: 0.85rem; margin-bottom: 10px; }
+      .config-line {
+        font-size: 0.68rem;
+        gap: 6px;
+      }
+      .config-line .source-badge { font-size: 0.55rem; }
+      .section { margin-bottom: 24px; }
+      .cards {
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+      .card { padding: 12px; }
+      .card .value { font-size: 1.25rem; }
+      .card .label { font-size: 0.65rem; }
+      .metric-grid { gap: 8px; }
+      .metric { padding: 8px; }
+      .metric .metric-value { font-size: 1.05rem; }
+      .metric .metric-label { font-size: 0.6rem; }
+      .summary-panel { padding: 14px; }
+      .summary-panel .panel-badge { font-size: 0.6rem; }
+      th, td {
+        padding: 5px 8px;
+        font-size: 0.72rem;
+      }
+      th {
+        font-size: 0.62rem;
+        letter-spacing: 0.03em;
+      }
+      .prompt-text { max-width: 240px; }
+      .tabs { gap: 3px; }
+      .tab {
+        padding: 5px 10px;
+        font-size: 0.7rem;
+      }
+      .project-badge { font-size: 0.65rem; }
+      .tool-detail-panel {
+        padding: 12px;
+        max-height: 360px;
+      }
+      .tool-detail-panel h3 {
+        font-size: 0.78rem;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .cost-bar { display: none; }
+      .error-banner { padding: 10px 12px; }
+      .tool-name { width: 110px; max-width: 110px; }
+      .tool-bar-cell .bar { max-width: calc(100% - 44px); }
+      .bar-count { min-width: 32px; font-size: 0.7rem; }
+    }
+
+    @media (max-width: 420px) {
+      .cards { grid-template-columns: 1fr; }
+      .metric-grid { grid-template-columns: 1fr 1fr; }
+      .summary-panel { padding: 12px; }
+      .config-line .config-path { font-size: 0.65rem; }
     }
   </style>
 </head>
 <body>
-  <h1>Claude Code Usage Dashboard</h1>
+  <div class="header">
+    <div class="header-left">
+      <h1>Claude Code Usage Dashboard</h1>
+      <div class="config-line" id="config-line">
+        <span class="loading">Detecting Claude data directory…</span>
+      </div>
+    </div>
+    <div class="header-right">
+      <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">
+        <span id="theme-icon">🌙</span>
+        <span id="theme-label">Dark</span>
+      </button>
+    </div>
+  </div>
+
+  <div id="error-container"></div>
 
   <div id="summary-section" class="section">
     <div class="loading">Loading...</div>
@@ -334,30 +633,58 @@
 
   <div class="section">
     <h2>Project Activity</h2>
-    <table>
-      <thead>
-        <tr><th>Project</th><th>Messages</th><th>Sessions</th><th>Last Active</th></tr>
-      </thead>
-      <tbody id="projects-body">
-        <tr><td colspan="4" class="loading">Loading...</td></tr>
-      </tbody>
-    </table>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Project</th><th>Messages</th><th>Sessions</th><th>Last Active</th></tr>
+        </thead>
+        <tbody id="projects-body">
+          <tr><td colspan="4" class="loading">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 
   <div class="section">
     <h2>Prompt History</h2>
     <div class="tabs" id="history-tabs"></div>
-    <table>
-      <thead>
-        <tr><th>Time</th><th>Project</th><th>Prompt</th><th>Session</th></tr>
-      </thead>
-      <tbody id="history-table-body">
-        <tr><td colspan="4" class="loading">Loading...</td></tr>
-      </tbody>
-    </table>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Time</th><th>Project</th><th>Prompt</th><th>Session</th></tr>
+        </thead>
+        <tbody id="history-table-body">
+          <tr><td colspan="4" class="loading">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 
   <script>
+    // === Theme handling ===
+    const THEME_KEY = 'claude-lens-theme';
+    function getInitialTheme() {
+      const saved = localStorage.getItem(THEME_KEY);
+      if (saved === 'light' || saved === 'dark') return saved;
+      return window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches
+        ? 'light' : 'dark';
+    }
+    function applyTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme);
+      const icon = document.getElementById('theme-icon');
+      const label = document.getElementById('theme-label');
+      if (icon) icon.textContent = theme === 'dark' ? '🌙' : '☀️';
+      if (label) label.textContent = theme === 'dark' ? 'Dark' : 'Light';
+    }
+    applyTheme(getInitialTheme());
+    document.getElementById('theme-toggle').addEventListener('click', () => {
+      const current = document.documentElement.getAttribute('data-theme') || 'dark';
+      const next = current === 'dark' ? 'light' : 'dark';
+      localStorage.setItem(THEME_KEY, next);
+      applyTheme(next);
+    });
+
+    // === Formatters ===
     const fmt = (n) => n != null ? n.toLocaleString() : '—';
     const fmtDate = (ts) => {
       if (!ts) return '—';
@@ -374,31 +701,100 @@
     const shortProject = (p) => {
       if (!p) return '—';
       const parts = p.split('/');
-      // Take last meaningful segment(s)
       return parts.slice(-1)[0] || parts.slice(-2)[0];
     };
+    const localDateKey = (date = new Date()) => {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    };
+
+    function renderConfig(cfg) {
+      const el = document.getElementById('config-line');
+      if (!cfg) {
+        el.innerHTML = '<span class="loading">Config unavailable</span>';
+        return;
+      }
+      const sourceLabel = {
+        env: 'from .env',
+        home: '~/.claude',
+        appdata: 'AppData',
+        localappdata: 'LocalAppData',
+        userprofile: 'UserProfile',
+        'macos-app-support': 'macOS App Support',
+        xdg: 'XDG config',
+      }[cfg.source] || cfg.source;
+      const badgeClass = cfg.valid ? '' : ' invalid';
+      const badgeText = cfg.valid ? sourceLabel : 'NOT FOUND';
+      const tz = cfg.timezone || {};
+      const tzName = tz.name || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+      const tzOffset = tz.offset || '';
+      const tzText = tzOffset ? `${tzName} (UTC${tzOffset})` : tzName;
+      el.innerHTML =
+        `<span>CLAUDE_DIR:</span>` +
+        `<span class="config-path">${escapeHtml(cfg.claudeDir)}</span>` +
+        `<span class="source-badge${badgeClass}">${escapeHtml(badgeText)}</span>` +
+        `<span style="margin-left:8px">TZ:</span>` +
+        `<span class="config-path" title="All dates and times shown in your system timezone">${escapeHtml(tzText)}</span>`;
+    }
+
+    function renderConfigError(cfg) {
+      if (!cfg || cfg.valid) return;
+      const container = document.getElementById('error-container');
+      const tried = (cfg.candidates || [])
+        .map(c => `<li><code>${escapeHtml(c.path)}</code> — ${escapeHtml(c.source)}${c.exists ? ' (exists, but missing Claude data)' : ' (not found)'}</li>`)
+        .join('');
+      container.innerHTML = `
+        <div class="error-banner">
+          <h3>No Claude data directory found</h3>
+          <div>Set <code>CLAUDE_DIR</code> in <code>.env</code> to point to your Claude Code data folder. Locations checked:</div>
+          <ul>${tried}</ul>
+        </div>`;
+    }
 
     async function load() {
+      let cfg = null;
+      try {
+        cfg = await fetch('/api/config').then(r => r.json());
+        renderConfig(cfg);
+        renderConfigError(cfg);
+      } catch (err) {
+        renderConfig(null);
+      }
+
+      if (cfg && !cfg.valid) {
+        // Skip data fetches when no valid dir; clear loading states
+        document.getElementById('summary-section').innerHTML = '';
+        document.getElementById('cache-cards').innerHTML = '';
+        document.getElementById('daily-costs').innerHTML = '';
+        document.getElementById('tool-calls').innerHTML = '';
+        document.getElementById('projects-body').innerHTML = '<tr><td colspan="4" class="loading">No data</td></tr>';
+        document.getElementById('history-table-body').innerHTML = '<tr><td colspan="4" class="loading">No data</td></tr>';
+        return;
+      }
+
+      const safeJson = (url) => fetch(url).then(r => r.json()).catch(() => null);
       const [stats, history, toolData, projects, costData] = await Promise.all([
-        fetch('/api/stats').then(r => r.json()),
-        fetch('/api/history').then(r => r.json()),
-        fetch('/api/tool-calls').then(r => r.json()),
-        fetch('/api/projects').then(r => r.json()),
-        fetch('/api/daily-costs').then(r => r.json()),
+        safeJson('/api/stats'),
+        safeJson('/api/history'),
+        safeJson('/api/tool-calls'),
+        safeJson('/api/projects'),
+        safeJson('/api/daily-costs'),
       ]);
 
-      renderSummary(costData, stats);
-      renderDailyCosts(costData);
-      renderTools(toolData);
-      renderProjects(projects);
-      renderHistory(history);
+      if (costData) renderSummary(costData, stats);
+      if (costData) renderDailyCosts(costData);
+      if (toolData) renderTools(toolData);
+      if (projects) renderProjects(projects);
+      if (history) renderHistory(history);
     }
 
     function renderSummary(costData, stats) {
       const container = document.getElementById('summary-section');
       const totals = costData.totals || {};
       const days = costData.days || [];
-      const today = new Date().toISOString().slice(0, 10);
+      const today = localDateKey();
       const todayData = days.find(d => d.date === today);
 
       function calcMetrics(d) {
@@ -409,17 +805,17 @@
         return { hitRate, saved };
       }
 
-      function topModelsCard(models, cls) {
+      function topModelsCard(models) {
         if (!models || Object.keys(models).length === 0) return '';
         const sorted = Object.entries(models).sort((a, b) => b[1] - a[1]).slice(0, 3);
         return `
-        <div class="top-models" style="margin-top:12px;padding-top:12px;border-top:1px solid #21262d">
-          <div class="metric-label" style="margin-bottom:8px">Top Models</div>
+        <div class="top-models" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+          <div class="metric-label" style="margin-bottom:8px;font-size:0.65rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em">Top Models</div>
           ${sorted.map(([model, count], i) => `
             <div style="display:flex;align-items:center;gap:8px;padding:4px 0">
-              <span class="model-rank" style="font-size:0.65rem;color:#8b949e;min-width:16px">${i + 1}.</span>
-              <span class="model-name" style="font-size:0.75rem;color:#d2a8ff;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${model}</span>
-              <span class="model-count" style="font-size:0.7rem;color:#8b949e">${fmt(count)} responses</span>
+              <span style="font-size:0.65rem;color:var(--text-muted);min-width:16px">${i + 1}.</span>
+              <span style="font-size:0.75rem;color:var(--purple);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(model)}</span>
+              <span style="font-size:0.7rem;color:var(--text-muted)">${fmt(count)} responses</span>
             </div>
           `).join('')}
         </div>`;
@@ -474,7 +870,7 @@
               <div class="metric-value">${fmt(data.output)}</div>
             </div>
           </div>
-          ${topModelsCard(models, cls)}
+          ${topModelsCard(models)}
         </div>`;
       }
 
@@ -489,7 +885,6 @@
           </div>`;
 
       const allTimePanel = panel(totals, false, totals.models);
-
       container.innerHTML = `<div class="summary-grid">${todayPanel}${allTimePanel}</div>`;
     }
 
@@ -509,7 +904,6 @@
         return;
       }
 
-      // Render cache summary cards
       const totalAllInput = totals.input + totals.cacheRead + totals.cacheCreate;
       const hitRate = totalAllInput > 0 ? (totals.cacheRead / totalAllInput * 100) : 0;
       const costWithoutCache = (totalAllInput * 5.0 + totals.output * 25.0) / 1e6;
@@ -523,14 +917,17 @@
         card('Cache Savings', '$' + saved.toFixed(2), savingsPct.toFixed(0) + '% cheaper'),
       ].join('');
 
-      // Daily table with cache columns
       const maxCost = Math.max(...days.map(d => d.cost));
+      const greenColor = 'var(--green)';
+      const amberColor = 'var(--amber)';
+      const redColor = 'var(--red-strong)';
 
       const rows = days.map(d => {
         const allInput = d.input + d.cacheRead + d.cacheCreate;
         const hr = allInput > 0 ? (d.cacheRead / allInput * 100) : 0;
         const noCacheCost = (allInput * 5.0 + d.output * 25.0) / 1e6;
         const sv = noCacheCost - d.cost;
+        const hrColor = hr > 80 ? greenColor : hr > 50 ? amberColor : redColor;
         return `
         <tr>
           <td>${d.date}</td>
@@ -539,42 +936,43 @@
           <td class="cost-value">${fmt(d.sessions)}</td>
           <td class="cost-value">${fmt(d.cacheRead)}</td>
           <td class="cost-value">${fmt(d.cacheCreate)}</td>
-          <td class="cost-value" style="color: ${hr > 80 ? '#7ee787' : hr > 50 ? '#d29922' : '#f85149'}">${hr.toFixed(1)}%</td>
+          <td class="cost-value" style="color: ${hrColor}">${hr.toFixed(1)}%</td>
           <td class="cost-value">
             <div class="bar-container">
               <span class="cost-bar" style="width: ${Math.max((d.cost / maxCost) * 80, 2)}px"></span>
               <span>$${d.cost.toFixed(2)}</span>
             </div>
           </td>
-          <td class="cost-value" style="color: #7ee787">$${sv.toFixed(2)}</td>
+          <td class="cost-value" style="color: var(--green)">$${sv.toFixed(2)}</td>
         </tr>
       `}).join('');
 
-      const totalNoCacheCost = costWithoutCache;
       container.innerHTML = `
-        <table>
-          <thead>
-            <tr>
-              <th>Date</th><th style="text-align:right">Msgs</th><th style="text-align:right">Tools</th><th style="text-align:right">Sess</th>
-              <th style="text-align:right">Cache Read</th><th style="text-align:right">Cache Write</th><th style="text-align:right">Hit Rate</th><th style="text-align:right">Est. Cost</th><th style="text-align:right">Saved</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rows}
-            <tr class="cost-total">
-              <td>Total</td>
-              <td class="cost-value">${fmt(totals.messages)}</td>
-              <td class="cost-value">${fmt(totals.toolCalls)}</td>
-              <td class="cost-value">${fmt(totals.sessions)}</td>
-              <td class="cost-value">${fmt(totals.cacheRead)}</td>
-              <td class="cost-value">${fmt(totals.cacheCreate)}</td>
-              <td class="cost-value" style="color: #7ee787">${hitRate.toFixed(1)}%</td>
-              <td class="cost-value"><strong>$${totals.cost.toFixed(2)}</strong></td>
-              <td class="cost-value" style="color: #7ee787"><strong>$${saved.toFixed(2)}</strong></td>
-            </tr>
-          </tbody>
-        </table>
-        <div class="cost-note">Rates: Bedrock (ap-southeast-2) — Input $5/M, Output $25/M, Cache Read $0.50/M, Cache Write $6.25/M. Derived from actual session costs. Edit RATES in server.js to adjust.</div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th><th style="text-align:right">Msgs</th><th style="text-align:right">Tools</th><th style="text-align:right">Sess</th>
+                <th style="text-align:right">Cache Read</th><th style="text-align:right">Cache Write</th><th style="text-align:right">Hit Rate</th><th style="text-align:right">Est. Cost</th><th style="text-align:right">Saved</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows}
+              <tr class="cost-total">
+                <td>Total</td>
+                <td class="cost-value">${fmt(totals.messages)}</td>
+                <td class="cost-value">${fmt(totals.toolCalls)}</td>
+                <td class="cost-value">${fmt(totals.sessions)}</td>
+                <td class="cost-value">${fmt(totals.cacheRead)}</td>
+                <td class="cost-value">${fmt(totals.cacheCreate)}</td>
+                <td class="cost-value" style="color: var(--green)">${hitRate.toFixed(1)}%</td>
+                <td class="cost-value"><strong>$${totals.cost.toFixed(2)}</strong></td>
+                <td class="cost-value" style="color: var(--green)"><strong>$${saved.toFixed(2)}</strong></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="cost-note">Rates: Bedrock (ap-southeast-2) — Input $5/M, Output $25/M, Cache Read $0.50/M, Cache Write $6.25/M. Edit RATES in server.js or .env to adjust.</div>
       `;
     }
 
@@ -587,9 +985,9 @@
       }
       const max = tools[0].count;
       const rows = tools.map(t => `
-        <tr class="tool-row" data-tool="${t.tool}">
-          <td class="tool-name">${t.tool}</td>
-          <td style="width:100%">
+        <tr class="tool-row" data-tool="${escapeHtml(t.tool)}">
+          <td class="tool-name" title="${escapeHtml(t.tool)}">${escapeHtml(t.tool)}</td>
+          <td class="tool-bar-cell">
             <div class="bar-container">
               <div class="bar" style="width: ${Math.max((t.count / max) * 100, 1)}%"></div>
               <span class="bar-count">${fmt(t.count)}</span>
@@ -599,7 +997,7 @@
       `).join('');
 
       container.innerHTML = `
-        <table><tbody id="tool-table-body">${rows}</tbody></table>
+        <table class="tool-table"><tbody id="tool-table-body">${rows}</tbody></table>
         <div id="tool-detail-container"></div>
       `;
 
@@ -620,14 +1018,13 @@
       panel.className = 'tool-detail-panel';
 
       const header = `<h3>
-        <span>${toolName} — ${fmt(calls.length)} calls</span>
+        <span>${escapeHtml(toolName)} — ${fmt(calls.length)} calls</span>
         <span>
-          <button class="close-btn" onclick="exportToolCalls('${toolName}', ${JSON.stringify(calls).length > 5000000 ? '[]' : 'null'})">Export</button>
+          <button class="close-btn" onclick="exportToolCalls()">Export</button>
           <button class="close-btn" onclick="this.closest('.tool-detail-panel').remove()">Close</button>
         </span>
       </h3>`;
 
-      // Stash calls for export
       window._lastToolCalls = { toolName, calls };
 
       let rows = '';
@@ -639,36 +1036,36 @@
           rows += `<div class="detail-row">
             ${c.description ? `<div class="detail-desc">${escapeHtml(c.description)}</div>` : ''}
             <div class="detail-cmd">$ ${escapeHtml(c.command)}</div>
-            <div class="detail-meta">${time} &middot; ${proj}</div>
+            <div class="detail-meta">${time} &middot; ${escapeHtml(proj)}</div>
           </div>`;
         } else if (toolName === 'Read' || toolName === 'Edit' || toolName === 'Write') {
           rows += `<div class="detail-row">
             <div class="detail-path">${escapeHtml(c.file_path)}</div>
-            <div class="detail-meta">${time} &middot; ${proj}</div>
+            <div class="detail-meta">${time} &middot; ${escapeHtml(proj)}</div>
           </div>`;
         } else if (toolName === 'Grep') {
           rows += `<div class="detail-row">
             <div class="detail-cmd">/${escapeHtml(c.pattern)}/</div>
             ${c.path ? `<div class="detail-path">${escapeHtml(c.path)}</div>` : ''}
             ${c.glob ? `<div class="detail-desc">glob: ${escapeHtml(c.glob)}</div>` : ''}
-            <div class="detail-meta">${time} &middot; ${proj}</div>
+            <div class="detail-meta">${time} &middot; ${escapeHtml(proj)}</div>
           </div>`;
         } else if (toolName === 'Glob') {
           rows += `<div class="detail-row">
             <div class="detail-cmd">${escapeHtml(c.pattern)}</div>
             ${c.path ? `<div class="detail-path">${escapeHtml(c.path)}</div>` : ''}
-            <div class="detail-meta">${time} &middot; ${proj}</div>
+            <div class="detail-meta">${time} &middot; ${escapeHtml(proj)}</div>
           </div>`;
         } else if (toolName === 'Agent') {
           rows += `<div class="detail-row">
             <div class="detail-desc">${escapeHtml(c.description)}</div>
             ${c.subagent_type ? `<div class="detail-path">type: ${escapeHtml(c.subagent_type)}</div>` : ''}
-            <div class="detail-meta">${time} &middot; ${proj}</div>
+            <div class="detail-meta">${time} &middot; ${escapeHtml(proj)}</div>
           </div>`;
         } else {
           rows += `<div class="detail-row">
             <div class="detail-cmd">${escapeHtml(c.input || '')}</div>
-            <div class="detail-meta">${time} &middot; ${proj}</div>
+            <div class="detail-meta">${time} &middot; ${escapeHtml(proj)}</div>
           </div>`;
         }
       }
@@ -686,7 +1083,7 @@
       const tbody = document.getElementById('projects-body');
       tbody.innerHTML = projects.map(p => `
         <tr>
-          <td><span class="project-badge">${p.shortName}</span><br><span class="session-id">${p.name}</span></td>
+          <td><span class="project-badge">${escapeHtml(p.shortName)}</span><br><span class="session-id">${escapeHtml(p.name)}</span></td>
           <td>${fmt(p.messages)}</td>
           <td>${fmt(p.sessions)}</td>
           <td>${fmtDateTime(p.lastSeen)}</td>
@@ -695,27 +1092,25 @@
     }
 
     function renderHistory(history) {
-      // Get unique projects for tabs
       const allProjects = [...new Set(history.map(h => h.project))];
       const tabsEl = document.getElementById('history-tabs');
 
       tabsEl.innerHTML = `<button class="tab active" data-project="all">All</button>` +
         allProjects.map(p =>
-          `<button class="tab" data-project="${p}">${shortProject(p)}</button>`
+          `<button class="tab" data-project="${escapeHtml(p)}">${escapeHtml(shortProject(p))}</button>`
         ).join('');
 
       const tbody = document.getElementById('history-table-body');
 
       function render(filter) {
         const filtered = filter === 'all' ? history : history.filter(h => h.project === filter);
-        // Show most recent first
         const sorted = [...filtered].reverse();
         tbody.innerHTML = sorted.map(h => `
           <tr>
             <td style="white-space:nowrap">${fmtDateTime(h.timestamp)}</td>
-            <td><span class="project-badge">${shortProject(h.project)}</span></td>
+            <td><span class="project-badge">${escapeHtml(shortProject(h.project))}</span></td>
             <td class="prompt-text" title="${(h.display || '').replace(/"/g, '&quot;')}">${escapeHtml(h.display || '')}</td>
-            <td class="session-id">${(h.sessionId || '').slice(0, 8)}</td>
+            <td class="session-id">${escapeHtml((h.sessionId || '').slice(0, 8))}</td>
           </tr>
         `).join('');
       }
@@ -777,7 +1172,7 @@
 
     function escapeHtml(str) {
       const div = document.createElement('div');
-      div.textContent = str;
+      div.textContent = str == null ? '' : String(str);
       return div.innerHTML;
     }
 
