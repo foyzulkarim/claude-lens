@@ -277,6 +277,13 @@
       word-break: break-all;
     }
     .reason-banner p { color: var(--text-muted); margin-top: 4px; }
+    .reason-banner .tried-list {
+      margin: 4px 0 0 18px;
+      padding: 0;
+      color: var(--text-muted);
+      font-size: 0.8rem;
+    }
+    .reason-banner .tried-list li { margin: 2px 0; }
 
     .footnote {
       font-size: 0.7rem;
@@ -401,13 +408,22 @@
     function reasonText(reason) {
       switch (reason) {
         case 'credentials_missing':
-          return 'No credentials file found in your Claude data directory. Run `claude /login` to authenticate.';
+          return 'No Claude credentials found. Run `claude /login` in a terminal to authenticate. Claude Code stores credentials in a plaintext file on Windows, in the macOS Keychain on macOS, and in libsecret (GNOME Keyring / KWallet) on Linux.';
         case 'credentials_unreadable':
-          return 'Found a credentials file but couldn\'t parse it. The file may be corrupted.';
+          return 'Found Claude credentials but couldn\'t parse them. The store may be corrupted — try `claude /logout` then `claude /login` to refresh.';
         case 'no_access_token':
-          return 'Credentials file is present but contains no access token.';
+          return 'Credentials are present but contain no access token.';
         default:
           return 'Not currently signed in to Claude.';
+      }
+    }
+
+    function credentialsSourceText(source) {
+      switch (source) {
+        case 'file': return 'plaintext credentials file';
+        case 'keychain': return 'macOS Keychain';
+        case 'libsecret': return 'Linux libsecret (GNOME Keyring / KWallet)';
+        default: return source || 'local credential store';
       }
     }
 
@@ -442,11 +458,20 @@
     }
 
     function renderLoggedOut(data) {
+      let triedHtml = '';
+      if (Array.isArray(data.credentialsTried) && data.credentialsTried.length) {
+        triedHtml = `<p>Looked in:</p><ul class="tried-list">${
+          data.credentialsTried.map((p) => `<li><code>${escapeHtml(p)}</code></li>`).join('')
+        }</ul>`;
+      } else if (data.credentialsPath) {
+        triedHtml = `<p>Looked at: <code>${escapeHtml(data.credentialsPath)}</code> (${escapeHtml(credentialsSourceText(data.credentialsSource))})</p>`;
+      }
+
       const banner = `
         <div class="reason-banner">
           <h3>Not signed in</h3>
           <p>${escapeHtml(reasonText(data.reason))}</p>
-          ${data.credentialsPath ? `<p>Looked at: <code>${escapeHtml(data.credentialsPath)}</code></p>` : ''}
+          ${triedHtml}
         </div>`;
 
       const hero = `
@@ -570,7 +595,7 @@
             <div class="field">
               <div class="field-label">Subscription type (local)</div>
               <div class="field-value">${escapeHtml(data.subscriptionType || '—')}</div>
-              <div class="field-sub">from .credentials.json</div>
+              <div class="field-sub">from ${escapeHtml(credentialsSourceText(data.credentialsSource))}</div>
             </div>
             <div class="field" style="grid-column: 1 / -1">
               <div class="field-label">Scopes</div>
@@ -581,12 +606,15 @@
 
       // === Privacy footer ===
       const cacheNote = data.profileFromCache ? ' (served from 60s cache)' : '';
+      const sourceLabel = credentialsSourceText(data.credentialsSource);
+      const sourceLocator = data.credentialsPath
+        ? `<code>${escapeHtml(data.credentialsPath)}</code>`
+        : `your <code>${escapeHtml(sourceLabel)}</code>`;
       const footnote = `
         <div class="footnote">
           <strong>Privacy:</strong> profile data is fetched server-side from
           <code>https://api.anthropic.com/api/oauth/profile</code>${escapeHtml(cacheNote)}
-          using the access token in your local
-          <code>${escapeHtml(data.credentialsPath || '')}</code>.
+          using the access token from ${sourceLocator}.
           The token never leaves the server — only the projected fields above
           (full name, email, plan, organization, application) are forwarded
           to the browser. <code>accessToken</code> and <code>refreshToken</code>

@@ -6,6 +6,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const readline = require("readline");
+const { execFileSync } = require("child_process");
 
 const app = express();
 const PORT = 3456;
@@ -137,6 +138,74 @@ const RATES = {
   cacheCreate: parseFloat(process.env.RATE_CACHE_CREATE ?? "6.25") / 1e6,
 };
 
+// === Cross-platform credentials reader ===
+//
+// Claude Code stores its OAuth credentials differently per platform:
+//   - Windows: plaintext JSON at `<CLAUDE_DIR>/.credentials.json`
+//   - macOS:   login Keychain entry, service name "Claude Code-credentials"
+//   - Linux:   libsecret (GNOME Keyring / KWallet) under the same service name
+//
+// Try the file first (Windows + Linux fallback), then the platform-native
+// secret store. Never log or surface the credential contents — return them
+// to the caller and let the caller use only the safe fields.
+function readClaudeCredentials() {
+  const tried = [];
+  const filePath = path.join(CLAUDE_DIR, ".credentials.json");
+  if (fs.existsSync(filePath)) {
+    try {
+      const raw = JSON.parse(fs.readFileSync(filePath, "utf8"));
+      return { ok: true, raw, source: "file", path: filePath };
+    } catch (err) {
+      return { ok: false, reason: "unreadable", message: err.message, source: "file", path: filePath };
+    }
+  }
+  tried.push(filePath);
+
+  if (process.platform === "darwin") {
+    try {
+      const out = execFileSync(
+        "security",
+        ["find-generic-password", "-s", "Claude Code-credentials", "-w"],
+        { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 3000 },
+      );
+      const text = out.trim();
+      if (text) {
+        try {
+          const raw = JSON.parse(text);
+          return { ok: true, raw, source: "keychain" };
+        } catch (err) {
+          return { ok: false, reason: "unreadable", message: `Keychain item is not valid JSON: ${err.message}`, source: "keychain" };
+        }
+      }
+    } catch {
+      // Item not present (or keychain locked / security cmd missing) — fall through
+    }
+    tried.push('macOS Keychain (service "Claude Code-credentials")');
+  } else if (process.platform === "linux") {
+    try {
+      const out = execFileSync(
+        "secret-tool",
+        ["lookup", "service", "Claude Code-credentials", "account", os.userInfo().username],
+        { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 3000 },
+      );
+      const text = out.trim();
+      if (text) {
+        try {
+          const raw = JSON.parse(text);
+          return { ok: true, raw, source: "libsecret" };
+        } catch (err) {
+          return { ok: false, reason: "unreadable", message: `libsecret item is not valid JSON: ${err.message}`, source: "libsecret" };
+        }
+      }
+    } catch {
+      // secret-tool missing, no keyring running, or no entry — fall through
+    }
+    tried.push('Linux libsecret (service "Claude Code-credentials", via secret-tool)');
+  }
+
+  return { ok: false, reason: "missing", tried };
+}
+
 app.use(express.static(__dirname));
 
 // GET /api/config — runtime config so the UI can show the active data dir
@@ -222,41 +291,40 @@ function projectProfile(profile) {
   };
 }
 
-// GET /api/account — read .credentials.json and surface SAFE fields only.
+// GET /api/account — read credentials (file on Windows, Keychain on macOS,
+// libsecret on Linux) and surface SAFE fields only.
 // SECURITY: accessToken and refreshToken must never appear in the response.
-// They live in the local file but are never serialized over the wire. The
+// They live in the local store but are never serialized over the wire. The
 // remote profile call uses the token server-side; only the projected fields
 // (see projectProfile) are forwarded to the browser.
 app.get("/api/account", async (req, res) => {
-  const credPath = path.join(CLAUDE_DIR, ".credentials.json");
   try {
-    if (!fs.existsSync(credPath)) {
+    const cred = readClaudeCredentials();
+    if (!cred.ok) {
+      if (cred.reason === "unreadable") {
+        return res.json({
+          loggedIn: false,
+          reason: "credentials_unreadable",
+          message: cred.message,
+          credentialsSource: cred.source,
+          credentialsPath: cred.path || null,
+        });
+      }
       return res.json({
         loggedIn: false,
         reason: "credentials_missing",
-        credentialsPath: credPath,
+        credentialsTried: cred.tried,
       });
     }
 
-    let raw;
-    try {
-      raw = JSON.parse(fs.readFileSync(credPath, "utf8"));
-    } catch (parseErr) {
-      return res.json({
-        loggedIn: false,
-        reason: "credentials_unreadable",
-        message: parseErr.message,
-        credentialsPath: credPath,
-      });
-    }
-
-    const oauth = raw.claudeAiOauth || {};
+    const oauth = cred.raw.claudeAiOauth || {};
     const hasToken = typeof oauth.accessToken === "string" && oauth.accessToken.length > 0;
     if (!hasToken) {
       return res.json({
         loggedIn: false,
         reason: "no_access_token",
-        credentialsPath: credPath,
+        credentialsSource: cred.source,
+        credentialsPath: cred.path || null,
       });
     }
 
@@ -288,8 +356,9 @@ app.get("/api/account", async (req, res) => {
       expiresAt,
       expiresInMs,
       expired,
-      organizationUuid: raw.organizationUuid || null,
-      credentialsPath: credPath,
+      organizationUuid: cred.raw.organizationUuid || null,
+      credentialsSource: cred.source,
+      credentialsPath: cred.path || null,
       profile,
       profileError,
       profileFromCache,
@@ -534,19 +603,17 @@ const AI_INSIGHTS = {
 // Inference billed against the user's local Claude account quota
 // (no separate API key needed thanks to the `user:inference` scope).
 app.post("/api/chat", express.json({ limit: "25mb" }), async (req, res) => {
-  const credPath = path.join(CLAUDE_DIR, ".credentials.json");
+  const cred = readClaudeCredentials();
   let token;
-  try {
-    if (!fs.existsSync(credPath)) {
-      return res.status(401).json({ error: "not_logged_in", reason: "credentials_missing" });
+  if (!cred.ok) {
+    if (cred.reason === "unreadable") {
+      return res.status(500).json({ error: "credentials_read_error", message: cred.message });
     }
-    const cred = JSON.parse(fs.readFileSync(credPath, "utf8"));
-    token = cred.claudeAiOauth?.accessToken;
-    if (!token) {
-      return res.status(401).json({ error: "not_logged_in", reason: "no_access_token" });
-    }
-  } catch (err) {
-    return res.status(500).json({ error: "credentials_read_error", message: err.message });
+    return res.status(401).json({ error: "not_logged_in", reason: "credentials_missing" });
+  }
+  token = cred.raw.claudeAiOauth?.accessToken;
+  if (!token) {
+    return res.status(401).json({ error: "not_logged_in", reason: "no_access_token" });
   }
 
   const body = req.body || {};
@@ -656,29 +723,27 @@ app.post("/api/chat", express.json({ limit: "25mb" }), async (req, res) => {
 // ask). Always uses Haiku for cost control. Stateless — caching is the
 // caller's job (the dashboard caches by kind+context-hash in localStorage).
 app.post("/api/ai-insight", express.json({ limit: "2mb" }), async (req, res) => {
-  const credPath = path.join(CLAUDE_DIR, ".credentials.json");
+  const cred = readClaudeCredentials();
   let token;
-  try {
-    if (!fs.existsSync(credPath)) {
-      return res.status(401).json({
-        error: "not_logged_in",
-        reason: "credentials_missing",
-        message: "Not signed in to Claude. Run `claude /login` in a terminal first, then reload this page.",
+  if (!cred.ok) {
+    if (cred.reason === "unreadable") {
+      return res.status(500).json({
+        error: "credentials_read_error",
+        message: `Could not read Claude credentials (${cred.source}): ${cred.message}`,
       });
     }
-    const cred = JSON.parse(fs.readFileSync(credPath, "utf8"));
-    token = cred.claudeAiOauth?.accessToken;
-    if (!token) {
-      return res.status(401).json({
-        error: "not_logged_in",
-        reason: "no_access_token",
-        message: "Credentials file exists but contains no access token. Try `claude /logout` then `claude /login` to refresh it.",
-      });
-    }
-  } catch (err) {
-    return res.status(500).json({
-      error: "credentials_read_error",
-      message: `Could not read credentials.json: ${err.message}`,
+    return res.status(401).json({
+      error: "not_logged_in",
+      reason: "credentials_missing",
+      message: "Not signed in to Claude. Run `claude /login` in a terminal first, then reload this page.",
+    });
+  }
+  token = cred.raw.claudeAiOauth?.accessToken;
+  if (!token) {
+    return res.status(401).json({
+      error: "not_logged_in",
+      reason: "no_access_token",
+      message: "Credentials present but contain no access token. Try `claude /logout` then `claude /login` to refresh it.",
     });
   }
 
@@ -1032,19 +1097,17 @@ app.post("/v1/chat/completions", express.json({ limit: "25mb" }), async (req, re
   if (!checkLocalApiKey(req, res)) return;
 
   // Read OAuth token from local credentials (same path as /api/chat)
-  const credPath = path.join(CLAUDE_DIR, ".credentials.json");
+  const cred = readClaudeCredentials();
   let token;
-  try {
-    if (!fs.existsSync(credPath)) {
-      return res.status(401).json({ error: { type: "authentication_error", message: "Not signed in. Run `claude /login` in a terminal first." } });
+  if (!cred.ok) {
+    if (cred.reason === "unreadable") {
+      return res.status(500).json({ error: { type: "server_error", message: cred.message } });
     }
-    const cred = JSON.parse(fs.readFileSync(credPath, "utf8"));
-    token = cred.claudeAiOauth?.accessToken;
-    if (!token) {
-      return res.status(401).json({ error: { type: "authentication_error", message: "No access token in credentials file." } });
-    }
-  } catch (err) {
-    return res.status(500).json({ error: { type: "server_error", message: err.message } });
+    return res.status(401).json({ error: { type: "authentication_error", message: "Not signed in. Run `claude /login` in a terminal first." } });
+  }
+  token = cred.raw.claudeAiOauth?.accessToken;
+  if (!token) {
+    return res.status(401).json({ error: { type: "authentication_error", message: "No access token in credentials." } });
   }
 
   let translated;
