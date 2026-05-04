@@ -446,6 +446,388 @@ app.post("/api/chat", express.json({ limit: "25mb" }), async (req, res) => {
   }
 });
 
+// === OpenAI-compatible API ===
+//
+// Lets external clients (OpenAI Python/JS SDKs, curl, etc.) talk to the
+// user's local Claude account using the OpenAI Chat Completions wire shape.
+// Translates request/response/stream between OpenAI and Anthropic, and
+// reuses the same OAuth-based proxy logic as /api/chat (so the load-bearing
+// system marker is injected automatically and the same quota applies).
+
+// Optional API key. If LOCAL_API_KEY is set in .env, callers must send
+// `Authorization: Bearer <key>`. Unset → no auth (trust localhost).
+const LOCAL_API_KEY = process.env.LOCAL_API_KEY || null;
+
+function checkLocalApiKey(req, res) {
+  if (!LOCAL_API_KEY) return true;
+  const auth = req.headers.authorization || "";
+  const m = /^Bearer\s+(.+)$/i.exec(auth);
+  if (!m || m[1] !== LOCAL_API_KEY) {
+    res.status(401).json({
+      error: { type: "invalid_request_error", message: "Invalid or missing API key. Set LOCAL_API_KEY in .env to control this." },
+    });
+    return false;
+  }
+  return true;
+}
+
+// Map Anthropic stop_reason → OpenAI finish_reason.
+function mapStopReason(reason) {
+  if (!reason) return null;
+  if (reason === "end_turn") return "stop";
+  if (reason === "stop_sequence") return "stop";
+  if (reason === "max_tokens") return "length";
+  if (reason === "tool_use") return "tool_calls";
+  if (reason === "refusal") return "content_filter";
+  return "stop";
+}
+
+// Convert an OpenAI multimodal content array into Anthropic's block form.
+// Accepts a string (returned as-is) or an array of {type,text}/{type,image_url,...}.
+function convertOpenAIContent(content) {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return String(content ?? "");
+  const blocks = [];
+  for (const item of content) {
+    if (!item || typeof item !== "object") continue;
+    if (item.type === "text" && typeof item.text === "string") {
+      blocks.push({ type: "text", text: item.text });
+    } else if (item.type === "image_url") {
+      const url = typeof item.image_url === "string"
+        ? item.image_url
+        : (item.image_url && item.image_url.url) || "";
+      if (!url) continue;
+      const dataMatch = /^data:([^;,]+);base64,(.+)$/i.exec(url);
+      if (dataMatch) {
+        blocks.push({
+          type: "image",
+          source: { type: "base64", media_type: dataMatch[1], data: dataMatch[2] },
+        });
+      } else {
+        blocks.push({ type: "image", source: { type: "url", url } });
+      }
+    } else if (item.type === "input_audio") {
+      // Not supported — skip with a marker so the model still has context.
+      blocks.push({ type: "text", text: "[audio attachment — not supported by Claude]" });
+    }
+  }
+  return blocks.length > 0 ? blocks : "";
+}
+
+// Convert an OpenAI Chat Completions request body into the Anthropic shape.
+// Returns { body, warnings:[string] }.
+function openAIRequestToAnthropic(input) {
+  const warnings = [];
+  const body = {};
+
+  if (!input || typeof input !== "object") {
+    throw Object.assign(new Error("Request body must be an object"), { status: 400 });
+  }
+  if (!Array.isArray(input.messages) || input.messages.length === 0) {
+    throw Object.assign(new Error("messages must be a non-empty array"), { status: 400 });
+  }
+
+  body.model = input.model;
+
+  // Required by Anthropic. OpenAI's default is no cap; pick a sensible cap.
+  body.max_tokens = Number.isFinite(input.max_tokens) ? input.max_tokens : 4096;
+
+  if (Number.isFinite(input.temperature)) body.temperature = input.temperature;
+  if (Number.isFinite(input.top_p)) body.top_p = input.top_p;
+
+  if (typeof input.stop === "string") body.stop_sequences = [input.stop];
+  else if (Array.isArray(input.stop)) body.stop_sequences = input.stop.filter(s => typeof s === "string");
+
+  if (input.stream) body.stream = true;
+
+  // Pull system messages out of the messages array — Anthropic uses a
+  // separate `system` field. Concatenate them in the order they appeared.
+  const systemTexts = [];
+  const messages = [];
+  for (const m of input.messages) {
+    if (!m || typeof m !== "object" || !m.role) continue;
+    if (m.role === "system") {
+      const t = typeof m.content === "string" ? m.content : convertOpenAIContent(m.content);
+      if (typeof t === "string" && t.trim().length > 0) systemTexts.push(t);
+      // Note: arrays end up empty for systems — Anthropic system is text-only
+      continue;
+    }
+    if (m.role === "user" || m.role === "assistant") {
+      messages.push({ role: m.role, content: convertOpenAIContent(m.content) });
+    } else if (m.role === "tool") {
+      // Tool results — not supported in this minimal translation
+      warnings.push(`Ignored 'tool' message (function calling not yet supported)`);
+    }
+  }
+  if (systemTexts.length > 0) body.system = systemTexts.join("\n\n");
+  body.messages = messages;
+
+  // Warn about fields we silently drop so SDK clients don't get confused.
+  for (const f of ["frequency_penalty", "presence_penalty", "logit_bias", "response_format", "tools", "tool_choice", "n", "logprobs", "top_logprobs", "seed", "service_tier", "parallel_tool_calls"]) {
+    if (f in input) warnings.push(`Ignored unsupported field: ${f}`);
+  }
+
+  return { body, warnings };
+}
+
+// Convert a non-streaming Anthropic response into the OpenAI shape.
+function anthropicResponseToOpenAI(anth, model) {
+  const content = Array.isArray(anth.content) ? anth.content : [];
+  const text = content
+    .filter(c => c && c.type === "text" && typeof c.text === "string")
+    .map(c => c.text)
+    .join("");
+  const usage = anth.usage || {};
+  const promptTokens =
+    (usage.input_tokens || 0) +
+    (usage.cache_read_input_tokens || 0) +
+    (usage.cache_creation_input_tokens || 0);
+  const completionTokens = usage.output_tokens || 0;
+  return {
+    id: "chatcmpl-" + (anth.id ? anth.id.replace(/^msg_/, "") : Date.now().toString(36)),
+    object: "chat.completion",
+    created: Math.floor(Date.now() / 1000),
+    model: model || anth.model,
+    choices: [
+      {
+        index: 0,
+        message: { role: "assistant", content: text },
+        finish_reason: mapStopReason(anth.stop_reason),
+      },
+    ],
+    usage: {
+      prompt_tokens: promptTokens,
+      completion_tokens: completionTokens,
+      total_tokens: promptTokens + completionTokens,
+      prompt_tokens_details: { cached_tokens: usage.cache_read_input_tokens || 0 },
+    },
+  };
+}
+
+// Convert Anthropic SSE stream → OpenAI streaming chunks. Reads from `reader`
+// and writes `data: {json}\n\n` (and a final `data: [DONE]\n\n`) to `res`.
+async function pipeAnthropicStreamAsOpenAI(reader, res, requestedModel, includeUsage) {
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let chatId = "chatcmpl-" + Date.now().toString(36);
+  let modelOut = requestedModel || "";
+  let inputTokens = 0;
+  let cachedTokens = 0;
+  let outputTokens = 0;
+  let stopReason = null;
+  let openedRoleChunk = false;
+
+  const writeChunk = (delta, finishReason = null, usage = undefined) => {
+    const chunk = {
+      id: chatId,
+      object: "chat.completion.chunk",
+      created: Math.floor(Date.now() / 1000),
+      model: modelOut,
+      choices: [{ index: 0, delta, finish_reason: finishReason }],
+    };
+    if (usage) chunk.usage = usage;
+    res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+  };
+
+  const handleEvent = (event, dataStr) => {
+    let data;
+    try { data = JSON.parse(dataStr); } catch { return; }
+    if (event === "message_start" && data.message) {
+      if (data.message.id) chatId = "chatcmpl-" + data.message.id.replace(/^msg_/, "");
+      if (data.message.model) modelOut = data.message.model;
+      const u = data.message.usage || {};
+      inputTokens = u.input_tokens || 0;
+      cachedTokens = u.cache_read_input_tokens || 0;
+      if (!openedRoleChunk) {
+        writeChunk({ role: "assistant", content: "" });
+        openedRoleChunk = true;
+      }
+    } else if (event === "content_block_delta" && data.delta && data.delta.type === "text_delta") {
+      writeChunk({ content: data.delta.text || "" });
+    } else if (event === "message_delta") {
+      if (data.delta && data.delta.stop_reason) stopReason = data.delta.stop_reason;
+      if (data.usage && Number.isFinite(data.usage.output_tokens)) outputTokens = data.usage.output_tokens;
+    } else if (event === "error") {
+      // Forward as a final chunk with finish_reason=stop so the client closes.
+      writeChunk({}, "stop");
+    }
+  };
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let idx;
+      while ((idx = buffer.indexOf("\n\n")) !== -1) {
+        const block = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        let event = "";
+        let data = "";
+        for (const line of block.split("\n")) {
+          if (line.startsWith("event:")) event = line.slice(6).trim();
+          else if (line.startsWith("data:")) data += line.slice(5).trim();
+        }
+        if (event && data) handleEvent(event, data);
+      }
+    }
+  } catch {
+    // Reader error — most likely client disconnect; just terminate the stream.
+  }
+
+  // Final chunk with finish_reason + optional usage
+  const finishReason = mapStopReason(stopReason) || "stop";
+  let usage;
+  if (includeUsage) {
+    const promptTokens = inputTokens + cachedTokens;
+    usage = {
+      prompt_tokens: promptTokens,
+      completion_tokens: outputTokens,
+      total_tokens: promptTokens + outputTokens,
+      prompt_tokens_details: { cached_tokens: cachedTokens },
+    };
+  }
+  writeChunk({}, finishReason, usage);
+  res.write("data: [DONE]\n\n");
+  res.end();
+}
+
+// GET /v1/models — OpenAI-compatible model listing
+app.get("/v1/models", (req, res) => {
+  if (!checkLocalApiKey(req, res)) return;
+  const created = Math.floor(Date.now() / 1000);
+  res.json({
+    object: "list",
+    data: [...CHAT_MODELS].map((id) => ({
+      id,
+      object: "model",
+      created,
+      owned_by: "anthropic",
+    })),
+  });
+});
+
+// POST /v1/chat/completions — OpenAI-compatible chat completion
+app.post("/v1/chat/completions", express.json({ limit: "25mb" }), async (req, res) => {
+  if (!checkLocalApiKey(req, res)) return;
+
+  // Read OAuth token from local credentials (same path as /api/chat)
+  const credPath = path.join(CLAUDE_DIR, ".credentials.json");
+  let token;
+  try {
+    if (!fs.existsSync(credPath)) {
+      return res.status(401).json({ error: { type: "authentication_error", message: "Not signed in. Run `claude /login` in a terminal first." } });
+    }
+    const cred = JSON.parse(fs.readFileSync(credPath, "utf8"));
+    token = cred.claudeAiOauth?.accessToken;
+    if (!token) {
+      return res.status(401).json({ error: { type: "authentication_error", message: "No access token in credentials file." } });
+    }
+  } catch (err) {
+    return res.status(500).json({ error: { type: "server_error", message: err.message } });
+  }
+
+  let translated;
+  try {
+    translated = openAIRequestToAnthropic(req.body || {});
+  } catch (err) {
+    return res.status(err.status || 400).json({ error: { type: "invalid_request_error", message: err.message } });
+  }
+  const { body: anthropicBody, warnings } = translated;
+
+  if (!anthropicBody.model || !CHAT_MODELS.has(anthropicBody.model)) {
+    return res.status(400).json({
+      error: { type: "invalid_request_error", message: `Model not in allow-list. Pick one of: ${[...CHAT_MODELS].join(", ")}` },
+    });
+  }
+
+  // Inject the load-bearing Claude-Code system marker (same as /api/chat).
+  // Without this block, OAuth requests share a much smaller quota and 429 quickly.
+  const userSystem = anthropicBody.system;
+  const extraBlocks = [];
+  if (typeof userSystem === "string" && userSystem.trim().length > 0) {
+    extraBlocks.push({ type: "text", text: userSystem });
+  }
+  anthropicBody.system = [
+    { type: "text", text: "You are Claude Code, Anthropic's official CLI for Claude." },
+    { type: "text", text: "You are running in conversational chat mode inside claude-lens, a local OpenAI-compatible API gateway. The user is making API calls — respond as a general-purpose assistant. You have no file access, no tool use, and no workspace in this session." },
+    ...extraBlocks,
+  ];
+
+  const wantStream = !!anthropicBody.stream;
+  const includeUsage = !!(req.body && req.body.stream_options && req.body.stream_options.include_usage);
+
+  let upstreamRes;
+  try {
+    upstreamRes = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        "anthropic-version": "2023-06-01",
+        "anthropic-beta": "oauth-2025-04-20",
+        "User-Agent": "claude-lens/1.0",
+      },
+      body: JSON.stringify(anthropicBody),
+    });
+  } catch (err) {
+    return res.status(502).json({ error: { type: "upstream_error", message: err.message } });
+  }
+
+  // Forward Anthropic rate-limit + warning headers
+  for (const [name, value] of upstreamRes.headers) {
+    const n = name.toLowerCase();
+    if (n.startsWith("anthropic-ratelimit-") || n === "retry-after" || n === "anthropic-request-id") {
+      res.setHeader(name, value);
+    }
+  }
+  if (warnings.length > 0) res.setHeader("X-Claude-Lens-Warnings", warnings.join("; "));
+
+  if (!upstreamRes.ok) {
+    // Upstream returned a non-2xx — translate the error envelope to OpenAI shape.
+    const errText = await upstreamRes.text().catch(() => "");
+    let parsed = null;
+    try { parsed = JSON.parse(errText); } catch { /* ignore */ }
+    const errType = parsed?.error?.type || "upstream_error";
+    const errMsg = parsed?.error?.message || errText || `HTTP ${upstreamRes.status}`;
+    return res.status(upstreamRes.status).json({
+      error: {
+        type: errType === "rate_limit_error" ? "rate_limit_exceeded" : errType,
+        message: errMsg,
+        code: errType,
+      },
+    });
+  }
+
+  if (wantStream) {
+    res.status(200);
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("X-Accel-Buffering", "no");
+    if (!upstreamRes.body) return res.end();
+    const reader = upstreamRes.body.getReader();
+    req.on("close", () => {
+      try { reader.cancel("client_disconnected"); } catch { /* ignore */ }
+    });
+    await pipeAnthropicStreamAsOpenAI(reader, res, anthropicBody.model, includeUsage);
+    return;
+  }
+
+  // Non-streaming
+  let anth;
+  try {
+    anth = await upstreamRes.json();
+  } catch (err) {
+    return res.status(502).json({ error: { type: "upstream_error", message: "Upstream returned non-JSON: " + err.message } });
+  }
+  res.json(anthropicResponseToOpenAI(anth, anthropicBody.model));
+});
+
+// GET /api — serve the OpenAI-compatible API docs / playground page
+app.get("/api", (req, res) => {
+  res.sendFile(path.join(__dirname, "api.html"));
+});
+
 // GET /api/stats — return stats-cache.json as-is
 app.get("/api/stats", (req, res) => {
   try {

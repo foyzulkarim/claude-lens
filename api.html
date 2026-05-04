@@ -1,0 +1,1016 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>API · Claude Code Usage Dashboard</title>
+  <style>
+    :root[data-theme="dark"] {
+      --bg: #0d1117;
+      --bg-elevated: #161b22;
+      --bg-sunken: #0d1117;
+      --border: #21262d;
+      --border-strong: #30363d;
+      --text: #c9d1d9;
+      --text-strong: #f0f6fc;
+      --text-muted: #8b949e;
+      --text-faint: #484f58;
+      --accent: #58a6ff;
+      --accent-strong: #388bfd;
+      --accent-on: #ffffff;
+      --green: #7ee787;
+      --amber: #d29922;
+      --red: #da3633;
+      --red-strong: #f85149;
+      --info: #79c0ff;
+      --purple: #d2a8ff;
+      --code-bg: #0d1117;
+    }
+    :root[data-theme="light"] {
+      --bg: #ffffff;
+      --bg-elevated: #f6f8fa;
+      --bg-sunken: #ffffff;
+      --border: #d0d7de;
+      --border-strong: #afb8c1;
+      --text: #1f2328;
+      --text-strong: #1f2328;
+      --text-muted: #656d76;
+      --text-faint: #8c959f;
+      --accent: #0969da;
+      --accent-strong: #0969da;
+      --accent-on: #ffffff;
+      --green: #1a7f37;
+      --amber: #9a6700;
+      --red: #cf222e;
+      --red-strong: #d1242f;
+      --info: #0969da;
+      --purple: #8250df;
+      --code-bg: #eaeef2;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', Consolas, monospace;
+      background: var(--bg);
+      color: var(--text);
+      padding: 24px;
+      line-height: 1.5;
+      transition: background 0.15s ease, color 0.15s ease;
+    }
+
+    .header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 24px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 12px;
+    }
+    .header-left { min-width: 0; flex: 1; }
+    h1 { font-size: 1.4rem; color: var(--accent); margin-bottom: 6px; }
+    .nav { display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap; }
+    .nav a {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      text-decoration: none;
+      padding: 4px 10px;
+      border: 1px solid transparent;
+      border-radius: 6px;
+    }
+    .nav a:hover { color: var(--accent); border-color: var(--border); }
+    .nav a:active { background: var(--bg-sunken); }
+    .nav a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .nav a.active {
+      color: var(--accent-on);
+      background: var(--accent-strong);
+      border-color: var(--accent-strong);
+    }
+    .header-right { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+    .icon-btn {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 6px 10px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.8rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .icon-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .icon-btn:active { background: var(--bg-sunken); transform: translateY(1px); }
+    .icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    h2 {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin: 22px 0 10px;
+    }
+    h3 { font-size: 0.9rem; color: var(--text-strong); margin: 14px 0 6px; }
+    p { margin: 6px 0; font-size: 0.85rem; }
+    code {
+      background: var(--code-bg);
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-size: 0.78rem;
+      border: 1px solid var(--border);
+      color: var(--text-strong);
+    }
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px 14px;
+      font-size: 0.78rem;
+      overflow-x: auto;
+      margin: 6px 0 12px;
+      position: relative;
+    }
+    pre code { background: transparent; border: none; padding: 0; font-size: inherit; color: var(--text); }
+    .copy-btn {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      border-radius: 4px;
+      padding: 2px 8px;
+      font-size: 0.65rem;
+      cursor: pointer;
+      font-family: inherit;
+      opacity: 0.85;
+    }
+    .copy-btn:hover { color: var(--accent); border-color: var(--accent); opacity: 1; }
+    .copy-btn:active { transform: translateY(1px); }
+    .copy-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; opacity: 1; }
+
+    .panel {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 18px;
+      margin-bottom: 16px;
+    }
+    .panel-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .kv-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.78rem;
+      margin: 4px 0 10px;
+    }
+    .kv-table td { padding: 5px 0; border-bottom: 1px solid var(--border); vertical-align: top; }
+    .kv-table td:first-child { color: var(--text-muted); padding-right: 14px; white-space: nowrap; }
+    .kv-table td:last-child { color: var(--text); font-variant-numeric: tabular-nums; }
+
+    .columns {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .columns > .panel { margin: 0; }
+
+    .form-grid { display: grid; gap: 10px; }
+    .form-row {
+      display: grid;
+      grid-template-columns: 110px 1fr;
+      gap: 10px;
+      align-items: center;
+    }
+    .form-row label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+    .form-row input[type="text"],
+    .form-row input[type="number"],
+    .form-row select,
+    .form-row textarea {
+      width: 100%;
+      background: var(--bg-sunken);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 6px 10px;
+      font-family: inherit;
+      font-size: 0.78rem;
+    }
+    .form-row textarea { resize: vertical; min-height: 90px; line-height: 1.45; }
+    .form-row .with-toggle {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .form-row .with-toggle input[type="checkbox"] { accent-color: var(--accent); }
+    .form-row .with-toggle .tag { font-size: 0.7rem; color: var(--text-muted); }
+
+    .send-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-top: 8px;
+    }
+    .btn-primary {
+      background: var(--accent-strong);
+      color: var(--accent-on);
+      border: 1px solid var(--accent-strong);
+      border-radius: 6px;
+      padding: 7px 16px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.8rem;
+    }
+    .btn-primary:hover:not(:disabled) { background: var(--accent); }
+    .btn-primary:active:not(:disabled) { transform: translateY(1px); filter: brightness(0.95); }
+    .btn-primary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-ghost {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      border-radius: 6px;
+      padding: 7px 12px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.78rem;
+    }
+    .btn-ghost:hover { color: var(--accent); border-color: var(--accent); }
+    .btn-ghost:active { background: var(--bg-sunken); transform: translateY(1px); }
+    .btn-ghost:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    .response-meta {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      margin: 6px 0 4px;
+      font-variant-numeric: tabular-nums;
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .response-meta .ok { color: var(--green); }
+    .response-meta .bad { color: var(--red-strong); }
+    .response-body {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px 14px;
+      font-size: 0.78rem;
+      max-height: 420px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: inherit;
+      color: var(--text);
+    }
+    .response-body.empty { color: var(--text-faint); font-style: italic; }
+    .badge {
+      display: inline-block;
+      font-size: 0.62rem;
+      padding: 2px 6px;
+      border-radius: 3px;
+      background: var(--bg-sunken);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .badge.green { color: var(--green); border-color: var(--green); }
+    .badge.amber { color: var(--amber); border-color: var(--amber); }
+
+    .lang-tabs { display: flex; gap: 4px; margin-bottom: 8px; flex-wrap: wrap; }
+    .lang-tab {
+      padding: 4px 10px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 0.72rem;
+      font-family: inherit;
+    }
+    .lang-tab:hover:not(.active) {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .lang-tab:active:not(.active) {
+      background: var(--bg-sunken);
+      transform: translateY(1px);
+    }
+    .lang-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .lang-tab.active {
+      background: var(--accent-strong);
+      color: var(--accent-on);
+      border-color: var(--accent-strong);
+    }
+    .lang-pane { display: none; }
+    .lang-pane.active { display: block; }
+
+    ul { margin: 4px 0 10px 18px; font-size: 0.82rem; }
+    li { margin: 3px 0; }
+
+    /* Image-attach UI in the playground */
+    .image-attach-bar {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .image-attach-bar button.btn-ghost { padding: 5px 10px; font-size: 0.72rem; }
+    .image-attach-bar input[type="text"] {
+      flex: 1;
+      min-width: 0;
+    }
+    .image-attach-list {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-top: 6px;
+    }
+    .image-attach-list:empty { display: none; }
+    .image-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 6px 4px 4px;
+      background: var(--bg-sunken);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 0.7rem;
+      max-width: 240px;
+    }
+    .image-chip.error { border-color: var(--red); background: rgb(from var(--red) r g b / 0.08); }
+    .image-chip img.thumb {
+      width: 28px; height: 28px;
+      border-radius: 4px;
+      object-fit: cover;
+      flex-shrink: 0;
+    }
+    .image-chip .url-icon {
+      width: 28px; height: 28px;
+      border-radius: 4px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      font-size: 0.6rem;
+      color: var(--text-muted);
+      font-weight: 700;
+    }
+    .image-chip .name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 0;
+    }
+    .image-chip .size { color: var(--text-faint); font-size: 0.62rem; flex-shrink: 0; }
+    .image-chip button.remove {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.95rem;
+      line-height: 1;
+      padding: 0 2px;
+    }
+    .image-chip button.remove:hover { color: var(--red-strong); }
+    .image-chip button.remove:focus-visible { outline: 2px solid var(--red); outline-offset: 1px; border-radius: 3px; }
+
+    /* Tighter heading inside the multimodal example panel */
+    .panel h3.tight { margin-top: 14px; }
+    .panel p.note { margin-top: 10px; }
+    .panel h3.flush { margin-top: 0; }
+
+    @media (max-width: 720px) {
+      .columns { grid-template-columns: 1fr; }
+      .form-row { grid-template-columns: 1fr; }
+      .form-row label { margin-bottom: -4px; }
+      body { padding: 14px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-left">
+      <h1>OpenAI-compatible API</h1>
+      <nav class="nav" aria-label="Primary">
+        <a href="/">Dashboard</a>
+        <a href="/account">Account</a>
+        <a href="/chat">Chat</a>
+        <a href="/api" class="active">API</a>
+      </nav>
+    </div>
+    <div class="header-right">
+      <button id="theme-toggle" class="icon-btn" type="button" aria-label="Toggle theme">
+        <span id="theme-icon">🌙</span>
+        <span id="theme-label">Dark</span>
+      </button>
+    </div>
+  </div>
+
+  <p>This server exposes a local <strong>OpenAI Chat Completions</strong>–compatible API, so any client that already speaks the OpenAI wire format (the official <code>openai</code> Python / Node SDKs, LangChain, llama.cpp clients, IDE plugins, etc.) can call your local Claude account by pointing its <code>base_url</code> at this server. Every call is proxied to Anthropic's <code>/v1/messages</code> with your local OAuth token — same quota as the Chat page, no separate API key required.</p>
+
+  <h2>Endpoints</h2>
+  <div class="panel">
+    <table class="kv-table">
+      <tbody>
+        <tr><td>Base URL</td><td><code id="base-url">http://localhost:3456</code></td></tr>
+        <tr><td>Chat completions</td><td><code>POST /v1/chat/completions</code> — streaming &amp; non-streaming, same wire shape as <code>api.openai.com/v1/chat/completions</code></td></tr>
+        <tr><td>List models</td><td><code>GET /v1/models</code></td></tr>
+        <tr><td>Authentication</td><td id="auth-status">Optional — set <code>LOCAL_API_KEY</code> in <code>.env</code> to require <code>Authorization: Bearer &lt;key&gt;</code>. Unset → no auth (trusts localhost).</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Playground</h2>
+  <div class="panel">
+    <div class="form-grid">
+      <div class="form-row">
+        <label for="pg-model">Model</label>
+        <select id="pg-model">
+          <option value="claude-haiku-4-5-20251001" selected>claude-haiku-4-5-20251001 — fastest</option>
+          <option value="claude-sonnet-4-6">claude-sonnet-4-6 — balanced</option>
+          <option value="claude-opus-4-7">claude-opus-4-7 — most capable</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label for="pg-system">System</label>
+        <textarea id="pg-system" placeholder="Optional system prompt — appended after the load-bearing Claude-Code marker.">You are a concise, friendly assistant.</textarea>
+      </div>
+      <div class="form-row">
+        <label for="pg-user">User message</label>
+        <textarea id="pg-user" placeholder="What should the model answer?">Hello! In one sentence, tell me what you are.</textarea>
+      </div>
+      <div class="form-row">
+        <label for="pg-image-file">Images</label>
+        <div>
+          <div class="image-attach-bar">
+            <input type="file" id="pg-image-file" accept="image/jpeg,image/png,image/gif,image/webp" multiple hidden>
+            <button class="btn-ghost" type="button" id="pg-image-pick">📎 Add file…</button>
+            <input type="text" id="pg-image-url" placeholder="…or paste an https:// URL and press Enter" autocomplete="off">
+          </div>
+          <div class="image-attach-list" id="pg-image-list"></div>
+        </div>
+      </div>
+      <div class="form-row">
+        <label for="pg-max-tokens">Max tokens</label>
+        <input type="number" id="pg-max-tokens" value="512" min="1" max="16384">
+      </div>
+      <div class="form-row">
+        <label for="pg-temperature">Temperature</label>
+        <div class="with-toggle">
+          <input type="checkbox" id="pg-temperature-enabled" aria-label="Enable temperature override">
+          <input type="number" id="pg-temperature" value="0.7" min="0" max="1" step="0.05" disabled>
+          <span class="tag">override</span>
+        </div>
+      </div>
+      <div class="form-row">
+        <label for="pg-stream">Stream</label>
+        <div class="with-toggle">
+          <input type="checkbox" id="pg-stream" checked>
+          <span class="tag">SSE chunks accumulated below</span>
+        </div>
+      </div>
+      <div class="form-row">
+        <label for="pg-api-key">API key</label>
+        <input type="text" id="pg-api-key" placeholder="optional — required only if LOCAL_API_KEY is set">
+      </div>
+    </div>
+    <div class="send-row">
+      <button id="pg-send" class="btn-primary" type="button">Send request</button>
+      <button id="pg-models" class="btn-ghost" type="button">GET /v1/models</button>
+      <span class="response-meta" id="pg-status"></span>
+    </div>
+  </div>
+
+  <div class="columns">
+    <div class="panel">
+      <h3 class="flush">Request preview</h3>
+      <pre><code id="pg-request">(updates as you type)</code><button class="copy-btn" data-copy-target="pg-request" type="button">Copy</button></pre>
+    </div>
+    <div class="panel">
+      <h3 class="flush">Response</h3>
+      <div class="response-body empty" id="pg-response">(send a request to see output)</div>
+    </div>
+  </div>
+
+  <h2>Code snippets</h2>
+  <div class="panel">
+    <div class="lang-tabs" id="lang-tabs">
+      <button class="lang-tab active" type="button" data-lang="curl">cURL</button>
+      <button class="lang-tab" type="button" data-lang="python">Python (openai SDK)</button>
+      <button class="lang-tab" type="button" data-lang="node">Node (openai SDK)</button>
+      <button class="lang-tab" type="button" data-lang="fetch">Fetch</button>
+    </div>
+    <div class="lang-pane active" data-lang="curl">
+      <pre><code id="snippet-curl"></code><button class="copy-btn" data-copy-target="snippet-curl" type="button">Copy</button></pre>
+    </div>
+    <div class="lang-pane" data-lang="python">
+      <pre><code id="snippet-python"></code><button class="copy-btn" data-copy-target="snippet-python" type="button">Copy</button></pre>
+    </div>
+    <div class="lang-pane" data-lang="node">
+      <pre><code id="snippet-node"></code><button class="copy-btn" data-copy-target="snippet-node" type="button">Copy</button></pre>
+    </div>
+    <div class="lang-pane" data-lang="fetch">
+      <pre><code id="snippet-fetch"></code><button class="copy-btn" data-copy-target="snippet-fetch" type="button">Copy</button></pre>
+    </div>
+  </div>
+
+  <h2>Multimodal: text + images</h2>
+  <div class="panel">
+    <p>Both inputs ride on the standard OpenAI Chat Completions wire format. The user's <code>content</code> is an array of <code>{type:"text"}</code> and <code>{type:"image_url"}</code> blocks. The server handles two image source forms:</p>
+    <ul>
+      <li><strong>Inline data URL</strong> — <code>data:image/png;base64,...</code>. Use this for local files. Encode your bytes to base64 first.</li>
+      <li><strong>Remote URL</strong> — any <code>http://</code> or <code>https://</code> URL Anthropic can fetch.</li>
+    </ul>
+    <p>Allowed image MIME types: <code>image/jpeg</code>, <code>image/png</code>, <code>image/gif</code>, <code>image/webp</code>. Per-image size cap: ~5 MB (server-side limit before base64-inflation is 25 MB total request).</p>
+    <h3 class="tight">Python — local file</h3>
+    <pre><code>import base64
+from openai import OpenAI
+
+client = OpenAI(base_url="http://localhost:3456/v1", api_key="sk-not-required")
+
+with open("diagram.png", "rb") as f:
+    b64 = base64.b64encode(f.read()).decode()
+
+resp = client.chat.completions.create(
+    model="claude-haiku-4-5-20251001",
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
+            {"type": "text",      "text": "What's in this image?"},
+        ],
+    }],
+    max_tokens=512,
+)
+print(resp.choices[0].message.content)</code><button class="copy-btn" data-copy-target="multimodal-py-file" type="button">Copy</button></pre>
+    <h3>Python — remote URL</h3>
+    <pre><code>resp = client.chat.completions.create(
+    model="claude-haiku-4-5-20251001",
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "image_url", "image_url": {"url": "https://example.com/photo.jpg"}},
+            {"type": "text",      "text": "Describe this photo."},
+        ],
+    }],
+)</code></pre>
+    <h3>Node (openai SDK)</h3>
+    <pre><code>import fs from 'node:fs/promises';
+import OpenAI from 'openai';
+
+const client = new OpenAI({ baseURL: 'http://localhost:3456/v1', apiKey: 'sk-not-required' });
+const b64 = (await fs.readFile('diagram.png')).toString('base64');
+
+const resp = await client.chat.completions.create({
+  model: 'claude-haiku-4-5-20251001',
+  messages: [{
+    role: 'user',
+    content: [
+      { type: 'image_url', image_url: { url: `data:image/png;base64,${b64}` } },
+      { type: 'text',      text: 'What does this image show?' },
+    ],
+  }],
+});
+console.log(resp.choices[0].message.content);</code></pre>
+    <p class="note">For a hands-on test, scroll up to the <strong>Playground</strong> — click <em>📎 Add file…</em> for a local image (encoded as a data URL automatically) or paste a remote <code>https://</code> URL. The request preview will show the exact wire shape.</p>
+  </div>
+
+  <h2>Reference</h2>
+
+  <h3>What gets translated</h3>
+  <p>Internally, the server converts your OpenAI request to Anthropic's <code>/v1/messages</code> shape and the response back. You don't need to know any of this — but here's the mapping in case something looks off:</p>
+  <table class="kv-table">
+    <tbody>
+      <tr><td><code>messages[].role: "system"</code></td><td>Pulled out of the array → Anthropic's separate <code>system</code> field (concatenated if multiple).</td></tr>
+      <tr><td>Multimodal <code>image_url</code></td><td>Both <code>data:&lt;mime&gt;;base64,...</code> URLs and remote <code>https://…</code> URLs are accepted. Mapped to Anthropic <code>image</code> blocks.</td></tr>
+      <tr><td><code>stop</code></td><td>String or array → Anthropic <code>stop_sequences</code>.</td></tr>
+      <tr><td><code>finish_reason</code></td><td><code>end_turn</code>/<code>stop_sequence</code> → <code>stop</code>, <code>max_tokens</code> → <code>length</code>, <code>tool_use</code> → <code>tool_calls</code>, <code>refusal</code> → <code>content_filter</code>.</td></tr>
+      <tr><td><code>usage.prompt_tokens</code></td><td>= <code>input_tokens + cache_read_input_tokens + cache_creation_input_tokens</code>. <code>prompt_tokens_details.cached_tokens</code> reflects cache reads.</td></tr>
+      <tr><td>Streaming</td><td>Anthropic SSE events are converted to OpenAI <code>data: {chunk}\n\n</code> chunks and a final <code>data: [DONE]</code>.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Currently ignored fields</h3>
+  <p>The following OpenAI fields are silently dropped (a warning is returned in the <code>X-Claude-Lens-Warnings</code> response header). The model still answers — just without these directives.</p>
+  <ul>
+    <li><code>frequency_penalty</code>, <code>presence_penalty</code>, <code>logit_bias</code>, <code>seed</code> — not exposed by Anthropic's API.</li>
+    <li><code>response_format</code> (including <code>{type: "json_object"}</code>) — instruct the model in your prompt instead.</li>
+    <li><code>tools</code>, <code>tool_choice</code>, <code>parallel_tool_calls</code> — function calling is not yet plumbed through this gateway.</li>
+    <li><code>n &gt; 1</code>, <code>logprobs</code>, <code>top_logprobs</code>, <code>service_tier</code> — not supported.</li>
+  </ul>
+
+  <h3>Models</h3>
+  <p>The allow-list is the same as the Chat page: <code>claude-opus-4-7</code>, <code>claude-sonnet-4-6</code>, <code>claude-haiku-4-5-20251001</code>. To extend it, edit <code>CHAT_MODELS</code> in <code>server.js</code>.</p>
+
+  <h3>Auth &amp; quotas</h3>
+  <p>Inference is billed against your local Claude account, so the same 5h / 7d unified quota you see on the Chat page applies here. Anthropic rate-limit headers (<code>anthropic-ratelimit-unified-5h-utilization</code>, <code>retry-after</code>, etc.) are forwarded on every response, so your client can decode 429s correctly.</p>
+  <p>The local API key (<code>LOCAL_API_KEY</code>) is purely a guard against accidental network exposure. Unset by default — perfect for localhost. If you forward port 3456 outside your machine, set one.</p>
+
+  <script>
+    // === Theme ===
+    const THEME_KEY = 'claude-lens-theme';
+    function getInitialTheme() {
+      const saved = localStorage.getItem(THEME_KEY);
+      if (saved === 'light' || saved === 'dark') return saved;
+      return globalThis.matchMedia && globalThis.matchMedia('(prefers-color-scheme: light)').matches
+        ? 'light' : 'dark';
+    }
+    function applyTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme);
+      const icon = document.getElementById('theme-icon');
+      const label = document.getElementById('theme-label');
+      if (icon) icon.textContent = theme === 'dark' ? '🌙' : '☀️';
+      if (label) label.textContent = theme === 'dark' ? 'Dark' : 'Light';
+    }
+    applyTheme(getInitialTheme());
+    document.getElementById('theme-toggle').addEventListener('click', () => {
+      const current = document.documentElement.getAttribute('data-theme') || 'dark';
+      const next = current === 'dark' ? 'light' : 'dark';
+      localStorage.setItem(THEME_KEY, next);
+      applyTheme(next);
+    });
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str == null ? '' : String(str);
+      return div.innerHTML;
+    }
+
+    const baseUrl = `${globalThis.location.protocol}//${globalThis.location.host}`;
+    document.getElementById('base-url').textContent = baseUrl;
+
+    // === Form references ===
+    const f = {
+      model: document.getElementById('pg-model'),
+      system: document.getElementById('pg-system'),
+      user: document.getElementById('pg-user'),
+      imageFile: document.getElementById('pg-image-file'),
+      imagePick: document.getElementById('pg-image-pick'),
+      imageUrl: document.getElementById('pg-image-url'),
+      imageList: document.getElementById('pg-image-list'),
+      maxTokens: document.getElementById('pg-max-tokens'),
+      temperature: document.getElementById('pg-temperature'),
+      temperatureEnabled: document.getElementById('pg-temperature-enabled'),
+      stream: document.getElementById('pg-stream'),
+      apiKey: document.getElementById('pg-api-key'),
+      send: document.getElementById('pg-send'),
+      models: document.getElementById('pg-models'),
+      status: document.getElementById('pg-status'),
+      requestPreview: document.getElementById('pg-request'),
+      response: document.getElementById('pg-response'),
+    };
+
+    f.temperatureEnabled.addEventListener('change', () => {
+      f.temperature.disabled = !f.temperatureEnabled.checked;
+      updatePreviews();
+    });
+
+    // === Image attachments for the playground ===
+    // Each item: { id, kind: 'file'|'url', name, size?, mimeType?, dataUrl?: string, url?: string, error? }
+    let pgImages = [];
+    const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
+    function fmtBytes(n) {
+      if (n < 1024) return n + ' B';
+      if (n < 1024 * 1024) return (n / 1024).toFixed(0) + ' KB';
+      return (n / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+    function fileToDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+      });
+    }
+    function shortUrl(u) {
+      try {
+        const parsed = new URL(u);
+        const last = parsed.pathname.split('/').findLast(Boolean) || parsed.hostname;
+        return last.length > 30 ? last.slice(0, 27) + '…' : last;
+      } catch { return u.length > 30 ? u.slice(0, 27) + '…' : u; }
+    }
+
+    function renderImageList() {
+      f.imageList.innerHTML = pgImages.map(img => {
+        const cls = img.error ? ' error' : '';
+        const visual = img.dataUrl
+          ? `<img class="thumb" src="${escapeHtml(img.dataUrl)}" alt="">`
+          : `<span class="url-icon">URL</span>`;
+        const sizeLabel = img.error ? '!' : (typeof img.size === 'number' ? fmtBytes(img.size) : 'remote');
+        const title = img.error ? img.error : (img.url || img.name);
+        return `<span class="image-chip${cls}" title="${escapeHtml(title)}">
+          ${visual}
+          <span class="name">${escapeHtml(img.name)}</span>
+          <span class="size">${escapeHtml(sizeLabel)}</span>
+          <button class="remove" type="button" data-image-id="${img.id}" aria-label="Remove">×</button>
+        </span>`;
+      }).join('');
+    }
+
+    async function addImageFiles(files) {
+      for (const file of Array.from(files || [])) {
+        const id = 'img-' + Math.random().toString(36).slice(2, 9);
+        const item = { id, kind: 'file', name: file.name, size: file.size, mimeType: file.type };
+        if (!['image/jpeg','image/png','image/gif','image/webp'].includes(file.type)) {
+          item.error = `Unsupported type ${file.type || '?'} — use jpeg, png, gif, or webp`;
+        } else if (file.size > MAX_IMAGE_BYTES) {
+          item.error = `Too large (${fmtBytes(file.size)}, max ${fmtBytes(MAX_IMAGE_BYTES)})`;
+        } else {
+          try {
+            item.dataUrl = await fileToDataUrl(file);
+          } catch (err) {
+            item.error = `Read failed: ${err.message || err}`;
+          }
+        }
+        pgImages.push(item);
+      }
+      renderImageList();
+      updatePreviews();
+    }
+
+    function addImageUrl(url) {
+      const trimmed = (url || '').trim();
+      if (!trimmed) return;
+      const id = 'img-' + Math.random().toString(36).slice(2, 9);
+      const item = { id, kind: 'url', name: shortUrl(trimmed), url: trimmed };
+      if (!/^https?:\/\//i.test(trimmed) && !trimmed.startsWith('data:image/')) {
+        item.error = 'URL must start with http://, https://, or data:image/';
+      }
+      pgImages.push(item);
+      renderImageList();
+      updatePreviews();
+    }
+
+    f.imagePick.addEventListener('click', () => f.imageFile.click());
+    f.imageFile.addEventListener('change', (e) => {
+      addImageFiles(e.target.files);
+      e.target.value = '';
+    });
+    f.imageUrl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        addImageUrl(f.imageUrl.value);
+        f.imageUrl.value = '';
+      }
+    });
+    f.imageList.addEventListener('click', (e) => {
+      const removeId = e.target.dataset.imageId;
+      if (!removeId) return;
+      pgImages = pgImages.filter(p => p.id !== removeId);
+      renderImageList();
+      updatePreviews();
+    });
+
+    function buildUserContent() {
+      const usable = pgImages.filter(p => !p.error);
+      const text = f.user.value;
+      if (usable.length === 0) return text;
+      const parts = [];
+      for (const img of usable) {
+        const url = img.dataUrl || img.url;
+        if (!url) continue;
+        parts.push({ type: 'image_url', image_url: { url } });
+      }
+      parts.push({ type: 'text', text });
+      return parts;
+    }
+
+    // For code snippets: don't dump full base64 inline (kilobytes per image
+    // would make the snippet useless to copy). Replace data URLs with a
+    // clear placeholder so the user knows to substitute their own.
+    function buildBodyForSnippet() {
+      const body = structuredClone(buildBody());
+      const last = body.messages[body.messages.length - 1];
+      if (last && Array.isArray(last.content)) {
+        last.content = last.content.map(part => {
+          if (part.type === 'image_url' && part.image_url && /^data:/.test(part.image_url.url || '')) {
+            return { type: 'image_url', image_url: { url: 'data:image/png;base64,<…BASE64_OF_YOUR_IMAGE…>' } };
+          }
+          return part;
+        });
+      }
+      return body;
+    }
+
+    function buildBody() {
+      const messages = [];
+      const system = f.system.value.trim();
+      if (system) messages.push({ role: 'system', content: system });
+      messages.push({ role: 'user', content: buildUserContent() });
+      const body = {
+        model: f.model.value,
+        messages,
+        max_tokens: Number.parseInt(f.maxTokens.value, 10) || 512,
+        stream: f.stream.checked,
+      };
+      if (f.temperatureEnabled.checked) {
+        body.temperature = Number.parseFloat(f.temperature.value);
+      }
+      return body;
+    }
+
+    function updatePreviews() {
+      // Use the placeholder-substituted body for both panes so a 2 MB image
+      // doesn't make the previews unreadable. The actual sent request still
+      // uses the full base64 — see sendRequest below.
+      const display = buildBodyForSnippet();
+      f.requestPreview.textContent = JSON.stringify(display, null, 2);
+      renderSnippets(display);
+    }
+
+    function renderSnippets(body) {
+      const url = `${baseUrl}/v1/chat/completions`;
+      const apiKeyHeader = f.apiKey.value ? `\n  -H "Authorization: Bearer ${f.apiKey.value}"` : '';
+      const apiKeyPy = f.apiKey.value ? `"${f.apiKey.value}"` : '"sk-not-required"';
+
+      document.getElementById('snippet-curl').textContent =
+`curl ${url} \\
+  -H "Content-Type: application/json"${apiKeyHeader} \\
+  -d '${JSON.stringify(body).replaceAll("'", "'\\''")}'`;
+
+      document.getElementById('snippet-python').textContent =
+`# pip install openai
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="${baseUrl}/v1",
+    api_key=${apiKeyPy},
+)
+
+response = client.chat.completions.create(
+    model=${JSON.stringify(body.model)},
+    messages=${JSON.stringify(body.messages, null, 4).replaceAll('\n', '\n    ')},
+    max_tokens=${body.max_tokens},${body.stream ? '\n    stream=True,' : ''}${body.temperature !== undefined ? '\n    temperature=' + body.temperature + ',' : ''}
+)
+
+${body.stream
+  ? 'for chunk in response:\n    delta = chunk.choices[0].delta\n    if delta.content:\n        print(delta.content, end="", flush=True)'
+  : 'print(response.choices[0].message.content)'}`;
+
+      const apiKeyJs = f.apiKey.value ? `'${f.apiKey.value}'` : "'sk-not-required'";
+      document.getElementById('snippet-node').textContent =
+`// npm install openai
+import OpenAI from 'openai';
+
+const client = new OpenAI({
+  baseURL: '${baseUrl}/v1',
+  apiKey: ${apiKeyJs},
+});
+
+const response = await client.chat.completions.create(${JSON.stringify(body, null, 2)});
+
+${body.stream
+  ? 'for await (const chunk of response) {\n  process.stdout.write(chunk.choices[0].delta.content || "");\n}'
+  : 'console.log(response.choices[0].message.content);'}`;
+
+      const apiKeyFetch = f.apiKey.value ? `\n    'Authorization': 'Bearer ${f.apiKey.value}',` : '';
+      document.getElementById('snippet-fetch').textContent =
+`const res = await fetch('${url}', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',${apiKeyFetch}
+  },
+  body: JSON.stringify(${JSON.stringify(body, null, 2).replaceAll('\n', '\n  ')}),
+});
+${body.stream ? '// Body is text/event-stream — use ReadableStream / TextDecoder to read chunks.' : 'const data = await res.json();\nconsole.log(data.choices[0].message.content);'}`;
+    }
+
+    [f.model, f.system, f.user, f.maxTokens, f.temperature, f.stream, f.apiKey].forEach(el => {
+      el.addEventListener('input', updatePreviews);
+      el.addEventListener('change', updatePreviews);
+    });
+    updatePreviews();
+
+    // === Lang tabs ===
+    document.getElementById('lang-tabs').addEventListener('click', (e) => {
+      const tab = e.target.closest('.lang-tab');
+      if (!tab) return;
+      const lang = tab.dataset.lang;
+      document.querySelectorAll('.lang-tab').forEach(t => t.classList.toggle('active', t === tab));
+      document.querySelectorAll('.lang-pane').forEach(p => p.classList.toggle('active', p.dataset.lang === lang));
+    });
+
+    // === Copy buttons ===
+    document.body.addEventListener('click', (e) => {
+      const btn = e.target.closest('.copy-btn');
+      if (!btn) return;
+      const target = document.getElementById(btn.dataset.copyTarget);
+      if (!target) return;
+      navigator.clipboard.writeText(target.textContent || '').then(() => {
+        const orig = btn.textContent;
+        btn.textContent = 'Copied!';
+        setTimeout(() => { btn.textContent = orig; }, 1200);
+      }).catch(() => {});
+    });
+
+    // === Send request ===
+    function setStatus(html) { f.status.innerHTML = html; }
+    function showResponse(text, isError) {
+      f.response.classList.remove('empty');
+      f.response.textContent = text || '';
+      f.response.style.color = isError ? 'var(--red-strong)' : 'var(--text)';
+    }
+
+    async function sendRequest() {
+      f.send.disabled = true;
+      setStatus('<span class="badge amber">Sending…</span>');
+      showResponse('');
+      const t0 = performance.now();
+      try {
+        const body = buildBody();
+        const headers = { 'Content-Type': 'application/json' };
+        if (f.apiKey.value) headers['Authorization'] = 'Bearer ' + f.apiKey.value;
+        const res = await fetch('/v1/chat/completions', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(body),
+        });
+        const ms = Math.round(performance.now() - t0);
+        const warnings = res.headers.get('x-claude-lens-warnings');
+        const reqId = res.headers.get('anthropic-request-id');
+        const statusBadge = res.ok
+          ? `<span class="badge green">${res.status} OK</span>`
+          : `<span class="badge" style="color:var(--red-strong);border-color:var(--red)">${res.status} ${res.statusText}</span>`;
+        setStatus(`${statusBadge} <span>${ms} ms</span>${warnings ? ` <span class="badge amber" title="${escapeHtml(warnings)}">warnings</span>` : ''}${reqId ? ` <code>${escapeHtml(reqId)}</code>` : ''}`);
+
+        if (!body.stream) {
+          const json = await res.json().catch(() => null);
+          showResponse(json ? JSON.stringify(json, null, 2) : '(no body)', !res.ok);
+          return;
+        }
+
+        // Streaming — read chunks and accumulate decoded message text + raw events
+        if (!res.ok) {
+          const errText = await res.text();
+          showResponse(errText, true);
+          return;
+        }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let accText = '';
+        let chunkCount = 0;
+        f.response.classList.remove('empty');
+        f.response.style.color = 'var(--text)';
+        const renderStream = () => {
+          f.response.textContent = `${chunkCount} chunks · ${accText.length} chars\n\n${accText}`;
+        };
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let idx;
+          while ((idx = buffer.indexOf('\n\n')) !== -1) {
+            const block = buffer.slice(0, idx);
+            buffer = buffer.slice(idx + 2);
+            if (!block.startsWith('data:')) continue;
+            const data = block.slice(5).trim();
+            if (data === '[DONE]') continue;
+            chunkCount++;
+            try {
+              const obj = JSON.parse(data);
+              const piece = obj.choices?.[0]?.delta?.content;
+              if (piece) accText += piece;
+            } catch { /* ignore */ }
+            renderStream();
+          }
+        }
+        renderStream();
+      } catch (err) {
+        setStatus(`<span class="badge" style="color:var(--red-strong);border-color:var(--red)">network error</span>`);
+        showResponse(String(err.message || err), true);
+      } finally {
+        f.send.disabled = false;
+      }
+    }
+    f.send.addEventListener('click', sendRequest);
+
+    f.models.addEventListener('click', async () => {
+      setStatus('<span class="badge amber">Sending…</span>');
+      showResponse('');
+      try {
+        const headers = {};
+        if (f.apiKey.value) headers['Authorization'] = 'Bearer ' + f.apiKey.value;
+        const res = await fetch('/v1/models', { headers });
+        const json = await res.json();
+        setStatus(`<span class="badge ${res.ok ? 'green' : ''}">${res.status}</span>`);
+        showResponse(JSON.stringify(json, null, 2), !res.ok);
+      } catch (err) {
+        setStatus(`<span class="badge" style="color:var(--red-strong);border-color:var(--red)">network error</span>`);
+        showResponse(String(err.message || err), true);
+      }
+    });
+  </script>
+</body>
+</html>

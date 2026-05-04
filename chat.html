@@ -89,6 +89,8 @@
       border-radius: 6px;
     }
     .nav a:hover { color: var(--accent); border-color: var(--border); }
+    .nav a:active { background: var(--bg-sunken); }
+    .nav a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     .nav a.active {
       color: var(--accent-on);
       background: var(--accent-strong);
@@ -109,6 +111,8 @@
       gap: 6px;
     }
     .icon-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .icon-btn:active { background: var(--bg-sunken); transform: translateY(1px); }
+    .icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     .icon-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
     /* Toolbar */
@@ -388,6 +392,7 @@
       flex-shrink: 0;
     }
     .attachment-chip .chip-remove:hover { color: var(--red-strong); }
+    .attachment-chip .chip-remove:focus-visible { outline: 2px solid var(--red); outline-offset: 1px; border-radius: 3px; }
     .composer-icon-btn {
       flex-shrink: 0;
       width: 36px;
@@ -466,6 +471,8 @@
       font-size: 0.75rem;
     }
     .settings-close-btn:hover { color: var(--accent); border-color: var(--accent); }
+    .settings-close-btn:active { background: var(--bg-elevated); transform: translateY(1px); }
+    .settings-close-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     .settings-body {
       padding: 16px 20px;
       overflow-y: auto;
@@ -556,6 +563,8 @@
       font-size: 0.75rem;
     }
     .settings-footer button:hover { color: var(--accent); border-color: var(--accent); }
+    .settings-footer button:active { background: var(--bg-elevated); transform: translateY(1px); }
+    .settings-footer button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     .settings-footer .reset-link {
       background: transparent;
       border: none;
@@ -601,6 +610,8 @@
       transition: border-color 0.15s ease, background 0.15s ease;
     }
     .history-row:hover { border-color: var(--accent); }
+    .history-row:active { background: var(--bg-elevated); }
+    .history-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     .history-row.active {
       border-color: var(--accent-strong);
       background: rgb(from var(--accent) r g b / 0.08);
@@ -638,6 +649,8 @@
       color: var(--red-strong);
       border-color: var(--red);
     }
+    .history-row .row-delete:active { background: rgb(from var(--red) r g b / 0.08); }
+    .history-row .row-delete:focus-visible { outline: 2px solid var(--red); outline-offset: 1px; }
     .composer:focus-within {
       border-color: var(--accent);
       box-shadow: 0 0 0 3px rgb(from var(--accent) r g b / 0.15);
@@ -737,6 +750,7 @@
         <a href="/">Dashboard</a>
         <a href="/account">Account</a>
         <a href="/chat" class="active">Chat</a>
+        <a href="/api">API</a>
       </nav>
     </div>
     <div class="header-right">

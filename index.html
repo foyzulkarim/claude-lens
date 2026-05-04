@@ -338,6 +338,10 @@
       color: var(--accent-on);
       border-color: var(--accent-strong);
     }
+    .project-badge.clickable:active {
+      transform: translateY(1px);
+      filter: brightness(0.95);
+    }
     .project-badge.clickable:focus-visible {
       outline: 2px solid var(--accent);
       outline-offset: 2px;
@@ -478,6 +482,10 @@
     .chip:hover:not(.active) {
       border-color: var(--accent);
       color: var(--accent);
+    }
+    .chip:active:not(.active) {
+      background: var(--bg-sunken);
+      transform: translateY(1px);
     }
     .chip:focus-visible {
       outline: 2px solid var(--accent);
@@ -812,6 +820,8 @@
       font-size: 0.75rem;
     }
     .help-close-btn:hover { color: var(--accent); border-color: var(--accent); }
+    .help-close-btn:active { background: var(--bg-elevated); transform: translateY(1px); }
+    .help-close-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     .help-modal-body {
       padding: 20px 24px;
       overflow-y: auto;
@@ -921,6 +931,7 @@
         <a href="/" class="active">Dashboard</a>
         <a href="/account">Account</a>
         <a href="/chat">Chat</a>
+        <a href="/api">API</a>
       </nav>
       <div class="config-line" id="config-line">
         <span class="loading">Detecting Claude data directory…</span>
@@ -1053,6 +1064,7 @@
             <li><a href="#h-filter">Date filter (global)</a></li>
             <li><a href="#h-tz">Timezone &amp; date bucketing</a></li>
             <li><a href="#h-prefs">Theme &amp; time format</a></li>
+            <li><a href="#h-api">OpenAI-compatible API</a></li>
             <li><a href="#h-faq">FAQ &amp; limitations</a></li>
           </ol>
         </div>
@@ -1260,8 +1272,22 @@
           </ul>
         </div>
 
+        <div class="help-section" id="h-api">
+          <h3>13. OpenAI-compatible API</h3>
+          <p>The server exposes a local <strong>OpenAI Chat Completions–compatible</strong> API at <code>POST /v1/chat/completions</code> and <code>GET /v1/models</code>, so any client that already speaks OpenAI's wire format (the official <code>openai</code> Python / Node SDKs, LangChain, IDE plugins, etc.) can call your local Claude account by pointing its <code>base_url</code> at <code>http://localhost:3456/v1</code>.</p>
+          <p>The full reference, a request playground, and copy-pasteable cURL / Python / Node / fetch snippets live on the dedicated <a href="/api">API page</a> (linked from the top nav).</p>
+          <h4>Highlights</h4>
+          <ul>
+            <li>Same OAuth-based proxy as the Chat page — no separate Anthropic API key, billed against your local Claude account.</li>
+            <li>Auto-translates OpenAI <code>system</code> messages, multimodal <code>image_url</code> blocks (data URLs and remote URLs), <code>stop</code>, and finish reasons.</li>
+            <li>Streaming output is converted from Anthropic SSE → OpenAI <code>data: {chunk}\n\n</code> + final <code>data: [DONE]</code>.</li>
+            <li>Optional API-key guard via <code>LOCAL_API_KEY</code> in <code>.env</code> for when you forward port 3456 outside your machine.</li>
+            <li>Unsupported fields (<code>frequency_penalty</code>, <code>tools</code>, <code>response_format</code>, <code>n &gt; 1</code>, etc.) are silently ignored with a warning header.</li>
+          </ul>
+        </div>
+
         <div class="help-section" id="h-faq">
-          <h3>13. FAQ &amp; limitations</h3>
+          <h3>14. FAQ &amp; limitations</h3>
           <h4>Is anything sent to the network?</h4>
           <p>No. The server is Express on <code>localhost:3456</code> and reads files from disk. The HTML page only talks to that server. There are no analytics, no telemetry, no outbound calls.</p>
           <h4>Why does my cost look different from my Anthropic / AWS bill?</h4>
