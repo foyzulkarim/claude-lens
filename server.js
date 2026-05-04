@@ -168,22 +168,72 @@ app.get("/api/stats", (req, res) => {
   }
 });
 
-// GET /api/history — parse history.jsonl
-app.get("/api/history", (req, res) => {
+// GET /api/history — typed user prompts, derived from projects/**/*.jsonl
+// (canonical, always-fresh source) merged with legacy history.jsonl entries
+// for any older data. Sorted newest-first; deduped by sessionId+timestamp.
+app.get("/api/history", async (req, res) => {
   try {
-    const lines = fs
-      .readFileSync(path.join(CLAUDE_DIR, "history.jsonl"), "utf8")
-      .split("\n")
-      .filter((l) => l.trim());
-    const entries = lines.map((line) => {
-      const obj = JSON.parse(line);
-      return {
-        display: obj.display,
-        timestamp: obj.timestamp,
-        project: obj.project,
-        sessionId: obj.sessionId,
-      };
+    const seen = new Set();
+    const entries = [];
+
+    // Source 1: legacy history.jsonl — tolerate missing file
+    try {
+      const lines = fs
+        .readFileSync(path.join(CLAUDE_DIR, "history.jsonl"), "utf8")
+        .split("\n")
+        .filter((l) => l.trim());
+      for (const line of lines) {
+        try {
+          const obj = JSON.parse(line);
+          const key = `${obj.sessionId}|${obj.timestamp}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          entries.push({
+            display: obj.display,
+            timestamp: obj.timestamp,
+            project: obj.project,
+            sessionId: obj.sessionId,
+          });
+        } catch {
+          // skip malformed lines
+        }
+      }
+    } catch {
+      // history.jsonl absent — that's fine, projects/ has the data
+    }
+
+    // Source 2: projects/**/*.jsonl — fresh data, scanned every request
+    try {
+      const projectsDir = path.join(CLAUDE_DIR, "projects");
+      const projectDirs = fs
+        .readdirSync(projectsDir)
+        .filter((d) => fs.statSync(path.join(projectsDir, d)).isDirectory());
+
+      const projEntries = [];
+      for (const projDir of projectDirs) {
+        const projPath = path.join(projectsDir, projDir);
+        const jsonlFiles = findJsonlFiles(projPath);
+        for (const file of jsonlFiles) {
+          await parsePromptsFromProject(file, projEntries);
+        }
+      }
+      for (const e of projEntries) {
+        const key = `${e.sessionId}|${e.timestamp}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        entries.push(e);
+      }
+    } catch {
+      // projects/ absent — fine
+    }
+
+    // Sort newest-first; handle both numeric (legacy) and ISO-string timestamps
+    entries.sort((a, b) => {
+      const ta = typeof a.timestamp === "number" ? a.timestamp : Date.parse(a.timestamp);
+      const tb = typeof b.timestamp === "number" ? b.timestamp : Date.parse(b.timestamp);
+      return (tb || 0) - (ta || 0);
     });
+
     res.json(entries);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -430,6 +480,52 @@ function parseJsonlForTools(filePath, projDir, toolCounts, toolsByProject) {
               (toolsByProject[projDir][tool] || 0) + 1;
           }
         }
+      } catch {
+        // skip malformed lines
+      }
+    });
+
+    rl.on("close", resolve);
+    rl.on("error", resolve);
+  });
+}
+
+// Parse a JSONL file and collect typed user prompts
+// Skips tool-result entries (content is an array) and Claude Code's
+// system-injected user messages (command stdout/stderr, hook output).
+function parsePromptsFromProject(filePath, entries) {
+  return new Promise((resolve) => {
+    const stream = fs.createReadStream(filePath, { encoding: "utf8" });
+    const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
+
+    rl.on("line", (line) => {
+      try {
+        const obj = JSON.parse(line);
+        if (obj.type !== "user" || !obj.message) return;
+        const content = obj.message.content;
+        if (typeof content !== "string") return;
+        const trimmed = content.trim();
+        if (!trimmed) return;
+        if (
+          trimmed.startsWith("<command-name>") ||
+          trimmed.startsWith("<command-message>") ||
+          trimmed.startsWith("<command-args>") ||
+          trimmed.startsWith("<local-command-stdout>") ||
+          trimmed.startsWith("<local-command-stderr>") ||
+          trimmed.startsWith("<bash-input>") ||
+          trimmed.startsWith("<bash-stdout>") ||
+          trimmed.startsWith("<bash-stderr>") ||
+          trimmed.startsWith("Caveat:") ||
+          trimmed.startsWith("[Request interrupted")
+        ) return;
+
+        const display = trimmed.length > 500 ? trimmed.slice(0, 500) + "…" : trimmed;
+        entries.push({
+          display,
+          timestamp: obj.timestamp,
+          project: obj.cwd || "unknown",
+          sessionId: obj.sessionId,
+        });
       } catch {
         // skip malformed lines
       }

@@ -586,6 +586,157 @@
       .summary-panel { padding: 12px; }
       .config-line .config-path { font-size: 0.65rem; }
     }
+
+    /* === Help drawer === */
+    .help-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.55);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      padding: 20px;
+    }
+    :root[data-theme="light"] .help-overlay { background: rgba(31, 35, 40, 0.4); }
+    .help-overlay.open { display: flex; }
+    .help-modal {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-strong);
+      border-radius: 10px;
+      width: 100%;
+      max-width: 860px;
+      max-height: 90vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+    }
+    .help-modal-header {
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+    .help-modal-header h2 {
+      color: var(--accent);
+      font-size: 1rem;
+      margin: 0;
+      text-transform: none;
+      letter-spacing: 0;
+    }
+    .help-close-btn {
+      background: var(--bg-sunken);
+      border: 1px solid var(--border-strong);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 4px 10px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.75rem;
+    }
+    .help-close-btn:hover { color: var(--accent); border-color: var(--accent); }
+    .help-modal-body {
+      padding: 20px 24px;
+      overflow-y: auto;
+      font-size: 0.82rem;
+      line-height: 1.65;
+      color: var(--text);
+    }
+    .help-toc {
+      background: var(--bg-sunken);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px 16px;
+      margin-bottom: 22px;
+      font-size: 0.78rem;
+    }
+    .help-toc strong {
+      display: block;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-size: 0.65rem;
+      margin-bottom: 6px;
+    }
+    .help-toc ol { padding-left: 20px; columns: 2; column-gap: 24px; }
+    .help-toc li { margin: 2px 0; break-inside: avoid; }
+    .help-toc a { color: var(--accent); text-decoration: none; }
+    .help-toc a:hover { text-decoration: underline; }
+    .help-section { margin-bottom: 24px; scroll-margin-top: 12px; }
+    .help-section h3 {
+      color: var(--accent);
+      font-size: 0.95rem;
+      margin-bottom: 8px;
+      font-weight: 700;
+    }
+    .help-section h4 {
+      color: var(--text-strong);
+      font-size: 0.82rem;
+      margin: 14px 0 4px;
+      font-weight: 700;
+    }
+    .help-section p { margin: 6px 0; }
+    .help-section ul { padding-left: 20px; margin: 4px 0 8px; }
+    .help-section li { margin: 3px 0; }
+    .help-section code {
+      background: var(--bg-sunken);
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-size: 0.76rem;
+      border: 1px solid var(--border);
+      color: var(--text-strong);
+    }
+    .help-formula {
+      background: var(--bg-sunken);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-size: 0.76rem;
+      color: var(--green);
+      margin: 6px 0 10px;
+      overflow-x: auto;
+      white-space: nowrap;
+    }
+    .help-callout {
+      background: var(--bg-sunken);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--amber);
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-size: 0.78rem;
+      color: var(--text);
+      margin: 8px 0;
+    }
+    .help-callout strong { color: var(--amber); }
+    .help-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.78rem;
+      margin: 6px 0 10px;
+    }
+    .help-table th, .help-table td {
+      text-align: left;
+      padding: 6px 10px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    .help-table th {
+      color: var(--text-muted);
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    @media (max-width: 640px) {
+      .help-modal-body { padding: 14px 16px; font-size: 0.78rem; }
+      .help-modal-header { padding: 12px 14px; }
+      .help-toc ol { columns: 1; }
+      .help-section h3 { font-size: 0.88rem; }
+    }
   </style>
 </head>
 <body>
@@ -597,6 +748,13 @@
       </div>
     </div>
     <div class="header-right">
+      <button id="help-toggle" class="theme-toggle" type="button" aria-label="Open help and metric reference">
+        <span aria-hidden="true">?</span>
+        <span>Help</span>
+      </button>
+      <button id="time-format-toggle" class="theme-toggle" type="button" aria-label="Toggle 12 / 24 hour time">
+        <span id="time-format-label">24h</span>
+      </button>
       <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">
         <span id="theme-icon">🌙</span>
         <span id="theme-label">Dark</span>
@@ -684,6 +842,25 @@
       applyTheme(next);
     });
 
+    // === Time format handling ===
+    const TIME_FORMAT_KEY = 'claude-lens-time-format';
+    let TIME_FORMAT = (() => {
+      const saved = localStorage.getItem(TIME_FORMAT_KEY);
+      return saved === '12h' || saved === '24h' ? saved : '24h';
+    })();
+    function applyTimeFormat(fmt) {
+      TIME_FORMAT = fmt;
+      const label = document.getElementById('time-format-label');
+      if (label) label.textContent = fmt;
+    }
+    applyTimeFormat(TIME_FORMAT);
+    document.getElementById('time-format-toggle').addEventListener('click', () => {
+      const next = TIME_FORMAT === '24h' ? '12h' : '24h';
+      localStorage.setItem(TIME_FORMAT_KEY, next);
+      applyTimeFormat(next);
+      if (globalThis._lastData) rerenderAll(globalThis._lastData);
+    });
+
     // === Formatters ===
     const fmt = (n) => n != null ? n.toLocaleString() : '—';
     const fmtDate = (ts) => {
@@ -695,7 +872,7 @@
       if (!ts) return '—';
       const d = new Date(ts);
       return d.toLocaleString('en-AU', {
-        day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false,
+        day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: TIME_FORMAT === '12h',
       });
     };
     const shortProject = (p) => {
@@ -783,11 +960,20 @@
         safeJson('/api/daily-costs'),
       ]);
 
+      globalThis._lastData = { stats, history, toolData, projects, costData };
+      rerenderAll(globalThis._lastData);
+    }
+
+    function rerenderAll({ stats, history, toolData, projects, costData }) {
       if (costData) renderSummary(costData, stats);
       if (costData) renderDailyCosts(costData);
       if (toolData) renderTools(toolData);
       if (projects) renderProjects(projects);
       if (history) renderHistory(history);
+      const last = globalThis._lastToolCalls;
+      if (last && document.querySelector('.tool-detail-panel')) {
+        loadToolDetails(last.toolName);
+      }
     }
 
     function renderSummary(costData, stats) {
@@ -1025,7 +1211,7 @@
         </span>
       </h3>`;
 
-      window._lastToolCalls = { toolName, calls };
+      globalThis._lastToolCalls = { toolName, calls };
 
       let rows = '';
       for (const c of calls.slice(0, 200)) {
@@ -1104,8 +1290,7 @@
 
       function render(filter) {
         const filtered = filter === 'all' ? history : history.filter(h => h.project === filter);
-        const sorted = [...filtered].reverse();
-        tbody.innerHTML = sorted.map(h => `
+        tbody.innerHTML = filtered.map(h => `
           <tr>
             <td style="white-space:nowrap">${fmtDateTime(h.timestamp)}</td>
             <td><span class="project-badge">${escapeHtml(shortProject(h.project))}</span></td>
@@ -1126,7 +1311,7 @@
     }
 
     function exportToolCalls() {
-      const { toolName, calls } = window._lastToolCalls || {};
+      const { toolName, calls } = globalThis._lastToolCalls || {};
       if (!toolName || !calls) return;
 
       let lines = [];
