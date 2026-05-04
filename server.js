@@ -1206,6 +1206,243 @@ app.post("/v1/chat/completions", express.json({ limit: "25mb" }), async (req, re
   res.json(anthropicResponseToOpenAI(anth, anthropicBody.model));
 });
 
+// POST /api/stress — concurrent stress test runner. Streams progress as SSE.
+//
+// Body: { model, prompt, total, concurrency, max_tokens?, system? }
+// Caps: concurrency ∈ [1, 20], total ∈ [1, 500]. Hard caps to keep this from
+// being a foot-gun against the user's own quota. The browser shows live
+// counters + final percentiles; cancellation is server-driven via the
+// request `close` event so an aborted run stops billing immediately.
+//
+// Each worker fires a non-streaming /v1/messages call with the same OAuth
+// token + load-bearing Claude-Code system marker as /api/chat. Latency is
+// wall-clock around the upstream fetch; tokens come from Anthropic's `usage`
+// block on success.
+//
+// SSE event shapes:
+//   start    { model, total, concurrency, maxTokens, limits, promptPreview }
+//   result   { idx, status, latencyMs, tokens?, error?, message? }
+//   progress { done, inFlight, total, errors, elapsedMs }
+//   done     { total, done, aborted, elapsedMs, successful, errors,
+//              latencyMs:{min,p50,p95,p99,max,mean},
+//              throughput:{requestsPerSec,tokensPerSec},
+//              usage:{input,output,cache_read,cache_create},
+//              rateLimitHeaders }
+const STRESS_LIMITS = { maxConcurrency: 20, maxTotal: 500, maxTokensCap: 4096 };
+
+app.post("/api/stress", express.json({ limit: "1mb" }), async (req, res) => {
+  const cred = readClaudeCredentials();
+  if (!cred.ok) {
+    return res.status(401).json({ error: "not_logged_in", reason: cred.reason || "credentials_missing" });
+  }
+  const token = cred.raw.claudeAiOauth?.accessToken;
+  if (!token) {
+    return res.status(401).json({ error: "not_logged_in", reason: "no_access_token" });
+  }
+
+  const body = req.body || {};
+  const model = body.model;
+  const prompt = typeof body.prompt === "string" ? body.prompt : "";
+  const totalReq = parseInt(body.total, 10);
+  const concurrencyReq = parseInt(body.concurrency, 10);
+  if (!Number.isFinite(totalReq) || totalReq < 1) {
+    return res.status(400).json({ error: "bad_params", message: "total must be a positive integer" });
+  }
+  if (!Number.isFinite(concurrencyReq) || concurrencyReq < 1) {
+    return res.status(400).json({ error: "bad_params", message: "concurrency must be a positive integer" });
+  }
+  const total = Math.min(STRESS_LIMITS.maxTotal, totalReq);
+  const concurrency = Math.min(STRESS_LIMITS.maxConcurrency, concurrencyReq);
+  const maxTokens = Math.min(STRESS_LIMITS.maxTokensCap, Math.max(1, parseInt(body.max_tokens, 10) || 64));
+
+  if (!model || !CHAT_MODELS.has(model)) {
+    return res.status(400).json({ error: "bad_model", message: `Pick one of: ${[...CHAT_MODELS].join(", ")}` });
+  }
+  if (!prompt.trim()) {
+    return res.status(400).json({ error: "bad_prompt", message: "prompt must be non-empty" });
+  }
+
+  res.status(200);
+  res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.setHeader("Connection", "keep-alive");
+  if (typeof res.flushHeaders === "function") res.flushHeaders();
+
+  const send = (event, data) => {
+    if (res.writableEnded) return;
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+
+  let aborted = false;
+  let nextIdx = 0;
+  let inFlight = 0;
+  let done = 0;
+  const errors = { http_4xx: 0, http_5xx: 0, http_429: 0, network: 0 };
+  const latencies = [];
+  const totalUsage = { input: 0, output: 0, cache_read: 0, cache_create: 0 };
+  let lastRateLimitHeaders = {};
+
+  // Listen on `res.close` (not `req.close`): the response stream's `close`
+  // event only fires when the underlying socket terminates, while
+  // `req.close` on Node ≥18 fires as soon as the request body has been fully
+  // read — which would falsely abort every run. Guard with `writableEnded`
+  // so the natural end-of-stream after `res.end()` doesn't count as abort.
+  res.on("close", () => {
+    if (!res.writableEnded) aborted = true;
+  });
+
+  const startedAt = Date.now();
+
+  const systemBlocks = [
+    { type: "text", text: "You are Claude Code, Anthropic's official CLI for Claude." },
+    { type: "text", text: "You are running inside a stress test. Reply briefly." },
+  ];
+  if (typeof body.system === "string" && body.system.trim()) {
+    systemBlocks.push({ type: "text", text: body.system.trim() });
+  }
+  const requestBody = JSON.stringify({
+    model,
+    max_tokens: maxTokens,
+    system: systemBlocks,
+    messages: [{ role: "user", content: prompt }],
+  });
+
+  send("start", {
+    model,
+    total,
+    concurrency,
+    maxTokens,
+    limits: STRESS_LIMITS,
+    promptPreview: prompt.length > 120 ? prompt.slice(0, 120) + "…" : prompt,
+  });
+
+  async function runOne(idx) {
+    const t0 = Date.now();
+    let upstreamRes;
+    try {
+      upstreamRes = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+          "anthropic-version": "2023-06-01",
+          "anthropic-beta": "oauth-2025-04-20",
+          "User-Agent": "claude-lens-stress/1.0",
+        },
+        body: requestBody,
+      });
+    } catch (err) {
+      const latencyMs = Date.now() - t0;
+      latencies.push(latencyMs);
+      errors.network++;
+      return { idx, status: 0, latencyMs, error: "network", message: err.message };
+    }
+    const status = upstreamRes.status;
+    for (const [n, v] of upstreamRes.headers) {
+      const ln = n.toLowerCase();
+      if (ln.startsWith("anthropic-ratelimit-") || ln === "retry-after" || ln === "anthropic-request-id") {
+        lastRateLimitHeaders[n] = v;
+      }
+    }
+    let bodyText = "";
+    try {
+      bodyText = await upstreamRes.text();
+    } catch {}
+    const latencyMs = Date.now() - t0;
+    latencies.push(latencyMs);
+    if (!upstreamRes.ok) {
+      if (status === 429) errors.http_429++;
+      else if (status >= 500) errors.http_5xx++;
+      else errors.http_4xx++;
+      return { idx, status, latencyMs, error: `http_${status}`, message: bodyText.slice(0, 300) };
+    }
+    let tokens = null;
+    try {
+      const j = JSON.parse(bodyText);
+      const u = j.usage || {};
+      tokens = {
+        input: u.input_tokens || 0,
+        output: u.output_tokens || 0,
+        cache_read: u.cache_read_input_tokens || 0,
+        cache_create: u.cache_creation_input_tokens || 0,
+      };
+      totalUsage.input += tokens.input;
+      totalUsage.output += tokens.output;
+      totalUsage.cache_read += tokens.cache_read;
+      totalUsage.cache_create += tokens.cache_create;
+    } catch {
+      // success status but unparseable body — count as success without tokens
+    }
+    return { idx, status, latencyMs, tokens };
+  }
+
+  function pickIdx() {
+    if (aborted || nextIdx >= total) return -1;
+    return nextIdx++;
+  }
+
+  async function worker() {
+    while (true) {
+      const idx = pickIdx();
+      if (idx < 0) return;
+      inFlight++;
+      const result = await runOne(idx);
+      inFlight--;
+      done++;
+      send("result", result);
+      // Stop early if Anthropic is hard-rate-limiting — surface the limit
+      // instead of burning every remaining request on guaranteed 429s.
+      if (errors.http_429 >= 3) {
+        aborted = true;
+      }
+    }
+  }
+
+  const progressTimer = setInterval(() => {
+    if (aborted || res.writableEnded) return;
+    send("progress", { done, inFlight, total, errors, elapsedMs: Date.now() - startedAt });
+  }, 500);
+
+  const workers = Array.from({ length: concurrency }, () => worker());
+  await Promise.all(workers);
+  clearInterval(progressTimer);
+
+  const sortedLat = [...latencies].sort((a, b) => a - b);
+  const pct = (p) => {
+    if (!sortedLat.length) return 0;
+    const k = Math.min(sortedLat.length - 1, Math.max(0, Math.ceil((p / 100) * sortedLat.length) - 1));
+    return sortedLat[k];
+  };
+  const elapsedMs = Date.now() - startedAt;
+  const failures = errors.http_4xx + errors.http_5xx + errors.http_429 + errors.network;
+  const successful = Math.max(0, done - failures);
+  const summary = {
+    total,
+    done,
+    aborted,
+    elapsedMs,
+    successful,
+    errors,
+    latencyMs: {
+      min: sortedLat[0] || 0,
+      p50: pct(50),
+      p95: pct(95),
+      p99: pct(99),
+      max: sortedLat[sortedLat.length - 1] || 0,
+      mean: latencies.length ? Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length) : 0,
+    },
+    throughput: {
+      requestsPerSec: elapsedMs > 0 ? +(done * 1000 / elapsedMs).toFixed(2) : 0,
+      tokensPerSec: elapsedMs > 0 ? +(totalUsage.output * 1000 / elapsedMs).toFixed(2) : 0,
+    },
+    usage: totalUsage,
+    rateLimitHeaders: lastRateLimitHeaders,
+  };
+  send("done", summary);
+  if (!res.writableEnded) res.end();
+});
+
 // GET /api — serve the OpenAI-compatible API docs / playground page
 app.get("/api", (req, res) => {
   res.sendFile(path.join(__dirname, "api.html"));

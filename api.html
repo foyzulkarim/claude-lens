@@ -389,6 +389,116 @@
     .panel p.note { margin-top: 10px; }
     .panel h3.flush { margin-top: 0; }
 
+    /* Stress test UI */
+    .stress-warn {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      background: rgb(from var(--amber) r g b / 0.08);
+      border-left: 3px solid var(--amber);
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+    }
+    .stress-warn strong { color: var(--text); font-weight: 600; }
+    .stress-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .stress-cell {
+      background: var(--bg-sunken);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 10px;
+    }
+    .stress-cell .label {
+      font-size: 0.65rem;
+      color: var(--text-faint);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 600;
+    }
+    .stress-cell .value {
+      font-size: 1.05rem;
+      font-weight: 600;
+      margin-top: 2px;
+      color: var(--text-strong);
+      font-variant-numeric: tabular-nums;
+    }
+    .stress-cell .value.green { color: var(--green); }
+    .stress-cell .value.amber { color: var(--amber); }
+    .stress-cell .value.red { color: var(--red-strong); }
+    .stress-cell .sub {
+      font-size: 0.65rem;
+      color: var(--text-faint);
+      margin-top: 1px;
+    }
+    .stress-bar-wrap {
+      margin-top: 10px;
+      background: var(--bg-sunken);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      height: 8px;
+      overflow: hidden;
+    }
+    .stress-bar-fill {
+      height: 100%;
+      width: 0;
+      background: var(--accent);
+      transition: width 0.2s ease;
+    }
+    .stress-bar-fill.amber { background: var(--amber); }
+    .stress-bar-fill.red { background: var(--red); }
+    .stress-bar-fill.green { background: var(--green); }
+    .stress-log {
+      margin-top: 12px;
+      max-height: 220px;
+      overflow-y: auto;
+      background: var(--bg-sunken);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 8px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.72rem;
+    }
+    .stress-log:empty { display: none; }
+    .stress-log .row {
+      display: grid;
+      grid-template-columns: 60px 70px 80px 1fr;
+      gap: 8px;
+      padding: 2px 0;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-muted);
+    }
+    .stress-log .row:last-child { border-bottom: none; }
+    .stress-log .row .idx { color: var(--text-faint); }
+    .stress-log .row .status.ok { color: var(--green); }
+    .stress-log .row .status.err { color: var(--red-strong); }
+    .stress-log .row .lat { color: var(--text); font-variant-numeric: tabular-nums; }
+    .stress-log .row .msg {
+      color: var(--text-muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .stress-summary {
+      margin-top: 12px;
+      padding: 10px 12px;
+      background: var(--bg-sunken);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--green);
+      border-radius: 4px;
+      font-size: 0.82rem;
+    }
+    .stress-summary.aborted { border-left-color: var(--amber); }
+    .stress-summary.failed { border-left-color: var(--red); }
+    .stress-summary h4 { margin: 0 0 6px; font-size: 0.85rem; }
+    .stress-summary code { background: var(--code-bg); padding: 1px 5px; border-radius: 3px; font-size: 0.72rem; }
+
     @media (max-width: 720px) {
       .columns { grid-template-columns: 1fr; }
       .form-row { grid-template-columns: 1fr; }
@@ -522,6 +632,51 @@
     <div class="lang-pane" data-lang="fetch">
       <pre><code id="snippet-fetch"></code><button class="copy-btn" data-copy-target="snippet-fetch" type="button">Copy</button></pre>
     </div>
+  </div>
+
+  <h2>Stress test</h2>
+  <div class="panel">
+    <div class="stress-warn">
+      <span>⚠️</span>
+      <div>
+        <strong>Real billed traffic.</strong> Each request hits Anthropic via your local OAuth token and counts against your 5h / 7d quota — same as the Chat page. Start small, watch the rate-limit pills, and use <em>Cancel</em> to stop in-flight workers immediately.
+      </div>
+    </div>
+    <div class="form-grid">
+      <div class="form-row">
+        <label for="st-model">Model</label>
+        <select id="st-model">
+          <option value="claude-haiku-4-5-20251001" selected>claude-haiku-4-5-20251001 — fastest</option>
+          <option value="claude-sonnet-4-6">claude-sonnet-4-6 — balanced</option>
+          <option value="claude-opus-4-7">claude-opus-4-7 — most capable</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label for="st-prompt">Prompt</label>
+        <textarea id="st-prompt" placeholder="What every worker should ask…">Reply with the single word: ok.</textarea>
+      </div>
+      <div class="form-row">
+        <label for="st-total">Total requests</label>
+        <input type="number" id="st-total" value="20" min="1" max="500">
+      </div>
+      <div class="form-row">
+        <label for="st-concurrency">Concurrency</label>
+        <input type="number" id="st-concurrency" value="5" min="1" max="20">
+      </div>
+      <div class="form-row">
+        <label for="st-max-tokens">Max tokens / req</label>
+        <input type="number" id="st-max-tokens" value="32" min="1" max="4096">
+      </div>
+    </div>
+    <div class="send-row">
+      <button id="st-run" class="btn-primary" type="button">Run stress test</button>
+      <button id="st-cancel" class="btn-ghost" type="button" disabled>Cancel</button>
+      <span class="response-meta" id="st-status"></span>
+    </div>
+    <div class="stress-bar-wrap" id="st-bar-wrap" hidden><div class="stress-bar-fill" id="st-bar-fill"></div></div>
+    <div class="stress-grid" id="st-counters" hidden></div>
+    <div class="stress-log" id="st-log"></div>
+    <div id="st-summary"></div>
   </div>
 
   <h2>Multimodal: text + images</h2>
@@ -1010,6 +1165,219 @@ ${body.stream ? '// Body is text/event-stream — use ReadableStream / TextDecod
         setStatus(`<span class="badge" style="color:var(--red-strong);border-color:var(--red)">network error</span>`);
         showResponse(String(err.message || err), true);
       }
+    });
+
+    // === Stress test ===
+    const st = {
+      model: document.getElementById('st-model'),
+      prompt: document.getElementById('st-prompt'),
+      total: document.getElementById('st-total'),
+      concurrency: document.getElementById('st-concurrency'),
+      maxTokens: document.getElementById('st-max-tokens'),
+      run: document.getElementById('st-run'),
+      cancel: document.getElementById('st-cancel'),
+      status: document.getElementById('st-status'),
+      barWrap: document.getElementById('st-bar-wrap'),
+      barFill: document.getElementById('st-bar-fill'),
+      counters: document.getElementById('st-counters'),
+      log: document.getElementById('st-log'),
+      summary: document.getElementById('st-summary'),
+    };
+
+    let stressAbort = null;
+
+    function fmtMs(ms) {
+      if (ms == null) return '—';
+      if (ms < 1000) return Math.round(ms) + ' ms';
+      return (ms / 1000).toFixed(2) + ' s';
+    }
+    function fmtNum(n) {
+      if (n == null) return '0';
+      if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+      if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k';
+      return String(n);
+    }
+
+    function renderCell(label, value, opts = {}) {
+      const klass = opts.tone ? ` ${opts.tone}` : '';
+      const sub = opts.sub ? `<div class="sub">${escapeHtml(opts.sub)}</div>` : '';
+      return `<div class="stress-cell"><div class="label">${escapeHtml(label)}</div><div class="value${klass}">${escapeHtml(value)}</div>${sub}</div>`;
+    }
+
+    function renderCounters(state) {
+      const { done, inFlight, total, errors, latencies, elapsedMs, throughputPerSec } = state;
+      const errCount = errors.http_4xx + errors.http_5xx + errors.http_429 + errors.network;
+      const sorted = [...latencies].sort((a, b) => a - b);
+      const pct = (p) => sorted.length ? sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil(p / 100 * sorted.length) - 1))] : 0;
+
+      st.counters.innerHTML =
+        renderCell('Done', `${done} / ${total}`) +
+        renderCell('In flight', String(inFlight)) +
+        renderCell('Errors', String(errCount), { tone: errCount ? 'red' : '' , sub: errCount ? `429:${errors.http_429} 4xx:${errors.http_4xx} 5xx:${errors.http_5xx} net:${errors.network}` : '' }) +
+        renderCell('Elapsed', fmtMs(elapsedMs)) +
+        renderCell('p50', fmtMs(pct(50))) +
+        renderCell('p95', fmtMs(pct(95))) +
+        renderCell('p99', fmtMs(pct(99))) +
+        renderCell('req/s', throughputPerSec ? throughputPerSec.toFixed(2) : '—');
+    }
+
+    function appendLog(result) {
+      const ok = !result.error;
+      const status = result.status || (result.error === 'network' ? 'NET' : '?');
+      const msg = ok ? '✓' : escapeHtml((result.message || result.error || '').slice(0, 140));
+      const tokensSub = result.tokens ? ` (in ${result.tokens.input}, out ${result.tokens.output})` : '';
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.innerHTML = `<span class="idx">#${result.idx}</span><span class="status ${ok ? 'ok' : 'err'}">${escapeHtml(String(status))}</span><span class="lat">${fmtMs(result.latencyMs)}</span><span class="msg">${msg}${escapeHtml(tokensSub)}</span>`;
+      st.log.prepend(row);
+      // Trim to 200 rows
+      while (st.log.childElementCount > 200) st.log.lastChild.remove();
+    }
+
+    function renderSummary(s) {
+      const errTotal = s.errors.http_4xx + s.errors.http_5xx + s.errors.http_429 + s.errors.network;
+      const cls = s.aborted ? 'aborted' : (errTotal > 0 ? 'failed' : '');
+      const lat = s.latencyMs;
+      const u = s.usage;
+      const rl = Object.entries(s.rateLimitHeaders || {}).map(([k, v]) => `<div><code>${escapeHtml(k)}</code>: ${escapeHtml(v)}</div>`).join('');
+      st.summary.className = 'stress-summary' + (cls ? ' ' + cls : '');
+      st.summary.innerHTML = `
+        <h4>${s.aborted ? 'Aborted' : 'Done'} — ${s.successful} ok / ${errTotal} errors / ${s.done} dispatched (cap ${s.total})</h4>
+        <div>Elapsed <strong>${escapeHtml(fmtMs(s.elapsedMs))}</strong> · throughput <strong>${escapeHtml(s.throughput.requestsPerSec.toFixed(2))} req/s</strong>, <strong>${escapeHtml(s.throughput.tokensPerSec.toFixed(1))} tok/s</strong> output</div>
+        <div>Latency min/p50/p95/p99/max: <strong>${fmtMs(lat.min)}</strong> / <strong>${fmtMs(lat.p50)}</strong> / <strong>${fmtMs(lat.p95)}</strong> / <strong>${fmtMs(lat.p99)}</strong> / <strong>${fmtMs(lat.max)}</strong> · mean ${fmtMs(lat.mean)}</div>
+        <div>Tokens: input ${fmtNum(u.input)} · output ${fmtNum(u.output)} · cache read ${fmtNum(u.cache_read)} · cache create ${fmtNum(u.cache_create)}</div>
+        ${errTotal ? `<div>Error breakdown: 429×${s.errors.http_429}, 4xx×${s.errors.http_4xx}, 5xx×${s.errors.http_5xx}, network×${s.errors.network}</div>` : ''}
+        ${rl ? `<div style="margin-top:6px">Rate-limit headers (last seen):<br>${rl}</div>` : ''}
+      `;
+    }
+
+    function setStressBar(done, total, errCount) {
+      const pct = total > 0 ? Math.min(100, (done / total) * 100) : 0;
+      st.barFill.style.width = pct + '%';
+      st.barFill.classList.remove('amber', 'red', 'green');
+      if (errCount > 0 && done >= total) st.barFill.classList.add('amber');
+      else if (errCount > 0) st.barFill.classList.add('amber');
+      else if (done >= total && total > 0) st.barFill.classList.add('green');
+    }
+
+    function setStressStatus(html) { st.status.innerHTML = html; }
+
+    function resetStressUI() {
+      st.barWrap.hidden = false;
+      st.barFill.style.width = '0%';
+      st.barFill.classList.remove('amber', 'red', 'green');
+      st.counters.hidden = false;
+      st.counters.innerHTML = '';
+      st.log.innerHTML = '';
+      st.summary.className = '';
+      st.summary.innerHTML = '';
+    }
+
+    async function runStress() {
+      const total = Number.parseInt(st.total.value, 10);
+      const concurrency = Number.parseInt(st.concurrency.value, 10);
+      const maxTokens = Number.parseInt(st.maxTokens.value, 10);
+      const prompt = (st.prompt.value || '').trim();
+      const model = st.model.value;
+      if (!prompt) { setStressStatus('<span class="badge" style="color:var(--red-strong);border-color:var(--red)">prompt required</span>'); return; }
+      if (!Number.isFinite(total) || total < 1) { setStressStatus('<span class="badge" style="color:var(--red-strong);border-color:var(--red)">total invalid</span>'); return; }
+      if (!Number.isFinite(concurrency) || concurrency < 1) { setStressStatus('<span class="badge" style="color:var(--red-strong);border-color:var(--red)">concurrency invalid</span>'); return; }
+
+      resetStressUI();
+      st.run.disabled = true;
+      st.cancel.disabled = false;
+      setStressStatus('<span class="badge amber">Running…</span>');
+
+      const state = {
+        done: 0, inFlight: 0, total,
+        errors: { http_4xx: 0, http_5xx: 0, http_429: 0, network: 0 },
+        latencies: [],
+        elapsedMs: 0,
+        throughputPerSec: 0,
+      };
+      let startedAt = Date.now();
+      let renderTimer = setInterval(() => {
+        state.elapsedMs = Date.now() - startedAt;
+        if (state.elapsedMs > 0) state.throughputPerSec = (state.done * 1000) / state.elapsedMs;
+        renderCounters(state);
+        const errCount = state.errors.http_4xx + state.errors.http_5xx + state.errors.http_429 + state.errors.network;
+        setStressBar(state.done, state.total, errCount);
+      }, 200);
+
+      stressAbort = new AbortController();
+      try {
+        const res = await fetch('/api/stress', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model, prompt, total, concurrency, max_tokens: maxTokens }),
+          signal: stressAbort.signal,
+        });
+        if (!res.ok) {
+          const errJson = await res.json().catch(() => ({}));
+          throw new Error(errJson.message || errJson.error || `HTTP ${res.status}`);
+        }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          let idx;
+          while ((idx = buf.indexOf('\n\n')) !== -1) {
+            const block = buf.slice(0, idx);
+            buf = buf.slice(idx + 2);
+            const lines = block.split('\n');
+            let event = 'message';
+            const dataLines = [];
+            for (const line of lines) {
+              if (line.startsWith('event: ')) event = line.slice(7).trim();
+              else if (line.startsWith('data: ')) dataLines.push(line.slice(6));
+            }
+            if (!dataLines.length) continue;
+            let data;
+            try { data = JSON.parse(dataLines.join('\n')); } catch { continue; }
+
+            if (event === 'start') {
+              startedAt = Date.now();
+            } else if (event === 'result') {
+              state.done++;
+              if (typeof data.latencyMs === 'number') state.latencies.push(data.latencyMs);
+              if (data.error === 'network') state.errors.network++;
+              else if (data.error === 'http_429') state.errors.http_429++;
+              else if (typeof data.error === 'string' && data.error.startsWith('http_')) {
+                const code = Number.parseInt(data.error.slice(5), 10);
+                if (code >= 500) state.errors.http_5xx++; else state.errors.http_4xx++;
+              }
+              appendLog(data);
+            } else if (event === 'progress') {
+              state.inFlight = data.inFlight;
+              state.elapsedMs = data.elapsedMs;
+            } else if (event === 'done') {
+              renderSummary(data);
+              setStressBar(state.done, state.total, state.errors.http_4xx + state.errors.http_5xx + state.errors.http_429 + state.errors.network);
+              setStressStatus(`<span class="badge ${data.aborted ? '' : 'green'}">${data.aborted ? 'aborted' : 'done'}</span>`);
+            }
+          }
+        }
+      } catch (err) {
+        if (err.name === 'AbortError') {
+          setStressStatus('<span class="badge amber">cancelled</span>');
+        } else {
+          setStressStatus(`<span class="badge" style="color:var(--red-strong);border-color:var(--red)">${escapeHtml(err.message || String(err))}</span>`);
+        }
+      } finally {
+        clearInterval(renderTimer);
+        renderCounters(state);
+        st.run.disabled = false;
+        st.cancel.disabled = true;
+        stressAbort = null;
+      }
+    }
+
+    st.run.addEventListener('click', runStress);
+    st.cancel.addEventListener('click', () => {
+      if (stressAbort) stressAbort.abort();
     });
   </script>
 </body>
