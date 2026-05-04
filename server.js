@@ -318,6 +318,210 @@ const CHAT_MODELS = new Set([
   "claude-haiku-4-5-20251001",
 ]);
 
+// === AI insight templates ===
+//
+// Each kind defines a system prompt, a function that turns the structured
+// payload from the client into the user message, and a max_tokens cap.
+// Always run on Haiku 4.5 so the cost-per-insight stays in the
+// fraction-of-a-cent range. Results are cached client-side; this endpoint
+// is intentionally stateless and never auto-fires.
+const AI_MODEL = "claude-haiku-4-5-20251001";
+
+function fmtNum(n) {
+  if (n == null) return "0";
+  if (n >= 1e9) return (n / 1e9).toFixed(2) + "B";
+  if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + "k";
+  return Number(n).toLocaleString();
+}
+
+function fmtModelMix(models) {
+  if (!models || typeof models !== "object") return "n/a";
+  const entries = Object.entries(models).sort((a, b) => b[1] - a[1]);
+  if (entries.length === 0) return "n/a";
+  return entries.slice(0, 3).map(([m, c]) => `${m} (${c})`).join(", ");
+}
+
+const AI_INSIGHTS = {
+  "daily-summary": {
+    system:
+      "You are a concise usage analyst. The user is viewing their personal Claude Code dashboard and wants a quick paragraph (3 to 5 sentences) summarising today's activity. Focus on: what shape today had, cache health, any notable cost or model shifts vs yesterday. Plain English. No emoji. No bullet points. No closing pleasantries. Just facts and observations.",
+    formatUser: (ctx) => {
+      const t = ctx.today || {};
+      const y = ctx.yesterday;
+      const all = ctx.allTime || {};
+      const lines = [];
+      lines.push(`TODAY (${t.date || "n/a"}, ${ctx.timezone || "local"}):`);
+      lines.push(`- Sessions: ${t.sessions || 0}, messages: ${t.messages || 0}, tool calls: ${t.toolCalls || 0}`);
+      lines.push(`- Tokens — input: ${fmtNum(t.input)}, output: ${fmtNum(t.output)}, cache read: ${fmtNum(t.cacheRead)}, cache write: ${fmtNum(t.cacheCreate)}`);
+      lines.push(`- Cache hit rate: ${(t.hitRate ?? 0).toFixed(1)}%`);
+      lines.push(`- Estimated cost: $${(t.cost || 0).toFixed(2)}`);
+      lines.push(`- Top models: ${fmtModelMix(t.models)}`);
+      if (y) {
+        lines.push("");
+        lines.push(`YESTERDAY (${y.date}): ${y.sessions || 0} sessions, ${(y.hitRate ?? 0).toFixed(1)}% hit rate, $${(y.cost || 0).toFixed(2)} cost, top models ${fmtModelMix(y.models)}`);
+      } else {
+        lines.push("");
+        lines.push("YESTERDAY: no data on disk.");
+      }
+      lines.push("");
+      lines.push(`ALL TIME: ${all.sessions || 0} session-days, ${(all.hitRate ?? 0).toFixed(1)}% hit rate, $${(all.cost || 0).toFixed(2)} estimated cost.`);
+      return lines.join("\n");
+    },
+    max_tokens: 350,
+  },
+
+  "project-narrative": {
+    system:
+      "You are summarising what a developer has been working on in a specific project, given recent prompts they typed. Write 2 to 4 sentences capturing themes, not a list. Plain English. No emoji. Don't quote prompts verbatim — paraphrase.",
+    formatUser: (ctx) => {
+      const lines = [];
+      lines.push(`Project: ${ctx.projectName || "unknown"}`);
+      lines.push(`Activity: ${ctx.messages || 0} messages across ${ctx.sessions || 0} sessions. Last active ${ctx.lastSeen || "n/a"}.`);
+      lines.push("");
+      lines.push("Recent prompts (newest first):");
+      const prompts = Array.isArray(ctx.prompts) ? ctx.prompts.slice(0, 30) : [];
+      if (prompts.length === 0) {
+        lines.push("- (no prompt text available)");
+      } else {
+        for (const p of prompts) lines.push(`- ${String(p).slice(0, 240)}`);
+      }
+      return lines.join("\n");
+    },
+    max_tokens: 280,
+  },
+
+  "cache-diagnosis": {
+    system:
+      "You are a usage analyst diagnosing Anthropic prompt-cache performance for a developer. Given daily cache statistics, write 3 to 5 sentences explaining what the hit rate looks like and why, and suggest one or two concrete actions if it is below 70%. Plain English. No emoji. Don't repeat the raw numbers — interpret them.",
+    formatUser: (ctx) => {
+      const lines = [];
+      lines.push(`Cache statistics over the selected date range (${ctx.rangeLabel || "all time"}):`);
+      const days = (ctx.days || []).slice(-14);
+      for (const d of days) {
+        lines.push(`- ${d.date}: hit rate ${(d.hitRate ?? 0).toFixed(1)}%, ${d.sessions || 0} sessions, ${fmtNum(d.cacheRead)} cache reads, ${fmtNum(d.cacheCreate)} cache writes, $${(d.cost || 0).toFixed(2)} cost`);
+      }
+      const t = ctx.totals || {};
+      const totalInput = (t.input || 0) + (t.cacheRead || 0) + (t.cacheCreate || 0);
+      lines.push("");
+      lines.push(`Totals: ${fmtNum(t.cacheRead)} cache reads of ${fmtNum(totalInput)} input tokens (${totalInput > 0 ? ((t.cacheRead || 0) / totalInput * 100).toFixed(1) : "0"}% overall hit rate).`);
+      return lines.join("\n");
+    },
+    max_tokens: 350,
+  },
+
+  "tool-summary": {
+    system:
+      "You are summarising a developer's recent tool usage in Claude Code. Given a sample of invocations of one specific tool, group them and write 3 to 5 sentences capturing themes (what kinds of commands, files, or patterns dominate). Plain English. No bullet lists. No emoji.",
+    formatUser: (ctx) => {
+      const lines = [];
+      lines.push(`Tool: ${ctx.tool || "unknown"}`);
+      lines.push(`Total invocations: ${ctx.totalCount || 0} (sample of ${(ctx.calls || []).length} most recent shown).`);
+      lines.push("");
+      const calls = Array.isArray(ctx.calls) ? ctx.calls.slice(0, 60) : [];
+      for (const c of calls) {
+        const summary = JSON.stringify(c).slice(0, 280);
+        lines.push(`- ${summary}`);
+      }
+      return lines.join("\n");
+    },
+    max_tokens: 320,
+  },
+
+  "conversation-title": {
+    system:
+      "Given the first user message and the first assistant response of a conversation, output a 3 to 6 word title that captures the topic. Output ONLY the title — no quotes, no trailing punctuation, no preamble like 'Title:'.",
+    formatUser: (ctx) => {
+      const u = String(ctx.userMsg || "").slice(0, 600);
+      const a = String(ctx.assistantMsg || "").slice(0, 600);
+      return `USER: ${u}\n\nASSISTANT: ${a}`;
+    },
+    max_tokens: 30,
+  },
+
+  "conversation-summary": {
+    system:
+      "Summarise this conversation in 3 to 5 sentences. Capture (1) what the user was trying to do, (2) what was figured out, (3) any open threads or next steps. Plain English. No emoji. No closing pleasantries.",
+    formatUser: (ctx) => {
+      const msgs = Array.isArray(ctx.messages) ? ctx.messages : [];
+      return msgs
+        .map(m => `${(m.role || "?").toUpperCase()}: ${String(m.content || "").slice(0, 1500)}`)
+        .join("\n\n");
+    },
+    max_tokens: 400,
+  },
+
+  "ask": {
+    system:
+      "You are a usage analyst answering a developer's natural-language question about their personal Claude Code dashboard. Use the provided structured snapshot. If the data does not contain what is needed to answer, say so plainly — do not invent numbers. Cite figures when relevant. Plain English, 1 to 5 sentences. No emoji.",
+    formatUser: (ctx) => {
+      const snapshot = ctx.snapshot ? JSON.stringify(ctx.snapshot, null, 2) : "(no snapshot)";
+      return `User question: ${ctx.question || ""}\n\nDashboard snapshot:\n${snapshot}`;
+    },
+    max_tokens: 500,
+  },
+
+  "cost-forecast": {
+    system:
+      "You are a usage analyst commenting on a cost projection. Given a 7-day rolling daily-cost average, this month's spend so far, and a linear projection to month-end, write 1 to 3 sentences interpreting whether the trend is on track, elevated, or below baseline, and whether the projection looks credible (e.g. early in the month, recent spike, etc). Plain English. No emoji. No bullet points. Don't repeat raw numbers — interpret them.",
+    formatUser: (ctx) => {
+      const days = ctx.last7 || [];
+      const recentLines = days.map(d => `- ${d.date}: $${(d.cost || 0).toFixed(2)}`);
+      const lines = [
+        `Today (${ctx.today || "n/a"}, ${ctx.timezone || "local"}): $${(ctx.todayCost || 0).toFixed(2)}`,
+        `This month so far (day ${ctx.daysIntoMonth || 0} of ${ctx.daysInMonth || 0}): $${(ctx.monthToDate || 0).toFixed(2)}`,
+        `7-day rolling daily average: $${(ctx.rolling7AvgCost || 0).toFixed(2)}`,
+        `Projected month-end total: $${(ctx.projectedMonthTotal || 0).toFixed(2)} (${ctx.daysRemainingInMonth || 0} days remaining at the rolling avg)`,
+        "",
+        "Recent daily costs (oldest → newest):",
+        ...recentLines,
+      ];
+      return lines.join("\n");
+    },
+    max_tokens: 200,
+  },
+
+  "standup-prep": {
+    system:
+      "You are summarising what a developer did recently for a daily / weekly standup. Output Markdown in exactly this structure (omit a section if empty):\n\n**Recent work**\n- one bullet per project, 1 short sentence each, capturing themes (don't quote prompts verbatim)\n\n**Likely up next**\n- 1 to 2 bullets inferring what's queued based on the most recent activity\n\n**Open threads / friction**\n- 0 to 2 bullets if there are signs of debugging loops, repeated failures, or stuck flows; skip this section entirely if none\n\nReference projects by their short name. Be concise. No emoji. No closing pleasantries.",
+    formatUser: (ctx) => {
+      const projects = ctx.projects || [];
+      const blocks = projects.map(proj => {
+        const prompts = Array.isArray(proj.prompts) ? proj.prompts.slice(0, 12) : [];
+        const promptLines = prompts.length === 0
+          ? ["- (no prompt text available)"]
+          : prompts.map(p => `- ${String(p).slice(0, 220)}`);
+        return [
+          `### ${proj.shortName} (${proj.fullPath})`,
+          `Activity: ${proj.messages || 0} messages across ${proj.sessions || 0} sessions, last active ${proj.lastSeen || "n/a"}.`,
+          "Recent prompts (newest first):",
+          ...promptLines,
+          "",
+        ].join("\n");
+      });
+      const header = [
+        `Time range: ${ctx.rangeLabel || "recent"} (${ctx.timezone || "local"})`,
+        `Total prompts in range: ${ctx.totalPrompts || 0} across ${projects.length} projects.`,
+        "",
+      ].join("\n");
+      return header + blocks.join("\n");
+    },
+    max_tokens: 700,
+  },
+
+  "conversation-compact": {
+    system:
+      "You are compacting an older portion of a developer's chat conversation so it can be replaced with a single message that preserves the load-bearing context. Given the older turns (USER / ASSISTANT alternating), produce a markdown summary that captures: (1) the goal and scope of what's been discussed, (2) the key decisions or conclusions reached, (3) any unresolved questions, (4) any specific code, file paths, names, or facts the assistant should remember (verbatim if they're identifiers). Aim for compression — typically 5 to 12 sentences total — but never drop names, paths, or numeric facts. No emoji. No closing pleasantries. Do not address the user directly. Begin the output with `Earlier in this conversation:` so it reads as a context handoff.",
+    formatUser: (ctx) => {
+      const msgs = Array.isArray(ctx.messages) ? ctx.messages : [];
+      return msgs
+        .map(m => `${(m.role || "?").toUpperCase()}: ${String(m.content || "").slice(0, 2500)}`)
+        .join("\n\n");
+    },
+    max_tokens: 800,
+  },
+};
+
 // POST /api/chat — proxy /v1/messages with the local OAuth token.
 //
 // The browser sends the same JSON body shape Anthropic expects (model,
@@ -444,6 +648,122 @@ app.post("/api/chat", express.json({ limit: "25mb" }), async (req, res) => {
   } finally {
     res.end();
   }
+});
+
+// POST /api/ai-insight — generate a short paragraph for one of the
+// pre-defined dashboard insight kinds (daily-summary, project-narrative,
+// cache-diagnosis, tool-summary, conversation-title, conversation-summary,
+// ask). Always uses Haiku for cost control. Stateless — caching is the
+// caller's job (the dashboard caches by kind+context-hash in localStorage).
+app.post("/api/ai-insight", express.json({ limit: "2mb" }), async (req, res) => {
+  const credPath = path.join(CLAUDE_DIR, ".credentials.json");
+  let token;
+  try {
+    if (!fs.existsSync(credPath)) {
+      return res.status(401).json({
+        error: "not_logged_in",
+        reason: "credentials_missing",
+        message: "Not signed in to Claude. Run `claude /login` in a terminal first, then reload this page.",
+      });
+    }
+    const cred = JSON.parse(fs.readFileSync(credPath, "utf8"));
+    token = cred.claudeAiOauth?.accessToken;
+    if (!token) {
+      return res.status(401).json({
+        error: "not_logged_in",
+        reason: "no_access_token",
+        message: "Credentials file exists but contains no access token. Try `claude /logout` then `claude /login` to refresh it.",
+      });
+    }
+  } catch (err) {
+    return res.status(500).json({
+      error: "credentials_read_error",
+      message: `Could not read credentials.json: ${err.message}`,
+    });
+  }
+
+  const { kind, context } = req.body || {};
+  const tmpl = AI_INSIGHTS[kind];
+  if (!tmpl) {
+    return res.status(400).json({ error: "bad_kind", message: `Unknown insight kind: ${kind}. Valid: ${Object.keys(AI_INSIGHTS).join(", ")}` });
+  }
+
+  let userMessage;
+  try {
+    userMessage = tmpl.formatUser(context || {});
+  } catch (err) {
+    return res.status(400).json({ error: "bad_context", message: err.message });
+  }
+
+  const body = {
+    model: AI_MODEL,
+    max_tokens: tmpl.max_tokens || 400,
+    system: [
+      { type: "text", text: "You are Claude Code, Anthropic's official CLI for Claude." },
+      { type: "text", text: tmpl.system },
+    ],
+    messages: [{ role: "user", content: userMessage }],
+  };
+
+  let upstreamRes;
+  try {
+    upstreamRes = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        "anthropic-version": "2023-06-01",
+        "anthropic-beta": "oauth-2025-04-20",
+        "User-Agent": "claude-lens/1.0",
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    return res.status(502).json({ error: "upstream_unreachable", message: err.message });
+  }
+
+  // Forward rate-limit headers so the UI can surface 429 reasons
+  for (const [name, value] of upstreamRes.headers) {
+    const n = name.toLowerCase();
+    if (n.startsWith("anthropic-ratelimit-") || n === "retry-after" || n === "anthropic-request-id") {
+      res.setHeader(name, value);
+    }
+  }
+
+  if (!upstreamRes.ok) {
+    const errText = await upstreamRes.text().catch(() => "");
+    let parsed = null;
+    try { parsed = JSON.parse(errText); } catch { /* ignore */ }
+    return res.status(upstreamRes.status).json({
+      error: parsed?.error?.type || "upstream_error",
+      message: parsed?.error?.message || errText || `HTTP ${upstreamRes.status}`,
+    });
+  }
+
+  let anth;
+  try {
+    anth = await upstreamRes.json();
+  } catch (err) {
+    return res.status(502).json({ error: "upstream_parse_error", message: err.message });
+  }
+  const text = (anth.content || [])
+    .filter(c => c && c.type === "text" && typeof c.text === "string")
+    .map(c => c.text)
+    .join("")
+    .trim();
+  const usage = anth.usage || {};
+  res.json({
+    kind,
+    text,
+    model: anth.model || AI_MODEL,
+    usage: {
+      input_tokens: usage.input_tokens || 0,
+      output_tokens: usage.output_tokens || 0,
+      cache_read_input_tokens: usage.cache_read_input_tokens || 0,
+      cache_creation_input_tokens: usage.cache_creation_input_tokens || 0,
+    },
+    generatedAt: new Date().toISOString(),
+  });
 });
 
 // === OpenAI-compatible API ===
@@ -1332,6 +1652,22 @@ function parseJsonlForToolDetails(filePath, projDir, toolName, calls) {
     rl.on("error", resolve);
   });
 }
+
+// JSON-shaped error responses for /api/* and /v1/* routes. Without this,
+// body-parser failures on malformed JSON return Express's default HTML
+// stack-trace page, which the dashboard's `.json().catch()` can't parse
+// into a useful message. Catches everything that lands here as a fallback.
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+  const wantsJson = req.path && (req.path.startsWith("/api/") || req.path.startsWith("/v1/"));
+  if (!wantsJson) return next(err);
+  const status = Number.isInteger(err?.status) ? err.status : 500;
+  const type = err?.type ?? (status >= 500 ? "server_error" : "invalid_request_error");
+  res.status(status).json({
+    error: type,
+    message: err?.message ?? "Unknown server error",
+  });
+});
 
 app.listen(PORT, () => {
   console.log(`Claude Usage Dashboard running at http://localhost:${PORT}`);

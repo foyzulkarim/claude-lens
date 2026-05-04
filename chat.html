@@ -590,6 +590,53 @@
       font-variant-numeric: tabular-nums;
     }
 
+    /* === AI insights (shared with the dashboard) === */
+    .ai-summary-msg {
+      align-self: stretch !important;
+      max-width: 100% !important;
+    }
+    .ai-summary-msg .bubble {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--purple);
+      color: var(--text);
+      font-size: 0.82rem;
+    }
+    .ai-summary-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    .ai-badge {
+      font-size: 0.6rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      padding: 2px 6px;
+      border-radius: 3px;
+      background: var(--purple);
+      color: var(--bg);
+    }
+    .ai-meta {
+      font-size: 0.65rem;
+      color: var(--text-faint);
+    }
+    .ai-summary-loading {
+      color: var(--purple);
+      font-style: italic;
+      font-size: 0.78rem;
+    }
+    .ai-summary-error {
+      color: var(--red-strong);
+      font-size: 0.78rem;
+    }
+    /* Title regenerate hint shown in History drawer when titles are AI-generated */
+    .history-row .row-title.ai-titled::before {
+      content: "✨ ";
+      color: var(--purple);
+      font-size: 0.7em;
+    }
+
     /* === History drawer === */
     .history-list { display: flex; flex-direction: column; gap: 4px; }
     .history-list .empty {
@@ -754,6 +801,14 @@
       </nav>
     </div>
     <div class="header-right">
+      <button id="ai-compact-btn" class="icon-btn" type="button" title="AI-compact older turns into a single summary message (saves context window + tokens)">
+        <span aria-hidden="true">✨</span>
+        <span>Compact</span>
+      </button>
+      <button id="ai-summarise-btn" class="icon-btn" type="button" title="AI-summarise this conversation">
+        <span aria-hidden="true">✨</span>
+        <span>Summarise</span>
+      </button>
       <button id="history-btn" class="icon-btn" type="button" title="Browse past conversations">
         <span aria-hidden="true">🕘</span>
         <span>History</span>
@@ -1290,6 +1345,40 @@
       }
     });
 
+    // === AI insight helper (chat) ===
+    //
+    // Same shape as the dashboard helper: POST /api/ai-insight with {kind, context}.
+    // Used here by the auto-titler (fires once per conversation) and the
+    // "Summarise this conversation" header button (user-triggered).
+    async function fetchAIInsight(kind, context) {
+      let res;
+      try {
+        res = await fetch('/api/ai-insight', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ kind, context }),
+        });
+      } catch (err) {
+        const e = new Error(`Network error: ${err.message || err}`);
+        e.category = 'network';
+        throw e;
+      }
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        const msg = errBody.message || `HTTP ${res.status}`;
+        const e = new Error(msg);
+        if (res.status === 401 || errBody.error === 'not_logged_in' || errBody.error === 'authentication_error') {
+          e.category = 'auth';
+        } else if (res.status === 429 || errBody.error === 'rate_limit_error') {
+          e.category = 'rate_limit';
+        } else if (res.status >= 500) {
+          e.category = 'upstream';
+        }
+        throw e;
+      }
+      return res.json();
+    }
+
     // === Conversation storage (multi-conv) ===
     //
     // localStorage layout:
@@ -1353,8 +1442,8 @@
       if (found) {
         found.updatedAt = now;
         found.messageCount = msgs.length;
-        // Re-derive title only while the conv is still untitled (1 msg or fewer).
-        if (msgs.length <= 2 || !found.title || found.title === 'New conversation') {
+        // Re-derive title only while the conv is untitled, never overwrite an AI title.
+        if (!found.aiTitled && (msgs.length <= 2 || !found.title || found.title === 'New conversation')) {
           found.title = deriveTitle(msgs);
         }
       } else {
@@ -1454,10 +1543,15 @@
 
     function renderMessage(msg) {
       const wrap = document.createElement('div');
-      wrap.className = `msg ${msg.role || 'system'}${msg.error ? ' error' : ''}`;
+      // Compacted entries get rendered as a system-style note so they read as
+      // a meta artefact, not a regular assistant turn.
+      const cls = msg.compacted ? 'system ai-summary-msg' : (msg.role || 'system');
+      wrap.className = `msg ${cls}${msg.error ? ' error' : ''}`;
       const role = document.createElement('div');
       role.className = 'role';
-      role.textContent = msg.role === 'user' ? 'You' : msg.role === 'assistant' ? 'Claude' : (msg.role || '');
+      role.textContent = msg.compacted
+        ? `Compacted ${msg.compactedFromCount || ''} earlier turns`.trim()
+        : (msg.role === 'user' ? 'You' : msg.role === 'assistant' ? 'Claude' : (msg.role || ''));
       const bubble = document.createElement('div');
       bubble.className = 'bubble';
       if (Array.isArray(msg.attachmentStubs) && msg.attachmentStubs.length > 0) {
@@ -1767,6 +1861,47 @@
         if (ts) footerParts.push(ts);
         footerEl.textContent = footerParts.join(' · ');
         assistantNode.appendChild(footerEl);
+
+        // === AI auto-titler ===
+        // Fires once: after the first assistant response in a conversation.
+        // Replaces the "first 80 chars of the first prompt" title with a
+        // model-generated 3-6 word title in the conv index. Cheap Haiku call.
+        // No-ops if the conv already has an AI title (idx.aiTitled === true)
+        // or has more than one assistant message.
+        const assistantTurnsSoFar = history.filter(m => m.role === 'assistant').length;
+        if (assistantTurnsSoFar === 1) {
+          const idx = loadConvIndex();
+          const meta = idx.find(c => c.id === activeConvId);
+          if (meta && !meta.aiTitled) {
+            const firstUser = history.find(m => m.role === 'user');
+            const firstUserText = firstUser
+              ? (typeof firstUser.content === 'string' ? firstUser.content : '')
+              : '';
+            // Fire & forget — don't block the UI
+            fetchAIInsight('conversation-title', {
+              userMsg: firstUserText,
+              assistantMsg: finalAssistant.content || '',
+            }).then((data) => {
+              const title = String(data.text || '').trim().replace(/^["']|["']$/g, '').slice(0, 80);
+              if (!title) return;
+              const idx2 = loadConvIndex();
+              const m2 = idx2.find(c => c.id === activeConvId);
+              if (!m2) return;
+              m2.title = title;
+              m2.aiTitled = true;
+              saveConvIndex(idx2);
+              // Refresh history drawer if open so the new title shows immediately
+              const overlay = document.getElementById('history-overlay');
+              if (overlay && !overlay.hidden && typeof renderHistoryList === 'function') {
+                renderHistoryList();
+              }
+            }).catch((err) => {
+              // Auto-titler is best-effort — never bother the user about it.
+              // Log to the console so it's still discoverable when debugging.
+              console.debug('[claude-lens] AI auto-titler failed:', err && err.message ? err.message : err);
+            });
+          }
+        }
         saveHistory(history);
       } catch (err) {
         // Remove the in-progress assistant bubble; replace with error
@@ -1874,7 +2009,7 @@
         return `
           <div class="history-row${active}" data-conv-id="${escapeHtml(c.id)}">
             <div class="row-main">
-              <div class="row-title">${escapeHtml(c.title || 'New conversation')}</div>
+              <div class="row-title${c.aiTitled ? ' ai-titled' : ''}" title="${c.aiTitled ? 'AI-generated title' : ''}">${escapeHtml(c.title || 'New conversation')}</div>
               <div class="row-meta">${escapeHtml(meta)}</div>
             </div>
             <button class="row-delete" type="button" data-delete-id="${escapeHtml(c.id)}" aria-label="Delete conversation" title="Delete">×</button>
@@ -1936,6 +2071,129 @@
       historyOverlay.classList.remove('open');
       historyOverlay.hidden = true;
     }
+
+    // === Smart compaction ===
+    //
+    // Replaces older turns in the conversation with a single synthetic
+    // assistant message that condenses the context. Subsequent /api/chat
+    // calls then send the summary in place of the original older turns,
+    // shrinking the prompt while preserving the load-bearing facts (file
+    // paths, names, decisions). Works alongside the History budget slider
+    // — they're complementary tools.
+    const COMPACT_KEEP_RECENT = 4;  // Keep this many most-recent turns verbatim.
+
+    document.getElementById('ai-compact-btn').addEventListener('click', async () => {
+      const realTurns = history.filter(m => m.role === 'user' || m.role === 'assistant');
+      if (realTurns.length <= COMPACT_KEEP_RECENT + 1) {
+        alert(`Need at least ${COMPACT_KEEP_RECENT + 2} turns before compacting is worthwhile.`);
+        return;
+      }
+      // Already compacted? Refuse to compact again — would lose nuance.
+      const alreadyCompacted = history.find(m => m.compacted);
+      if (alreadyCompacted) {
+        if (!confirm('This conversation has already been compacted once. Compact again? (Earlier compaction summary would be replaced; the most recent turns are preserved.)')) return;
+      }
+
+      // Split: older turns to compact + recent turns to keep verbatim
+      const splitAt = realTurns.length - COMPACT_KEEP_RECENT;
+      const olderTurns = realTurns.slice(0, splitAt);
+      const recentTurns = realTurns.slice(splitAt);
+
+      // Render a placeholder system bubble so the user sees something is happening
+      const wrap = document.createElement('div');
+      wrap.className = 'msg system ai-summary-msg';
+      wrap.innerHTML = `
+        <div class="role">Compacting…</div>
+        <div class="bubble">
+          <div class="ai-summary-header">
+            <span class="ai-badge">✨ AI</span>
+            <span class="ai-meta ai-summary-loading">Summarising ${olderTurns.length} older turns…</span>
+          </div>
+        </div>`;
+      threadEl.appendChild(wrap);
+      scrollToBottom();
+
+      try {
+        const data = await fetchAIInsight('conversation-compact', {
+          messages: olderTurns.map(m => ({
+            role: m.role,
+            content: typeof m.content === 'string' ? m.content : '(non-text content)',
+          })),
+        });
+        const summaryText = String(data.text || '').trim() || 'Earlier in this conversation: (compaction returned empty)';
+        // Replace history: synthetic compacted message followed by recent turns
+        history = [
+          {
+            role: 'assistant',
+            content: summaryText,
+            compacted: true,
+            compactedFromCount: olderTurns.length,
+            model: data.model,
+            timestamp: new Date().toISOString(),
+          },
+          ...recentTurns,
+        ];
+        saveHistory(history);
+        renderAll();
+      } catch (err) {
+        wrap.querySelector('.bubble').innerHTML = `
+          <div class="ai-summary-error">✨ Compaction failed: ${escapeHtml(err.message || String(err))}</div>`;
+      }
+    });
+
+    // === Conversation summariser ===
+    document.getElementById('ai-summarise-btn').addEventListener('click', async () => {
+      if (history.length < 2) {
+        alert('Nothing to summarise yet — send and receive at least one turn first.');
+        return;
+      }
+      // Render a placeholder system bubble while the model runs
+      const wrap = document.createElement('div');
+      wrap.className = 'msg system ai-summary-msg';
+      wrap.innerHTML = `
+        <div class="role">Summary</div>
+        <div class="bubble">
+          <div class="ai-summary-header">
+            <span class="ai-badge">✨ AI</span>
+            <span class="ai-meta ai-summary-loading">Generating summary…</span>
+          </div>
+        </div>`;
+      threadEl.appendChild(wrap);
+      scrollToBottom();
+      try {
+        const data = await fetchAIInsight('conversation-summary', {
+          messages: history
+            .filter(m => m.role === 'user' || m.role === 'assistant')
+            .map(m => ({
+              role: m.role,
+              content: typeof m.content === 'string' ? m.content : '(non-text content)',
+            })),
+        });
+        const bubble = wrap.querySelector('.bubble');
+        const meta = `${(data.model || 'Haiku').replace('claude-', '')} · ${(data.usage?.input_tokens || 0) + (data.usage?.cache_read_input_tokens || 0)} in · ${data.usage?.output_tokens || 0} out`;
+        bubble.innerHTML = `
+          <div class="ai-summary-header">
+            <span class="ai-badge">✨ AI</span>
+            <span class="ai-meta">${escapeHtml(meta)}</span>
+          </div>
+          ${renderMarkdown(data.text || '(empty)')}`;
+        scrollToBottom();
+      } catch (err) {
+        const bubble = wrap.querySelector('.bubble');
+        const cat = err && err.category;
+        let extra = '';
+        if (cat === 'auth') {
+          extra = `<div class="ai-meta">Sign-in status: <a href="/account">/account</a>. Re-run <code>claude /login</code> if needed.</div>`;
+        } else if (cat === 'rate_limit') {
+          extra = `<div class="ai-meta">All AI calls share the same unified 5h / 7d Claude quota.</div>`;
+        } else if (cat === 'network') {
+          extra = `<div class="ai-meta">If the server was just restarted, give it a couple of seconds.</div>`;
+        }
+        bubble.innerHTML = `
+          <div class="ai-summary-error">✨ Summarisation failed: ${escapeHtml(err.message || String(err))}</div>
+          ${extra}`;
+      }
+    });
 
     document.getElementById('history-btn').addEventListener('click', openHistory);
     document.getElementById('history-close').addEventListener('click', closeHistory);
