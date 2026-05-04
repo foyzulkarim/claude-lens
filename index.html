@@ -5,24 +5,169 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Claude Code Usage Dashboard</title>
   <style>
+    /* === Theme tokens === */
+    :root[data-theme="dark"] {
+      --bg: #0d1117;
+      --bg-elevated: #161b22;
+      --bg-sunken: #0d1117;
+      --border: #21262d;
+      --border-strong: #30363d;
+      --text: #c9d1d9;
+      --text-strong: #f0f6fc;
+      --text-muted: #8b949e;
+      --text-faint: #484f58;
+      --accent: #58a6ff;
+      --accent-strong: #388bfd;
+      --accent-on: #ffffff;
+      --green: #7ee787;
+      --amber: #d29922;
+      --pink: #f778ba;
+      --info: #79c0ff;
+      --purple: #d2a8ff;
+      --purple-hover: #e2c5ff;
+      --red: #da3633;
+      --red-strong: #f85149;
+      --badge-bg: #1f2937;
+      --badge-text: #79c0ff;
+      --row-hover: #161b22;
+      --shadow: 0 1px 0 rgba(0,0,0,0.1);
+    }
+    :root[data-theme="light"] {
+      --bg: #ffffff;
+      --bg-elevated: #f6f8fa;
+      --bg-sunken: #ffffff;
+      --border: #d0d7de;
+      --border-strong: #afb8c1;
+      --text: #1f2328;
+      --text-strong: #1f2328;
+      --text-muted: #656d76;
+      --text-faint: #8c959f;
+      --accent: #0969da;
+      --accent-strong: #0969da;
+      --accent-on: #ffffff;
+      --green: #1a7f37;
+      --amber: #9a6700;
+      --pink: #bf3989;
+      --info: #0969da;
+      --purple: #8250df;
+      --purple-hover: #6639ba;
+      --red: #cf222e;
+      --red-strong: #d1242f;
+      --badge-bg: #ddf4ff;
+      --badge-text: #0969da;
+      --row-hover: #f6f8fa;
+      --shadow: 0 1px 0 rgba(31,35,40,0.04);
+    }
+
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', Consolas, monospace;
-      background: #0d1117;
-      color: #c9d1d9;
+      background: var(--bg);
+      color: var(--text);
       padding: 24px;
       line-height: 1.5;
+      transition: background 0.15s ease, color 0.15s ease;
     }
-    h1 {
-      font-size: 1.4rem;
-      color: #58a6ff;
+    .header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
       margin-bottom: 24px;
-      border-bottom: 1px solid #21262d;
+      border-bottom: 1px solid var(--border);
       padding-bottom: 12px;
     }
+    .header-left { min-width: 0; flex: 1; }
+    h1 {
+      font-size: 1.4rem;
+      color: var(--accent);
+      margin-bottom: 6px;
+    }
+    .nav {
+      display: flex;
+      gap: 4px;
+      margin: 0 0 8px;
+    }
+    .nav a {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      text-decoration: none;
+      padding: 4px 10px;
+      border: 1px solid transparent;
+      border-radius: 6px;
+    }
+    .nav a:hover {
+      color: var(--accent);
+      border-color: var(--border);
+    }
+    .nav a.active {
+      color: var(--accent-on);
+      background: var(--accent-strong);
+      border-color: var(--accent-strong);
+    }
+    .config-line {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .config-line .config-path {
+      color: var(--text);
+      word-break: break-all;
+    }
+    .config-line .source-badge {
+      font-size: 0.6rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 2px 6px;
+      border-radius: 3px;
+      background: var(--badge-bg);
+      color: var(--badge-text);
+      font-weight: 600;
+    }
+    .config-line .source-badge.invalid {
+      background: var(--red);
+      color: var(--accent-on);
+    }
+    .header-right {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    .theme-toggle {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 6px 10px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.8rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+    .theme-toggle:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .theme-toggle:active {
+      background: var(--bg-sunken);
+      transform: translateY(1px);
+    }
+    .theme-toggle:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+    .theme-toggle svg { width: 14px; height: 14px; }
+
     h2 {
       font-size: 1rem;
-      color: #8b949e;
+      color: var(--text-muted);
       text-transform: uppercase;
       letter-spacing: 0.05em;
       margin-bottom: 12px;
@@ -34,22 +179,22 @@
       margin-bottom: 32px;
     }
     .card {
-      background: #161b22;
-      border: 1px solid #21262d;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
       border-radius: 8px;
       padding: 16px;
       min-width: 0;
     }
     .card .label {
       font-size: 0.75rem;
-      color: #8b949e;
+      color: var(--text-muted);
       text-transform: uppercase;
       letter-spacing: 0.05em;
     }
     .card .value {
       font-size: 1.6rem;
       font-weight: 700;
-      color: #f0f6fc;
+      color: var(--text-strong);
       margin-top: 4px;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -57,7 +202,7 @@
     }
     .card .sub {
       font-size: 0.7rem;
-      color: #484f58;
+      color: var(--text-faint);
       margin-top: 2px;
     }
     .summary-grid {
@@ -67,13 +212,13 @@
       margin-bottom: 32px;
     }
     .summary-panel {
-      background: #161b22;
-      border: 1px solid #21262d;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
       border-radius: 10px;
       padding: 20px;
     }
     .summary-panel.today {
-      border-color: #388bfd;
+      border-color: var(--accent-strong);
       border-width: 2px;
     }
     .summary-panel .panel-header {
@@ -91,16 +236,16 @@
       border-radius: 4px;
     }
     .summary-panel.today .panel-badge {
-      background: #388bfd;
-      color: #fff;
+      background: var(--accent-strong);
+      color: var(--accent-on);
     }
     .summary-panel.alltime .panel-badge {
-      background: #30363d;
-      color: #8b949e;
+      background: var(--border-strong);
+      color: var(--text-muted);
     }
     .summary-panel .panel-date {
       font-size: 0.75rem;
-      color: #484f58;
+      color: var(--text-faint);
     }
     .metric-grid {
       display: grid;
@@ -110,11 +255,12 @@
     .metric {
       padding: 10px;
       border-radius: 6px;
-      background: #0d1117;
+      background: var(--bg-sunken);
+      border: 1px solid var(--border);
     }
     .metric .metric-label {
       font-size: 0.65rem;
-      color: #8b949e;
+      color: var(--text-muted);
       text-transform: uppercase;
       letter-spacing: 0.04em;
       margin-bottom: 4px;
@@ -122,23 +268,23 @@
     .metric .metric-value {
       font-size: 1.3rem;
       font-weight: 700;
-      color: #f0f6fc;
+      color: var(--text-strong);
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
-    .metric .metric-value.green { color: #7ee787; }
-    .metric .metric-value.blue { color: #79c0ff; }
-    .metric .metric-value.amber { color: #d29922; }
-    .metric .metric-value.pink { color: #f778ba; }
+    .metric .metric-value.green { color: var(--green); }
+    .metric .metric-value.blue { color: var(--info); }
+    .metric .metric-value.amber { color: var(--amber); }
+    .metric .metric-value.pink { color: var(--pink); }
     .metric .metric-sub {
       font-size: 0.6rem;
-      color: #484f58;
+      color: var(--text-faint);
       margin-top: 2px;
     }
     .summary-divider {
       border: none;
-      border-top: 1px solid #21262d;
+      border-top: 1px solid var(--border);
       margin: 14px 0;
     }
     .section {
@@ -151,36 +297,57 @@
     }
     th {
       text-align: left;
-      color: #8b949e;
+      color: var(--text-muted);
       font-weight: 600;
       padding: 8px 12px;
-      border-bottom: 1px solid #21262d;
+      border-bottom: 1px solid var(--border);
       text-transform: uppercase;
       font-size: 0.7rem;
       letter-spacing: 0.05em;
     }
     td {
       padding: 6px 12px;
-      border-bottom: 1px solid #161b22;
+      border-bottom: 1px solid var(--border);
       vertical-align: top;
     }
     tr:hover td {
-      background: #161b22;
+      background: var(--row-hover);
     }
     .prompt-text {
       max-width: 500px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      color: #c9d1d9;
+      color: var(--text);
     }
     .project-badge {
       display: inline-block;
-      background: #1f2937;
-      color: #79c0ff;
+      background: var(--badge-bg);
+      color: var(--badge-text);
       padding: 2px 8px;
       border-radius: 4px;
       font-size: 0.7rem;
+      border: 1px solid transparent;
+    }
+    .project-badge.clickable {
+      cursor: pointer;
+      transition: background 0.1s ease, color 0.1s ease, border-color 0.1s ease;
+    }
+    .project-badge.clickable:hover {
+      background: var(--accent-strong);
+      color: var(--accent-on);
+      border-color: var(--accent-strong);
+    }
+    .project-badge.clickable:active {
+      transform: translateY(1px);
+      filter: brightness(0.95);
+    }
+    .project-badge.clickable:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+    .project-badge.no-match {
+      opacity: 0.6;
     }
     .bar-container {
       display: flex;
@@ -189,69 +356,209 @@
     }
     .bar {
       height: 16px;
-      background: #388bfd;
+      background: var(--accent-strong);
       border-radius: 3px;
       min-width: 2px;
     }
     .bar-count {
       font-size: 0.75rem;
-      color: #8b949e;
+      color: var(--text-muted);
       min-width: 40px;
     }
     .tool-name {
-      min-width: 100px;
+      width: 200px;
+      max-width: 200px;
       font-weight: 600;
-      color: #d2a8ff;
+      color: var(--purple);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
+    .tool-table {
+      table-layout: fixed;
+      width: 100%;
+    }
+    .tool-bar-cell {
+      width: auto;
+      overflow: hidden;
+    }
+    .tool-bar-cell .bar-container {
+      width: 100%;
+      overflow: hidden;
+    }
+    .tool-bar-cell .bar { max-width: calc(100% - 50px); }
     .loading {
-      color: #484f58;
+      color: var(--text-faint);
       font-style: italic;
     }
     .tabs {
       display: flex;
       gap: 4px;
       margin-bottom: 16px;
+      flex-wrap: wrap;
     }
     .tab {
       padding: 6px 14px;
-      background: #161b22;
-      border: 1px solid #21262d;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
       border-radius: 6px;
-      color: #8b949e;
+      color: var(--text-muted);
       cursor: pointer;
       font-size: 0.75rem;
       font-family: inherit;
+      transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+    }
+    .tab:hover {
+      background: var(--row-hover);
+      border-color: var(--border-strong);
+      color: var(--text);
+    }
+    .tab:active {
+      transform: translateY(1px);
+    }
+    .tab:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
     }
     .tab.active {
-      background: #388bfd;
-      color: #fff;
-      border-color: #388bfd;
+      background: var(--accent-strong);
+      color: var(--accent-on);
+      border-color: var(--accent-strong);
     }
+    .tab.active:hover {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: var(--accent-on);
+    }
+
+    /* Filter bar (date chips + custom from/to inputs) */
+    .filter-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    #global-filter-section {
+      margin-bottom: 16px;
+    }
+    #global-filter-bar {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      margin-bottom: 0;
+    }
+    #global-filter-meta {
+      margin-left: auto;
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+    .filter-bar .filter-label {
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-right: 2px;
+    }
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      align-items: center;
+    }
+    .chip {
+      padding: 5px 10px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 0.7rem;
+      font-family: inherit;
+      transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+    }
+    .chip:hover:not(.active) {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .chip:active:not(.active) {
+      background: var(--bg-sunken);
+      transform: translateY(1px);
+    }
+    .chip:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+    .chip.active {
+      background: var(--accent-strong);
+      color: var(--accent-on);
+      border-color: var(--accent-strong);
+    }
+    .filter-divider {
+      width: 1px;
+      align-self: stretch;
+      background: var(--border);
+      margin: 0 4px;
+    }
+    .date-range {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .date-range input[type="date"] {
+      padding: 4px 8px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 0.7rem;
+      color-scheme: light dark;
+    }
+    .date-range input[type="date"]:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    .date-range .date-sep {
+      color: var(--text-faint);
+      font-size: 0.7rem;
+    }
+    .filter-meta {
+      font-size: 0.7rem;
+      color: var(--text-faint);
+      margin-bottom: 8px;
+    }
+    .filter-meta strong { color: var(--text); }
+
     #history-table-body tr { cursor: default; }
     .session-id {
       font-size: 0.65rem;
-      color: #484f58;
+      color: var(--text-faint);
     }
-    .cost-total td { font-weight: 700; border-top: 2px solid #30363d; color: #f0f6fc; }
+    .cost-total td { font-weight: 700; border-top: 2px solid var(--border-strong); color: var(--text-strong); }
     .cost-value { text-align: right; font-variant-numeric: tabular-nums; }
     .cost-bar {
       height: 12px;
-      background: #da3633;
+      background: var(--red);
       border-radius: 2px;
       display: inline-block;
       vertical-align: middle;
     }
     .cost-note {
       font-size: 0.7rem;
-      color: #484f58;
+      color: var(--text-faint);
       margin-top: 8px;
     }
     .tool-row { cursor: pointer; }
-    .tool-row:hover .tool-name { color: #e2c5ff; }
-    .tool-row:hover .bar { background: #58a6ff; }
+    .tool-row td { transition: background 0.1s ease; }
+    .tool-row:hover .tool-name { color: var(--purple-hover); }
+    .tool-row:hover .bar { background: var(--accent); }
+    .tool-row:active td { background: var(--bg-sunken); }
     .tool-detail-panel {
-      background: #161b22;
-      border: 1px solid #21262d;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
       border-radius: 8px;
       margin-top: 12px;
       padding: 16px;
@@ -260,7 +567,7 @@
     }
     .tool-detail-panel h3 {
       font-size: 0.85rem;
-      color: #d2a8ff;
+      color: var(--purple);
       margin-bottom: 12px;
       display: flex;
       justify-content: space-between;
@@ -268,47 +575,684 @@
     }
     .tool-detail-panel .close-btn {
       background: none;
-      border: 1px solid #30363d;
-      color: #8b949e;
+      border: 1px solid var(--border-strong);
+      color: var(--text-muted);
       border-radius: 4px;
       padding: 2px 8px;
       cursor: pointer;
       font-family: inherit;
       font-size: 0.7rem;
+      transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
     }
-    .tool-detail-panel .close-btn:hover { color: #f0f6fc; border-color: #484f58; }
+    .tool-detail-panel .close-btn:hover { color: var(--text-strong); border-color: var(--text-faint); }
+    .tool-detail-panel .close-btn:active {
+      background: var(--bg-sunken);
+      transform: translateY(1px);
+    }
+    .tool-detail-panel .close-btn:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
     .detail-row {
       padding: 6px 0;
-      border-bottom: 1px solid #21262d;
+      border-bottom: 1px solid var(--border);
       font-size: 0.75rem;
     }
     .detail-row:last-child { border-bottom: none; }
     .detail-cmd {
-      color: #7ee787;
+      color: var(--green);
       font-size: 0.75rem;
       word-break: break-all;
     }
     .detail-desc {
-      color: #8b949e;
+      color: var(--text-muted);
       font-size: 0.7rem;
     }
     .detail-path {
-      color: #79c0ff;
+      color: var(--info);
       font-size: 0.75rem;
       word-break: break-all;
     }
     .detail-meta {
-      color: #484f58;
+      color: var(--text-faint);
       font-size: 0.65rem;
       margin-top: 2px;
+    }
+    .error-banner {
+      background: var(--bg-elevated);
+      border: 1px solid var(--red);
+      border-left: 4px solid var(--red);
+      border-radius: 6px;
+      padding: 12px 16px;
+      margin-bottom: 24px;
+      font-size: 0.8rem;
+      color: var(--text);
+    }
+    .error-banner h3 {
+      color: var(--red-strong);
+      font-size: 0.85rem;
+      margin-bottom: 6px;
+    }
+    .error-banner code {
+      background: var(--bg-sunken);
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-size: 0.75rem;
+      border: 1px solid var(--border);
+    }
+    .error-banner ul { margin-top: 8px; padding-left: 20px; }
+    .error-banner li { margin: 2px 0; color: var(--text-muted); }
+
+    /* Wide tables scroll horizontally instead of breaking the layout */
+    .table-wrap {
+      overflow-x: auto;
+      max-width: 100%;
+    }
+    .table-wrap table { min-width: max-content; }
+
+    /* === Responsive breakpoints === */
+    @media (max-width: 1100px) {
+      .summary-grid {
+        grid-template-columns: 1fr;
+        gap: 12px;
+      }
+    }
+
+    @media (max-width: 900px) {
+      body { padding: 16px; }
+      .metric-grid { grid-template-columns: repeat(2, 1fr); }
+      .summary-panel { padding: 16px; }
+      .cards { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+    }
+
+    @media (max-width: 640px) {
+      body { padding: 12px; line-height: 1.45; }
+      .header {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+      }
+      .header-right { justify-content: flex-end; }
+      h1 { font-size: 1.15rem; margin-bottom: 4px; }
+      h2 { font-size: 0.85rem; margin-bottom: 10px; }
+      .config-line {
+        font-size: 0.68rem;
+        gap: 6px;
+      }
+      .config-line .source-badge { font-size: 0.55rem; }
+      .section { margin-bottom: 24px; }
+      .cards {
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+      .card { padding: 12px; }
+      .card .value { font-size: 1.25rem; }
+      .card .label { font-size: 0.65rem; }
+      .metric-grid { gap: 8px; }
+      .metric { padding: 8px; }
+      .metric .metric-value { font-size: 1.05rem; }
+      .metric .metric-label { font-size: 0.6rem; }
+      .summary-panel { padding: 14px; }
+      .summary-panel .panel-badge { font-size: 0.6rem; }
+      th, td {
+        padding: 5px 8px;
+        font-size: 0.72rem;
+      }
+      th {
+        font-size: 0.62rem;
+        letter-spacing: 0.03em;
+      }
+      .prompt-text { max-width: 240px; }
+      .tabs { gap: 3px; }
+      .tab {
+        padding: 5px 10px;
+        font-size: 0.7rem;
+      }
+      .filter-bar { gap: 8px; }
+      .chip { padding: 4px 8px; font-size: 0.65rem; }
+      .filter-divider { display: none; }
+      .date-range input[type="date"] { font-size: 0.65rem; padding: 3px 6px; }
+      .project-badge { font-size: 0.65rem; }
+      .tool-detail-panel {
+        padding: 12px;
+        max-height: 360px;
+      }
+      .tool-detail-panel h3 {
+        font-size: 0.78rem;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .cost-bar { display: none; }
+      .error-banner { padding: 10px 12px; }
+      .tool-name { width: 110px; max-width: 110px; }
+      .tool-bar-cell .bar { max-width: calc(100% - 44px); }
+      .bar-count { min-width: 32px; font-size: 0.7rem; }
+    }
+
+    @media (max-width: 420px) {
+      .cards { grid-template-columns: 1fr; }
+      .metric-grid { grid-template-columns: 1fr 1fr; }
+      .summary-panel { padding: 12px; }
+      .config-line .config-path { font-size: 0.65rem; }
+    }
+
+    /* === Token usage cards === */
+    .token-usage-intro {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: 6px;
+      padding: 10px 14px;
+      margin-bottom: 14px;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+    .token-usage-intro strong { color: var(--text-strong); }
+    .token-usage-intro a {
+      color: var(--accent);
+      text-decoration: none;
+      white-space: nowrap;
+    }
+    .token-usage-intro a:hover { text-decoration: underline; }
+    .card .value.pink-text { color: var(--pink); }
+    .card .value.blue-text { color: var(--info); }
+    .card .value.amber-text { color: var(--amber); }
+    .card .value.green-text { color: var(--green); }
+    .token-desc {
+      font-size: 0.65rem;
+      color: var(--text-faint);
+      margin-top: 4px;
+      line-height: 1.35;
+    }
+    .token-dot.pink { color: var(--pink); }
+    .token-dot.blue { color: var(--info); }
+    .token-dot.amber { color: var(--amber); }
+
+    /* === AI insights === */
+    .ai-insight {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--purple);
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 0.82rem;
+      margin: 8px 0;
+    }
+    .ai-insight-empty,
+    .ai-insight-loading,
+    .ai-insight-error {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      color: var(--text-muted);
+    }
+    .ai-insight-loading {
+      color: var(--purple);
+      font-style: italic;
+    }
+    .ai-insight-error { color: var(--red-strong); flex-direction: column; align-items: flex-start; }
+    .ai-trigger-btn {
+      background: var(--bg-sunken);
+      border: 1px solid var(--border-strong);
+      color: var(--purple);
+      border-radius: 6px;
+      padding: 5px 12px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.78rem;
+      font-weight: 600;
+    }
+    .ai-trigger-btn:hover { color: var(--purple-hover); border-color: var(--purple); }
+    .ai-trigger-btn:active { background: var(--bg-elevated); transform: translateY(1px); }
+    .ai-trigger-btn:focus-visible { outline: 2px solid var(--purple); outline-offset: 2px; }
+    .ai-hint {
+      font-size: 0.7rem;
+      color: var(--text-faint);
+    }
+    .ai-insight-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    .ai-badge {
+      font-size: 0.6rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      padding: 2px 6px;
+      border-radius: 3px;
+      background: var(--purple);
+      color: var(--bg);
+    }
+    .ai-meta {
+      font-size: 0.65rem;
+      color: var(--text-faint);
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .ai-refresh-btn {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      border-radius: 4px;
+      padding: 2px 8px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.85rem;
+      line-height: 1;
+    }
+    .ai-refresh-btn:hover { color: var(--purple); border-color: var(--purple); }
+    .ai-refresh-btn:active { transform: translateY(1px); }
+    .ai-refresh-btn:focus-visible { outline: 2px solid var(--purple); outline-offset: 2px; }
+    .ai-insight-body p {
+      margin: 4px 0;
+      color: var(--text);
+      line-height: 1.55;
+      white-space: normal;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+    }
+    .ai-insight-body p:first-child { margin-top: 0; }
+    .ai-insight-body p:last-child { margin-bottom: 0; }
+
+    /* Cost Forecast cards inherit .card styling; only the section header
+       gets a small AI badge to make the "✨ insight below" affordance read. */
+    #cost-forecast-section h2::after {
+      content: "✨";
+      margin-left: 6px;
+      color: var(--purple);
+      font-size: 0.85rem;
+    }
+    #cost-forecast-cards .forecast-card .value.amber-text { color: var(--amber); }
+    #cost-forecast-cards .forecast-card .value.green-text { color: var(--green); }
+    #cost-forecast-cards .forecast-card .value.purple-text { color: var(--purple); }
+
+    /* Standup prep controls */
+    .standup-controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+    .standup-controls .standup-label {
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    #ai-standup-result {
+      margin-top: 8px;
+    }
+    #ai-standup-result .ai-insight-body p {
+      margin: 6px 0;
+    }
+    #ai-standup-result .ai-insight-body strong {
+      display: block;
+      margin: 10px 0 4px;
+      font-size: 0.78rem;
+      color: var(--text-strong);
+      text-transform: none;
+      letter-spacing: 0;
+    }
+    #ai-standup-result .ai-insight-body strong:first-child { margin-top: 0; }
+    #ai-standup-result .ai-insight-body ul {
+      margin: 4px 0 8px 18px;
+      font-size: 0.82rem;
+    }
+    #ai-standup-result .ai-insight-body li {
+      margin: 2px 0;
+      line-height: 1.5;
+    }
+
+    /* Project narratives render in a sub-row directly under their project
+       row. The table has `min-width: max-content` (needed for the wide cost
+       table); to keep the narrative from blowing out width, we constrain
+       the inner panel with max-width + word-break, which makes the cell's
+       max-content small enough that the table fits the viewport. */
+    .narrative-row td {
+      padding: 4px 12px 12px;
+      border-bottom: 1px solid var(--border-strong);
+    }
+    .narrative-row .narrative-panel {
+      max-width: clamp(360px, 80vw, 1100px);
+      position: relative;
+    }
+    .narrative-row .narrative-close {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      border-radius: 4px;
+      padding: 1px 8px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.85rem;
+      line-height: 1;
+      z-index: 1;
+    }
+    .narrative-row .narrative-close:hover { color: var(--red-strong); border-color: var(--red); }
+    .narrative-row .narrative-close:active { transform: translateY(1px); }
+    .narrative-row .narrative-close:focus-visible { outline: 2px solid var(--red); outline-offset: 1px; }
+    .narrative-row .ai-narrative-host { padding-right: 32px; /* leave room for close button */ }
+
+    /* Q&A bar */
+    .ai-ask-bar {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .ai-ask-bar input[type="text"] {
+      flex: 1;
+      min-width: 200px;
+      background: var(--bg-sunken);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 6px 10px;
+      font-family: inherit;
+      font-size: 0.82rem;
+    }
+    .ai-ask-bar input[type="text"]:focus {
+      outline: none;
+      border-color: var(--purple);
+    }
+    .ai-ask-section {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--purple);
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin-bottom: 16px;
+    }
+    .ai-ask-label {
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .ai-ask-label .ai-badge { background: var(--purple); color: var(--bg); }
+    .ai-ask-suggestions {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+      margin-top: 6px;
+    }
+    .ai-ask-suggestions button {
+      background: transparent;
+      border: 1px dashed var(--border);
+      color: var(--text-muted);
+      border-radius: 12px;
+      padding: 2px 10px;
+      font-size: 0.7rem;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .ai-ask-suggestions button:hover { color: var(--purple); border-color: var(--purple); border-style: solid; }
+    .ai-ask-suggestions button:active { transform: translateY(1px); }
+    .ai-ask-suggestions button:focus-visible { outline: 2px solid var(--purple); outline-offset: 2px; }
+
+    /* Inline AI button shown next to project rows */
+    .ai-row-btn {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      border-radius: 4px;
+      padding: 1px 8px;
+      font-size: 0.65rem;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .ai-row-btn:hover { color: var(--purple); border-color: var(--purple); }
+    .ai-row-btn:active { transform: translateY(1px); }
+    .ai-row-btn:focus-visible { outline: 2px solid var(--purple); outline-offset: 2px; }
+
+    /* === Help drawer === */
+    .help-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.55);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      padding: 20px;
+    }
+    :root[data-theme="light"] .help-overlay { background: rgba(31, 35, 40, 0.4); }
+    .help-overlay.open { display: flex; }
+    .help-modal {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-strong);
+      border-radius: 10px;
+      width: 100%;
+      max-width: 860px;
+      max-height: 90vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+    }
+    .help-modal-header {
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+    .help-modal-header h2 {
+      color: var(--accent);
+      font-size: 1rem;
+      margin: 0;
+      text-transform: none;
+      letter-spacing: 0;
+    }
+    .help-close-btn {
+      background: var(--bg-sunken);
+      border: 1px solid var(--border-strong);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 4px 10px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.75rem;
+    }
+    .help-close-btn:hover { color: var(--accent); border-color: var(--accent); }
+    .help-close-btn:active { background: var(--bg-elevated); transform: translateY(1px); }
+    .help-close-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .help-modal-body {
+      padding: 20px 24px;
+      overflow-y: auto;
+      font-size: 0.82rem;
+      line-height: 1.65;
+      color: var(--text);
+    }
+    .help-toc {
+      background: var(--bg-sunken);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px 16px;
+      margin-bottom: 22px;
+      font-size: 0.78rem;
+    }
+    .help-toc strong {
+      display: block;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-size: 0.65rem;
+      margin-bottom: 6px;
+    }
+    .help-toc ol { padding-left: 20px; columns: 2; column-gap: 24px; }
+    .help-toc li { margin: 2px 0; break-inside: avoid; }
+    .help-toc a { color: var(--accent); text-decoration: none; }
+    .help-toc a:hover { text-decoration: underline; }
+    .help-section { margin-bottom: 24px; scroll-margin-top: 12px; }
+    .help-section h3 {
+      color: var(--accent);
+      font-size: 0.95rem;
+      margin-bottom: 8px;
+      font-weight: 700;
+    }
+    .help-section h4 {
+      color: var(--text-strong);
+      font-size: 0.82rem;
+      margin: 14px 0 4px;
+      font-weight: 700;
+    }
+    .help-section p { margin: 6px 0; }
+    .help-section ul { padding-left: 20px; margin: 4px 0 8px; }
+    .help-section li { margin: 3px 0; }
+    .help-section code {
+      background: var(--bg-sunken);
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-size: 0.76rem;
+      border: 1px solid var(--border);
+      color: var(--text-strong);
+    }
+    .help-formula {
+      background: var(--bg-sunken);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-size: 0.76rem;
+      color: var(--green);
+      margin: 6px 0 10px;
+      overflow-x: auto;
+      white-space: nowrap;
+    }
+    .help-callout {
+      background: var(--bg-sunken);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--amber);
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-size: 0.78rem;
+      color: var(--text);
+      margin: 8px 0;
+    }
+    .help-callout strong { color: var(--amber); }
+    .help-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.78rem;
+      margin: 6px 0 10px;
+    }
+    .help-table th, .help-table td {
+      text-align: left;
+      padding: 6px 10px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    .help-table th {
+      color: var(--text-muted);
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    @media (max-width: 640px) {
+      .help-modal-body { padding: 14px 16px; font-size: 0.78rem; }
+      .help-modal-header { padding: 12px 14px; }
+      .help-toc ol { columns: 1; }
+      .help-section h3 { font-size: 0.88rem; }
     }
   </style>
 </head>
 <body>
-  <h1>Claude Code Usage Dashboard</h1>
+  <div class="header">
+    <div class="header-left">
+      <h1>Claude Code Usage Dashboard</h1>
+      <nav class="nav" aria-label="Primary">
+        <a href="/" class="active">Dashboard</a>
+        <a href="/account">Account</a>
+        <a href="/chat">Chat</a>
+        <a href="/api">API</a>
+      </nav>
+      <div class="config-line" id="config-line">
+        <span class="loading">Detecting Claude data directory…</span>
+      </div>
+    </div>
+    <div class="header-right">
+      <button id="help-toggle" class="theme-toggle" type="button" aria-label="Open help and metric reference">
+        <span aria-hidden="true">?</span>
+        <span>Help</span>
+      </button>
+      <button id="time-format-toggle" class="theme-toggle" type="button" aria-label="Toggle 12 / 24 hour time">
+        <span id="time-format-label">24h</span>
+      </button>
+      <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">
+        <span id="theme-icon">🌙</span>
+        <span id="theme-label">Dark</span>
+      </button>
+    </div>
+  </div>
+
+  <div id="error-container"></div>
+
+  <div id="ai-ask-section" class="ai-ask-section">
+    <div class="ai-ask-label"><span class="ai-badge">✨ AI</span> Ask the dashboard</div>
+    <div class="ai-ask-bar">
+      <input type="text" id="ai-ask-input" placeholder="e.g. Which project did I spend the most on this week?" autocomplete="off">
+      <button id="ai-ask-send" class="ai-trigger-btn" type="button">Ask</button>
+    </div>
+    <div class="ai-ask-suggestions" id="ai-ask-suggestions">
+      <button type="button" data-q="Summarise my last 7 days in one paragraph.">Last 7 days</button>
+      <button type="button" data-q="Which model burned the most output tokens this month?">Heaviest model</button>
+      <button type="button" data-q="Why might my cache hit rate be lower than usual?">Cache why</button>
+      <button type="button" data-q="Which project did I work on most recently?">Most recent project</button>
+    </div>
+    <div id="ai-ask-result"></div>
+  </div>
+
+  <div class="section" id="global-filter-section">
+    <div class="filter-bar" id="global-filter-bar">
+      <span class="filter-label">Date</span>
+      <div class="chips" id="date-chips" role="group" aria-label="Date range">
+        <button class="chip active" type="button" data-range="all">All time</button>
+        <button class="chip" type="button" data-range="today">Today</button>
+        <button class="chip" type="button" data-range="yesterday">Yesterday</button>
+        <button class="chip" type="button" data-range="7d">Last 7 days</button>
+        <button class="chip" type="button" data-range="30d">Last 30 days</button>
+      </div>
+      <span class="filter-divider" aria-hidden="true"></span>
+      <div class="date-range">
+        <input type="date" id="date-from" aria-label="From date">
+        <span class="date-sep">—</span>
+        <input type="date" id="date-to" aria-label="To date">
+      </div>
+      <span class="filter-meta" id="global-filter-meta"></span>
+    </div>
+  </div>
 
   <div id="summary-section" class="section">
     <div class="loading">Loading...</div>
+  </div>
+
+  <div id="ai-daily-summary"></div>
+
+  <div class="section" id="token-usage-section">
+    <h2>Token Usage</h2>
+    <div class="token-usage-intro">
+      A <strong>token</strong> is roughly 3–4 characters of text (about ¾ of an English word). Every Claude request consumes tokens in four categories — each billed at a different rate. Hover any card for details, or
+      <a href="#" id="help-tokens-link">open the full guide →</a>
+    </div>
+    <div id="token-cards" class="cards">
+      <div class="card"><div class="label">Loading...</div></div>
+    </div>
   </div>
 
   <div class="section">
@@ -316,6 +1260,13 @@
     <div id="cache-cards" class="cards">
       <div class="card"><div class="label">Loading...</div></div>
     </div>
+    <div id="ai-cache-diagnosis"></div>
+  </div>
+
+  <div class="section" id="cost-forecast-section">
+    <h2>Cost Forecast</h2>
+    <div id="cost-forecast-cards" class="cards"></div>
+    <div id="ai-cost-forecast"></div>
   </div>
 
   <div class="section">
@@ -334,31 +1285,426 @@
 
   <div class="section">
     <h2>Project Activity</h2>
-    <table>
-      <thead>
-        <tr><th>Project</th><th>Messages</th><th>Sessions</th><th>Last Active</th></tr>
-      </thead>
-      <tbody id="projects-body">
-        <tr><td colspan="4" class="loading">Loading...</td></tr>
-      </tbody>
-    </table>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Project</th><th>Messages</th><th>Sessions</th><th>Last Active</th></tr>
+        </thead>
+        <tbody id="projects-body">
+          <tr><td colspan="4" class="loading">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="section" id="standup-prep-section">
+    <h2>Standup Prep ✨</h2>
+    <div class="standup-controls">
+      <span class="standup-label">Range:</span>
+      <div class="chips" id="standup-range-chips" role="group" aria-label="Standup range">
+        <button class="chip" type="button" data-standup-range="today">Today</button>
+        <button class="chip active" type="button" data-standup-range="yesterday">Yesterday</button>
+        <button class="chip" type="button" data-standup-range="3d">Last 3 days</button>
+        <button class="chip" type="button" data-standup-range="7d">Last 7 days</button>
+      </div>
+      <button class="ai-trigger-btn" id="ai-standup-btn" type="button">✨ Generate standup</button>
+    </div>
+    <div id="ai-standup-result"></div>
   </div>
 
   <div class="section">
     <h2>Prompt History</h2>
     <div class="tabs" id="history-tabs"></div>
-    <table>
-      <thead>
-        <tr><th>Time</th><th>Project</th><th>Prompt</th><th>Session</th></tr>
-      </thead>
-      <tbody id="history-table-body">
-        <tr><td colspan="4" class="loading">Loading...</td></tr>
-      </tbody>
-    </table>
+    <div class="filter-meta" id="history-meta"></div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Time</th><th>Project</th><th>Prompt</th><th>Session</th></tr>
+        </thead>
+        <tbody id="history-table-body">
+          <tr><td colspan="4" class="loading">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="help-overlay" class="help-overlay" role="dialog" aria-modal="true" aria-labelledby="help-title" hidden>
+    <div class="help-modal">
+      <div class="help-modal-header">
+        <h2 id="help-title">claude-lens — guide &amp; metric reference</h2>
+        <button id="help-close" class="help-close-btn" type="button" aria-label="Close help">Close (Esc)</button>
+      </div>
+      <div class="help-modal-body" id="help-body">
+        <p>This dashboard reads files written by the Claude Code CLI on your machine and shows what you've been doing — sessions, prompts, tool usage, and estimated cost. Everything is local: nothing on this page is sent to a server.</p>
+
+        <div class="help-toc">
+          <strong>On this page</strong>
+          <ol>
+            <li><a href="#h-data">Where the data comes from</a></li>
+            <li><a href="#h-summary">Today vs All-Time panels</a></li>
+            <li><a href="#h-cache">Cache Performance</a></li>
+            <li><a href="#h-daily">Daily Cost &amp; Cache table</a></li>
+            <li><a href="#h-tools">Tool Calls</a></li>
+            <li><a href="#h-projects">Project Activity</a></li>
+            <li><a href="#h-history">Prompt History</a></li>
+            <li><a href="#h-cost">How cost is calculated</a></li>
+            <li><a href="#h-tokens">Token types explained</a></li>
+            <li><a href="#h-filter">Date filter (global)</a></li>
+            <li><a href="#h-tz">Timezone &amp; date bucketing</a></li>
+            <li><a href="#h-prefs">Theme &amp; time format</a></li>
+            <li><a href="#h-api">OpenAI-compatible API</a></li>
+            <li><a href="#h-ai">AI insights ✨</a></li>
+            <li><a href="#h-faq">FAQ &amp; limitations</a></li>
+          </ol>
+        </div>
+
+        <div class="help-section" id="h-data">
+          <h3>1. Where the data comes from</h3>
+          <p>claude-lens auto-detects your Claude Code data directory (<code>CLAUDE_DIR</code>) and reads four kinds of files. The active path is shown in the header.</p>
+          <table class="help-table">
+            <thead><tr><th>File / folder</th><th>What it contains</th><th>Used for</th></tr></thead>
+            <tbody>
+              <tr><td><code>history.jsonl</code></td><td>Every prompt you've submitted with timestamp, project, and session ID</td><td>Prompt History, Project Activity</td></tr>
+              <tr><td><code>projects/&lt;encoded&gt;/&lt;sessionId&gt;.jsonl</code></td><td>Per-message records: token usage, tool calls, model used</td><td>Tool Calls, Daily Cost, Summary panels</td></tr>
+              <tr><td><code>sessions/*.json</code></td><td>Session metadata files</td><td>Exposed via API (not currently rendered)</td></tr>
+              <tr><td><code>stats-cache.json</code></td><td>Claude Code's internal cached stats</td><td>Returned via API for completeness</td></tr>
+            </tbody>
+          </table>
+          <p>Auto-detect order: <code>CLAUDE_DIR</code> env var → <code>~/.claude</code> → platform-specific paths (Windows <code>%APPDATA%\Claude</code>, macOS <code>~/Library/Application Support/Claude</code>, Linux <code>$XDG_CONFIG_HOME/claude</code>). The first directory containing any of <code>projects/</code>, <code>history.jsonl</code>, <code>sessions/</code>, or <code>stats-cache.json</code> wins.</p>
+        </div>
+
+        <div class="help-section" id="h-summary">
+          <h3>2. Today vs All-Time panels</h3>
+          <p>Two side-by-side cards at the top. <em>Today</em> is your local date (see Timezone below). <em>All Time</em> is the sum across every day on disk.</p>
+          <h4>Top row</h4>
+          <ul>
+            <li><strong>Sessions</strong> — distinct <code>sessionId</code> values that produced any user message that day. Sessions that span midnight are counted in each day they touched.</li>
+            <li><strong>Messages</strong> — number of user messages (your prompts and tool-result turns) on that day.</li>
+            <li><strong>Tool Calls</strong> — number of <code>tool_use</code> blocks emitted by the assistant that day.</li>
+            <li><strong>Cache Hit</strong> — share of input tokens that came from cache reads (see <a href="#h-cache">Cache Performance</a>). Color-coded: green &gt; 80%, amber &gt; 50%, pink otherwise.</li>
+          </ul>
+          <h4>Bottom row</h4>
+          <ul>
+            <li><strong>Est. Cost</strong> — sum of input + output + cache-read + cache-write tokens multiplied by the configured rates.</li>
+            <li><strong>Saved</strong> — estimated savings vs a no-cache baseline (see <a href="#h-cache">Cache Performance</a>).</li>
+            <li><strong>Cache Read</strong> — total tokens served from cache that day.</li>
+            <li><strong>Output Tokens</strong> — total tokens the model generated that day.</li>
+          </ul>
+          <h4>Top Models</h4>
+          <p>Lists the top three models by number of assistant responses (not tokens). Useful for spotting which Claude variant is doing most of the work.</p>
+        </div>
+
+        <div class="help-section" id="h-cache">
+          <h3>3. Cache Performance</h3>
+          <p>Anthropic's <em>prompt caching</em> lets long prefixes (system prompt, instructions, files re-read every turn) be billed at a discount on subsequent turns: you pay full price the first time (a <em>cache write</em>) and a tenth of input price thereafter (a <em>cache read</em>).</p>
+          <h4>Cache Hit Rate</h4>
+          <div class="help-formula">hitRate = cacheRead / (input + cacheRead + cacheCreate) × 100</div>
+          <p>The fraction of all input tokens that came from cache reads. Higher is better. A long-running session with stable context typically reaches 90%+.</p>
+          <h4>Cost With Cache vs Cost Without Cache</h4>
+          <div class="help-formula">costWithoutCache = (allInput × $5/M) + (output × $25/M)</div>
+          <div class="help-formula">saved = costWithoutCache − actualCost</div>
+          <p>"Without cache" treats every cached input token as if you paid full input price for it. "Cache Savings" is the difference.</p>
+          <div class="help-callout"><strong>Caveat:</strong> the no-cache baseline hard-codes Bedrock ap-southeast-2 rates ($5/M input, $25/M output). If you set <code>RATE_INPUT</code> / <code>RATE_OUTPUT</code> for Anthropic API pricing in <code>.env</code>, your <em>actual</em> cost reflects that, but the "Saved" column still compares against $5/M — so the savings number understates reality on the Anthropic API.</div>
+        </div>
+
+        <div class="help-section" id="h-daily">
+          <h3>4. Daily Cost &amp; Cache table</h3>
+          <p>One row per day in your local timezone. Columns:</p>
+          <table class="help-table">
+            <tbody>
+              <tr><td><strong>Date</strong></td><td>Local date (YYYY-MM-DD).</td></tr>
+              <tr><td><strong>Msgs</strong></td><td>User messages that day.</td></tr>
+              <tr><td><strong>Tools</strong></td><td>Tool-call invocations that day.</td></tr>
+              <tr><td><strong>Sess</strong></td><td>Distinct sessions touched that day.</td></tr>
+              <tr><td><strong>Cache Read</strong></td><td>Tokens served from cache (cheap).</td></tr>
+              <tr><td><strong>Cache Write</strong></td><td>Tokens written into the cache (expensive — ~25% premium over input).</td></tr>
+              <tr><td><strong>Hit Rate</strong></td><td>Per-day cache hit rate. Same formula as the summary panel.</td></tr>
+              <tr><td><strong>Est. Cost</strong></td><td>Per-day total: input + output + cache-read + cache-write at configured rates. The bar visualizes relative spend across days.</td></tr>
+              <tr><td><strong>Saved</strong></td><td>Per-day savings vs the no-cache baseline.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="help-section" id="h-tools">
+          <h3>5. Tool Calls</h3>
+          <p>Counts every <code>tool_use</code> block the assistant emitted across all projects, then sorts by frequency. Click any tool row to drill in: the most recent 200 calls are shown with the relevant arguments (Bash command, file path, Grep pattern, etc.) and a timestamp.</p>
+          <p>The detail panel includes an <strong>Export</strong> button that downloads all calls (not just the first 200) as a plain-text file — useful for grep'ing through your own command history.</p>
+        </div>
+
+        <div class="help-section" id="h-projects">
+          <h3>6. Project Activity</h3>
+          <p>Aggregated from <code>history.jsonl</code>. Rows are sorted by message count (most active first):</p>
+          <ul>
+            <li><strong>Project</strong> — short name + full encoded path (Claude Code stores projects as URL-encoded directory names).</li>
+            <li><strong>Messages</strong> — total prompts you've submitted in that project, ever.</li>
+            <li><strong>Sessions</strong> — distinct sessions in that project.</li>
+            <li><strong>Last Active</strong> — most recent prompt timestamp.</li>
+          </ul>
+        </div>
+
+        <div class="help-section" id="h-history">
+          <h3>7. Prompt History</h3>
+          <p>Every prompt you've ever sent, newest first. Use the project tabs to filter. Each row shows time, project, the prompt text (hover for the full message), and the first 8 characters of the session ID.</p>
+        </div>
+
+        <div class="help-section" id="h-cost">
+          <h3>8. How cost is calculated</h3>
+          <p>The server multiplies aggregated token counts by per-million-token rates configured in <code>.env</code>:</p>
+          <div class="help-formula">cost = input × RATE_INPUT + output × RATE_OUTPUT + cacheRead × RATE_CACHE_READ + cacheCreate × RATE_CACHE_CREATE</div>
+          <p>(All RATE values are USD per 1,000,000 tokens.)</p>
+          <table class="help-table">
+            <thead><tr><th>Variable</th><th>Default (Bedrock)</th><th>Anthropic API equivalent</th></tr></thead>
+            <tbody>
+              <tr><td><code>RATE_INPUT</code></td><td>$5.00</td><td>$15.00</td></tr>
+              <tr><td><code>RATE_OUTPUT</code></td><td>$25.00</td><td>$75.00</td></tr>
+              <tr><td><code>RATE_CACHE_READ</code></td><td>$0.50</td><td>$1.50</td></tr>
+              <tr><td><code>RATE_CACHE_CREATE</code></td><td>$6.25</td><td>$18.75</td></tr>
+            </tbody>
+          </table>
+          <p>Override any of these in <code>.env</code> and restart the server. Costs are <em>estimates</em>; the authoritative number is on your bill.</p>
+        </div>
+
+        <div class="help-section" id="h-tokens">
+          <h3>9. Token types explained</h3>
+
+          <h4>What is a token?</h4>
+          <p>A <strong>token</strong> is the unit Claude reads and writes. Roughly speaking, one token is 3–4 characters of English text — about ¾ of a word. The word "tokenization" is two tokens; the sentence "Hello, world!" is about four. Code, punctuation, and non-English text often use more tokens per character. <em>Everything you send and everything Claude generates is counted in tokens, and tokens are the unit of billing.</em></p>
+
+          <h4>One request, four kinds of tokens</h4>
+          <p>Every assistant turn reports a <code>usage</code> object with four counters. claude-lens sums these across all your project JSONL files.</p>
+          <table class="help-table">
+            <thead><tr><th>Token type</th><th>What it is</th><th>Default Bedrock price</th><th>Relative cost</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><strong>Input</strong> <span class="token-dot pink" aria-hidden="true">●</span></td>
+                <td>Fresh content you sent that wasn't already in the prompt cache (your latest message + any uncached context).</td>
+                <td>$5.00 / 1M</td>
+                <td>1× (baseline)</td>
+              </tr>
+              <tr>
+                <td><strong>Output</strong></td>
+                <td>Every token the model generated in its reply, including assistant text and tool-call arguments.</td>
+                <td>$25.00 / 1M</td>
+                <td>~5× input</td>
+              </tr>
+              <tr>
+                <td><strong>Cache Read</strong> <span class="token-dot blue" aria-hidden="true">●</span></td>
+                <td>Input tokens served from prompt cache instead of being processed fresh. The cache is what makes long conversations cheap.</td>
+                <td>$0.50 / 1M</td>
+                <td>~0.1× input</td>
+              </tr>
+              <tr>
+                <td><strong>Cache Write</strong> <span class="token-dot amber" aria-hidden="true">●</span></td>
+                <td>Input tokens being <em>stored into</em> the cache for later reuse. Paid once when the cache entry is created.</td>
+                <td>$6.25 / 1M</td>
+                <td>~1.25× input</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <h4>How they appear on your bill</h4>
+          <p>Total cost for a turn is roughly:</p>
+          <div class="help-formula">cost = input×$5 + output×$25 + cacheRead×$0.50 + cacheWrite×$6.25  (per 1M)</div>
+          <p>For Claude Code's typical workload — long, repeated context with many turns per session — cache reads dominate input volume, which is why the Cache Hit Rate matters so much. A 90% hit rate effectively cuts your input cost by ~9× compared to no caching.</p>
+
+          <h4>Why "Cache Write" is more expensive than "Input"</h4>
+          <p>Anthropic charges a one-time ~25% premium to write tokens into the cache. After that, every reuse costs only ~10% of the input rate. Net result over many turns: a big win — but the very first turn of a new session looks more expensive than the rest.</p>
+
+          <h4>Where claude-lens reads these from</h4>
+          <p>The numbers come from <code>message.usage</code> on each assistant message in <code>projects/&lt;project&gt;/&lt;sessionId&gt;.jsonl</code>:</p>
+          <ul>
+            <li><code>input_tokens</code> → Input</li>
+            <li><code>output_tokens</code> → Output</li>
+            <li><code>cache_read_input_tokens</code> → Cache Read</li>
+            <li><code>cache_creation_input_tokens</code> → Cache Write</li>
+          </ul>
+
+          <h4>Practical tips</h4>
+          <ul>
+            <li><strong>Long sessions are cheap, not expensive.</strong> Once your project context is cached, each new turn is mostly cache reads + output.</li>
+            <li><strong>Restarting kills your cache.</strong> A fresh session starts with cache writes again. If the cache hit rate is consistently low, look for whether something is invalidating the cache between turns (e.g. file content changes, model switch).</li>
+            <li><strong>Output is what you really pay for.</strong> If you're trying to cut cost, shorter responses help more than shorter prompts.</li>
+            <li><strong>Tokens ≠ characters.</strong> A 100k-token context window is not 100,000 characters — it's roughly 75,000 words.</li>
+          </ul>
+        </div>
+
+        <div class="help-section" id="h-filter">
+          <h3>10. Date filter (global)</h3>
+          <p>The chip bar at the top of the page (<em>All time / Today / Yesterday / Last 7 days / Last 30 days</em>, plus a custom from–to range) scopes <strong>every</strong> section below it.</p>
+          <h4>What it filters</h4>
+          <ul>
+            <li><strong>"Range" summary panel</strong> — sessions, messages, tool calls, cost, cache hit rate, output and cache-read tokens are all computed for the active range. The "Today" panel always shows today regardless of the filter, so you keep that quick reference even when looking at a wider window.</li>
+            <li><strong>Token Usage cards</strong> — main values reflect the range; "Today: …" sub-line is unchanged.</li>
+            <li><strong>Cache Performance</strong> — hit rate, cost-with-cache, cost-without-cache, and savings are recomputed.</li>
+            <li><strong>Daily Cost &amp; Cache</strong> — only days inside the range are listed; totals row sums those rows only.</li>
+            <li><strong>Tool Calls</strong> — counts are summed from per-day tool buckets returned by <code>/api/tool-calls</code>. If you see an "all time" note here, your server hasn't been restarted since the byDate field was added — restart it to enable filtering.</li>
+            <li><strong>Project Activity</strong> — re-derived from filtered Prompt History so messages/sessions/last-active reflect the range.</li>
+            <li><strong>Prompt History</strong> — rows scoped to the range; the project tabs still work on top of that.</li>
+          </ul>
+          <h4>Persistence</h4>
+          <p>Your selection is saved to <code>localStorage</code> as <code>claude-lens-date-filter</code>. Relative ranges ("last 7 days") re-resolve from <em>now</em> on each page load — they aren't frozen at the moment you chose them.</p>
+          <h4>Custom range</h4>
+          <p>Typing into the from/to inputs activates custom mode and clears the chip selection. Clearing both inputs falls back to <em>All time</em>. Inputs are inclusive on both ends in your local timezone.</p>
+        </div>
+
+        <div class="help-section" id="h-tz">
+          <h3>11. Timezone &amp; date bucketing</h3>
+          <p>All daily aggregations bucket by your <em>local</em> date (your system's IANA timezone, shown in the header). A turn at 11:30 PM local on Monday is on Monday's row even if UTC says it's already Tuesday.</p>
+          <p>Individual timestamps in tables (Last Active, Prompt History) are rendered with <code>toLocaleString</code>, also in your system timezone.</p>
+        </div>
+
+        <div class="help-section" id="h-prefs">
+          <h3>12. Theme &amp; time format</h3>
+          <ul>
+            <li><strong>Theme</strong> (🌙 / ☀️) — light/dark toggle. Defaults to your OS preference, persisted in <code>localStorage</code>.</li>
+            <li><strong>Time format</strong> (12h / 24h) — toggles between 24-hour and AM/PM display for all timestamps. Persisted in <code>localStorage</code>; switching re-renders without re-fetching data.</li>
+          </ul>
+        </div>
+
+        <div class="help-section" id="h-api">
+          <h3>13. OpenAI-compatible API</h3>
+          <p>The server exposes a local <strong>OpenAI Chat Completions–compatible</strong> API at <code>POST /v1/chat/completions</code> and <code>GET /v1/models</code>, so any client that already speaks OpenAI's wire format (the official <code>openai</code> Python / Node SDKs, LangChain, IDE plugins, etc.) can call your local Claude account by pointing its <code>base_url</code> at <code>http://localhost:3456/v1</code>.</p>
+          <p>The full reference, a request playground, and copy-pasteable cURL / Python / Node / fetch snippets live on the dedicated <a href="/api">API page</a> (linked from the top nav).</p>
+          <h4>Highlights</h4>
+          <ul>
+            <li>Same OAuth-based proxy as the Chat page — no separate Anthropic API key, billed against your local Claude account.</li>
+            <li>Auto-translates OpenAI <code>system</code> messages, multimodal <code>image_url</code> blocks (data URLs and remote URLs), <code>stop</code>, and finish reasons.</li>
+            <li>Streaming output is converted from Anthropic SSE → OpenAI <code>data: {chunk}\n\n</code> + final <code>data: [DONE]</code>.</li>
+            <li>Optional API-key guard via <code>LOCAL_API_KEY</code> in <code>.env</code> for when you forward port 3456 outside your machine.</li>
+            <li>Unsupported fields (<code>frequency_penalty</code>, <code>tools</code>, <code>response_format</code>, <code>n &gt; 1</code>, etc.) are silently ignored with a warning header.</li>
+          </ul>
+        </div>
+
+        <div class="help-section" id="h-ai">
+          <h3>14. AI insights ✨</h3>
+          <p>Several panels on this page can call Claude (Haiku 4.5) to write a short interpretation of the underlying numbers. Each one is gated behind an explicit button — nothing fires automatically on this dashboard, because a usage tool that silently burns tokens to summarise your usage would be ironic.</p>
+          <h4>Where they live</h4>
+          <ul>
+            <li><strong>Ask the dashboard</strong> — natural-language Q&amp;A bar at the top of the page. Type a question, get an answer grounded in your last 14 days of activity, top projects, top tools, and totals.</li>
+            <li><strong>Summarise today</strong> — paragraph card right under the Today / Range summary panels. Compares today to yesterday and notes any cache or model shifts.</li>
+            <li><strong>Cost Forecast</strong> — three cards (month-to-date, 7-day average, projected month-end) plus a one-line AI commentary on whether the trend is on track, elevated, or below baseline. Hides itself until there's at least one day of history.</li>
+            <li><strong>Diagnose cache hit rate</strong> — button under the Cache Performance cards. Reads the per-day cache stats in the active date range and explains the trend in plain English.</li>
+            <li><strong>Standup Prep ✨</strong> — section between Project Activity and Prompt History. Pick a range (today / yesterday / 3d / 7d), click Generate → markdown standup with <em>Recent work</em>, <em>Likely up next</em>, and <em>Open threads / friction</em> sections, grouped by project. Independent of the global date filter.</li>
+            <li><strong>Project narrative</strong> — small <code>✨ summarise</code> button on each Project Activity row. Reads recent prompts in that project and writes a 2-4 sentence theme summary.</li>
+            <li><strong>Tool drill-down summary</strong> — <code>✨ Summarise</code> button in any tool's drill-down panel. Groups similar invocations and surfaces themes (great for the Bash tool).</li>
+            <li><strong>Chat compaction</strong> — <code>✨ Compact</code> button in the chat header. After a long conversation, replaces older turns with a single AI-generated context handoff message that preserves names, paths, decisions, and open questions. Subsequent sends use the compacted version, shrinking the prompt and keeping cache-friendly. The most recent 4 turns are always kept verbatim.</li>
+          </ul>
+          <h4>How it works</h4>
+          <p>Every insight goes through one local server endpoint <code>POST /api/ai-insight</code>, which uses your existing OAuth token (same path as <code>/api/chat</code>). The model is always Haiku — typical cost per insight is a fraction of a cent. Inputs are aggregated structured data (counts, dates, project names), not your raw prompt text — except for the project narrative and conversation summariser, which need the prompts/messages to do their job.</p>
+          <h4>Caching</h4>
+          <p>Results are cached in <code>localStorage</code> keyed by <code>(kind, hashed-context)</code>. Reloading the page does not re-cost. Click the <code>↻</code> button on any insight to force a fresh generation.</p>
+          <h4>Privacy &amp; quota</h4>
+          <p>Each call goes to <code>api.anthropic.com</code> — the same risk model as the Chat page. Inference is billed against your local Claude account quota and counts toward the same 5h / 7d unified window. If you'd rather no AI calls happen at all, simply don't click the buttons and don't use the Q&amp;A bar.</p>
+        </div>
+
+        <div class="help-section" id="h-faq">
+          <h3>15. FAQ &amp; limitations</h3>
+          <h4>Is anything sent to the network?</h4>
+          <p>No. The server is Express on <code>localhost:3456</code> and reads files from disk. The HTML page only talks to that server. There are no analytics, no telemetry, no outbound calls.</p>
+          <h4>Why does my cost look different from my Anthropic / AWS bill?</h4>
+          <p>The numbers are computed from the rates you set in <code>.env</code>. They don't account for free tiers, prepay credits, region-specific pricing, or invoicing rounding. Treat them as a directional estimate.</p>
+          <h4>Why doesn't the page auto-refresh?</h4>
+          <p>It doesn't yet. Reload the page to pull the latest data. Files on disk update as Claude Code runs.</p>
+          <h4>I see "No Claude data directory found"</h4>
+          <p>Either Claude Code hasn't been run yet, or the data is somewhere unusual. Set <code>CLAUDE_DIR</code> in <code>.env</code> to the right path. The error banner lists every path the auto-detector tried.</p>
+          <h4>Port 3456 is in use</h4>
+          <p>Another instance of <code>claude-lens</code> is already running. Stop it, or change the <code>PORT</code> constant in <code>server.js</code>.</p>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script>
+    // === Theme handling ===
+    const THEME_KEY = 'claude-lens-theme';
+    function getInitialTheme() {
+      const saved = localStorage.getItem(THEME_KEY);
+      if (saved === 'light' || saved === 'dark') return saved;
+      return window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches
+        ? 'light' : 'dark';
+    }
+    function applyTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme);
+      const icon = document.getElementById('theme-icon');
+      const label = document.getElementById('theme-label');
+      if (icon) icon.textContent = theme === 'dark' ? '🌙' : '☀️';
+      if (label) label.textContent = theme === 'dark' ? 'Dark' : 'Light';
+    }
+    applyTheme(getInitialTheme());
+    document.getElementById('theme-toggle').addEventListener('click', () => {
+      const current = document.documentElement.getAttribute('data-theme') || 'dark';
+      const next = current === 'dark' ? 'light' : 'dark';
+      localStorage.setItem(THEME_KEY, next);
+      applyTheme(next);
+    });
+
+    // === Help drawer ===
+    const helpOverlay = document.getElementById('help-overlay');
+    const helpBody = document.getElementById('help-body');
+    function openHelp() {
+      helpOverlay.hidden = false;
+      helpOverlay.classList.add('open');
+      const closeBtn = document.getElementById('help-close');
+      if (closeBtn) closeBtn.focus();
+    }
+    function closeHelp() {
+      helpOverlay.classList.remove('open');
+      helpOverlay.hidden = true;
+    }
+    document.getElementById('help-toggle').addEventListener('click', openHelp);
+    document.getElementById('help-close').addEventListener('click', closeHelp);
+    document.getElementById('help-tokens-link').addEventListener('click', (e) => {
+      e.preventDefault();
+      openHelp();
+      requestAnimationFrame(() => {
+        const target = helpBody.querySelector('#h-tokens');
+        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
+    helpOverlay.addEventListener('click', (e) => {
+      if (e.target === helpOverlay) closeHelp();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !helpOverlay.hidden) closeHelp();
+    });
+    // Smooth-scroll TOC links to sections within the modal body
+    helpBody.addEventListener('click', (e) => {
+      const a = e.target.closest('a[href^="#"]');
+      if (!a) return;
+      const target = helpBody.querySelector(a.getAttribute('href'));
+      if (!target) return;
+      e.preventDefault();
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    // === Time format handling ===
+    const TIME_FORMAT_KEY = 'claude-lens-time-format';
+    let TIME_FORMAT = (() => {
+      const saved = localStorage.getItem(TIME_FORMAT_KEY);
+      return saved === '12h' || saved === '24h' ? saved : '24h';
+    })();
+    function applyTimeFormat(fmt) {
+      TIME_FORMAT = fmt;
+      const label = document.getElementById('time-format-label');
+      if (label) label.textContent = fmt;
+    }
+    applyTimeFormat(TIME_FORMAT);
+    document.getElementById('time-format-toggle').addEventListener('click', () => {
+      const next = TIME_FORMAT === '24h' ? '12h' : '24h';
+      localStorage.setItem(TIME_FORMAT_KEY, next);
+      applyTimeFormat(next);
+      if (globalThis._lastData) rerenderAll(globalThis._lastData);
+    });
+
+    // === Formatters ===
     const fmt = (n) => n != null ? n.toLocaleString() : '—';
+    const fmtTokens = (n) => {
+      if (n == null) return '—';
+      if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B';
+      if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+      if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k';
+      return n.toLocaleString();
+    };
     const fmtDate = (ts) => {
       if (!ts) return '—';
       const d = new Date(ts);
@@ -368,38 +1714,723 @@
       if (!ts) return '—';
       const d = new Date(ts);
       return d.toLocaleString('en-AU', {
-        day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false,
+        day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: TIME_FORMAT === '12h',
       });
     };
     const shortProject = (p) => {
       if (!p) return '—';
       const parts = p.split('/');
-      // Take last meaningful segment(s)
       return parts.slice(-1)[0] || parts.slice(-2)[0];
     };
+    const localDateKey = (date = new Date()) => {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    };
 
-    async function load() {
-      const [stats, history, toolData, projects, costData] = await Promise.all([
-        fetch('/api/stats').then(r => r.json()),
-        fetch('/api/history').then(r => r.json()),
-        fetch('/api/tool-calls').then(r => r.json()),
-        fetch('/api/projects').then(r => r.json()),
-        fetch('/api/daily-costs').then(r => r.json()),
-      ]);
-
-      renderSummary(costData, stats);
-      renderDailyCosts(costData);
-      renderTools(toolData);
-      renderProjects(projects);
-      renderHistory(history);
+    // === AI insights (shared helper) ===
+    //
+    // Every AI feature in this file goes through `mountAIInsight(host, kind, contextProvider, opts)`.
+    // It renders a "Generate" button → loading state → result panel with a refresh
+    // button. Results cache in localStorage by (kind, hashed-context) so reloading
+    // the dashboard doesn't re-cost. Always Haiku, always user-triggered, never
+    // auto-fires on this page.
+    function aiHashString(s) {
+      let h = 5381;
+      for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+      return (h >>> 0).toString(36);
+    }
+    function aiCacheKey(kind, context) {
+      const stable = JSON.stringify(context, Object.keys(context || {}).sort());
+      return `claude-lens-ai-${kind}-${aiHashString(stable || '')}`;
+    }
+    function aiBuildError(res, body) {
+      // Friendly errors for the most common cases. Each carries a `category`
+      // so the renderer can pick a specific UX (e.g. login button for 401).
+      const status = res.status;
+      const errType = body && body.error;
+      const baseMsg = (body && body.message) || `HTTP ${status}`;
+      if (status === 401 || errType === 'not_logged_in' || errType === 'authentication_error') {
+        const e = new Error(baseMsg);
+        e.category = 'auth';
+        return e;
+      }
+      if (status === 429 || errType === 'rate_limit_error') {
+        const retryAfter = res.headers.get('retry-after');
+        const reset5h = res.headers.get('anthropic-ratelimit-unified-5h-reset');
+        const lines = [baseMsg || 'Rate limit hit on the Claude account quota.'];
+        if (retryAfter) lines.push(`Retry after ~${retryAfter}s.`);
+        else if (reset5h) lines.push(`5h limit resets at unix ${reset5h}.`);
+        lines.push('Tip: Haiku-backed insights still consume the same unified quota — wait a moment and try again.');
+        const e = new Error(lines.join(' '));
+        e.category = 'rate_limit';
+        return e;
+      }
+      if (status === 502 || status === 503 || status === 504) {
+        const e = new Error(`Claude API is temporarily unreachable (${status}). Try again in a moment.`);
+        e.category = 'upstream';
+        return e;
+      }
+      const e = new Error(baseMsg);
+      e.category = 'other';
+      return e;
     }
 
-    function renderSummary(costData, stats) {
-      const container = document.getElementById('summary-section');
+    async function fetchAIInsight(kind, context, opts = {}) {
+      const cacheKey = aiCacheKey(kind, context);
+      if (!opts.refresh) {
+        try {
+          const cached = JSON.parse(localStorage.getItem(cacheKey) || 'null');
+          if (cached && cached.text) return { ...cached, fromCache: true };
+        } catch { /* ignore */ }
+      }
+      let res;
+      try {
+        res = await fetch('/api/ai-insight', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ kind, context }),
+        });
+      } catch (err) {
+        const e = new Error(`Network error: ${err.message || err}. Is the claude-lens server running?`);
+        e.category = 'network';
+        throw e;
+      }
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        throw aiBuildError(res, errBody);
+      }
+      const data = await res.json();
+      try { localStorage.setItem(cacheKey, JSON.stringify(data)); } catch { /* ignore */ }
+      return { ...data, fromCache: false };
+    }
+    function aiFormatText(text) {
+      const paras = String(text || '').trim().split(/\n\n+/);
+      return paras.map(p => `<p>${escapeHtml(p).replaceAll('\n', '<br>')}</p>`).join('');
+    }
+    // Tiny markdown renderer for AI output that uses **bold** and "- bullet"
+    // lines (standup-prep, conversation-summary). Splits on blank lines into
+    // sections; lines starting with "- " become <ul><li>; "**xxx**" becomes
+    // <strong>xxx</strong>. Anything fancier is out of scope.
+    function aiFormatMarkdown(text) {
+      const safe = String(text || '').trim();
+      if (!safe) return '<p>(empty)</p>';
+      const sections = safe.split(/\n\n+/);
+      const renderInline = (s) => escapeHtml(s).replaceAll(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+      return sections.map(section => {
+        const lines = section.split('\n');
+        const out = [];
+        let inList = false;
+        for (const raw of lines) {
+          const line = raw.trim();
+          if (!line) continue;
+          if (line.startsWith('- ')) {
+            if (!inList) { out.push('<ul>'); inList = true; }
+            out.push(`<li>${renderInline(line.slice(2))}</li>`);
+          } else {
+            if (inList) { out.push('</ul>'); inList = false; }
+            out.push(`<p>${renderInline(line)}</p>`);
+          }
+        }
+        if (inList) out.push('</ul>');
+        return out.join('');
+      }).join('');
+    }
+    function aiUsageLabel(data) {
+      const u = data && data.usage;
+      if (!u) return '';
+      const inTok = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0);
+      const outTok = u.output_tokens || 0;
+      return `${inTok} in · ${outTok} out`;
+    }
+    function aiModelShort(id) {
+      if (!id) return '';
+      if (id.includes('haiku')) return 'Haiku';
+      if (id.includes('sonnet')) return 'Sonnet';
+      if (id.includes('opus')) return 'Opus';
+      return id;
+    }
+    function mountAIInsight(host, kind, contextProvider, opts = {}) {
+      if (!host) return;
+      host.classList.add('ai-insight');
+      const label = opts.label || 'Generate insight';
+      const hint = opts.hint || '';
+      const renderEmpty = () => {
+        host.innerHTML = `
+          <div class="ai-insight-empty">
+            <button class="ai-trigger-btn" type="button">✨ ${escapeHtml(label)}</button>
+            ${hint ? `<span class="ai-hint">${escapeHtml(hint)}</span>` : ''}
+          </div>`;
+        host.querySelector('.ai-trigger-btn').addEventListener('click', () => run(false));
+      };
+      const renderResult = (data) => {
+        const meta = [aiModelShort(data.model || ''), aiUsageLabel(data)].filter(Boolean);
+        if (data.fromCache) meta.push('cached');
+        host.innerHTML = `
+          <div class="ai-insight-result">
+            <div class="ai-insight-header">
+              <span class="ai-badge">✨ AI</span>
+              <span class="ai-meta">${escapeHtml(meta.join(' · '))}</span>
+              <button class="ai-refresh-btn" type="button" title="Re-generate" aria-label="Re-generate insight">↻</button>
+            </div>
+            <div class="ai-insight-body">${(opts.formatter || aiFormatText)(data.text || '(empty)')}</div>
+          </div>`;
+        host.querySelector('.ai-refresh-btn').addEventListener('click', () => run(true));
+      };
+      const renderError = (err) => {
+        const msg = (err && err.message) || String(err) || 'Unknown error';
+        const cat = (err && err.category) || 'other';
+        let extra = '';
+        if (cat === 'auth') {
+          extra = `<div class="ai-hint">Sign-in status is shown on <a href="/account">/account</a>. Re-run <code>claude /login</code> if needed.</div>`;
+        } else if (cat === 'rate_limit') {
+          extra = `<div class="ai-hint">All AI insights count against the same unified 5h / 7d quota as the chat page.</div>`;
+        } else if (cat === 'network') {
+          extra = `<div class="ai-hint">If the server was just restarted, give it a couple of seconds.</div>`;
+        }
+        const showRetry = cat !== 'auth';  // don't offer retry until they fix the credentials
+        host.innerHTML = `
+          <div class="ai-insight-error">
+            <div>✨ AI insight failed: ${escapeHtml(msg)}</div>
+            ${extra}
+            ${showRetry ? '<button class="ai-trigger-btn" type="button">Try again</button>' : ''}
+          </div>`;
+        const retryBtn = host.querySelector('.ai-trigger-btn');
+        if (retryBtn) retryBtn.addEventListener('click', () => run(true));
+      };
+      const run = async (forceRefresh) => {
+        host.innerHTML = `<div class="ai-insight-loading">✨ Generating insight…</div>`;
+        try {
+          const ctx = contextProvider();
+          const data = await fetchAIInsight(kind, ctx, { refresh: forceRefresh });
+          renderResult(data);
+        } catch (err) {
+          renderError(err);
+        }
+      };
+      // If we have a cached result already, render it directly. Otherwise show the empty state.
+      try {
+        const ctx = contextProvider();
+        const cached = JSON.parse(localStorage.getItem(aiCacheKey(kind, ctx)) || 'null');
+        if (cached && cached.text) {
+          renderResult({ ...cached, fromCache: true });
+          return;
+        }
+      } catch { /* ignore */ }
+      renderEmpty();
+    }
+
+    // === Date filter (global) ===
+    const DATE_FILTER_KEY = 'claude-lens-date-filter';
+    let dateFilter = (() => {
+      try {
+        const raw = JSON.parse(localStorage.getItem(DATE_FILTER_KEY) || 'null');
+        if (raw && typeof raw.mode === 'string') return raw;
+      } catch { /* ignore */ }
+      return { mode: 'all' };
+    })();
+
+    const startOfLocalDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    const parseTs = (ts) => typeof ts === 'number' ? ts : Date.parse(ts);
+
+    // Returns { from, to } in ms, or null for "all".
+    function dateRangeMs() {
+      if (!dateFilter || dateFilter.mode === 'all') return null;
+      const now = new Date();
+      const startToday = startOfLocalDay(now);
+      const DAY = 86400000;
+      if (dateFilter.mode === 'today') return { from: startToday, to: startToday + DAY - 1 };
+      if (dateFilter.mode === 'yesterday') return { from: startToday - DAY, to: startToday - 1 };
+      if (dateFilter.mode === '7d') return { from: startToday - 6 * DAY, to: startToday + DAY - 1 };
+      if (dateFilter.mode === '30d') return { from: startToday - 29 * DAY, to: startToday + DAY - 1 };
+      if (dateFilter.mode === 'custom') {
+        const from = dateFilter.from ? startOfLocalDay(new Date(dateFilter.from + 'T00:00:00')) : -Infinity;
+        const to = dateFilter.to ? startOfLocalDay(new Date(dateFilter.to + 'T00:00:00')) + DAY - 1 : Infinity;
+        return { from, to };
+      }
+      return null;
+    }
+
+    function describeDateFilter() {
+      if (!dateFilter || dateFilter.mode === 'all') return 'All time';
+      if (dateFilter.mode === 'today') return 'Today';
+      if (dateFilter.mode === 'yesterday') return 'Yesterday';
+      if (dateFilter.mode === '7d') return 'Last 7 days';
+      if (dateFilter.mode === '30d') return 'Last 30 days';
+      if (dateFilter.mode === 'custom') {
+        const f = dateFilter.from || '…';
+        const t = dateFilter.to || '…';
+        return `${f} → ${t}`;
+      }
+      return '';
+    }
+
+    // Whether a YYYY-MM-DD local-date string falls within the active range.
+    function dateStringInRange(dateStr, range) {
+      if (!range) return true;
+      const t = startOfLocalDay(new Date(dateStr + 'T00:00:00'));
+      return t >= range.from && t <= range.to;
+    }
+
+    function filterDays(days, range) {
+      if (!range) return days || [];
+      return (days || []).filter(d => dateStringInRange(d.date, range));
+    }
+
+    // Re-aggregate per-day cost rows into the same totals shape the server returns.
+    function totalsFromDays(days) {
+      const totals = { messages: 0, toolCalls: 0, sessions: 0, input: 0, output: 0, cacheRead: 0, cacheCreate: 0, cost: 0, models: {} };
+      for (const d of days) {
+        totals.messages += d.messages || 0;
+        totals.toolCalls += d.toolCalls || 0;
+        totals.sessions += d.sessions || 0;
+        totals.input += d.input || 0;
+        totals.output += d.output || 0;
+        totals.cacheRead += d.cacheRead || 0;
+        totals.cacheCreate += d.cacheCreate || 0;
+        totals.cost += d.cost || 0;
+        for (const [m, c] of Object.entries(d.models || {})) {
+          totals.models[m] = (totals.models[m] || 0) + c;
+        }
+      }
+      totals.cost = Math.round(totals.cost * 100) / 100;
+      return totals;
+    }
+
+    function filterHistory(history, range) {
+      if (!range) return history || [];
+      return (history || []).filter(h => {
+        const t = parseTs(h.timestamp);
+        return Number.isFinite(t) && t >= range.from && t <= range.to;
+      });
+    }
+
+    function projectsFromHistory(history) {
+      const map = {};
+      for (const h of history) {
+        const proj = h.project || 'unknown';
+        if (!map[proj]) map[proj] = { name: proj, shortName: (proj.split('/').pop() || proj), messages: 0, sessions: new Set(), firstSeen: null, lastSeen: null };
+        map[proj].messages++;
+        if (h.sessionId) map[proj].sessions.add(h.sessionId);
+        const ts = h.timestamp;
+        if (ts && (!map[proj].firstSeen || ts < map[proj].firstSeen)) map[proj].firstSeen = ts;
+        if (ts && (!map[proj].lastSeen || ts > map[proj].lastSeen)) map[proj].lastSeen = ts;
+      }
+      return Object.values(map).map(p => ({ ...p, sessions: p.sessions.size })).sort((a, b) => b.messages - a.messages);
+    }
+
+    // Sum tool counts within range using server-supplied byDate buckets.
+    // Returns { tools, supported } — supported=false when the server is older
+    // and didn't ship byDate, so the UI can fall back to all-time counts.
+    function filterToolData(toolData, range) {
+      if (!toolData) return { tools: [], supported: true };
+      if (!range) return { tools: toolData.tools || [], supported: true };
+      if (!toolData.byDate) return { tools: toolData.tools || [], supported: false };
+      const counts = {};
+      for (const [date, byTool] of Object.entries(toolData.byDate)) {
+        if (!dateStringInRange(date, range)) continue;
+        for (const [tool, c] of Object.entries(byTool)) {
+          counts[tool] = (counts[tool] || 0) + c;
+        }
+      }
+      const tools = Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([tool, count]) => ({ tool, count }));
+      return { tools, supported: true };
+    }
+
+    // === Filter UI wiring ===
+    function refreshFilterUI() {
+      const chipsEl = document.getElementById('date-chips');
+      const fromEl = document.getElementById('date-from');
+      const toEl = document.getElementById('date-to');
+      const metaEl = document.getElementById('global-filter-meta');
+      if (!chipsEl) return;
+      chipsEl.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+      if (dateFilter.mode === 'custom') {
+        if (fromEl) fromEl.value = dateFilter.from || '';
+        if (toEl) toEl.value = dateFilter.to || '';
+      } else {
+        const target = chipsEl.querySelector(`.chip[data-range="${dateFilter.mode}"]`);
+        if (target) target.classList.add('active');
+        if (fromEl) fromEl.value = '';
+        if (toEl) toEl.value = '';
+      }
+      if (metaEl) metaEl.textContent = describeDateFilter();
+    }
+
+    function setDateFilter(next) {
+      dateFilter = next;
+      try { localStorage.setItem(DATE_FILTER_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+      refreshFilterUI();
+      if (globalThis._lastData) rerenderAll(globalThis._lastData);
+    }
+
+    document.getElementById('date-chips').addEventListener('click', (e) => {
+      const chip = e.target.closest('.chip');
+      if (!chip) return;
+      setDateFilter({ mode: chip.dataset.range });
+    });
+
+    function onCustomDateChange() {
+      const fromEl = document.getElementById('date-from');
+      const toEl = document.getElementById('date-to');
+      const fromVal = fromEl ? fromEl.value : '';
+      const toVal = toEl ? toEl.value : '';
+      if (!fromVal && !toVal) {
+        setDateFilter({ mode: 'all' });
+      } else {
+        setDateFilter({ mode: 'custom', from: fromVal || null, to: toVal || null });
+      }
+    }
+    document.getElementById('date-from').addEventListener('change', onCustomDateChange);
+    document.getElementById('date-to').addEventListener('change', onCustomDateChange);
+
+    refreshFilterUI();
+
+    function renderConfig(cfg) {
+      const el = document.getElementById('config-line');
+      if (!cfg) {
+        el.innerHTML = '<span class="loading">Config unavailable</span>';
+        return;
+      }
+      const sourceLabel = {
+        env: 'from .env',
+        home: '~/.claude',
+        appdata: 'AppData',
+        localappdata: 'LocalAppData',
+        userprofile: 'UserProfile',
+        'macos-app-support': 'macOS App Support',
+        xdg: 'XDG config',
+      }[cfg.source] || cfg.source;
+      const badgeClass = cfg.valid ? '' : ' invalid';
+      const badgeText = cfg.valid ? sourceLabel : 'NOT FOUND';
+      const tz = cfg.timezone || {};
+      const tzName = tz.name || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+      const tzOffset = tz.offset || '';
+      const tzText = tzOffset ? `${tzName} (UTC${tzOffset})` : tzName;
+      el.innerHTML =
+        `<span>CLAUDE_DIR:</span>` +
+        `<span class="config-path">${escapeHtml(cfg.claudeDir)}</span>` +
+        `<span class="source-badge${badgeClass}">${escapeHtml(badgeText)}</span>` +
+        `<span style="margin-left:8px">TZ:</span>` +
+        `<span class="config-path" title="All dates and times shown in your system timezone">${escapeHtml(tzText)}</span>`;
+    }
+
+    function renderConfigError(cfg) {
+      if (!cfg || cfg.valid) return;
+      const container = document.getElementById('error-container');
+      const tried = (cfg.candidates || [])
+        .map(c => `<li><code>${escapeHtml(c.path)}</code> — ${escapeHtml(c.source)}${c.exists ? ' (exists, but missing Claude data)' : ' (not found)'}</li>`)
+        .join('');
+      container.innerHTML = `
+        <div class="error-banner">
+          <h3>No Claude data directory found</h3>
+          <div>Set <code>CLAUDE_DIR</code> in <code>.env</code> to point to your Claude Code data folder. Locations checked:</div>
+          <ul>${tried}</ul>
+        </div>`;
+    }
+
+    async function load() {
+      let cfg = null;
+      try {
+        cfg = await fetch('/api/config').then(r => r.json());
+        globalThis._lastConfig = cfg;
+        renderConfig(cfg);
+        renderConfigError(cfg);
+      } catch (err) {
+        renderConfig(null);
+      }
+
+      if (cfg && !cfg.valid) {
+        // Skip data fetches when no valid dir; clear loading states
+        document.getElementById('summary-section').innerHTML = '';
+        document.getElementById('cache-cards').innerHTML = '';
+        document.getElementById('daily-costs').innerHTML = '';
+        document.getElementById('tool-calls').innerHTML = '';
+        document.getElementById('projects-body').innerHTML = '<tr><td colspan="4" class="loading">No data</td></tr>';
+        document.getElementById('history-table-body').innerHTML = '<tr><td colspan="4" class="loading">No data</td></tr>';
+        return;
+      }
+
+      const safeJson = (url) => fetch(url).then(r => r.json()).catch(() => null);
+      const [stats, history, toolData, projects, costData] = await Promise.all([
+        safeJson('/api/stats'),
+        safeJson('/api/history'),
+        safeJson('/api/tool-calls'),
+        safeJson('/api/projects'),
+        safeJson('/api/daily-costs'),
+      ]);
+
+      globalThis._lastData = { stats, history, toolData, projects, costData };
+      rerenderAll(globalThis._lastData);
+    }
+
+    function rerenderAll({ stats, history, toolData, projects, costData }) {
+      const range = dateRangeMs();
+      const filteredDays = costData ? filterDays(costData.days, range) : [];
+      const filteredCostTotals = totalsFromDays(filteredDays);
+      const filteredHistory = filterHistory(history, range);
+      const filteredToolResult = filterToolData(toolData, range);
+
+      const ctx = {
+        range,
+        rangeLabel: describeDateFilter(),
+        rangeIsAll: !range,
+      };
+
+      if (costData) renderSummary(costData, filteredDays, filteredCostTotals, ctx, stats);
+      if (costData) renderTokenUsage(costData, filteredCostTotals, ctx);
+      if (costData) renderDailyCosts(costData, filteredDays, filteredCostTotals, ctx);
+      if (toolData) renderTools(filteredToolResult, ctx);
+      if (history) renderProjects(filteredHistory, projects, ctx);
+      if (history) renderHistory(history, filteredHistory, ctx);
+      if (costData) mountDailySummaryAI(costData);
+      if (costData) mountCacheDiagnosisAI(filteredDays, filteredCostTotals, ctx);
+      if (costData) renderCostForecast(costData);
+      const last = globalThis._lastToolCalls;
+      if (last && document.querySelector('.tool-detail-panel')) {
+        loadToolDetails(last.toolName);
+      }
+    }
+
+    // === AI feature mount helpers ===
+
+    function dayHitRate(d) {
+      const all = (d.input || 0) + (d.cacheRead || 0) + (d.cacheCreate || 0);
+      return all > 0 ? (d.cacheRead || 0) / all * 100 : 0;
+    }
+
+    function mountDailySummaryAI(costData) {
+      const host = document.getElementById('ai-daily-summary');
+      if (!host) return;
+      const today = localDateKey();
+      const allDays = costData.days || [];
+      const todayData = allDays.find(d => d.date === today);
+      // Hide the panel entirely on days with no activity yet — no point summarising nothing.
+      if (!todayData || (!todayData.messages && !todayData.toolCalls && !todayData.cost)) {
+        host.classList.remove('ai-insight');
+        host.innerHTML = '';
+        return;
+      }
+      const yesterdayKey = localDateKey(new Date(Date.now() - 86400000));
+      const yesterdayData = allDays.find(d => d.date === yesterdayKey);
       const totals = costData.totals || {};
-      const days = costData.days || [];
-      const today = new Date().toISOString().slice(0, 10);
-      const todayData = days.find(d => d.date === today);
+      const tzName = (globalThis._lastConfig && globalThis._lastConfig.timezone && globalThis._lastConfig.timezone.name) || '';
+      mountAIInsight(host, 'daily-summary', () => ({
+        timezone: tzName,
+        today: { ...todayData, hitRate: dayHitRate(todayData) },
+        yesterday: yesterdayData ? { ...yesterdayData, hitRate: dayHitRate(yesterdayData) } : null,
+        allTime: {
+          sessions: totals.sessions || 0,
+          messages: totals.messages || 0,
+          cost: totals.cost || 0,
+          hitRate: totals.cacheRead != null
+            ? ((totals.cacheRead || 0) / Math.max(1, (totals.input || 0) + (totals.cacheRead || 0) + (totals.cacheCreate || 0)) * 100)
+            : 0,
+        },
+      }), {
+        label: `Summarise today (${today})`,
+        hint: 'Cheap Haiku call · result cached per day',
+      });
+    }
+
+    function mountCacheDiagnosisAI(filteredDays, totals, ctx) {
+      const host = document.getElementById('ai-cache-diagnosis');
+      if (!host) return;
+      if (!filteredDays || filteredDays.length === 0) {
+        host.classList.remove('ai-insight');
+        host.innerHTML = '';
+        return;
+      }
+      const days = filteredDays.map(d => ({
+        date: d.date,
+        sessions: d.sessions,
+        cacheRead: d.cacheRead,
+        cacheCreate: d.cacheCreate,
+        cost: d.cost,
+        hitRate: dayHitRate(d),
+      }));
+      mountAIInsight(host, 'cache-diagnosis', () => ({
+        rangeLabel: ctx ? ctx.rangeLabel : 'All time',
+        days,
+        totals: {
+          input: totals.input || 0,
+          output: totals.output || 0,
+          cacheRead: totals.cacheRead || 0,
+          cacheCreate: totals.cacheCreate || 0,
+        },
+      }), {
+        label: 'Diagnose cache hit rate',
+        hint: 'Why is the rate what it is, and what would help',
+      });
+    }
+
+    // Compute a simple end-of-month cost projection from a 7-day rolling
+    // average of completed days. Today is excluded from the rolling average
+    // because it's mid-day and would skew low. Returns null when there's
+    // not enough history to be meaningful.
+    function buildCostForecast(allDays) {
+      if (!allDays || allDays.length === 0) return null;
+      const now = new Date();
+      const today = localDateKey();
+      const monthStartKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+      const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+      const daysIntoMonth = now.getDate();
+      const daysRemainingInMonth = Math.max(0, daysInMonth - daysIntoMonth);
+
+      const monthDays = allDays.filter(d => d.date >= monthStartKey && d.date <= today);
+      const monthToDate = monthDays.reduce((s, d) => s + (d.cost || 0), 0);
+      const todayData = allDays.find(d => d.date === today);
+      const todayCost = todayData ? (todayData.cost || 0) : 0;
+
+      // Rolling average over the last 7 *completed* days (anything before today
+      // that has data). If we don't have 7 yet, average over what we do have.
+      const completed = allDays.filter(d => d.date < today).slice(-7);
+      const rolling7AvgCost = completed.length > 0
+        ? completed.reduce((s, d) => s + (d.cost || 0), 0) / completed.length
+        : 0;
+
+      const projectedRemaining = rolling7AvgCost * daysRemainingInMonth;
+      const projectedMonthTotal = monthToDate + projectedRemaining;
+
+      return {
+        today,
+        todayCost,
+        monthToDate,
+        rolling7AvgCost,
+        daysIntoMonth,
+        daysInMonth,
+        daysRemainingInMonth,
+        projectedMonthTotal,
+        last7: completed.map(d => ({ date: d.date, cost: d.cost })),
+      };
+    }
+
+    function renderCostForecast(costData) {
+      const cardsEl = document.getElementById('cost-forecast-cards');
+      const aiHost = document.getElementById('ai-cost-forecast');
+      const sectionEl = document.getElementById('cost-forecast-section');
+      if (!cardsEl || !aiHost || !sectionEl) return;
+
+      const forecast = buildCostForecast(costData.days || []);
+      if (!forecast || (forecast.monthToDate === 0 && forecast.rolling7AvgCost === 0)) {
+        // Hide entirely until there's enough history to be useful
+        sectionEl.style.display = 'none';
+        return;
+      }
+      sectionEl.style.display = '';
+
+      const cards = [
+        {
+          label: 'Month to date',
+          value: '$' + forecast.monthToDate.toFixed(2),
+          sub: `Day ${forecast.daysIntoMonth} of ${forecast.daysInMonth}`,
+          cls: '',
+        },
+        {
+          label: '7-day avg / day',
+          value: '$' + forecast.rolling7AvgCost.toFixed(2),
+          sub: `Last ${forecast.last7.length} completed day${forecast.last7.length === 1 ? '' : 's'}`,
+          cls: 'amber-text',
+        },
+        {
+          label: 'Projected month-end',
+          value: '$' + forecast.projectedMonthTotal.toFixed(2),
+          sub: forecast.daysRemainingInMonth > 0
+            ? `+${forecast.daysRemainingInMonth} days at avg`
+            : 'Month is over',
+          cls: 'purple-text',
+        },
+      ];
+      cardsEl.innerHTML = cards.map(c => `
+        <div class="card forecast-card">
+          <div class="label">${escapeHtml(c.label)}</div>
+          <div class="value ${c.cls}">${escapeHtml(c.value)}</div>
+          <div class="sub">${escapeHtml(c.sub)}</div>
+        </div>`).join('');
+
+      const tzName = (globalThis._lastConfig?.timezone?.name) || '';
+      mountAIInsight(aiHost, 'cost-forecast', () => ({
+        timezone: tzName,
+        ...forecast,
+      }), {
+        label: 'Interpret this forecast',
+        hint: 'On track or elevated? Cheap Haiku commentary',
+      });
+    }
+
+    function renderTokenUsage(costData, filteredTotals, ctx) {
+      const totals = filteredTotals || costData.totals || {};
+      const today = localDateKey();
+      const todayData = (costData.days || []).find(d => d.date === today)
+        || { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 };
+      const rangeLabel = ctx && ctx.rangeIsAll ? 'All time' : (ctx ? ctx.rangeLabel : 'All time');
+
+      const tokenCard = (label, value, todayVal, desc, colorClass, tooltip) => `
+        <div class="card" title="${escapeHtml(tooltip)}">
+          <div class="label">${label}</div>
+          <div class="value ${colorClass}" title="${(value || 0).toLocaleString()} tokens">${fmtTokens(value || 0)}</div>
+          <div class="sub">Today: ${fmtTokens(todayVal || 0)}</div>
+          <div class="token-desc">${desc}</div>
+        </div>`;
+
+      const grandTotal = (totals.input || 0) + (totals.output || 0) + (totals.cacheRead || 0) + (totals.cacheCreate || 0);
+      const totalCard = `
+        <div class="card" title="Sum of input + output + cache read + cache write across the active date range.">
+          <div class="label">Total Tokens</div>
+          <div class="value" title="${grandTotal.toLocaleString()} tokens">${fmtTokens(grandTotal)}</div>
+          <div class="sub">${escapeHtml(rangeLabel)}</div>
+          <div class="token-desc">Sum of all four categories</div>
+        </div>`;
+
+      document.getElementById('token-cards').innerHTML = [
+        tokenCard(
+          'Input',
+          totals.input,
+          todayData.input,
+          'Fresh tokens you sent',
+          'pink-text',
+          'Uncached input tokens — text you sent that wasn’t already in the prompt cache. Billed at full input price (default $5 per 1M for Bedrock).',
+        ),
+        tokenCard(
+          'Output',
+          totals.output,
+          todayData.output,
+          'Tokens the model generated',
+          '',
+          'Output tokens — every word the model produced. Most expensive token type (default $25 per 1M for Bedrock, ~5× input price).',
+        ),
+        tokenCard(
+          'Cache Read',
+          totals.cacheRead,
+          todayData.cacheRead,
+          'Reused from cache (cheap)',
+          'blue-text',
+          'Cache reads — input tokens served from the prompt cache. Billed at ~10% of input price (default $0.50 per 1M). Higher = more savings.',
+        ),
+        tokenCard(
+          'Cache Write',
+          totals.cacheCreate,
+          todayData.cacheCreate,
+          'Stored to cache (one-time premium)',
+          'amber-text',
+          'Cache writes (cache_creation) — input tokens being placed into the cache for later reuse. One-time ~25% premium over input price (default $6.25 per 1M).',
+        ),
+        totalCard,
+      ].join('');
+    }
+
+    function renderSummary(costData, filteredDays, filteredTotals, ctx, stats) {
+      const container = document.getElementById('summary-section');
+      const allDays = costData.days || [];
+      const today = localDateKey();
+      const todayData = allDays.find(d => d.date === today);
+      const rangeIsAll = ctx ? ctx.rangeIsAll : true;
+      const rangeLabel = ctx ? ctx.rangeLabel : 'All time';
+      const rangeBadge = rangeIsAll ? 'All Time' : 'Range';
+      const rangeDate = rangeIsAll
+        ? (allDays.length ? `Since ${allDays[0].date}` : '')
+        : rangeLabel;
 
       function calcMetrics(d) {
         const allInput = d.input + d.cacheRead + d.cacheCreate;
@@ -409,17 +2440,17 @@
         return { hitRate, saved };
       }
 
-      function topModelsCard(models, cls) {
+      function topModelsCard(models) {
         if (!models || Object.keys(models).length === 0) return '';
         const sorted = Object.entries(models).sort((a, b) => b[1] - a[1]).slice(0, 3);
         return `
-        <div class="top-models" style="margin-top:12px;padding-top:12px;border-top:1px solid #21262d">
-          <div class="metric-label" style="margin-bottom:8px">Top Models</div>
+        <div class="top-models" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+          <div class="metric-label" style="margin-bottom:8px;font-size:0.65rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em">Top Models</div>
           ${sorted.map(([model, count], i) => `
             <div style="display:flex;align-items:center;gap:8px;padding:4px 0">
-              <span class="model-rank" style="font-size:0.65rem;color:#8b949e;min-width:16px">${i + 1}.</span>
-              <span class="model-name" style="font-size:0.75rem;color:#d2a8ff;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${model}</span>
-              <span class="model-count" style="font-size:0.7rem;color:#8b949e">${fmt(count)} responses</span>
+              <span style="font-size:0.65rem;color:var(--text-muted);min-width:16px">${i + 1}.</span>
+              <span style="font-size:0.75rem;color:var(--purple);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(model)}</span>
+              <span style="font-size:0.7rem;color:var(--text-muted)">${fmt(count)} responses</span>
             </div>
           `).join('')}
         </div>`;
@@ -427,8 +2458,8 @@
 
       function panel(data, isToday, models) {
         const cls = isToday ? 'today' : 'alltime';
-        const badge = isToday ? 'Today' : 'All Time';
-        const date = isToday ? today : (days.length ? `Since ${days[0].date}` : '');
+        const badge = isToday ? 'Today' : rangeBadge;
+        const date = isToday ? today : rangeDate;
         const m = calcMetrics(data);
 
         return `
@@ -474,7 +2505,7 @@
               <div class="metric-value">${fmt(data.output)}</div>
             </div>
           </div>
-          ${topModelsCard(models, cls)}
+          ${topModelsCard(models)}
         </div>`;
       }
 
@@ -488,9 +2519,17 @@
             <div class="metric" style="padding:10px"><div class="metric-label">No activity yet</div></div>
           </div>`;
 
-      const allTimePanel = panel(totals, false, totals.models);
-
-      container.innerHTML = `<div class="summary-grid">${todayPanel}${allTimePanel}</div>`;
+      const rangeHasData = (filteredTotals && (filteredTotals.messages || filteredTotals.toolCalls || filteredTotals.cost));
+      const rangePanel = rangeHasData
+        ? panel(filteredTotals, false, filteredTotals.models)
+        : `<div class="summary-panel alltime">
+            <div class="panel-header">
+              <span class="panel-badge">${escapeHtml(rangeBadge)}</span>
+              <span class="panel-date">${escapeHtml(rangeDate)}</span>
+            </div>
+            <div class="metric" style="padding:10px"><div class="metric-label">No activity in this range</div></div>
+          </div>`;
+      container.innerHTML = `<div class="summary-grid">${todayPanel}${rangePanel}</div>`;
     }
 
     function card(label, value, sub) {
@@ -501,15 +2540,17 @@
       </div>`;
     }
 
-    function renderDailyCosts(data) {
+    function renderDailyCosts(data, filteredDays, filteredTotals, ctx) {
       const container = document.getElementById('daily-costs');
-      const { days, totals } = data;
-      if (!days || !days.length) {
-        container.innerHTML = '<div class="loading">No cost data found</div>';
+      const days = filteredDays && filteredDays.length ? filteredDays : [];
+      const totals = filteredTotals || data.totals || {};
+      const rangeLabel = ctx ? ctx.rangeLabel : 'All time';
+      if (!days.length) {
+        container.innerHTML = `<div class="loading">No cost data for ${escapeHtml(rangeLabel)}</div>`;
+        document.getElementById('cache-cards').innerHTML = '';
         return;
       }
 
-      // Render cache summary cards
       const totalAllInput = totals.input + totals.cacheRead + totals.cacheCreate;
       const hitRate = totalAllInput > 0 ? (totals.cacheRead / totalAllInput * 100) : 0;
       const costWithoutCache = (totalAllInput * 5.0 + totals.output * 25.0) / 1e6;
@@ -523,14 +2564,17 @@
         card('Cache Savings', '$' + saved.toFixed(2), savingsPct.toFixed(0) + '% cheaper'),
       ].join('');
 
-      // Daily table with cache columns
       const maxCost = Math.max(...days.map(d => d.cost));
+      const greenColor = 'var(--green)';
+      const amberColor = 'var(--amber)';
+      const redColor = 'var(--red-strong)';
 
       const rows = days.map(d => {
         const allInput = d.input + d.cacheRead + d.cacheCreate;
         const hr = allInput > 0 ? (d.cacheRead / allInput * 100) : 0;
         const noCacheCost = (allInput * 5.0 + d.output * 25.0) / 1e6;
         const sv = noCacheCost - d.cost;
+        const hrColor = hr > 80 ? greenColor : hr > 50 ? amberColor : redColor;
         return `
         <tr>
           <td>${d.date}</td>
@@ -539,57 +2583,64 @@
           <td class="cost-value">${fmt(d.sessions)}</td>
           <td class="cost-value">${fmt(d.cacheRead)}</td>
           <td class="cost-value">${fmt(d.cacheCreate)}</td>
-          <td class="cost-value" style="color: ${hr > 80 ? '#7ee787' : hr > 50 ? '#d29922' : '#f85149'}">${hr.toFixed(1)}%</td>
+          <td class="cost-value" style="color: ${hrColor}">${hr.toFixed(1)}%</td>
           <td class="cost-value">
             <div class="bar-container">
               <span class="cost-bar" style="width: ${Math.max((d.cost / maxCost) * 80, 2)}px"></span>
               <span>$${d.cost.toFixed(2)}</span>
             </div>
           </td>
-          <td class="cost-value" style="color: #7ee787">$${sv.toFixed(2)}</td>
+          <td class="cost-value" style="color: var(--green)">$${sv.toFixed(2)}</td>
         </tr>
       `}).join('');
 
-      const totalNoCacheCost = costWithoutCache;
       container.innerHTML = `
-        <table>
-          <thead>
-            <tr>
-              <th>Date</th><th style="text-align:right">Msgs</th><th style="text-align:right">Tools</th><th style="text-align:right">Sess</th>
-              <th style="text-align:right">Cache Read</th><th style="text-align:right">Cache Write</th><th style="text-align:right">Hit Rate</th><th style="text-align:right">Est. Cost</th><th style="text-align:right">Saved</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rows}
-            <tr class="cost-total">
-              <td>Total</td>
-              <td class="cost-value">${fmt(totals.messages)}</td>
-              <td class="cost-value">${fmt(totals.toolCalls)}</td>
-              <td class="cost-value">${fmt(totals.sessions)}</td>
-              <td class="cost-value">${fmt(totals.cacheRead)}</td>
-              <td class="cost-value">${fmt(totals.cacheCreate)}</td>
-              <td class="cost-value" style="color: #7ee787">${hitRate.toFixed(1)}%</td>
-              <td class="cost-value"><strong>$${totals.cost.toFixed(2)}</strong></td>
-              <td class="cost-value" style="color: #7ee787"><strong>$${saved.toFixed(2)}</strong></td>
-            </tr>
-          </tbody>
-        </table>
-        <div class="cost-note">Rates: Bedrock (ap-southeast-2) — Input $5/M, Output $25/M, Cache Read $0.50/M, Cache Write $6.25/M. Derived from actual session costs. Edit RATES in server.js to adjust.</div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th><th style="text-align:right">Msgs</th><th style="text-align:right">Tools</th><th style="text-align:right">Sess</th>
+                <th style="text-align:right">Cache Read</th><th style="text-align:right">Cache Write</th><th style="text-align:right">Hit Rate</th><th style="text-align:right">Est. Cost</th><th style="text-align:right">Saved</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows}
+              <tr class="cost-total">
+                <td>Total</td>
+                <td class="cost-value">${fmt(totals.messages)}</td>
+                <td class="cost-value">${fmt(totals.toolCalls)}</td>
+                <td class="cost-value">${fmt(totals.sessions)}</td>
+                <td class="cost-value">${fmt(totals.cacheRead)}</td>
+                <td class="cost-value">${fmt(totals.cacheCreate)}</td>
+                <td class="cost-value" style="color: var(--green)">${hitRate.toFixed(1)}%</td>
+                <td class="cost-value"><strong>$${totals.cost.toFixed(2)}</strong></td>
+                <td class="cost-value" style="color: var(--green)"><strong>$${saved.toFixed(2)}</strong></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="cost-note">Rates: Bedrock (ap-southeast-2) — Input $5/M, Output $25/M, Cache Read $0.50/M, Cache Write $6.25/M. Edit RATES in server.js or .env to adjust.</div>
       `;
     }
 
-    function renderTools(data) {
-      const tools = data.tools || [];
+    function renderTools(result, ctx) {
+      const tools = (result && result.tools) || [];
+      const supported = !result || result.supported !== false;
       const container = document.getElementById('tool-calls');
+      const rangeLabel = ctx ? ctx.rangeLabel : 'All time';
+      const isAll = ctx ? ctx.rangeIsAll : true;
+      const note = !supported && !isAll
+        ? `<div class="cost-note">Tool counts shown for <strong>all time</strong> — your server is older than this UI and didn't return per-day tool buckets. Restart it to enable date-filtered tool counts.</div>`
+        : '';
       if (!tools.length) {
-        container.innerHTML = '<div class="loading">No tool calls found</div>';
+        container.innerHTML = `<div class="loading">No tool calls in ${escapeHtml(rangeLabel)}</div>${note}`;
         return;
       }
       const max = tools[0].count;
       const rows = tools.map(t => `
-        <tr class="tool-row" data-tool="${t.tool}">
-          <td class="tool-name">${t.tool}</td>
-          <td style="width:100%">
+        <tr class="tool-row" data-tool="${escapeHtml(t.tool)}">
+          <td class="tool-name" title="${escapeHtml(t.tool)}">${escapeHtml(t.tool)}</td>
+          <td class="tool-bar-cell">
             <div class="bar-container">
               <div class="bar" style="width: ${Math.max((t.count / max) * 100, 1)}%"></div>
               <span class="bar-count">${fmt(t.count)}</span>
@@ -599,7 +2650,8 @@
       `).join('');
 
       container.innerHTML = `
-        <table><tbody id="tool-table-body">${rows}</tbody></table>
+        <table class="tool-table"><tbody id="tool-table-body">${rows}</tbody></table>
+        ${note}
         <div id="tool-detail-container"></div>
       `;
 
@@ -620,15 +2672,16 @@
       panel.className = 'tool-detail-panel';
 
       const header = `<h3>
-        <span>${toolName} — ${fmt(calls.length)} calls</span>
+        <span>${escapeHtml(toolName)} — ${fmt(calls.length)} calls</span>
         <span>
-          <button class="close-btn" onclick="exportToolCalls('${toolName}', ${JSON.stringify(calls).length > 5000000 ? '[]' : 'null'})">Export</button>
+          <button class="close-btn" id="ai-tool-summary-btn">✨ Summarise</button>
+          <button class="close-btn" onclick="exportToolCalls()">Export</button>
           <button class="close-btn" onclick="this.closest('.tool-detail-panel').remove()">Close</button>
         </span>
-      </h3>`;
+      </h3>
+      <div id="ai-tool-summary-host"></div>`;
 
-      // Stash calls for export
-      window._lastToolCalls = { toolName, calls };
+      globalThis._lastToolCalls = { toolName, calls };
 
       let rows = '';
       for (const c of calls.slice(0, 200)) {
@@ -639,36 +2692,36 @@
           rows += `<div class="detail-row">
             ${c.description ? `<div class="detail-desc">${escapeHtml(c.description)}</div>` : ''}
             <div class="detail-cmd">$ ${escapeHtml(c.command)}</div>
-            <div class="detail-meta">${time} &middot; ${proj}</div>
+            <div class="detail-meta">${time} &middot; ${escapeHtml(proj)}</div>
           </div>`;
         } else if (toolName === 'Read' || toolName === 'Edit' || toolName === 'Write') {
           rows += `<div class="detail-row">
             <div class="detail-path">${escapeHtml(c.file_path)}</div>
-            <div class="detail-meta">${time} &middot; ${proj}</div>
+            <div class="detail-meta">${time} &middot; ${escapeHtml(proj)}</div>
           </div>`;
         } else if (toolName === 'Grep') {
           rows += `<div class="detail-row">
             <div class="detail-cmd">/${escapeHtml(c.pattern)}/</div>
             ${c.path ? `<div class="detail-path">${escapeHtml(c.path)}</div>` : ''}
             ${c.glob ? `<div class="detail-desc">glob: ${escapeHtml(c.glob)}</div>` : ''}
-            <div class="detail-meta">${time} &middot; ${proj}</div>
+            <div class="detail-meta">${time} &middot; ${escapeHtml(proj)}</div>
           </div>`;
         } else if (toolName === 'Glob') {
           rows += `<div class="detail-row">
             <div class="detail-cmd">${escapeHtml(c.pattern)}</div>
             ${c.path ? `<div class="detail-path">${escapeHtml(c.path)}</div>` : ''}
-            <div class="detail-meta">${time} &middot; ${proj}</div>
+            <div class="detail-meta">${time} &middot; ${escapeHtml(proj)}</div>
           </div>`;
         } else if (toolName === 'Agent') {
           rows += `<div class="detail-row">
             <div class="detail-desc">${escapeHtml(c.description)}</div>
             ${c.subagent_type ? `<div class="detail-path">type: ${escapeHtml(c.subagent_type)}</div>` : ''}
-            <div class="detail-meta">${time} &middot; ${proj}</div>
+            <div class="detail-meta">${time} &middot; ${escapeHtml(proj)}</div>
           </div>`;
         } else {
           rows += `<div class="detail-row">
             <div class="detail-cmd">${escapeHtml(c.input || '')}</div>
-            <div class="detail-meta">${time} &middot; ${proj}</div>
+            <div class="detail-meta">${time} &middot; ${escapeHtml(proj)}</div>
           </div>`;
         }
       }
@@ -680,58 +2733,198 @@
       panel.innerHTML = header + rows;
       container.innerHTML = '';
       container.appendChild(panel);
+
+      // Wire up the AI tool-summary button on this drilldown
+      const summaryBtn = panel.querySelector('#ai-tool-summary-btn');
+      const summaryHost = panel.querySelector('#ai-tool-summary-host');
+      if (summaryBtn && summaryHost) {
+        summaryBtn.addEventListener('click', () => {
+          mountAIInsight(summaryHost, 'tool-summary', () => ({
+            tool: toolName,
+            totalCount: calls.length,
+            calls: calls.slice(0, 60).map(c => {
+              const out = { project: (c.project || '').split('-').pop() };
+              for (const k of ['command', 'description', 'file_path', 'pattern', 'path', 'glob', 'subagent_type', 'input']) {
+                if (c[k] != null) out[k] = String(c[k]).slice(0, 240);
+              }
+              return out;
+            }),
+          }), {
+            label: `Generate ${toolName} summary`,
+            hint: 'Themes across the most recent invocations',
+          });
+          summaryBtn.style.display = 'none';
+        });
+      }
     }
 
-    function renderProjects(projects) {
+    function renderProjects(filteredHistory, projectsApi, ctx) {
       const tbody = document.getElementById('projects-body');
-      tbody.innerHTML = projects.map(p => `
-        <tr>
-          <td><span class="project-badge">${p.shortName}</span><br><span class="session-id">${p.name}</span></td>
-          <td>${fmt(p.messages)}</td>
-          <td>${fmt(p.sessions)}</td>
-          <td>${fmtDateTime(p.lastSeen)}</td>
-        </tr>
-      `).join('');
+      const rangeLabel = ctx ? ctx.rangeLabel : 'All time';
+      const projects = (filteredHistory && filteredHistory.length)
+        ? projectsFromHistory(filteredHistory)
+        : (ctx && ctx.rangeIsAll ? (projectsApi || []) : []);
+      if (!projects.length) {
+        tbody.innerHTML = `<tr><td colspan="4" class="loading">No projects active in ${escapeHtml(rangeLabel)}</td></tr>`;
+        return;
+      }
+      // Each project gets its own row PLUS a hidden narrative sub-row that
+      // sits directly under it. Click ✨ summarise → unhide the sub-row and
+      // mount the AI insight there. Click × → hide it again (DOM stays so
+      // re-opening is instant; the AI helper already caches results too).
+      tbody.innerHTML = projects.map(p => {
+        const safeName = escapeHtml(p.name);
+        return `
+          <tr>
+            <td>
+              <span class="project-badge clickable" role="button" tabindex="0" data-project="${safeName}" title="Filter Prompt History by ${safeName}">${escapeHtml(p.shortName)}</span>
+              <button class="ai-row-btn" type="button" data-narrative-for="${safeName}" title="Generate AI narrative of recent activity">✨ summarise</button>
+              <br><span class="session-id">${safeName}</span>
+            </td>
+            <td>${fmt(p.messages)}</td>
+            <td>${fmt(p.sessions)}</td>
+            <td>${fmtDateTime(p.lastSeen)}</td>
+          </tr>
+          <tr class="narrative-row" data-narrative-row-for="${safeName}" hidden>
+            <td colspan="4">
+              <div class="narrative-panel">
+                <button class="narrative-close" type="button" aria-label="Close narrative">×</button>
+                <div class="ai-narrative-host"></div>
+              </div>
+            </td>
+          </tr>`;
+      }).join('');
+
+      const projectsByName = {};
+      for (const p of projects) projectsByName[p.name] = p;
+
+      // Drop project names from the visible-set if their projects no longer
+      // appear in the current filter — otherwise stale entries would silently
+      // accumulate in memory. Set iteration is robust to mid-loop deletes.
+      for (const name of visibleProjectNarratives) {
+        if (!projectsByName[name]) visibleProjectNarratives.delete(name);
+      }
+
+      function mountNarrative(projName) {
+        const proj = projectsByName[projName];
+        if (!proj) return;
+        const row = tbody.querySelector(`tr.narrative-row[data-narrative-row-for="${CSS.escape(projName)}"]`);
+        const btn = tbody.querySelector(`button[data-narrative-for="${CSS.escape(projName)}"]`);
+        if (!row) return;
+        row.hidden = false;
+        if (btn) btn.style.display = 'none';
+        const host = row.querySelector('.ai-narrative-host');
+        const source = filteredHistory && filteredHistory.length ? filteredHistory : (globalThis._lastData?.history || []);
+        const prompts = source
+          .filter(h => h.project === projName)
+          .slice(-30)
+          .reverse()
+          .map(h => h.display)
+          .filter(Boolean);
+        mountAIInsight(host, 'project-narrative', () => ({
+          projectName: projName,
+          messages: proj.messages,
+          sessions: proj.sessions,
+          lastSeen: proj.lastSeen,
+          prompts,
+        }), {
+          label: 'Generate narrative',
+          hint: '',
+        });
+      }
+
+      // Re-mount narratives that were visible before this re-render
+      for (const projName of visibleProjectNarratives) mountNarrative(projName);
+
+      tbody.querySelectorAll('button[data-narrative-for]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const projName = btn.dataset.narrativeFor;
+          visibleProjectNarratives.add(projName);
+          mountNarrative(projName);
+        });
+      });
+
+      tbody.querySelectorAll('.narrative-close').forEach(closeBtn => {
+        closeBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const row = closeBtn.closest('.narrative-row');
+          if (!row) return;
+          const projName = row.dataset.narrativeRowFor;
+          if (!projName) return;
+          visibleProjectNarratives.delete(projName);
+          row.hidden = true;
+          const showAgain = tbody.querySelector(`button[data-narrative-for="${CSS.escape(projName)}"]`);
+          if (showAgain) showAgain.style.display = '';
+        });
+      });
     }
 
-    function renderHistory(history) {
-      // Get unique projects for tabs
-      const allProjects = [...new Set(history.map(h => h.project))];
+    // Tracks which project rows have an unhidden narrative sub-row, so that
+    // re-renders (filter changes, etc.) can re-show them and re-mount the AI
+    // insight (which itself reads from the localStorage cache, so re-mounting
+    // is free). The set is intentionally session-scoped — reloading the page
+    // collapses all narratives by design.
+    const visibleProjectNarratives = new Set();
+
+    let historyProjectFilter = 'all';
+
+    function renderHistory(rawHistory, filteredHistory, ctx) {
       const tabsEl = document.getElementById('history-tabs');
-
-      tabsEl.innerHTML = `<button class="tab active" data-project="all">All</button>` +
-        allProjects.map(p =>
-          `<button class="tab" data-project="${p}">${shortProject(p)}</button>`
-        ).join('');
-
       const tbody = document.getElementById('history-table-body');
+      const metaEl = document.getElementById('history-meta');
+      const rangeLabel = ctx ? ctx.rangeLabel : 'All time';
 
-      function render(filter) {
-        const filtered = filter === 'all' ? history : history.filter(h => h.project === filter);
-        // Show most recent first
-        const sorted = [...filtered].reverse();
-        tbody.innerHTML = sorted.map(h => `
+      const allProjects = [...new Set((rawHistory || []).map(h => h.project))];
+      // Drop selected project if it no longer exists in source data
+      if (historyProjectFilter !== 'all' && !allProjects.includes(historyProjectFilter)) {
+        historyProjectFilter = 'all';
+      }
+
+      tabsEl.innerHTML = `<button class="tab${historyProjectFilter === 'all' ? ' active' : ''}" data-project="all">All</button>` +
+        allProjects.map(p => {
+          const active = p === historyProjectFilter ? ' active' : '';
+          return `<button class="tab${active}" data-project="${escapeHtml(p)}">${escapeHtml(shortProject(p))}</button>`;
+        }).join('');
+
+      function renderRows() {
+        const dateScoped = filteredHistory || rawHistory || [];
+        const projScoped = historyProjectFilter === 'all'
+          ? dateScoped
+          : dateScoped.filter(h => h.project === historyProjectFilter);
+
+        const projDesc = historyProjectFilter === 'all' ? 'all projects' : shortProject(historyProjectFilter);
+        const totalCount = (rawHistory || []).length;
+        metaEl.innerHTML = `Showing <strong>${fmt(projScoped.length)}</strong> of ${fmt(totalCount)} prompts · ${escapeHtml(rangeLabel)} · ${escapeHtml(projDesc)}`;
+
+        if (projScoped.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="4" class="loading">No prompts match the current filters</td></tr>`;
+          return;
+        }
+
+        tbody.innerHTML = projScoped.map(h => `
           <tr>
             <td style="white-space:nowrap">${fmtDateTime(h.timestamp)}</td>
-            <td><span class="project-badge">${shortProject(h.project)}</span></td>
-            <td class="prompt-text" title="${(h.display || '').replace(/"/g, '&quot;')}">${escapeHtml(h.display || '')}</td>
-            <td class="session-id">${(h.sessionId || '').slice(0, 8)}</td>
+            <td><span class="project-badge clickable" role="button" tabindex="0" data-project="${escapeHtml(h.project || '')}" title="Filter by ${escapeHtml(h.project || '')}">${escapeHtml(shortProject(h.project))}</span></td>
+            <td class="prompt-text" title="${(h.display || '').replaceAll('"', '&quot;')}">${escapeHtml(h.display || '')}</td>
+            <td class="session-id">${escapeHtml((h.sessionId || '').slice(0, 8))}</td>
           </tr>
         `).join('');
       }
 
-      tabsEl.addEventListener('click', (e) => {
+      tabsEl.onclick = (e) => {
         if (!e.target.classList.contains('tab')) return;
         tabsEl.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
         e.target.classList.add('active');
-        render(e.target.dataset.project);
-      });
+        historyProjectFilter = e.target.dataset.project;
+        renderRows();
+      };
 
-      render('all');
+      renderRows();
     }
 
     function exportToolCalls() {
-      const { toolName, calls } = window._lastToolCalls || {};
+      const { toolName, calls } = globalThis._lastToolCalls || {};
       if (!toolName || !calls) return;
 
       let lines = [];
@@ -777,9 +2970,198 @@
 
     function escapeHtml(str) {
       const div = document.createElement('div');
-      div.textContent = str;
+      div.textContent = str == null ? '' : String(str);
       return div.innerHTML;
     }
+
+    // Clicking any project badge filters the Prompt History to that project
+    // and scrolls the view down so the user lands on the filtered table.
+    function activateProjectFilter(project) {
+      const tabsEl = document.getElementById('history-tabs');
+      if (!tabsEl) return false;
+      const tab = tabsEl.querySelector(`.tab[data-project="${CSS.escape(project)}"]`);
+      const target = tab || tabsEl.querySelector('.tab[data-project="all"]');
+      if (!target) return false;
+      target.click();
+      tabsEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return Boolean(tab);
+    }
+
+    document.addEventListener('click', (e) => {
+      const badge = e.target.closest('.project-badge.clickable');
+      if (!badge) return;
+      const project = badge.dataset.project;
+      if (!project) return;
+      activateProjectFilter(project);
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      const badge = e.target.closest('.project-badge.clickable');
+      if (!badge) return;
+      e.preventDefault();
+      const project = badge.dataset.project;
+      if (project) activateProjectFilter(project);
+    });
+
+    // === Q&A bar wiring ===
+    function buildAskSnapshot() {
+      const data = globalThis._lastData || {};
+      const costData = data.costData || {};
+      const totals = costData.totals || {};
+      const history = data.history || [];
+      const today = localDateKey();
+      const todayData = (costData.days || []).find(d => d.date === today);
+      const last14 = (costData.days || []).slice(-14).map(d => ({
+        date: d.date,
+        sessions: d.sessions,
+        messages: d.messages,
+        toolCalls: d.toolCalls,
+        cost: d.cost,
+        cacheRead: d.cacheRead,
+        cacheCreate: d.cacheCreate,
+        input: d.input,
+        output: d.output,
+        topModels: d.models ? Object.entries(d.models).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([m, c]) => `${m} (${c})`).join(', ') : '',
+      }));
+      const projectsAgg = projectsFromHistory(history).slice(0, 12).map(p => ({
+        name: p.name, messages: p.messages, sessions: p.sessions, lastSeen: p.lastSeen,
+      }));
+      const tools = (data.toolData && data.toolData.tools || []).slice(0, 12);
+      return {
+        timezone: (globalThis._lastConfig && globalThis._lastConfig.timezone && globalThis._lastConfig.timezone.name) || 'local',
+        today,
+        todayData: todayData || null,
+        totals: {
+          sessions: totals.sessions || 0,
+          messages: totals.messages || 0,
+          toolCalls: totals.toolCalls || 0,
+          cost: totals.cost || 0,
+          input: totals.input || 0,
+          output: totals.output || 0,
+          cacheRead: totals.cacheRead || 0,
+          cacheCreate: totals.cacheCreate || 0,
+          models: totals.models || {},
+        },
+        last14Days: last14,
+        topProjects: projectsAgg,
+        topTools: tools,
+        promptCount: history.length,
+      };
+    }
+
+    function runAskQuery(question) {
+      const host = document.getElementById('ai-ask-result');
+      if (!question || !question.trim()) return;
+      // Use mountAIInsight, but force a fresh call (Q&A is non-deterministic and cheap)
+      // by giving it a unique cache key per question. We achieve that by including the
+      // question in the context payload (the cache key hashes the context).
+      mountAIInsight(host, 'ask', () => ({
+        question: question.trim(),
+        snapshot: buildAskSnapshot(),
+      }), {
+        label: `Ask: ${question.slice(0, 40)}…`,
+      });
+      // Auto-trigger by simulating a click on the Generate button rendered above.
+      const btn = host.querySelector('.ai-trigger-btn');
+      if (btn) btn.click();
+    }
+
+    document.getElementById('ai-ask-send').addEventListener('click', () => {
+      const input = document.getElementById('ai-ask-input');
+      runAskQuery(input.value);
+    });
+    document.getElementById('ai-ask-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        runAskQuery(e.target.value);
+      }
+    });
+    document.getElementById('ai-ask-suggestions').addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-q]');
+      if (!btn) return;
+      const q = btn.dataset.q || '';
+      const input = document.getElementById('ai-ask-input');
+      input.value = q;
+      runAskQuery(q);
+    });
+
+    // === Standup prep wiring ===
+    let standupRange = 'yesterday';
+    document.getElementById('standup-range-chips').addEventListener('click', (e) => {
+      const chip = e.target.closest('.chip');
+      if (!chip) return;
+      document.getElementById('standup-range-chips').querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      standupRange = chip.dataset.standupRange;
+    });
+
+    function buildStandupContext(rangeKey) {
+      const data = globalThis._lastData || {};
+      const history = data.history || [];
+      const now = new Date();
+      const startOfLocal = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+      const DAY = 86400000;
+      const startToday = startOfLocal(now);
+      let from, rangeLabel;
+      if (rangeKey === 'today') {
+        from = startToday; rangeLabel = 'today';
+      } else if (rangeKey === '3d') {
+        from = startToday - 2 * DAY; rangeLabel = 'last 3 days';
+      } else if (rangeKey === '7d') {
+        from = startToday - 6 * DAY; rangeLabel = 'last 7 days';
+      } else {
+        from = startToday - DAY; rangeLabel = 'yesterday + today';
+      }
+      const to = startToday + DAY - 1;
+      const inRange = history.filter(h => {
+        const t = parseTs(h.timestamp);
+        return Number.isFinite(t) && t >= from && t <= to;
+      });
+      const projects = projectsFromHistory(inRange);
+      // Attach recent prompts per project for the model to read
+      const enriched = projects.slice(0, 8).map(p => {
+        const prompts = inRange
+          .filter(h => h.project === p.name)
+          .slice(-12)
+          .reverse()
+          .map(h => h.display)
+          .filter(Boolean);
+        return {
+          shortName: p.shortName,
+          fullPath: p.name,
+          messages: p.messages,
+          sessions: p.sessions,
+          lastSeen: p.lastSeen,
+          prompts,
+        };
+      });
+      return {
+        timezone: (globalThis._lastConfig?.timezone?.name) || 'local',
+        rangeLabel,
+        rangeKey,
+        totalPrompts: inRange.length,
+        projects: enriched,
+      };
+    }
+
+    document.getElementById('ai-standup-btn').addEventListener('click', () => {
+      const host = document.getElementById('ai-standup-result');
+      const ctx = buildStandupContext(standupRange);
+      if (ctx.projects.length === 0) {
+        host.classList.add('ai-insight');
+        host.innerHTML = `<div class="ai-insight-empty"><span class="ai-hint">No prompt activity in ${escapeHtml(ctx.rangeLabel)} — nothing to summarise.</span></div>`;
+        return;
+      }
+      mountAIInsight(host, 'standup-prep', () => ctx, {
+        label: `Generate standup for ${ctx.rangeLabel}`,
+        hint: `${ctx.totalPrompts} prompts across ${ctx.projects.length} project${ctx.projects.length === 1 ? '' : 's'} · markdown-formatted output`,
+        formatter: aiFormatMarkdown,
+      });
+      // Auto-trigger generation since the user already pressed Generate.
+      const btn = host.querySelector('.ai-trigger-btn');
+      if (btn) btn.click();
+    });
 
     load();
   </script>
