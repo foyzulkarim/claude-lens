@@ -404,6 +404,88 @@
       border-color: var(--accent);
       color: var(--accent-on);
     }
+
+    /* Filter bar (date chips + custom from/to inputs) */
+    .filter-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .filter-bar .filter-label {
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-right: 2px;
+    }
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      align-items: center;
+    }
+    .chip {
+      padding: 5px 10px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 0.7rem;
+      font-family: inherit;
+      transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+    }
+    .chip:hover:not(.active) {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .chip:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+    .chip.active {
+      background: var(--accent-strong);
+      color: var(--accent-on);
+      border-color: var(--accent-strong);
+    }
+    .filter-divider {
+      width: 1px;
+      align-self: stretch;
+      background: var(--border);
+      margin: 0 4px;
+    }
+    .date-range {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .date-range input[type="date"] {
+      padding: 4px 8px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 0.7rem;
+      color-scheme: light dark;
+    }
+    .date-range input[type="date"]:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    .date-range .date-sep {
+      color: var(--text-faint);
+      font-size: 0.7rem;
+    }
+    .filter-meta {
+      font-size: 0.7rem;
+      color: var(--text-faint);
+      margin-bottom: 8px;
+    }
+    .filter-meta strong { color: var(--text); }
+
     #history-table-body tr { cursor: default; }
     .session-id {
       font-size: 0.65rem;
@@ -580,6 +662,10 @@
         padding: 5px 10px;
         font-size: 0.7rem;
       }
+      .filter-bar { gap: 8px; }
+      .chip { padding: 4px 8px; font-size: 0.65rem; }
+      .filter-divider { display: none; }
+      .date-range input[type="date"] { font-size: 0.65rem; padding: 3px 6px; }
       .project-badge { font-size: 0.65rem; }
       .tool-detail-panel {
         padding: 12px;
@@ -822,7 +908,24 @@
 
   <div class="section">
     <h2>Prompt History</h2>
+    <div class="filter-bar">
+      <span class="filter-label">Date</span>
+      <div class="chips" id="date-chips" role="group" aria-label="Date range">
+        <button class="chip active" type="button" data-range="all">All time</button>
+        <button class="chip" type="button" data-range="today">Today</button>
+        <button class="chip" type="button" data-range="yesterday">Yesterday</button>
+        <button class="chip" type="button" data-range="7d">Last 7 days</button>
+        <button class="chip" type="button" data-range="30d">Last 30 days</button>
+      </div>
+      <span class="filter-divider" aria-hidden="true"></span>
+      <div class="date-range">
+        <input type="date" id="date-from" aria-label="From date">
+        <span class="date-sep">—</span>
+        <input type="date" id="date-to" aria-label="To date">
+      </div>
+    </div>
     <div class="tabs" id="history-tabs"></div>
+    <div class="filter-meta" id="history-meta"></div>
     <div class="table-wrap">
       <table>
         <thead>
@@ -1503,16 +1606,87 @@
     function renderHistory(history) {
       const allProjects = [...new Set(history.map(h => h.project))];
       const tabsEl = document.getElementById('history-tabs');
+      const tbody = document.getElementById('history-table-body');
+      const dateChipsEl = document.getElementById('date-chips');
+      const dateFromEl = document.getElementById('date-from');
+      const dateToEl = document.getElementById('date-to');
+      const metaEl = document.getElementById('history-meta');
 
       tabsEl.innerHTML = `<button class="tab active" data-project="all">All</button>` +
         allProjects.map(p =>
           `<button class="tab" data-project="${escapeHtml(p)}">${escapeHtml(shortProject(p))}</button>`
         ).join('');
 
-      const tbody = document.getElementById('history-table-body');
+      let projectFilter = 'all';
+      let dateFilter = { mode: 'all' };
 
-      function render(filter) {
-        const filtered = filter === 'all' ? history : history.filter(h => h.project === filter);
+      const parseTs = (ts) => typeof ts === 'number' ? ts : Date.parse(ts);
+      const startOfLocalDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+
+      function getDateRange() {
+        if (dateFilter.mode === 'all') return null;
+        const now = new Date();
+        if (dateFilter.mode === 'today') {
+          const start = startOfLocalDay(now);
+          return { from: start, to: start + 86400000 - 1 };
+        }
+        if (dateFilter.mode === 'yesterday') {
+          const start = startOfLocalDay(now) - 86400000;
+          return { from: start, to: start + 86400000 - 1 };
+        }
+        if (dateFilter.mode === '7d') {
+          return { from: Date.now() - 7 * 86400000, to: Date.now() };
+        }
+        if (dateFilter.mode === '30d') {
+          return { from: Date.now() - 30 * 86400000, to: Date.now() };
+        }
+        if (dateFilter.mode === 'custom') {
+          const from = dateFilter.from
+            ? startOfLocalDay(new Date(dateFilter.from + 'T00:00:00'))
+            : -Infinity;
+          const to = dateFilter.to
+            ? startOfLocalDay(new Date(dateFilter.to + 'T00:00:00')) + 86400000 - 1
+            : Infinity;
+          return { from, to };
+        }
+        return null;
+      }
+
+      function describeDateFilter() {
+        if (dateFilter.mode === 'all') return 'all dates';
+        if (dateFilter.mode === 'today') return 'today';
+        if (dateFilter.mode === 'yesterday') return 'yesterday';
+        if (dateFilter.mode === '7d') return 'last 7 days';
+        if (dateFilter.mode === '30d') return 'last 30 days';
+        if (dateFilter.mode === 'custom') {
+          const f = dateFilter.from || '…';
+          const t = dateFilter.to || '…';
+          return `${f} → ${t}`;
+        }
+        return '';
+      }
+
+      function render() {
+        let filtered = history;
+        if (projectFilter !== 'all') {
+          filtered = filtered.filter(h => h.project === projectFilter);
+        }
+        const range = getDateRange();
+        if (range) {
+          filtered = filtered.filter(h => {
+            const t = parseTs(h.timestamp);
+            return Number.isFinite(t) && t >= range.from && t <= range.to;
+          });
+        }
+
+        const projDesc = projectFilter === 'all' ? 'all projects' : shortProject(projectFilter);
+        metaEl.innerHTML = `Showing <strong>${fmt(filtered.length)}</strong> of ${fmt(history.length)} prompts · ${escapeHtml(describeDateFilter())} · ${escapeHtml(projDesc)}`;
+
+        if (filtered.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="4" class="loading">No prompts match the current filters</td></tr>`;
+          return;
+        }
+
         tbody.innerHTML = filtered.map(h => `
           <tr>
             <td style="white-space:nowrap">${fmtDateTime(h.timestamp)}</td>
@@ -1527,10 +1701,40 @@
         if (!e.target.classList.contains('tab')) return;
         tabsEl.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
         e.target.classList.add('active');
-        render(e.target.dataset.project);
+        projectFilter = e.target.dataset.project;
+        render();
       });
 
-      render('all');
+      // Preset chip selects a date range; clears any custom from/to inputs.
+      dateChipsEl.addEventListener('click', (e) => {
+        const chip = e.target.closest('.chip');
+        if (!chip) return;
+        dateChipsEl.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        dateFilter = { mode: chip.dataset.range };
+        if (dateFromEl) dateFromEl.value = '';
+        if (dateToEl) dateToEl.value = '';
+        render();
+      });
+
+      // Typing in either date input switches to custom mode (chips deactivate).
+      function onDateInputChange() {
+        const fromVal = dateFromEl.value;
+        const toVal = dateToEl.value;
+        if (!fromVal && !toVal) {
+          // Empty inputs — fall back to whichever chip is active, default 'all'
+          const activeChip = dateChipsEl.querySelector('.chip.active');
+          dateFilter = { mode: activeChip ? activeChip.dataset.range : 'all' };
+        } else {
+          dateChipsEl.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+          dateFilter = { mode: 'custom', from: fromVal || null, to: toVal || null };
+        }
+        render();
+      }
+      if (dateFromEl) dateFromEl.addEventListener('change', onDateInputChange);
+      if (dateToEl) dateToEl.addEventListener('change', onDateInputChange);
+
+      render();
     }
 
     function exportToolCalls() {
