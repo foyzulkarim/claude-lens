@@ -25,6 +25,19 @@ const RATES = {
 
 app.use(express.static(__dirname));
 
+// GET /api/rates — return the configured pricing rates
+app.get("/api/rates", (req, res) => {
+  res.json({
+    pIn:       parseFloat(process.env.RATE_INPUT        ?? "5.0"),
+    pOut:      parseFloat(process.env.RATE_OUTPUT       ?? "25.0"),
+    cacheRead: parseFloat(process.env.RATE_CACHE_READ   ?? "0.5"),
+    cacheCreate: parseFloat(process.env.RATE_CACHE_CREATE ?? "6.25"),
+    // derived multipliers relative to pIn
+    writeMult: parseFloat(process.env.RATE_CACHE_CREATE ?? "6.25") / parseFloat(process.env.RATE_INPUT ?? "5.0"),
+    readMult:  parseFloat(process.env.RATE_CACHE_READ   ?? "0.5")  / parseFloat(process.env.RATE_INPUT ?? "5.0"),
+  });
+});
+
 // GET /api/stats — return stats-cache.json as-is
 app.get("/api/stats", (req, res) => {
   try {
@@ -181,6 +194,204 @@ app.get("/api/projects", (req, res) => {
   }
 });
 
+// Find the actual project directory for a given project path.
+// Claude Code has used two encodings over time:
+//   newer: replace all non-alphanumeric with '-'  e.g. /foo/.bar -> -foo--bar
+//   older: replace only '/' with '-' but keep '.' e.g. /foo/.bar -> -foo-.bar
+// We normalise both the candidate folder names and the target path to the newer
+// scheme and pick the first match.
+function findProjectDir(projectPath) {
+  const projectsDir = path.join(CLAUDE_DIR, "projects");
+  const normalise = (s) => s.replace(/[^a-zA-Z0-9]/g, '-');
+  const target = normalise(projectPath);
+
+  const entries = fs.readdirSync(projectsDir);
+  for (const entry of entries) {
+    if (normalise(entry) === target) {
+      return path.join(projectsDir, entry);
+    }
+  }
+  return null;
+}
+
+// GET /api/project-sessions?project=<full-path>
+app.get("/api/project-sessions", async (req, res) => {
+  try {
+    const projectPath = req.query.project;
+    if (!projectPath) return res.status(400).json({ error: "project query param required" });
+
+    const projDir = findProjectDir(projectPath);
+
+    if (!projDir) {
+      return res.json([]);
+    }
+
+    const jsonlFiles = fs.readdirSync(projDir).filter(f => f.endsWith(".jsonl") && !f.endsWith(".cost.jsonl"));
+    const sessions = [];
+
+    for (const file of jsonlFiles) {
+      const sessionId = file.replace(".jsonl", "");
+      const filePath = path.join(projDir, file);
+      const session = await parseSessionFile(filePath, sessionId);
+      if (session) sessions.push(session);
+    }
+
+    sessions.sort((a, b) => (b.lastActive || "").localeCompare(a.lastActive || ""));
+    res.json(sessions);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+function parseSessionFile(filePath, sessionId) {
+  return new Promise((resolve) => {
+    const session = {
+      sessionId,
+      title: null,
+      lastPrompt: null,
+      firstActive: null,
+      lastActive: null,
+      userMessages: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheCreateTokens: 0,
+      cost: 0,
+      model: null,
+    };
+
+    const stream = fs.createReadStream(filePath, { encoding: "utf8" });
+    const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
+
+    rl.on("line", (line) => {
+      try {
+        const obj = JSON.parse(line);
+
+        if (obj.type === "ai-title" && obj.aiTitle) {
+          session.title = obj.aiTitle;
+        }
+
+        if (obj.type === "last-prompt" && obj.lastPrompt) {
+          session.lastPrompt = obj.lastPrompt;
+        }
+
+        if (obj.timestamp) {
+          if (!session.firstActive || obj.timestamp < session.firstActive) {
+            session.firstActive = obj.timestamp;
+          }
+          if (!session.lastActive || obj.timestamp > session.lastActive) {
+            session.lastActive = obj.timestamp;
+          }
+        }
+
+        if (obj.type === "user") {
+          session.userMessages++;
+        }
+
+        if (obj.type === "assistant" && obj.message) {
+          const usage = obj.message.usage || {};
+          session.inputTokens += usage.input_tokens || 0;
+          session.outputTokens += usage.output_tokens || 0;
+          session.cacheReadTokens += usage.cache_read_input_tokens || 0;
+          session.cacheCreateTokens += usage.cache_creation_input_tokens || 0;
+          if (obj.message.model) session.model = obj.message.model;
+        }
+      } catch {
+        // skip malformed lines
+      }
+    });
+
+    rl.on("close", () => {
+      session.cost = Math.round((
+        session.inputTokens * RATES.input +
+        session.outputTokens * RATES.output +
+        session.cacheReadTokens * RATES.cacheRead +
+        session.cacheCreateTokens * RATES.cacheCreate
+      ) * 100) / 100;
+      resolve(session);
+    });
+
+    rl.on("error", () => resolve(null));
+  });
+}
+
+// GET /api/session-turns?project=<path>&session=<sessionId>
+app.get("/api/session-turns", async (req, res) => {
+  try {
+    const { project, session } = req.query;
+    if (!project || !session) return res.status(400).json({ error: "project and session params required" });
+
+    const projDir = findProjectDir(project);
+    if (!projDir) return res.json([]);
+
+    const filePath = path.join(projDir, `${session}.jsonl`);
+    if (!fs.existsSync(filePath)) return res.json([]);
+
+    const turns = await parseSessionTurns(filePath);
+    res.json(turns);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+function parseSessionTurns(filePath) {
+  return new Promise((resolve) => {
+    const turns = [];
+    let prevUserEntry = null;
+
+    const stream = fs.createReadStream(filePath, { encoding: "utf8" });
+    const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
+
+    rl.on("line", (line) => {
+      try {
+        const obj = JSON.parse(line);
+
+        if (obj.type === "user") {
+          prevUserEntry = obj;
+          return;
+        }
+
+        if (obj.type !== "assistant" || !obj.message || !obj.message.usage) return;
+
+        const u = obj.message.usage;
+        const content = Array.isArray(obj.message.content) ? obj.message.content : [];
+
+        // Classify this assistant turn by content type
+        const hasText    = content.some(c => c.type === "text" && (c.text || "").trim());
+        const toolBlocks = content.filter(c => c.type === "tool_use");
+        const hasTools   = toolBlocks.length > 0;
+        const turnType   = hasText && hasTools ? "mixed" : hasTools ? "tool_call" : "text";
+
+        // Classify the preceding user turn
+        let prevTurnType = "unknown";
+        if (prevUserEntry) {
+          const pc = prevUserEntry.message?.content;
+          prevTurnType = Array.isArray(pc) && pc.some(c => c.type === "tool_result")
+            ? "tool_result"
+            : "human";
+        }
+
+        turns.push({
+          timestamp: obj.timestamp,
+          inputTokens:       u.input_tokens || 0,
+          cacheReadTokens:   u.cache_read_input_tokens || 0,
+          cacheCreateTokens: u.cache_creation_input_tokens || 0,
+          outputTokens:      u.output_tokens || 0,
+          turnType,
+          toolCount: toolBlocks.length,
+          toolNames: toolBlocks.map(t => t.name),
+          prevTurnType,
+        });
+      } catch {
+        // skip
+      }
+    });
+
+    rl.on("close", () => resolve(turns));
+    rl.on("error", () => resolve(turns));
+  });
+}
+
 // GET /api/daily-costs — token usage and estimated cost per day
 app.get("/api/daily-costs", async (req, res) => {
   try {
@@ -200,7 +411,7 @@ app.get("/api/daily-costs", async (req, res) => {
     }
 
     const days = Object.keys(daily)
-      .sort()
+      .sort((a, b) => b.localeCompare(a))
       .map((date) => {
         const d = daily[date];
         const cost =

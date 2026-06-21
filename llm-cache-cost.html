@@ -1,0 +1,1245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Token Oscilloscope — LLM Caching Cost Explorer</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg:      #0A0E16;
+    --panel:   #121826;
+    --panel2:  #0E1320;
+    --border:  #222B3D;
+    --grid:    #1A2233;
+    --text:    #E8ECF4;
+    --muted:   #7E8BA3;
+    --faint:   #4B556B;
+    --amber:   #F5A623;
+    --teal:    #2DD4BF;
+    --red:     #FF3B6B;
+    --green:   #3FB950;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  html, body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; min-height: 100%; }
+  body { padding: 24px 16px 48px; }
+  .wrap { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+
+  .eyebrow { font-size: 11px; letter-spacing: .12em; color: var(--teal); text-transform: uppercase; }
+  h1 { font-size: clamp(1.3rem, 3vw, 1.9rem); font-weight: 600; margin-top: 4px; }
+  .subtitle { font-size: 13px; color: var(--muted); margin-top: 4px; }
+  .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+  .panel  { background: var(--panel);  border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+  .panel2 { background: var(--panel2); border: 1px solid var(--border); border-radius: 8px;  padding: 12px; }
+
+  /* KPI row */
+  .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+  .kpi { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+  .kpi-label { font-size: 11px; color: var(--muted); }
+  .kpi-value { font-size: 1.5rem; font-family: var(--mono); margin: 4px 0 2px; }
+  .kpi-sub   { font-size: 11px; color: var(--faint); }
+
+  /* Token ledger */
+  .ledger-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-top: 12px; }
+  .ledger-head { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; margin-bottom: 8px; font-family: var(--mono); }
+  .ledger-row  { display: flex; justify-content: space-between; align-items: baseline; padding: 2px 0; }
+  .ledger-key  { font-size: 11px; color: var(--muted); }
+  .ledger-val  { text-align: right; }
+  .ledger-val .lv { font-size: 13px; font-family: var(--mono); color: var(--text); }
+  .ledger-val .ln { font-size: 10px; font-family: var(--mono); color: var(--faint); display: block; }
+  .ledger-div  { border-top: 1px solid var(--border); margin: 6px 0 4px; }
+  .ledger-note { font-size: 11px; color: var(--faint); margin-top: 10px; line-height: 1.5; }
+  .ledger-header { display: flex; justify-content: space-between; align-items: center; }
+  .ledger-caption { font-size: 11px; color: var(--faint); }
+
+  /* Chart */
+  .chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 8px; }
+  .seg { display: flex; gap: 6px; }
+  .seg-btn {
+    background: transparent; color: var(--muted); border: 1px solid var(--border);
+    border-radius: 6px; padding: 4px 12px; font-size: 12px; cursor: pointer;
+  }
+  .seg-btn.active { background: var(--teal); color: var(--bg); border-color: var(--teal); }
+  canvas#chart { width: 100%; display: block; }
+  .chart-legend { display: flex; gap: 16px; margin-top: 10px; flex-wrap: wrap; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
+  .legend-swatch { width: 20px; height: 3px; border-radius: 2px; }
+  .chart-note { font-size: 11px; color: var(--faint); margin-top: 6px; }
+
+  /* Table */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 11px; font-family: var(--mono); }
+  th { padding: 8px 10px; color: var(--muted); font-weight: 500; text-align: right; border-bottom: 1px solid var(--border); white-space: normal; line-height: 1.3; vertical-align: bottom; }
+  th:first-child { text-align: left; }
+  td { padding: 5px 10px; text-align: right; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+  td:first-child { text-align: left; }
+
+  .model-note { font-size: 11px; color: var(--faint); line-height: 1.6; }
+
+  /* Seed banner */
+  .seed-banner { background:#0E1C2E; border:1px solid #1E3A5F; border-radius:8px; padding:10px 14px; font-size:12px; color:#7E8BA3; }
+  .seed-banner strong { color: var(--teal); }
+
+  /* Loading state */
+  .loading-msg { text-align:center; padding:40px; color: var(--faint); font-size:13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- Header -->
+  <div>
+    <div class="eyebrow">Token Oscilloscope</div>
+    <h1 id="page-title">The cost of a conversation that won't sit still</h1>
+    <p class="subtitle" id="page-subtitle">Every turn's output becomes next turn's input, so the transcript snowballs. Watch caching bend the curve — and watch a cold cache punch a hole in your budget.</p>
+  </div>
+
+  <!-- Seed banner -->
+  <div id="seed-banner" class="seed-banner" style="display:none">
+    <strong>Real session data</strong>
+    <span id="seed-label" style="margin-left:8px;"></span>
+    <span id="seed-actual" style="margin-left:12px;color:#4B556B;"></span>
+  </div>
+
+  <!-- KPIs -->
+  <div class="kpi-grid">
+    <div class="kpi"><div class="kpi-label" id="kpi-no-label">No cache — total</div><div class="kpi-value mono" id="kpi-no" style="color:var(--amber)">—</div><div class="kpi-sub" id="kpi-no-sub"></div></div>
+    <div class="kpi"><div class="kpi-label" id="kpi-ca-label">Cached — total</div><div class="kpi-value mono" id="kpi-ca" style="color:var(--teal)">—</div><div class="kpi-sub" id="kpi-ca-sub"></div></div>
+    <div class="kpi"><div class="kpi-label">Saved by caching</div><div class="kpi-value mono" id="kpi-sv" style="color:var(--teal)">—</div><div class="kpi-sub" id="kpi-sv-sub"></div></div>
+    <div class="kpi" id="kpi-real-box" style="display:none"><div class="kpi-label">Actual spend</div><div class="kpi-value mono" id="kpi-real" style="color:var(--green)">—</div><div class="kpi-sub" id="kpi-real-sub"></div></div>
+  </div>
+
+  <!-- Token ledger -->
+  <div class="panel">
+    <div class="ledger-header">
+      <span style="font-size:14px;font-weight:500;">Token ledger</span>
+      <span class="ledger-caption" id="ledger-caption">same tokens — different price tier</span>
+    </div>
+    <div class="ledger-grid">
+      <div class="panel2">
+        <div class="ledger-head" style="color:var(--amber)">No cache</div>
+        <div class="ledger-row"><span class="ledger-key">Input billed</span><span class="ledger-val"><span class="lv" id="lg-nc-in">—</span><span class="ln" id="lg-nc-in-n"></span></span></div>
+        <div class="ledger-row"><span class="ledger-key">Output</span><span class="ledger-val"><span class="lv" id="lg-nc-out">—</span><span class="ln" id="lg-nc-out-n"></span></span></div>
+        <div class="ledger-div"></div>
+        <div class="ledger-row"><span class="ledger-key">Effective input rate</span><span class="ledger-val"><span class="lv" style="color:var(--amber);font-weight:600;" id="lg-nc-rate">—</span><span class="ln">every token at list price</span></span></div>
+      </div>
+      <div class="panel2">
+        <div class="ledger-head" style="color:var(--teal)">Cached</div>
+        <div class="ledger-row"><span class="ledger-key">Written</span><span class="ledger-val"><span class="lv" id="lg-ca-wr">—</span><span class="ln" id="lg-ca-wr-n"></span></span></div>
+        <div class="ledger-row"><span class="ledger-key">Read cheaply</span><span class="ledger-val"><span class="lv" id="lg-ca-rd">—</span><span class="ln" id="lg-ca-rd-n"></span></span></div>
+        <div class="ledger-row"><span class="ledger-key">Output</span><span class="ledger-val"><span class="lv" id="lg-ca-out">—</span><span class="ln" id="lg-ca-out-n"></span></span></div>
+        <div class="ledger-div"></div>
+        <div class="ledger-row"><span class="ledger-key">Effective input rate</span><span class="ledger-val"><span class="lv" style="color:var(--teal);font-weight:600;" id="lg-ca-rate">—</span><span class="ln" id="lg-ca-rate-n"></span></span></div>
+      </div>
+      <div class="panel2" id="lg-real-panel" style="display:none">
+        <div class="ledger-head" style="color:var(--green)">Actual (from JSONL)</div>
+        <div class="ledger-row"><span class="ledger-key">Uncached input</span><span class="ledger-val"><span class="lv" id="lg-re-in">—</span><span class="ln" id="lg-re-in-n"></span></span></div>
+        <div class="ledger-row"><span class="ledger-key">Your msgs (write)</span><span class="ledger-val"><span class="lv" id="lg-re-wr">—</span><span class="ln" id="lg-re-wr-n"></span></span></div>
+        <div class="ledger-row"><span class="ledger-key">Prior context (read)</span><span class="ledger-val"><span class="lv" id="lg-re-rd">—</span><span class="ln" id="lg-re-rd-n"></span></span></div>
+        <div class="ledger-row"><span class="ledger-key">Output</span><span class="ledger-val"><span class="lv" id="lg-re-out">—</span><span class="ln" id="lg-re-out-n"></span></span></div>
+        <div class="ledger-div"></div>
+        <div class="ledger-row"><span class="ledger-key">Total actual cost</span><span class="ledger-val"><span class="lv" style="color:var(--green);font-weight:600;" id="lg-re-cost">—</span></span></div>
+      </div>
+    </div>
+    <p class="ledger-note" id="ledger-note"></p>
+  </div>
+
+  <!-- Chart -->
+  <div class="panel">
+    <div class="chart-header">
+      <span style="font-size:14px;font-weight:500;" id="chart-title">Cumulative spend</span>
+      <div class="seg">
+        <button class="seg-btn active" id="btn-cum">Cumulative</button>
+        <button class="seg-btn" id="btn-pt">Per turn</button>
+      </div>
+    </div>
+    <canvas id="chart" height="320"></canvas>
+    <div class="chart-legend">
+      <div class="legend-item"><div class="legend-swatch" style="background:var(--amber)"></div><span id="leg-no-label">No cache</span></div>
+      <div class="legend-item"><div class="legend-swatch" style="background:var(--teal)"></div><span id="leg-ca-label">Perfect cache</span></div>
+      <div class="legend-item" id="leg-real" style="display:none"><div class="legend-swatch" style="background:var(--green)"></div>Actual</div>
+    </div>
+    <p class="chart-note" id="chart-note"></p>
+  </div>
+
+  <!-- Chart: Token composition per turn -->
+  <div class="panel" id="panel-tok-comp" style="display:none">
+    <div class="chart-header">
+      <span style="font-size:14px;font-weight:500;">Token composition per turn</span>
+    </div>
+    <canvas id="chart-tok-comp" height="260"></canvas>
+    <div class="chart-legend">
+      <div class="legend-item"><div class="legend-swatch" style="background:var(--teal)"></div>Cache read</div>
+      <div class="legend-item"><div class="legend-swatch" style="background:var(--muted)"></div>Cache write</div>
+      <div class="legend-item"><div class="legend-swatch" style="background:var(--amber)"></div>Uncached input</div>
+      <div class="legend-item"><div class="legend-swatch" style="background:var(--faint)"></div>Output</div>
+    </div>
+    <p class="chart-note">100% stacked — what fraction of each turn's tokens came from cache read (cheap), cache write (moderate), uncached input (full price), and output. A mostly-teal turn is cache-efficient.</p>
+  </div>
+
+  <!-- Chart: Cache utilization ratio -->
+  <div class="panel" id="panel-cache-util" style="display:none">
+    <div class="chart-header">
+      <span style="font-size:14px;font-weight:500;">Cache utilization per turn</span>
+    </div>
+    <canvas id="chart-cache-util" height="220"></canvas>
+    <div class="chart-legend">
+      <div class="legend-item"><div class="legend-swatch" style="background:var(--teal)"></div>Cache read % of total input</div>
+    </div>
+    <p class="chart-note">Percentage of input tokens served from cache each turn. Ramps up as the session warms; dips signal a cache miss or new context being added.</p>
+  </div>
+
+  <!-- Chart: Cost breakdown per turn -->
+  <div class="panel" id="panel-cost-breakdown" style="display:none">
+    <div class="chart-header">
+      <span style="font-size:14px;font-weight:500;">Cost breakdown per turn</span>
+    </div>
+    <canvas id="chart-cost-breakdown" height="260"></canvas>
+    <div class="chart-legend">
+      <div class="legend-item"><div class="legend-swatch" style="background:var(--teal)"></div>Read $</div>
+      <div class="legend-item"><div class="legend-swatch" style="background:var(--muted)"></div>Write $</div>
+      <div class="legend-item"><div class="legend-swatch" style="background:var(--amber)"></div>Uncached input $</div>
+      <div class="legend-item"><div class="legend-swatch" style="background:var(--faint)"></div>Output $</div>
+    </div>
+    <p class="chart-note">Stacked actual cost per turn by billing category. Write bars are cache-establishment cost; read bars are cheap cache hits. Mostly-teal turns are your best value.</p>
+  </div>
+
+  <!-- Chart: Savings per turn -->
+  <div class="panel" id="panel-saved" style="display:none">
+    <div class="chart-header">
+      <span style="font-size:14px;font-weight:500;">Savings vs no-cache per turn</span>
+    </div>
+    <canvas id="chart-saved" height="220"></canvas>
+    <div class="chart-legend">
+      <div class="legend-item"><div class="legend-swatch" style="background:var(--green)"></div>$ saved this turn</div>
+    </div>
+    <p class="chart-note">How much caching saved on each turn vs billing all input at the full rate. High bars = turns where the cache paid back its write cost many times over.</p>
+  </div>
+
+  <!-- Chart: Write spikes -->
+  <div class="panel" id="panel-write-spikes" style="display:none">
+    <div class="chart-header">
+      <span style="font-size:14px;font-weight:500;">Cache write spikes</span>
+    </div>
+    <canvas id="chart-write-spikes" height="220"></canvas>
+    <div class="chart-legend">
+      <div class="legend-item"><div class="legend-swatch" style="background:var(--amber)"></div>Write spike (above avg)</div>
+      <div class="legend-item"><div class="legend-swatch" style="background:var(--muted)"></div>Write (below avg)</div>
+    </div>
+    <p class="chart-note">New tokens written to cache each turn. Amber spikes reveal context expansion events — large tool outputs, file reads, or new content being established in cache for the first time.</p>
+  </div>
+
+  <!-- Chart: Turn type breakdown -->
+  <div class="panel" id="panel-turn-timeline" style="display:none">
+    <div class="chart-header">
+      <span style="font-size:14px;font-weight:500;">Turn type breakdown</span>
+    </div>
+    <canvas id="chart-turn-timeline" height="175"></canvas>
+    <div class="chart-legend">
+      <div class="legend-item"><div class="legend-swatch" style="background:#3B82F6"></div>Text response</div>
+      <div class="legend-item"><div class="legend-swatch" style="background:#F5A623"></div>Tool call(s)</div>
+      <div class="legend-item"><div class="legend-swatch" style="background:#8B5CF6"></div>Mixed (text + tools)</div>
+      <div class="legend-item"><div style="width:8px;height:8px;border-radius:50%;background:#F97316;flex-shrink:0;margin-top:1px;"></div>&nbsp;Preceded by tool result</div>
+    </div>
+    <p class="chart-note">Session composition by assistant turn type. The same color encoding appears as a thin strip at the bottom of every chart above. A high tool-result count means many turns consumed large context dumps (bash output, file reads) — those are the write-spike culprits.</p>
+  </div>
+
+  <!-- Chart: Tool calls per turn -->
+  <div class="panel" id="panel-tool-depth" style="display:none">
+    <div class="chart-header">
+      <span style="font-size:14px;font-weight:500;">Tool calls per turn</span>
+    </div>
+    <canvas id="chart-tool-depth" height="200"></canvas>
+    <div class="chart-legend">
+      <div class="legend-item"><div class="legend-swatch" style="background:#F5A623"></div>Tool call turn</div>
+      <div class="legend-item"><div class="legend-swatch" style="background:#8B5CF6"></div>Mixed turn</div>
+    </div>
+    <p class="chart-note">Number of tool calls per assistant turn. Text-only turns have no bar. Tall bars reveal batched parallel tool calls — they consolidate work into one API round-trip, keeping total turn count (and context growth) lower.</p>
+  </div>
+
+  <!-- Chart: Cost by turn type -->
+  <div class="panel" id="panel-cost-by-type" style="display:none">
+    <div class="chart-header">
+      <span style="font-size:14px;font-weight:500;">Cost by turn type</span>
+    </div>
+    <canvas id="chart-cost-by-type" height="150"></canvas>
+    <div class="chart-legend">
+      <div class="legend-item"><div class="legend-swatch" style="background:#3B82F6"></div>Text</div>
+      <div class="legend-item"><div class="legend-swatch" style="background:#F5A623"></div>Tool call</div>
+      <div class="legend-item"><div class="legend-swatch" style="background:#8B5CF6"></div>Mixed</div>
+    </div>
+    <p class="chart-note">Average per-turn cost by turn type. Tool call turns tend to cost less (output is just tool call JSON — short). Text turns have longer output. Mixed turns are often the most expensive per turn.</p>
+  </div>
+
+  <!-- Table -->
+  <div class="panel" style="padding:0;">
+    <div class="table-wrap">
+      <table>
+        <thead id="tbl-head">
+          <tr>
+            <th style="text-align:left">Turn</th>
+            <th>Read tok</th>
+            <th>Write tok</th>
+            <th>Input tok</th>
+            <th>Output tok</th>
+            <th>Read $</th>
+            <th>Write $</th>
+            <th>Input $</th>
+            <th>Out $</th>
+            <th>Total $</th>
+            <th>No cache $</th>
+            <th>Saved</th>
+          </tr>
+        </thead>
+        <tbody id="tbl-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <p class="model-note" id="model-note">
+    Model: input(n) = S + (u+o)·(n−1) + u. A warm turn reads the entire prior prefix at the read rate and writes only the (output + new message) delta at the write rate. A cold turn discards the prefix and rewrites the entire current input. Output is billed identically either way.
+  </p>
+</div>
+
+<script>
+const C = {
+  bg:'#0A0E16', panel:'#121826', border:'#222B3D', grid:'#1A2233',
+  text:'#E8ECF4', muted:'#7E8BA3', faint:'#4B556B',
+  amber:'#F5A623', teal:'#2DD4BF', red:'#FF3B6B', green:'#3FB950',
+};
+
+let RATES = { pIn: 3, pOut: 15, writeMult: 1.25, readMult: 0.1 }; // overwritten by /api/rates on boot
+
+// ── URL params ──
+const _p = new URLSearchParams(location.search);
+const SESSION_PROJECT = _p.get('project') || '';
+const SESSION_ID      = _p.get('session') || '';
+const SEED_LABEL      = _p.get('label') || '';
+const ACTUAL_COST     = _p.get('actualCost') ? parseFloat(_p.get('actualCost')) : null;
+const IS_REAL         = !!(SESSION_PROJECT && SESSION_ID);
+
+// Model state (used only when no real data)
+const modelState = {
+  S: 3000, u: 2000, o: 1500, N: 50,
+  view: 'cumulative',
+};
+
+let state = { view: 'cumulative' };
+
+// Real data from JSONL
+let realTurns = [];   // [{inputTokens, cacheReadTokens, cacheCreateTokens, outputTokens}]
+let realRows  = [];   // computed per-turn cost rows
+
+const fmtTok    = n => Math.round(n).toLocaleString();
+const fmtTokBig = n => n>=1e6 ? (n/1e6).toFixed(2)+'M' : n>=1e3 ? (n/1e3).toFixed(1)+'k' : Math.round(n).toLocaleString();
+const fmtRate   = n => '$'+n.toFixed(2)+'/M';
+const fmtUSD    = n => { if(n===0) return '$0'; const a=Math.abs(n); const dp=a>=1?2:a>=0.01?4:5; return '$'+n.toFixed(dp); };
+
+// ── Model compute (uniform model, used as no-cache / cached baselines) ──
+function computeModel(S, u, o, N) {
+  const pi = RATES.pIn / 1e6;
+  const po = RATES.pOut / 1e6;
+  const d  = u + o;
+  const rows = [];
+  let cumNo=0, cumCache=0;
+
+  for (let n=1; n<=N; n++) {
+    const In    = S + (n-1)*d + u;
+    const Iprev = n===1 ? 0 : S + (n-2)*d + u;
+    const outCost  = o * po;
+    const noTurn   = In * pi + outCost;
+    const readTok  = n===1 ? 0 : Iprev;
+    const writeTok = n===1 ? In : d;
+    const readCost  = readTok  * pi * RATES.readMult;
+    const writeCost = writeTok * pi * RATES.writeMult;
+    const cacheTurn = readCost + writeCost + outCost;
+    cumNo    += noTurn;
+    cumCache += cacheTurn;
+    rows.push({ n, In, readTok, writeTok, outTok:o, readCost, writeCost, outCost,
+                noTurn, cacheTurn, cumNo, cumCache });
+  }
+  return rows;
+}
+
+// ── Real-data compute ──
+function computeReal(turns) {
+  const pi = RATES.pIn / 1e6;
+  const po = RATES.pOut / 1e6;
+  const rows = [];
+  let cumReal=0, cumNoCacheHypo=0;
+
+  for (let i=0; i<turns.length; i++) {
+    const t = turns[i];
+    const readCost   = t.cacheReadTokens   * pi * RATES.readMult;
+    const writeCost  = t.cacheCreateTokens * pi * RATES.writeMult;
+    const inputCost  = t.inputTokens       * pi;
+    const outCost    = t.outputTokens      * po;
+    const totalInput = t.inputTokens + t.cacheReadTokens + t.cacheCreateTokens;
+    const realTurn   = readCost + writeCost + inputCost + outCost;
+    const noTurn     = totalInput * pi + outCost;
+
+    cumReal       += realTurn;
+    cumNoCacheHypo += noTurn;
+    rows.push({
+      n: i+1, t,
+      readCost, writeCost, inputCost, outCost, realTurn, noTurn,
+      totalInput,
+      cumReal, cumNoCacheHypo,
+    });
+  }
+  return rows;
+}
+
+// ── Chart ──
+function drawChart(modelRowsNo, modelRowsCache, realRowsArg, view) {
+  const canvas = document.getElementById('chart');
+  const dpr = window.devicePixelRatio || 1;
+  const W   = canvas.parentElement.clientWidth - 32;
+  const H   = 320;
+  canvas.width  = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width  = W+'px';
+  canvas.style.height = H+'px';
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  const PAD = { top:12, right:16, bottom:36, left:62 };
+  const cW = W - PAD.left - PAD.right;
+  const cH = H - PAD.top  - PAD.bottom;
+  const monoFont = getComputedStyle(document.body).getPropertyValue('--mono').trim();
+  const isCum = view === 'cumulative';
+
+  const noVals    = modelRowsNo.map(r    => isCum ? r.cumNo    : r.noTurn);
+  const cacheVals = modelRowsCache.map(r => isCum ? r.cumCache : r.cacheTurn);
+  const realVals  = realRowsArg.map(r    => isCum ? r.cumReal  : r.realTurn);
+  const allVals   = [...noVals, ...cacheVals, ...realVals];
+  const maxV = (Math.max(...allVals) || 1) * 1.08;
+  const N = Math.max(modelRowsNo.length, realRowsArg.length);
+
+  const yOf = v => PAD.top + cH - (v / maxV) * cH;
+  const yBase = PAD.top + cH;
+
+  // Grid lines + Y labels
+  const tickCount = 5;
+  ctx.strokeStyle = C.grid; ctx.lineWidth = 1;
+  for (let i=0; i<=tickCount; i++) {
+    const v = (maxV / tickCount) * i;
+    const y = yOf(v);
+    ctx.beginPath(); ctx.moveTo(PAD.left, y); ctx.lineTo(PAD.left+cW, y); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.font = '10px '+monoFont; ctx.textAlign = 'right';
+    ctx.fillText(v>=1 ? '$'+v.toFixed(1) : '$'+v.toFixed(2), PAD.left-6, y+3.5);
+  }
+
+  if (isCum) {
+    // ── Line chart for cumulative ──
+    const xOf = i => PAD.left + (i / (N-1 || 1)) * cW;
+
+    // X labels
+    const step = Math.max(1, Math.round(N / 8));
+    ctx.fillStyle = C.muted; ctx.textAlign = 'center'; ctx.font = '10px system-ui';
+    for (let i=0; i<N; i++) {
+      const n = i+1;
+      if (i===0 || n%step===0 || i===N-1) ctx.fillText(n, xOf(i), H - PAD.bottom + 16);
+    }
+
+    function drawLine(vals, color, width, dash=[]) {
+      if (!vals.length) return;
+      ctx.beginPath(); ctx.strokeStyle = color; ctx.lineWidth = width; ctx.setLineDash(dash);
+      vals.forEach((v, i) => { i===0 ? ctx.moveTo(xOf(i), yOf(v)) : ctx.lineTo(xOf(i), yOf(v)); });
+      ctx.stroke(); ctx.setLineDash([]);
+    }
+
+    drawLine(noVals,    C.amber, 1.5, [4,4]);
+    drawLine(cacheVals, C.teal,  1.5, [4,4]);
+    if (realVals.length) drawLine(realVals, C.green, 2.5);
+
+  } else {
+    // ── Bar chart for per-turn ──
+    const series = realVals.length
+      ? [{ vals: noVals, color: C.amber }, { vals: cacheVals, color: C.teal }, { vals: realVals, color: C.green }]
+      : [{ vals: noVals, color: C.amber }, { vals: cacheVals, color: C.teal }];
+
+    const groupCount = N;
+    const groupW     = cW / groupCount;
+    const barGap     = 1;
+    const groupPad   = Math.max(2, groupW * 0.15);
+    const barW       = Math.max(1, (groupW - groupPad * 2 - barGap * (series.length - 1)) / series.length);
+
+    // X labels — only when bar is wide enough to label individually, else sparse
+    const labelStep = barW < 6 ? Math.max(1, Math.round(N / 10)) : 1;
+    ctx.fillStyle = C.muted; ctx.textAlign = 'center'; ctx.font = '10px system-ui';
+    for (let i=0; i<N; i++) {
+      if (i===0 || (i+1)%labelStep===0 || i===N-1) {
+        const cx = PAD.left + i * groupW + groupW / 2;
+        ctx.fillText(i+1, cx, H - PAD.bottom + 16);
+      }
+    }
+
+    // Draw bars
+    for (let i=0; i<N; i++) {
+      const groupX = PAD.left + i * groupW + groupPad;
+      series.forEach(({ vals, color }, si) => {
+        const v = vals[i] ?? 0;
+        if (v <= 0) return;
+        const x = groupX + si * (barW + barGap);
+        const barH = Math.max(1, (v / maxV) * cH);
+        ctx.fillStyle = color;
+        ctx.globalAlpha = 0.85;
+        ctx.fillRect(x, yBase - barH, barW, barH);
+      });
+    }
+    ctx.globalAlpha = 1;
+  }
+}
+
+// ── Ledger update ──
+function updateLedger(modelRowsCache, modelRowsNo, realRowsArg) {
+  const pi = RATES.pIn / 1e6;
+
+  // No-cache side (from model — same total input regardless of real vs model)
+  let inTokNC=0, outTokNC=0;
+  modelRowsNo.forEach(r => { inTokNC+=r.In; outTokNC+=r.outTok; });
+  const noIn = inTokNC * pi;
+  document.getElementById('lg-nc-in').textContent   = fmtTokBig(inTokNC)+' tok';
+  document.getElementById('lg-nc-in-n').textContent  = `@ ${fmtRate(RATES.pIn)} → ${fmtUSD(noIn)}`;
+  document.getElementById('lg-nc-out').textContent   = fmtTokBig(outTokNC)+' tok';
+  document.getElementById('lg-nc-out-n').textContent  = `@ ${fmtRate(RATES.pOut)}`;
+  document.getElementById('lg-nc-rate').textContent  = fmtRate(RATES.pIn);
+
+  // Cached side
+  let wr=0, rd=0, outC=0, cacheIn=0;
+  modelRowsCache.forEach(r => { wr+=r.writeTok; rd+=r.readTok; outC+=r.outTok; cacheIn+=r.readCost+r.writeCost; });
+  const inTokC = inTokNC; // same tokens, different price
+  const effRate = inTokC ? (cacheIn/inTokC)*1e6 : 0;
+  const discount = RATES.pIn ? (1 - effRate/RATES.pIn)*100 : 0;
+  document.getElementById('lg-ca-wr').textContent   = fmtTokBig(wr)+' tok';
+  document.getElementById('lg-ca-wr-n').textContent  = `@ ${fmtRate(RATES.pIn*RATES.writeMult)} (write)`;
+  document.getElementById('lg-ca-rd').textContent   = fmtTokBig(rd)+' tok';
+  document.getElementById('lg-ca-rd-n').textContent  = `@ ${fmtRate(RATES.pIn*RATES.readMult)} (read)`;
+  document.getElementById('lg-ca-out').textContent  = fmtTokBig(outC)+' tok';
+  document.getElementById('lg-ca-out-n').textContent = `@ ${fmtRate(RATES.pOut)}`;
+  document.getElementById('lg-ca-rate').textContent = fmtRate(effRate);
+  document.getElementById('lg-ca-rate-n').textContent = `${discount.toFixed(1)}% below list price`;
+
+  // Real side
+  if (realRowsArg.length) {
+    let reIn=0, reWr=0, reRd=0, reOut=0, reCost=0;
+    realRowsArg.forEach(r => {
+      reIn  += r.t.inputTokens;
+      reWr  += r.t.cacheCreateTokens;
+      reRd  += r.t.cacheReadTokens;
+      reOut += r.t.outputTokens;
+      reCost += r.realTurn;
+    });
+    document.getElementById('lg-re-in').textContent   = fmtTokBig(reIn)+' tok';
+    document.getElementById('lg-re-in-n').textContent  = `@ ${fmtRate(RATES.pIn)} (uncached)`;
+    document.getElementById('lg-re-wr').textContent   = fmtTokBig(reWr)+' tok';
+    document.getElementById('lg-re-wr-n').textContent  = `@ ${fmtRate(RATES.pIn*RATES.writeMult)}`;
+    document.getElementById('lg-re-rd').textContent   = fmtTokBig(reRd)+' tok';
+    document.getElementById('lg-re-rd-n').textContent  = `@ ${fmtRate(RATES.pIn*RATES.readMult)}`;
+    document.getElementById('lg-re-out').textContent  = fmtTokBig(reOut)+' tok';
+    document.getElementById('lg-re-out-n').textContent = `@ ${fmtRate(RATES.pOut)}`;
+    document.getElementById('lg-re-cost').textContent = fmtUSD(reCost);
+  }
+
+  const note = IS_REAL
+    ? `Real per-turn token breakdown from the session JSONL. Uncached input tokens are billed at list price; cache reads at ${RATES.readMult}×; cache writes at ${RATES.writeMult}×. The no-cache and cached columns use the same model equations but with per-turn actual totals.`
+    : `Both paths feed the model the same ${fmtTokBig(inTokNC)} input tokens — caching never sends fewer tokens, it reprices them. Only ${fmtTokBig(wr)} are ever written; the rest are re-read at ${RATES.readMult}× instead of re-bought at full price.`;
+  document.getElementById('ledger-note').textContent = note;
+}
+
+// ── KPI update ──
+function updateKPIs(modelRowsNo, modelRowsCache, realRowsArg) {
+  const lastNo    = modelRowsNo[modelRowsNo.length-1]       || {};
+  const lastCache = modelRowsCache[modelRowsCache.length-1] || {};
+  const lastReal  = realRowsArg[realRowsArg.length-1]       || {};
+
+  const cumNo    = lastNo.cumNo    || 0;
+  const cumCache = lastCache.cumCache || 0;
+  const saved    = cumNo - cumCache;
+  const savedPct = cumNo ? (saved/cumNo)*100 : 0;
+
+  document.getElementById('kpi-no').textContent     = fmtUSD(cumNo);
+  document.getElementById('kpi-no-sub').textContent = IS_REAL ? `if nothing was cached` : `model projection`;
+  document.getElementById('kpi-ca').textContent     = fmtUSD(cumCache);
+  document.getElementById('kpi-ca-sub').textContent = IS_REAL ? `if perfectly cached` : `model projection`;
+  document.getElementById('kpi-sv').textContent     = fmtUSD(saved);
+  document.getElementById('kpi-sv-sub').textContent = `${savedPct.toFixed(1)}% off the bill`;
+
+  if (realRowsArg.length) {
+    const cumReal = lastReal.cumReal || 0;
+    document.getElementById('kpi-real-box').style.display = '';
+    document.getElementById('kpi-real').textContent     = fmtUSD(cumReal);
+    document.getElementById('kpi-real-sub').textContent = `vs $${fmtUSD(cumNo)} uncached`;
+  }
+}
+
+// ── Table update ──
+function updateTable(modelRowsNo, modelRowsCache, realRowsArg) {
+  const tbody = document.getElementById('tbl-body');
+  tbody.innerHTML = '';
+
+  if (realRowsArg.length) {
+    // Real data table
+    document.getElementById('tbl-head').innerHTML = `<tr>
+      <th style="text-align:left">Turn</th>
+      <th>Cache<br>read tok</th>
+      <th>Cache<br>write tok</th>
+      <th>Uncached<br>input tok</th>
+      <th>Output<br>tok</th>
+      <th>Read $</th>
+      <th>Write $</th>
+      <th>Input $</th>
+      <th>Out $</th>
+      <th style="color:var(--green)">Actual $</th>
+      <th style="color:var(--amber)">No cache $</th>
+      <th>Saved</th>
+    </tr>`;
+
+    let cumReal=0, cumNo=0;
+    realRowsArg.forEach(r => {
+      cumReal += r.realTurn; cumNo += r.noTurn;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td style="color:${C.text}">${r.n}</td>
+        <td style="color:${C.teal}">${fmtTok(r.t.cacheReadTokens)}</td>
+        <td style="color:${C.muted}">${fmtTok(r.t.cacheCreateTokens)}</td>
+        <td style="color:${C.muted}">${fmtTok(r.t.inputTokens)}</td>
+        <td style="color:${C.faint}">${fmtTok(r.t.outputTokens)}</td>
+        <td style="color:${C.teal}">${fmtUSD(r.readCost)}</td>
+        <td style="color:${C.muted}">${fmtUSD(r.writeCost)}</td>
+        <td style="color:${C.muted}">${fmtUSD(r.inputCost)}</td>
+        <td style="color:${C.faint}">${fmtUSD(r.outCost)}</td>
+        <td style="color:${C.green}">${fmtUSD(r.realTurn)}</td>
+        <td style="color:${C.amber}">${fmtUSD(r.noTurn)}</td>
+        <td style="color:${C.muted}">${fmtUSD(r.noTurn - r.realTurn)}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    // Totals row
+    const totR = realRowsArg.reduce((a,r) => ({
+      rd: a.rd+r.readCost, wr: a.wr+r.writeCost, inp: a.inp+r.inputCost,
+      out: a.out+r.outCost, real: a.real+r.realTurn, no: a.no+r.noTurn
+    }), {rd:0,wr:0,inp:0,out:0,real:0,no:0});
+    const totTr = document.createElement('tr');
+    totTr.style.fontWeight = '600';
+    totTr.style.borderTop  = `1px solid ${C.border}`;
+    totTr.innerHTML = `
+      <td style="color:${C.muted}">Total</td>
+      <td></td><td></td><td></td><td></td>
+      <td style="color:${C.teal}">${fmtUSD(totR.rd)}</td>
+      <td style="color:${C.muted}">${fmtUSD(totR.wr)}</td>
+      <td style="color:${C.muted}">${fmtUSD(totR.inp)}</td>
+      <td style="color:${C.faint}">${fmtUSD(totR.out)}</td>
+      <td style="color:${C.green}">${fmtUSD(totR.real)}</td>
+      <td style="color:${C.amber}">${fmtUSD(totR.no)}</td>
+      <td style="color:${C.muted}">${fmtUSD(totR.no - totR.real)}</td>
+    `;
+    tbody.appendChild(totTr);
+
+  } else {
+    // Model table
+    document.getElementById('tbl-head').innerHTML = `<tr>
+      <th style="text-align:left">Turn</th>
+      <th>Input</th><th>Read</th><th>Write</th>
+      <th>Read $</th><th>Write $</th><th>Out $</th>
+      <th>No cache</th><th>Cached</th><th>Save</th>
+    </tr>`;
+
+    modelRowsNo.forEach((rNo, i) => {
+      const rC = modelRowsCache[i];
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td style="color:${C.text}">${rNo.n}</td>
+        <td style="color:${C.muted}">${fmtTok(rNo.In)}</td>
+        <td style="color:${C.muted}">${fmtTok(rC.readTok)}</td>
+        <td style="color:${C.muted}">${fmtTok(rC.writeTok)}</td>
+        <td style="color:${C.muted}">${fmtUSD(rC.readCost)}</td>
+        <td style="color:${C.muted}">${fmtUSD(rC.writeCost)}</td>
+        <td style="color:${C.faint}">${fmtUSD(rC.outCost)}</td>
+        <td style="color:${C.amber}">${fmtUSD(rNo.noTurn)}</td>
+        <td style="color:${C.teal}">${fmtUSD(rC.cacheTurn)}</td>
+        <td style="color:${C.muted}">${fmtUSD(rNo.noTurn - rC.cacheTurn)}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+}
+
+// ── Real-only chart helpers ──
+function setupRealCanvas(canvasId, H) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return null;
+  const dpr = window.devicePixelRatio || 1;
+  const W   = canvas.parentElement.clientWidth - 32;
+  canvas.width  = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width  = W + 'px';
+  canvas.style.height = H + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  const monoFont = getComputedStyle(document.body).getPropertyValue('--mono').trim();
+  return { ctx, W, H, monoFont };
+}
+
+function realXLabels(ctx, N, PAD, W, H, groupW) {
+  const step = Math.max(1, Math.round(N / 10));
+  ctx.fillStyle = C.muted; ctx.textAlign = 'center'; ctx.font = '10px system-ui';
+  for (let i = 0; i < N; i++) {
+    if (i === 0 || (i + 1) % step === 0 || i === N - 1)
+      ctx.fillText(i + 1, PAD.left + i * groupW + groupW / 2, H - PAD.bottom + 16);
+  }
+}
+
+const TURN_COLORS = { text: '#3B82F6', tool_call: '#F5A623', mixed: '#8B5CF6' };
+
+// Thin color strip at canvas bottom encoding turn type; orange dot = preceded by tool result
+function drawTurnTypeStrip(ctx, rows, PAD, W, H) {
+  const N = rows.length;
+  if (!N) return;
+  const cW = W - PAD.left - PAD.right;
+  const gW = cW / N;
+  const bW = Math.max(1, gW * 0.88);
+  const STRIP = 5;
+  const y = H - STRIP - 1;
+
+  ctx.globalAlpha = 0.88;
+  for (let i = 0; i < N; i++) {
+    const t = rows[i].t;
+    ctx.fillStyle = TURN_COLORS[t?.turnType] || C.faint;
+    ctx.fillRect(PAD.left + i * gW + (gW - bW) / 2, y, bW, STRIP);
+  }
+  ctx.globalAlpha = 1;
+
+  for (let i = 0; i < N; i++) {
+    if (rows[i].t?.prevTurnType !== 'tool_result') continue;
+    const cx = PAD.left + i * gW + gW / 2;
+    ctx.beginPath(); ctx.arc(cx, y - 4, 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = '#F97316'; ctx.globalAlpha = 0.9; ctx.fill(); ctx.globalAlpha = 1;
+  }
+}
+
+// Chart 1: Token composition — 100% stacked bar
+function drawTokenComp(rows) {
+  const s = setupRealCanvas('chart-tok-comp', 260);
+  if (!s) return;
+  const { ctx, W, H, monoFont } = s;
+  const PAD = { top: 12, right: 16, bottom: 36, left: 56 };
+  const cW = W - PAD.left - PAD.right;
+  const cH = H - PAD.top - PAD.bottom;
+  const N  = rows.length;
+  const gW = cW / N;
+  const bW = Math.max(1, gW * 0.7);
+  const yB = PAD.top + cH;
+
+  ctx.strokeStyle = C.grid; ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const pct = i * 25;
+    const y = PAD.top + cH - (pct / 100) * cH;
+    ctx.beginPath(); ctx.moveTo(PAD.left, y); ctx.lineTo(PAD.left + cW, y); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.font = '10px ' + monoFont; ctx.textAlign = 'right';
+    ctx.fillText(pct + '%', PAD.left - 4, y + 3.5);
+  }
+
+  for (let i = 0; i < N; i++) {
+    const r = rows[i];
+    const total = r.totalInput + r.t.outputTokens;
+    if (!total) continue;
+    const segs = [
+      { v: r.t.cacheReadTokens,   c: C.teal  },
+      { v: r.t.cacheCreateTokens, c: C.muted  },
+      { v: r.t.inputTokens,       c: C.amber  },
+      { v: r.t.outputTokens,      c: C.faint  },
+    ];
+    const x = PAD.left + i * gW + (gW - bW) / 2;
+    let yOff = yB;
+    ctx.globalAlpha = 0.85;
+    for (const { v, c } of segs) {
+      const h = (v / total) * cH;
+      if (h < 0.5) continue;
+      ctx.fillStyle = c;
+      ctx.fillRect(x, yOff - h, bW, h);
+      yOff -= h;
+    }
+  }
+  ctx.globalAlpha = 1;
+  realXLabels(ctx, N, PAD, W, H, gW);
+  drawTurnTypeStrip(ctx, rows, PAD, W, H);
+}
+
+// Chart 2: Cache utilization ratio — line
+function drawCacheUtil(rows) {
+  const s = setupRealCanvas('chart-cache-util', 220);
+  if (!s) return;
+  const { ctx, W, H, monoFont } = s;
+  const PAD = { top: 12, right: 16, bottom: 36, left: 50 };
+  const cW = W - PAD.left - PAD.right;
+  const cH = H - PAD.top - PAD.bottom;
+  const N  = rows.length;
+
+  ctx.strokeStyle = C.grid; ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const pct = i * 25;
+    const y = PAD.top + cH - (pct / 100) * cH;
+    ctx.beginPath(); ctx.moveTo(PAD.left, y); ctx.lineTo(PAD.left + cW, y); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.font = '10px ' + monoFont; ctx.textAlign = 'right';
+    ctx.fillText(pct + '%', PAD.left - 4, y + 3.5);
+  }
+
+  const vals = rows.map(r => r.totalInput > 0 ? (r.t.cacheReadTokens / r.totalInput) * 100 : 0);
+  const xOf  = i => PAD.left + (i / (N - 1 || 1)) * cW;
+  const yOf  = v => PAD.top + cH - (v / 100) * cH;
+
+  ctx.beginPath(); ctx.strokeStyle = C.teal; ctx.lineWidth = 2; ctx.setLineDash([]);
+  vals.forEach((v, i) => i === 0 ? ctx.moveTo(xOf(i), yOf(v)) : ctx.lineTo(xOf(i), yOf(v)));
+  ctx.stroke();
+
+  vals.forEach((v, i) => {
+    ctx.beginPath(); ctx.arc(xOf(i), yOf(v), 3, 0, Math.PI * 2);
+    ctx.fillStyle = C.teal; ctx.fill();
+  });
+
+  const step = Math.max(1, Math.round(N / 8));
+  ctx.fillStyle = C.muted; ctx.textAlign = 'center'; ctx.font = '10px system-ui';
+  for (let i = 0; i < N; i++)
+    if (i === 0 || (i + 1) % step === 0 || i === N - 1)
+      ctx.fillText(i + 1, xOf(i), H - PAD.bottom + 16);
+  drawTurnTypeStrip(ctx, rows, PAD, W, H);
+}
+
+// Chart 3: Cost breakdown — stacked bar
+function drawCostBreakdown(rows) {
+  const s = setupRealCanvas('chart-cost-breakdown', 260);
+  if (!s) return;
+  const { ctx, W, H, monoFont } = s;
+  const PAD = { top: 12, right: 16, bottom: 36, left: 68 };
+  const cW = W - PAD.left - PAD.right;
+  const cH = H - PAD.top - PAD.bottom;
+  const N  = rows.length;
+  const gW = cW / N;
+  const bW = Math.max(1, gW * 0.7);
+  const yB = PAD.top + cH;
+
+  const maxV = (Math.max(...rows.map(r => r.realTurn)) || 1) * 1.1;
+  const fmtY = v => v >= 0.1 ? '$' + v.toFixed(2) : v >= 0.001 ? '$' + v.toFixed(4) : '$' + v.toFixed(5);
+
+  ctx.strokeStyle = C.grid; ctx.lineWidth = 1;
+  for (let i = 0; i <= 5; i++) {
+    const v = (maxV / 5) * i;
+    const y = PAD.top + cH - (v / maxV) * cH;
+    ctx.beginPath(); ctx.moveTo(PAD.left, y); ctx.lineTo(PAD.left + cW, y); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.font = '10px ' + monoFont; ctx.textAlign = 'right';
+    ctx.fillText(fmtY(v), PAD.left - 4, y + 3.5);
+  }
+
+  for (let i = 0; i < N; i++) {
+    const r = rows[i];
+    const segs = [
+      { v: r.readCost,  c: C.teal  },
+      { v: r.writeCost, c: C.muted  },
+      { v: r.inputCost, c: C.amber  },
+      { v: r.outCost,   c: C.faint  },
+    ];
+    const x = PAD.left + i * gW + (gW - bW) / 2;
+    let yOff = yB;
+    ctx.globalAlpha = 0.85;
+    for (const { v, c } of segs) {
+      const h = Math.max(0, (v / maxV) * cH);
+      if (h < 0.5) continue;
+      ctx.fillStyle = c;
+      ctx.fillRect(x, yOff - h, bW, h);
+      yOff -= h;
+    }
+  }
+  ctx.globalAlpha = 1;
+  realXLabels(ctx, N, PAD, W, H, gW);
+  drawTurnTypeStrip(ctx, rows, PAD, W, H);
+}
+
+// Chart 4: Savings per turn — bar
+function drawSavedPerTurn(rows) {
+  const s = setupRealCanvas('chart-saved', 220);
+  if (!s) return;
+  const { ctx, W, H, monoFont } = s;
+  const PAD = { top: 12, right: 16, bottom: 36, left: 68 };
+  const cW = W - PAD.left - PAD.right;
+  const cH = H - PAD.top - PAD.bottom;
+  const N  = rows.length;
+  const gW = cW / N;
+  const bW = Math.max(1, gW * 0.6);
+  const yB = PAD.top + cH;
+
+  const vals = rows.map(r => Math.max(0, r.noTurn - r.realTurn));
+  const maxV = (Math.max(...vals) || 1) * 1.1;
+  const fmtY = v => v >= 0.1 ? '$' + v.toFixed(2) : v >= 0.001 ? '$' + v.toFixed(4) : '$' + v.toFixed(5);
+
+  ctx.strokeStyle = C.grid; ctx.lineWidth = 1;
+  for (let i = 0; i <= 5; i++) {
+    const v = (maxV / 5) * i;
+    const y = PAD.top + cH - (v / maxV) * cH;
+    ctx.beginPath(); ctx.moveTo(PAD.left, y); ctx.lineTo(PAD.left + cW, y); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.font = '10px ' + monoFont; ctx.textAlign = 'right';
+    ctx.fillText(fmtY(v), PAD.left - 4, y + 3.5);
+  }
+
+  ctx.globalAlpha = 0.85;
+  for (let i = 0; i < N; i++) {
+    const v = vals[i];
+    if (v <= 0) continue;
+    const x  = PAD.left + i * gW + (gW - bW) / 2;
+    const bH = Math.max(1, (v / maxV) * cH);
+    ctx.fillStyle = C.green;
+    ctx.fillRect(x, yB - bH, bW, bH);
+  }
+  ctx.globalAlpha = 1;
+  realXLabels(ctx, N, PAD, W, H, gW);
+  drawTurnTypeStrip(ctx, rows, PAD, W, H);
+}
+
+// Chart 5: Cache write spikes — bar with avg line
+function drawWriteSpikes(rows) {
+  const s = setupRealCanvas('chart-write-spikes', 220);
+  if (!s) return;
+  const { ctx, W, H, monoFont } = s;
+  const PAD = { top: 12, right: 16, bottom: 36, left: 62 };
+  const cW = W - PAD.left - PAD.right;
+  const cH = H - PAD.top - PAD.bottom;
+  const N  = rows.length;
+  const gW = cW / N;
+  const bW = Math.max(1, gW * 0.6);
+  const yB = PAD.top + cH;
+
+  const vals = rows.map(r => r.t.cacheCreateTokens);
+  const maxV = (Math.max(...vals) || 1) * 1.1;
+  const avg  = vals.reduce((a, b) => a + b, 0) / (N || 1);
+  const fmtTokY = v => v >= 1000 ? (v / 1000).toFixed(1) + 'k' : Math.round(v).toString();
+
+  ctx.strokeStyle = C.grid; ctx.lineWidth = 1;
+  for (let i = 0; i <= 5; i++) {
+    const v = (maxV / 5) * i;
+    const y = PAD.top + cH - (v / maxV) * cH;
+    ctx.beginPath(); ctx.moveTo(PAD.left, y); ctx.lineTo(PAD.left + cW, y); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.font = '10px ' + monoFont; ctx.textAlign = 'right';
+    ctx.fillText(fmtTokY(v), PAD.left - 4, y + 3.5);
+  }
+
+  // Average reference line
+  const avgY = PAD.top + cH - (avg / maxV) * cH;
+  ctx.beginPath(); ctx.strokeStyle = C.faint; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+  ctx.moveTo(PAD.left, avgY); ctx.lineTo(PAD.left + cW, avgY); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = C.faint; ctx.textAlign = 'left'; ctx.font = '9px ' + monoFont;
+  ctx.fillText('avg', PAD.left + 3, avgY - 3);
+
+  ctx.globalAlpha = 0.85;
+  for (let i = 0; i < N; i++) {
+    const v = vals[i];
+    if (v <= 0) continue;
+    const x  = PAD.left + i * gW + (gW - bW) / 2;
+    const bH = Math.max(1, (v / maxV) * cH);
+    ctx.fillStyle = v > avg * 2 ? C.amber : C.muted;
+    ctx.fillRect(x, yB - bH, bW, bH);
+  }
+  ctx.globalAlpha = 1;
+  realXLabels(ctx, N, PAD, W, H, gW);
+  drawTurnTypeStrip(ctx, rows, PAD, W, H);
+}
+
+// Chart 6: Turn type breakdown — aggregated summary
+function drawTurnTimeline(rows) {
+  const s = setupRealCanvas('chart-turn-timeline', 175);
+  if (!s) return;
+  const { ctx, W, H, monoFont } = s;
+  const N = rows.length;
+  if (!N) return;
+
+  const types  = ['tool_call', 'text', 'mixed'];
+  const labels = { tool_call: 'Tool call', text: 'Text', mixed: 'Mixed' };
+  const counts = { tool_call: 0, text: 0, mixed: 0 };
+  let toolResultCount = 0;
+  for (const r of rows) {
+    const type = r.t?.turnType || 'text';
+    counts[type] = (counts[type] || 0) + 1;
+    if (r.t?.prevTurnType === 'tool_result') toolResultCount++;
+  }
+
+  const PAD_L = 90;
+  const PAD_R = 16;
+  const BAR_AREA = W - PAD_L - PAD_R;
+
+  // Total label
+  ctx.fillStyle = C.muted; ctx.font = '11px system-ui'; ctx.textAlign = 'right';
+  ctx.fillText(`${N} turns total`, W - PAD_R, 18);
+
+  // Main proportional stacked bar
+  const MAIN_Y = 10; const MAIN_H = 20;
+  let xOff = PAD_L;
+  for (const type of types) {
+    const w = Math.round((counts[type] / N) * BAR_AREA);
+    if (w <= 0) continue;
+    ctx.fillStyle = TURN_COLORS[type]; ctx.globalAlpha = 0.85;
+    ctx.fillRect(xOff, MAIN_Y, w, MAIN_H);
+    xOff += w;
+  }
+  ctx.globalAlpha = 1;
+
+  // Per-type rows
+  const ROW_H = 28; const BAR_H = 12; const ROW_TOP = MAIN_Y + MAIN_H + 18;
+  types.forEach((type, i) => {
+    const count = counts[type] || 0;
+    const pct   = N ? (count / N * 100) : 0;
+    const y     = ROW_TOP + i * ROW_H;
+    const barW  = Math.round((count / N) * BAR_AREA);
+
+    ctx.fillStyle = TURN_COLORS[type]; ctx.font = '600 11px system-ui'; ctx.textAlign = 'right';
+    ctx.fillText(labels[type], PAD_L - 8, y + BAR_H / 2 + 4);
+
+    ctx.fillStyle = TURN_COLORS[type]; ctx.globalAlpha = 0.7;
+    if (barW > 0) ctx.fillRect(PAD_L, y, barW, BAR_H);
+    ctx.globalAlpha = 1;
+
+    ctx.fillStyle = C.muted; ctx.font = `10px ${monoFont}`; ctx.textAlign = 'left';
+    ctx.fillText(
+      count ? `${count} turns  ${pct.toFixed(1)}%` : 'none',
+      PAD_L + barW + 8, y + BAR_H / 2 + 4
+    );
+  });
+
+  // Tool result predecessor row
+  const INFO_Y = ROW_TOP + types.length * ROW_H + 16;
+  const pct = N ? (toolResultCount / N * 100) : 0;
+  const dotX = PAD_L - 12;
+  ctx.beginPath(); ctx.arc(dotX, INFO_Y - 3, 4.5, 0, Math.PI * 2);
+  ctx.fillStyle = '#F97316'; ctx.fill();
+
+  ctx.fillStyle = C.muted; ctx.font = `11px system-ui`; ctx.textAlign = 'left';
+  ctx.fillText(
+    `${toolResultCount} turns preceded by a tool result  (${pct.toFixed(1)}%)`,
+    PAD_L, INFO_Y
+  );
+  ctx.fillStyle = C.faint; ctx.font = `10px ${monoFont}`;
+  ctx.fillText('file reads, bash output — the write-spike drivers', PAD_L, INFO_Y + 16);
+}
+
+// Chart 7: Tool calls per turn
+function drawToolDepth(rows) {
+  const s = setupRealCanvas('chart-tool-depth', 200);
+  if (!s) return;
+  const { ctx, W, H, monoFont } = s;
+  const PAD = { top: 12, right: 16, bottom: 36, left: 40 };
+  const cW = W - PAD.left - PAD.right;
+  const cH = H - PAD.top - PAD.bottom;
+  const N  = rows.length;
+  const gW = cW / N;
+  const bW = Math.max(1, gW * 0.6);
+  const yB = PAD.top + cH;
+
+  const vals = rows.map(r => r.t?.toolCount || 0);
+  const maxV = Math.max(...vals, 1);
+  const ticks = Math.min(maxV, 6);
+
+  ctx.strokeStyle = C.grid; ctx.lineWidth = 1;
+  for (let i = 0; i <= ticks; i++) {
+    const v = Math.round((maxV / ticks) * i);
+    const y = PAD.top + cH - (v / maxV) * cH;
+    ctx.beginPath(); ctx.moveTo(PAD.left, y); ctx.lineTo(PAD.left + cW, y); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.font = '10px ' + monoFont; ctx.textAlign = 'right';
+    ctx.fillText(v, PAD.left - 4, y + 3.5);
+  }
+
+  ctx.globalAlpha = 0.85;
+  for (let i = 0; i < N; i++) {
+    const v = vals[i];
+    if (v <= 0) continue;
+    const t = rows[i].t;
+    const x  = PAD.left + i * gW + (gW - bW) / 2;
+    const bH = Math.max(1, (v / maxV) * cH);
+    ctx.fillStyle = TURN_COLORS[t?.turnType] || C.faint;
+    ctx.fillRect(x, yB - bH, bW, bH);
+  }
+  ctx.globalAlpha = 1;
+  realXLabels(ctx, N, PAD, W, H, gW);
+  drawTurnTypeStrip(ctx, rows, PAD, W, H);
+}
+
+// Chart 8: Cost by turn type — horizontal bars
+function drawCostByType(rows) {
+  const s = setupRealCanvas('chart-cost-by-type', 150);
+  if (!s) return;
+  const { ctx, W, H, monoFont } = s;
+
+  const types  = ['text', 'tool_call', 'mixed'];
+  const labels = { text: 'Text', tool_call: 'Tool call', mixed: 'Mixed' };
+  const stats  = {};
+  for (const type of types) {
+    const tr = rows.filter(r => r.t?.turnType === type);
+    const total = tr.reduce((sum, r) => sum + r.realTurn, 0);
+    stats[type] = { count: tr.length, total, avg: tr.length ? total / tr.length : 0 };
+  }
+
+  const maxAvg  = Math.max(...types.map(t => stats[t].avg), 0.0001);
+  const LABEL_W = 72;
+  const BAR_MAX = W - LABEL_W - 180;
+  const ROW_H   = 28;
+  const GAP     = 10;
+  const TOP     = 16;
+
+  types.forEach((type, i) => {
+    const st = stats[type];
+    const y  = TOP + i * (ROW_H + GAP);
+
+    ctx.fillStyle = TURN_COLORS[type];
+    ctx.font = '600 11px system-ui';
+    ctx.textAlign = 'right';
+    ctx.fillText(labels[type], LABEL_W - 8, y + ROW_H / 2 + 4);
+
+    const barW = st.count ? Math.max(2, (st.avg / maxAvg) * BAR_MAX) : 0;
+    ctx.fillStyle = TURN_COLORS[type];
+    ctx.globalAlpha = 0.7;
+    ctx.fillRect(LABEL_W, y + 7, barW, ROW_H - 14);
+    ctx.globalAlpha = 1;
+
+    ctx.fillStyle = st.count ? C.muted : C.faint;
+    ctx.font = `10px ${monoFont}`;
+    ctx.textAlign = 'left';
+    ctx.fillText(
+      st.count
+        ? `${fmtUSD(st.avg)} avg · ${st.count} turn${st.count !== 1 ? 's' : ''} · ${fmtUSD(st.total)} total`
+        : 'no turns',
+      LABEL_W + barW + 10, y + ROW_H / 2 + 4
+    );
+  });
+}
+
+// ── Main render ──
+function render() {
+  const view = state.view;
+
+  let modelRowsNo, modelRowsCache;
+
+  if (IS_REAL && realTurns.length) {
+    realRows = computeReal(realTurns);
+    // Build "no cache" and "perfect cache" baselines from actual per-turn token sizes
+    const pi = RATES.pIn / 1e6;
+    const po = RATES.pOut / 1e6;
+    modelRowsNo = [];
+    modelRowsCache = [];
+    let cumNo = 0, cumCache = 0, prevInput = 0;
+    for (const r of realRows) {
+      const outCost = r.outCost;
+      const noTurn  = r.totalInput * pi + outCost;
+      cumNo += noTurn;
+      modelRowsNo.push({ n: r.n, In: r.totalInput, outTok: r.t.outputTokens, noTurn, cumNo });
+
+      const readTok   = prevInput;
+      const writeTok  = Math.max(0, r.totalInput - prevInput);
+      const readCost  = readTok  * pi * RATES.readMult;
+      const writeCost = writeTok * pi * RATES.writeMult;
+      const cacheTurn = readCost + writeCost + outCost;
+      cumCache += cacheTurn;
+      modelRowsCache.push({ n: r.n, readTok, writeTok, outTok: r.t.outputTokens, readCost, writeCost, outCost, cacheTurn, cumCache });
+      prevInput = r.totalInput;
+    }
+  } else {
+    const { S, u, o, N } = modelState;
+    modelRowsNo    = computeModel(S, u, o, N);
+    modelRowsCache = computeModel(S, u, o, N);
+    realRows = [];
+  }
+
+  updateKPIs(modelRowsNo, modelRowsCache, realRows);
+  updateLedger(modelRowsCache, modelRowsNo, realRows);
+
+  document.getElementById('chart-title').textContent = view==='cumulative' ? 'Cumulative spend' : 'Per-turn cost';
+  document.getElementById('chart-note').textContent  = IS_REAL && realRows.length
+    ? (view==='cumulative'
+        ? 'Green = actual session cost. Amber dashed = what it would have cost with no caching. Teal dashed = perfectly-cached model.'
+        : 'Green bars = actual cost per turn. Amber dashed = no-cache hypothetical. Spikes reveal expensive turns.')
+    : (view==='perTurn'
+        ? 'Per-turn cost from the uniform model. Add real session data for actual turn-by-turn breakdown.'
+        : 'The amber line is quadratic (you re-buy the transcript every turn). Caching keeps it near-linear.');
+
+  document.getElementById('leg-real').style.display = realRows.length ? 'flex' : 'none';
+  document.getElementById('leg-no-label').textContent = IS_REAL ? 'No cache (actual tokens)' : 'No cache (model)';
+  document.getElementById('leg-ca-label').textContent = IS_REAL ? 'Perfect cache (estimate)' : 'Cached (model)';
+  drawChart(modelRowsNo, modelRowsCache, realRows, view);
+  updateTable(modelRowsNo, modelRowsCache, realRows);
+
+  const realPanelIds = [
+    'panel-tok-comp', 'panel-cache-util', 'panel-cost-breakdown', 'panel-saved', 'panel-write-spikes',
+    'panel-turn-timeline', 'panel-tool-depth', 'panel-cost-by-type',
+  ];
+  realPanelIds.forEach(id => { document.getElementById(id).style.display = realRows.length ? '' : 'none'; });
+  if (realRows.length) {
+    drawTokenComp(realRows);
+    drawCacheUtil(realRows);
+    drawCostBreakdown(realRows);
+    drawSavedPerTurn(realRows);
+    drawWriteSpikes(realRows);
+    drawTurnTimeline(realRows);
+    drawToolDepth(realRows);
+    drawCostByType(realRows);
+  }
+}
+
+// ── Chart view toggle ──
+document.getElementById('btn-cum').addEventListener('click', () => {
+  state.view = 'cumulative';
+  document.getElementById('btn-cum').classList.add('active');
+  document.getElementById('btn-pt').classList.remove('active');
+  render();
+});
+document.getElementById('btn-pt').addEventListener('click', () => {
+  state.view = 'perTurn';
+  document.getElementById('btn-pt').classList.add('active');
+  document.getElementById('btn-cum').classList.remove('active');
+  render();
+});
+
+// ── Resize ──
+let resizeTimer;
+window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(render, 100); });
+
+// ── Boot ──
+async function boot() {
+  // Always fetch server rates so costs match the dashboard
+  try {
+    const r = await fetch('/api/rates').then(r => r.json());
+    RATES = { pIn: r.pIn, pOut: r.pOut, writeMult: r.writeMult, readMult: r.readMult };
+  } catch(e) { /* keep defaults */ }
+
+  if (IS_REAL) {
+    document.getElementById('seed-banner').style.display = '';
+    document.getElementById('seed-label').textContent = SEED_LABEL;
+    const rateNote = `$${RATES.pIn}/M in · $${RATES.pOut}/M out`;
+    document.getElementById('seed-actual').textContent = ACTUAL_COST !== null
+      ? `$${ACTUAL_COST.toFixed(2)} dashboard cost · ${rateNote}`
+      : rateNote;
+    document.getElementById('lg-real-panel').style.display = '';
+    document.getElementById('model-note').style.display = 'none';
+
+    document.getElementById('tbl-body').innerHTML = '<tr><td colspan="12" class="loading-msg">Loading session data…</td></tr>';
+    try {
+      const url = `/api/session-turns?project=${encodeURIComponent(SESSION_PROJECT)}&session=${encodeURIComponent(SESSION_ID)}`;
+      realTurns = await fetch(url).then(r => r.json());
+      if (!Array.isArray(realTurns) || !realTurns.length) {
+        document.getElementById('page-subtitle').textContent = 'Could not load session turn data — showing model projection.';
+        realTurns = [];
+      }
+    } catch(e) {
+      realTurns = [];
+    }
+  } else {
+    document.getElementById('ledger-caption').textContent =
+      `$${RATES.pIn}/M in · $${RATES.pOut}/M out · ${RATES.readMult}× read · ${RATES.writeMult}× write`;
+  }
+
+  render();
+}
+
+boot();
+</script>
+</body>
+</html>
