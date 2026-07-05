@@ -37,8 +37,14 @@ Everything here unblocks later phases; none of it is throwaway.
 - [ ] **#P0-4 — npm name check**
   Verify `claude-lens` availability on npm (and decide fallback name if taken). Reserve with a placeholder publish if needed. Cheap now, painful in Phase 5.
   *Acceptance:* package name decided and secured.
+- [ ] **#P0-5 — LICENSE + repo hygiene**
+  Choose and commit a license (MIT unless decided otherwise); add `engines` field (Node ≥ 18), `.nvmrc`, and `packageManager` so contributors and CI agree on runtime versions.
+  *Acceptance:* LICENSE at repo root; `npm pkg get engines packageManager` returns the pinned values.
+- [ ] **#P0-6 — GitHub project scaffolding**
+  Create the `phase-0`…`phase-5` labels, one milestone per phase, and an issue template that links back to this plan doc and carries the task ID + acceptance criteria structure. This is what makes "tasks become issues" real.
+  *Acceptance:* labels + milestones exist; a test issue filed from the template renders correctly and auto-links here.
 
-**Exit criteria:** repo root empty of V1; fixtures merged; package name locked.
+**Exit criteria:** repo root empty of V1; fixtures merged; package name locked; license committed; issue tracking scaffolded.
 
 ---
 
@@ -53,10 +59,16 @@ Target layout is architecture §3 exactly. No feature code — just a booting sk
   `tsx watch` dev server; `vite dev` with `/api` + `/ws` proxy; `scripts/build.ts` running vite build → esbuild server bundle → assembled `dist/` (`cli.js` + `public/`). CLI flags `--port`, `--no-open`, `--roots` parsed by hand (no commander).
   *Acceptance:* `node dist/cli.js` serves a hello-world SPA, an `/api/ping` route, and a WS upgrade on **one port**; dev mode hot-reloads client and restarts server.
 - [ ] **#P1-3 — CI**
-  GitHub Actions: typecheck + vitest on push/PR to main.
-  *Acceptance:* red CI blocks merge; runs in under ~2 min.
+  GitHub Actions: typecheck + vitest on push/PR to main, plus a `storybook build` smoke step (once #P1-4 lands) and lint/format checks (once #P1-5 lands). The Cypress E2E job is added later by #P3-5. Single OS/Node version by decision (see decisions log).
+  *Acceptance:* red CI blocks merge; typecheck+test stage runs in under ~2 min.
+- [ ] **#P1-4 — Storybook setup**
+  Storybook (Vite builder) wired to the client root as a devDependency: Tailwind styles loaded, dark/light theme toggle matching the dashboard aesthetic. Dev workbench only — no test-runner/play functions for now (revisit if UI regressions bite). Stories and `.storybook/` never enter the published `dist/`.
+  *Acceptance:* `npm run storybook` renders a sample story with Tailwind applied in both themes.
+- [ ] **#P1-5 — Linting + formatting**
+  One tool across all three TS roots, wired into CI (#P1-3) and an npm script. Decide at task start: Biome (single fast tool, fits the minimal-tooling ethos) vs ESLint + Prettier (bigger ecosystem). Config lives at repo root; `legacy/` excluded.
+  *Acceptance:* `npm run lint` and `npm run format:check` pass on the skeleton; a deliberately misformatted file fails CI.
 
-**Exit criteria:** `npx .` from a fresh clone boots the skeleton on one port; CI green.
+**Exit criteria:** `npx .` from a fresh clone boots the skeleton on one port; Storybook runs; lint enforced; CI green.
 
 ---
 
@@ -115,8 +127,11 @@ One vertical slice proving every layer. Nothing page-specific begins until this 
 - [ ] **#P3-4 — Chart layer + one live chart** *(the demo milestone)*
   ECharts wrapper (~50-line mount/setOption/ResizeObserver/dispose — no `echarts-for-react`); timeseries option builder; unit switcher, compare ghost, smoothing, granularity, click-to-drill implemented **in this layer** per §11. Mount one cost-over-time chart on the Dashboard stub.
   *Acceptance:* with Claude Code running a real session, the chart updates within a few seconds without reload. **Go/no-go checkpoint for Phase 4.**
+- [ ] **#P3-5 — Cypress setup + steel-thread smoke spec**
+  Cypress (devDependency) with a boot harness that launches the built app deterministically: `node dist/cli.js --roots test/fixtures --no-open --port <test-port>`. Smoke spec asserts: Dashboard renders the chart from fixture data; filter changes sync to the URL and survive navigation; appending a line to a fixture JSONL mid-test live-updates the chart (regression guard on the full ingest → store → WS → refetch loop). Add the E2E job to CI.
+  *Acceptance:* smoke spec green locally and in CI against the built `dist/`; the live-update assertion passes without reload or polling hacks.
 
-**Exit criteria:** live-updating chart demo recorded/verified against a real running session.
+**Exit criteria:** live-updating chart demo recorded/verified against a real running session; Cypress smoke green in CI.
 
 ---
 
@@ -124,9 +139,11 @@ One vertical slice proving every layer. Nothing page-specific begins until this 
 
 Pages are cheap by design: filter state + preset `MetricsQuery`s + layout. The HTML mockups in `specs/pages/` are the visual acceptance targets; `claude-lens-pages.md` defines each page's sections, deps, and tier behavior — treat its section tables as the per-issue checklist. Order below front-loads shared components; after #P4-2, remaining pages could parallelize, but sequential is fine.
 
+**Standing rule for every page task (#P4-2, #P4-4 … #P4-16):** acceptance includes a Cypress smoke spec — the route renders its key sections from fixture data and at least one drill-link navigates to the right filtered destination. Component-state coverage belongs in Storybook stories, not Cypress.
+
 - [ ] **#P4-1 — Shared dashboard primitives**
-  `components/`: stat-card (delta + sparkline), data-table (TanStack Table + virtualization), tier-badge, locked-card ("Set up cost capture" CTA), empty-state, chip. Tailwind, no component library.
-  *Acceptance:* Storybook-less demo route or visual check against the mockups' shared elements.
+  `components/`: stat-card (delta + sparkline), data-table (TanStack Table + virtualization), tier-badge, locked-card ("Set up cost capture" CTA), empty-state, chip. Tailwind, no component library. Built in Storybook first.
+  *Acceptance:* each primitive has stories covering its states (stat-card delta up/down/flat + sparkline, tier-badge 🟢/🟡/🔴, locked-card CTA, empty-state, table loading/virtualized rows); visual check against the mockups' shared elements.
 - [ ] **#P4-2 — Dashboard page** *(pages spec §1)*
   All 12 sections incl. stat cards, burn-rate, leaderboards, records strip, subscription window tracker, leverage ratio, savings decomposition, failed-work stat, capture CTA. Anomaly/gate-feed items may stub until #P4-11.
   *Acceptance:* matches `specs/pages/dashboard.html` against real data; every card deep-links per the spec's "→" column.
@@ -162,7 +179,7 @@ Pages are cheap by design: filter state + preset `MetricsQuery`s + layout. The H
   *Acceptance:* evidence links land on the exact turn in Turn Inspector.
 - [ ] **#P4-13 — Premium tier: C/B/L parsers + upgrades**
   `parse-premium.ts`; per-session tier detection wiring through to `TierFlags`; every 🟡 upgrade path lights up: observed $, intra-day resolution, true ctx %, waterfall widths from `api_duration_ms`, Δlines/api-vs-wall columns, latency/throughput on Models, context growth curves on Cache Lab; drift badge on Session Detail.
-  *Acceptance:* fixture set with C/B/L present flips tier badges and values; transcript-only sessions unaffected.
+  *Acceptance:* fixture set with C/B/L present flips tier badges and values; transcript-only sessions unaffected; tier-upgrade component states (🟡 columns lighting up, drift badge) covered by Storybook stories — these are hard to reproduce on demand with real data.
 - [ ] **#P4-14 — Data Health page + `/api/health`** *(§9)*
   Dedup stats, pricing coverage, scan coverage, parse errors; reconciliation and boundary/capture-gap sections (🔴, needs #P4-13).
   *Acceptance:* matches `data-health.html`; malformed-line counters from #P2-2 surface here.
@@ -175,8 +192,11 @@ Pages are cheap by design: filter state + preset `MetricsQuery`s + layout. The H
 - [ ] **#P4-17 — Export**
   `GET /api/export?format=csv|json` streaming the current view; export + copy-permalink buttons in the global layer.
   *Acceptance:* exported CSV of a filtered Sessions view opens correctly; permalink reproduces the view.
+- [ ] **#P4-18 — Cross-page E2E flows (Cypress)**
+  The journeys that span pages, run against the fixture-root harness from #P3-5: prompt search → Session Detail at the matching turn; drill-anywhere from a Dashboard chart slice → Sessions filtered to that slice; permalink copy → paste reproduces the exact view; CSV export downloads; gate evidence link → Turn Inspector at the exact turn.
+  *Acceptance:* all five flows green in CI.
 
-**Exit criteria:** all 11 pages match their mockups on real data; §13 test priorities 1–4 all green.
+**Exit criteria:** all 11 pages match their mockups on real data; §13 test priorities 1–4 all green; page smoke specs and #P4-18 flows green in CI.
 
 ---
 
@@ -186,8 +206,8 @@ Pages are cheap by design: filter state + preset `MetricsQuery`s + layout. The H
   Cold/warm boot and RSS on a large real history; warm-cache hit verification; profile only if numbers miss targets (single-threaded until proven otherwise, §5.7).
   *Acceptance:* numbers recorded below; warm boot near-instant.
 - [ ] **#P5-2 — Package hygiene + npx cold-start**
-  Publish `dist/` only; no postinstall, no native modules (hard rules, §12); package size a few MB. Test `npx claude-lens` from a packed tarball on a clean environment (macOS + Linux at minimum).
-  *Acceptance:* tarball size recorded; cold `npx` boot works with zero prior installs.
+  Publish `dist/` only; no postinstall, no native modules (hard rules, §12); package size a few MB. Test `npx claude-lens` from a packed tarball on a clean environment (macOS + Linux at minimum). Verify `.storybook/`, `*.stories.tsx`, and `cypress/` are excluded from the tarball.
+  *Acceptance:* tarball size recorded; cold `npx` boot works with zero prior installs; no dev-tooling files in the published package.
 - [ ] **#P5-3 — Docs**
   README (install, screenshots, tier explanation), cost-capture setup guide (statusline + Stop hook), CHANGELOG. `legacy/` pointer note.
   *Acceptance:* a new user can go from `npx claude-lens` to premium tier using docs alone.
@@ -210,3 +230,7 @@ Pages are cheap by design: filter state + preset `MetricsQuery`s + layout. The H
 |---|---|---|
 | 2026-07-06 | V1 app moves to `legacy/`, stays runnable | #P0-2 |
 | 2026-07-06 | Tasks tracked as sequential GitHub issues, one per task above, labeled by phase | this doc |
+| 2026-07-06 | Storybook (Vite builder, devDependency) as the component workbench; primitives built stories-first; workbench only, no test-runner for now | #P1-4, #P4-1, #P4-13 |
+| 2026-07-06 | Cypress for E2E only, booting built app via `--roots test/fixtures`; component states stay in Storybook (no duplication) | #P3-5, Phase 4 standing rule, #P4-18 |
+| 2026-07-06 | Lint/format enforced from Phase 1 (Biome vs ESLint+Prettier decided at #P1-5 start); LICENSE + runtime pinning in Phase 0; GitHub labels/milestones/issue template scaffolded in Phase 0 | #P0-5, #P0-6, #P1-5 |
+| 2026-07-06 | **Consciously skipped** (recorded so they're not re-litigated): CI OS/Node matrix (single OS/Node; cross-platform checked manually in Phase 5) · automated npx-tarball smoke in CI (manual in #P5-2) · npm provenance/OIDC + Dependabot · release automation (manual v0.1.0) · telemetry decision doc · global Definition-of-Done rule · a11y addon/audit · visual regression · Docker/staging · feature flags/i18n/APM · CONTRIBUTING/CODEOWNERS | — |
