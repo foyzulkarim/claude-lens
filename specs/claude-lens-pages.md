@@ -26,7 +26,7 @@ Any dimension × any measure is a valid chart — the pages below are the curate
 
 | Capability | Deps | Tier | Notes |
 |---|---|---|---|
-| Global filter bar: date range presets (1D/7D/30D/90D/custom), project, model, branch, host | T (+fs for host labels) | 🟢 | Persists across pages; encoded in URL hash for permalinks |
+| Global filter bar: date range presets (1D/7D/30D/90D/custom), project, model, branch, host | T (+fs for host labels) | 🟢 | Persists across pages; encoded in the URL query string for permalinks (see architecture §11) |
 | Period-over-period deltas on every stat (▲▼ vs previous equal period) | T+P | 🟢 | The single biggest "real dashboard" upgrade |
 | Sparkline inside every stat card | T+P | 🟢 | |
 | Granularity rollups: hour / day / week / month on every time series | T+P | 🟢 | |
@@ -137,7 +137,7 @@ Any dimension × any measure is a valid chart — the pages below are the curate
 | Input composition bar: reads / writes / uncached share of all input ("X% served from cache") | T | 🟢 | |
 | Busts headline + net panel: saved by cache vs lost to busts → NET, net-negative badge per session | T+P | 🟢 | Adds accounting to the existing cause classifier |
 | Miss attribution: TTL lapse (idle gap > TTL) vs prefix change (K2 classifier) vs unknown, verdict chip | T | 🟢 | One timestamp heuristic on top of existing classifier |
-| TTL bucket mix: 5m vs 1h cache-write split | T (`cache_creation.ephemeral_5m/1h` — confirmed present) | 🟢 | 5m-heavy mix + idle pattern explains TTL misses |
+| TTL bucket mix: 5m vs 1h cache-write split | T (`cache_creation.ephemeral_5m_input_tokens` / `ephemeral_1h_input_tokens` — verified in real transcripts 2026-07-06) | 🟢 | 5m-heavy mix + idle pattern explains TTL misses |
 | Baseline weight trend: first cache-write size per session over time (system prompt + CLAUDE.md + MCP overhead proxy) | T | 🟢 | "Baseline grew 18k the week I added that MCP server" |
 | $ saved by cache (+ counterfactual: "uncached this month = $X") | T+P | 🟢 | |
 | Invalidation gallery (cause-labeled, → turn) | T+P | 🟢 | |

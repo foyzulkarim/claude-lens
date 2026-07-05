@@ -1,6 +1,6 @@
 # Claude Lens — Architecture Specification
 
-Companion to `claude-lens-pages.md` (IA + data dependencies) and `gates.md` (Report Card gate specs). This document defines **how** the system is built; those define **what** it shows. Where this document and the page spec conflict on data semantics, the page spec wins.
+Companion to `claude-lens-pages.md` (IA + data dependencies) and `gates.md` (Report Card gate specs). This document defines **how** the system is built; those define **what** it shows. Conflict resolution: on **data semantics** the page spec wins; on **routing, URL encoding, and implementation mechanics** this document wins (e.g. global filters live in the query string, not the URL hash — see §11).
 
 ---
 
@@ -164,9 +164,11 @@ Per `claude-lens-pages.md` legend. Filename classification within scan roots:
 | Pattern | Source | Tier |
 |---|---|---|
 | `<uuid>.jsonl` | **T** — transcript (per-call usage, model, `promptId`, `isSidechain`, timestamps, tool calls, prompt text, `cwd`, `gitBranch`, `version`, `entrypoint`) | Default |
-| `<uuid>_cost.jsonl` | **C** — cost samples (observed $, `api_duration_ms`, lines ±, `context_pct`) | Premium |
-| `<uuid>_turn-boundaries.jsonl` | **B** — Stop-hook turn ends | Premium |
-| `cost-log.jsonl` | **L** — per-session totals | Premium |
+| `<uuid>.cost.jsonl` | **C** — cost samples (observed $, `api_duration_ms`, lines ±, `context_pct`) | Premium |
+| `<uuid>.turn-boundaries.jsonl` | **B** — Stop-hook turn ends | Premium |
+| `cost-log.jsonl` | **L** — per-session totals. **Lives at `~/.claude/cost-log.jsonl`** — the *parent* of the default projects scan root; discovery must check it explicitly, not rely on the projects glob | Premium |
+
+Filename convention is **dot-separated**, verified against the real capture output (`ls ~/.claude/projects/**/*.cost.jsonl`) and V1 `legacy/server.js` (filters `.cost.jsonl`). Do not use underscore forms.
 
 Core semantics (confirmed against real data, do not re-derive):
 
@@ -174,7 +176,7 @@ Core semantics (confirmed against real data, do not re-derive):
 - **`promptId` is the turn-grouping key.** Turn boundaries file (B) is optional refinement, not required for turn derivation.
 - **Tier is per-session**: detect which of C/B/L exist for each session; costs are labeled `computed` (tokens × pricing table) vs `observed` (from C/L).
 - **Host/machine is not in any file.** The host dimension comes from labeled scan roots in Settings.
-- Cache TTL buckets: `cache_creation.ephemeral_5m/1h` fields are present and drive the Cache Lab TTL mix panel.
+- Cache TTL buckets: `cache_creation.ephemeral_5m_input_tokens` and `cache_creation.ephemeral_1h_input_tokens` (exact field names, verified 2026-07-06 against real transcripts) drive the Cache Lab TTL mix panel.
 
 ---
 

@@ -2,7 +2,7 @@
 
 Deterministic rules evaluated over the canonical `parseSession()` output (`turns[]`, `calls[]`) plus a filesystem check of the project dir. Fixed built-in set for V1 — not pluggable. All gates are transcript-only (🟢); no cost capture required.
 
-Each gate emits: `{ gateId, status: pass|warn|fail, evidence: [{turnN, callId?, filePath?, detail}] }`. Evidence deep-links to Turn Inspector (`/session/:id/turn/:n`). Session score = weighted pass rate shown on the Report Card (Session Detail).
+Each gate emits: `{ gateId, status: pass|warn|fail, evidence: [{turnN?, callId?, filePath?, detail}] }`. `turnN` is present for the turn-scoped gates (V1, V2, P3, C3, K2) and their evidence deep-links to Turn Inspector (`/session/:id/turn/:n`). **E1/E2 is session-scoped**: its evidence is a filesystem check with no `turnN`/`callId` (`filePath` + `detail` only) and does not deep-link to a turn — consumers (Report Card UI, Dashboard gate feed) must not assume evidence is turn-keyed. Session score = weighted pass rate shown on the Report Card (Session Detail).
 
 **Shared preprocessing (applies to every gate):**
 - Dedup API calls by `message.id` before any counting.
@@ -64,7 +64,7 @@ Each gate emits: `{ gateId, status: pass|warn|fail, evidence: [{turnN, callId?, 
 - Present but size > `E2_MAX_CHARS` or lines > `E2_MAX_LINES` → **warn (E2)** — bloat causes instruction loss
 - Otherwise → pass
 **Defaults:** `E2_MAX_CHARS = 4000`, `E2_MAX_LINES = 60`.
-**Evidence:** resolved path(s) checked, size/line count. Follows `@import` references one level for the size total.
+**Evidence:** resolved path(s) checked, size/line count — session-scoped shape per the §1 contract: `{filePath, detail}` entries with no `turnN`/`callId`. Follows `@import` references one level for the size total.
 **Notes:** filesystem check at analysis time, not session time — label the result "as of now" since the file may have changed since the session ran.
 **Why it matters:** missing → conventions re-explained (and re-billed) every session. Bloated → rules get lost, experienced as "Claude ignores my instructions."
 
