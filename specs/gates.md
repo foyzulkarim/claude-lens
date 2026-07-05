@@ -1,6 +1,6 @@
 # Claude Lens — Best-Practice Gates (initial gate set)
 
-**Terminology (read first — "V1"/"V2" are overloaded):** gate IDs (**V1, V2, P3, C3, K2, E1, E2**) are check identifiers and have nothing to do with product versions. When a product version is meant, this doc says "product V1" (the legacy app) or "product V2" (this spec generation). The initial set has **six gate IDs across five checks** — E1 and E2 share one check with three outcomes, which is also why only four checks appear in the constants table (gates V1 and P3 are threshold-free).
+**Terminology (read first — "V1"/"V2" are overloaded):** gate IDs (**V1, V2, P3, C3, K2, E1, E2**) are check identifiers and have nothing to do with product versions. When a product version is meant, this doc says "product V1" (the legacy app) or "product V2" (this spec generation). The initial set has **seven gate IDs across six checks** — E1 and E2 share one check with three outcomes. Only four checks appear in the constants table because V1, P3, and E1 are threshold-free (within the shared CLAUDE.md check, only the E2 outcome carries thresholds).
 
 Deterministic rules evaluated over the canonical `parseSession()` output (`turns[]`, `calls[]`) plus a filesystem check of the project dir. Fixed built-in set for now — not pluggable. All gates are transcript-only (🟢); no cost capture required.
 
@@ -75,7 +75,7 @@ Each gate emits: `{ gateId, status: pass|warn|fail, evidence: [{turnN?, callId?,
 ## Report Card scoring
 
 - Per-gate status rolls up: any fail → gate fails for the session; else any warn → warn; else pass. N/A turns excluded from denominators.
-- Session score = `passes / (passes + warns×0.5-credit + fails)` across the 6 gates — display as letter or fraction, not a percentage with false precision.
+- Session score = `passes / (passes + 0.5·warns + fails)` across the six checks (a warn counts half weight in the denominator) — display as letter or fraction, not a percentage with false precision.
 - Fleet trend (V2 of the product, not now): gate failure rate per week.
 
 ## Configurable constants (Settings → Gate thresholds)

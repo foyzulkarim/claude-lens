@@ -64,7 +64,7 @@ Deliberately excluded: **chokidar** (§5.2), **any database driver** (§6), **zo
 | `echarts` | All charts. Canvas rendering (SVG chokes on per-call granularity). Per-module imports for treeshaking. Thin hand-rolled wrapper (~50 lines: mount, setOption, ResizeObserver, dispose) — **do not** use `echarts-for-react` |
 | `minisearch` | Client-side prompt full-text search over an index served by the API |
 | `date-fns` | Range-preset math, calendar grid helpers (client only) |
-| `tailwindcss`, `clsx` | Styling. No component library — build the ~10 dashboard primitives by hand |
+| `tailwindcss`, `clsx` | Styling. No component library — build the six dashboard primitives by hand (§11) |
 
 ### Toolchain
 
@@ -321,7 +321,7 @@ Covers every ⚑N item in the page spec except the optional hostname field in co
 - **Tables:** TanStack Table headless + shared `data-table` component; virtualized where rows can reach thousands (turn table, prompt list).
 - **Search:** index fetched once from `/api/search-index`, MiniSearch runs in-browser — search-as-you-type without server round-trips. Result rows deep-link to Session Detail at the matching turn.
 - **Tier awareness:** components render 🟢/🟡/🔴 states from per-session/fleet tier flags in API payloads — `locked-card` with "Set up cost capture" CTA for 🔴, upgraded columns/values lighting up when C/B/L present (🟡).
-- **Styling:** Tailwind; dense-data-dashboard aesthetic; seven hand-built primitives (stat-card with delta + sparkline, data-table, filter bar, chip, tier badge, empty state, locked card).
+- **Styling:** Tailwind; dense-data-dashboard aesthetic; six hand-built primitives (stat-card with delta + sparkline, data-table, chip, tier badge, empty state, locked card — the set built in plan #P4-1). The global filter bar is page-level layout owned by `filters/` (plan #P3-3), not a primitive.
 
 ## 12. Build, dev, distribution
 
