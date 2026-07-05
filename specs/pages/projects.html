@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude Lens — Projects</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0E1116;--panel:#151A21;--panel-2:#11161D;--line:#232B36;--text:#E8EDF2;--muted:#8B98A9;--faint:#5A6675;
+--money:#E8A33D;--cache:#4FC3D9;--bad:#E05252;--warn:#D9B44F;--good:#55B87A;
+--mono:'IBM Plex Mono',monospace;--sans:'IBM Plex Sans',sans-serif;--r:6px}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;line-height:1.45}
+a{color:inherit;text-decoration:none}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+header{display:flex;align-items:center;gap:14px;padding:14px 24px;border-bottom:1px solid var(--line)}
+.wordmark{font-family:var(--mono);font-weight:600;font-size:15px}.wordmark .lens{color:var(--cache)}
+nav{display:flex;gap:2px;margin-left:24px}
+nav a{padding:6px 10px;border-radius:var(--r);color:var(--muted);font-size:13px}
+nav a:hover{color:var(--text);background:var(--panel)}nav a.on{color:var(--text);background:var(--panel)}
+.tier{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:99px;padding:4px 10px}
+.tier b{color:var(--text);font-weight:500}
+/* global filter bar */
+.filters{display:flex;gap:10px;align-items:center;padding:12px 24px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.f{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:var(--r);padding:7px 12px;background:var(--panel-2);font-size:12px;cursor:pointer}
+.f:hover{border-color:#3A4656}
+.f .k{font-family:var(--mono);font-size:10px;letter-spacing:.08em;color:var(--faint);text-transform:uppercase}
+.f .v{color:var(--text)}.f .car{color:var(--faint);font-size:10px}
+.seg{display:flex;border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.seg button{background:var(--panel-2);border:0;color:var(--muted);font-family:var(--mono);font-size:11px;padding:7px 11px;cursor:pointer}
+.seg button.on{background:var(--panel);color:var(--text)}
+.seg button:hover:not(.on){color:var(--text)}
+.host{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:var(--r);padding:6px 10px}
+main{padding:16px 24px 32px;display:grid;gap:16px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px;min-width:0}
+.panel h2{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.panel h2 .goto{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:11px;letter-spacing:0;text-transform:none;font-weight:400}
+.panel h2 .goto:hover{color:var(--text)}
+/* chart-type switcher */
+.sw{display:flex;border:1px solid var(--line);border-radius:4px;overflow:hidden;margin-left:auto}
+.sw+ .goto{margin-left:12px!important}
+.sw button{background:transparent;border:0;color:var(--faint);font-family:var(--mono);font-size:10px;padding:3px 8px;cursor:pointer;text-transform:none;letter-spacing:0}
+.sw button.on{background:var(--panel-2);color:var(--text)}
+.sw button:hover:not(.on){color:var(--muted)}
+.badge{font-family:var(--mono);font-size:10px;letter-spacing:0;text-transform:none;font-weight:400;padding:1px 6px;border-radius:3px;border:1px solid var(--line);color:var(--muted)}
+.badge.computed{color:var(--money);border-color:rgba(232,163,61,.35)}
+.badge.premium{color:var(--cache);border-color:rgba(79,195,217,.35)}
+.badge.fail{color:var(--bad);border-color:rgba(224,82,82,.4)}
+.badge.warn{color:var(--warn);border-color:rgba(217,180,79,.4)}
+.badge.pass{color:var(--good);border-color:rgba(85,184,122,.4)}
+.delta{font-family:var(--mono);font-size:11px}.delta.up{color:var(--bad)}.delta.down{color:var(--good)}.delta.upgood{color:var(--good)}
+table{width:100%;border-collapse:collapse;margin-top:10px}
+th{font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--faint);text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);font-weight:600}
+td{padding:8px;border-bottom:1px solid var(--line);font-size:13px}
+tr:hover td{background:var(--panel-2);cursor:pointer}
+td.num,th.r{text-align:right}.money-cell{color:var(--money)}.cache-cell{color:var(--cache)}
+.mchip{font-family:var(--mono);font-size:10px;padding:1px 6px;border-radius:3px;border:1px solid var(--line);color:var(--muted)}
+.hbars{margin-top:12px;display:flex;flex-direction:column;gap:10px}
+.hb{display:grid;grid-template-columns:150px 1fr 70px;gap:10px;align-items:center;cursor:pointer}
+.hb .lbl{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hb:hover .lbl{color:var(--text)}
+.hb .rail{height:8px;background:var(--panel-2);border-radius:99px;overflow:hidden}
+.hb .fill{height:100%;border-radius:99px;background:var(--money)}.hb .fill.c{background:var(--cache)}
+.hb .val{font-family:var(--mono);font-size:12px;text-align:right}
+.locked{position:relative;overflow:hidden}
+.locked .veil{position:absolute;inset:0;background:rgba(14,17,22,.72);backdrop-filter:blur(2px);display:flex;flex-direction:column;gap:8px;align-items:center;justify-content:center}
+.locked .veil p{color:var(--muted);font-size:12px}
+.locked .veil a{font-size:12px;color:var(--money);border:1px solid rgba(232,163,61,.4);border-radius:var(--r);padding:5px 12px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+.statrow{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.stat{background:var(--panel);padding:14px 16px}
+.stat .k{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+.stat .v{font-family:var(--mono);font-size:22px;font-weight:500;margin-top:4px;display:flex;align-items:baseline;gap:8px}
+.stat .v.money{color:var(--money)}.stat .v.cache{color:var(--cache)}
+.stat .sub{font-size:11px;color:var(--faint);margin-top:2px;font-family:var(--mono)}
+.gatecard{display:flex;gap:10px;padding:10px 4px;border-top:1px solid var(--line);align-items:flex-start}
+.gatecard .t{font-size:13px}.gatecard .t b{font-weight:500}
+.gatecard .w{font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:2px}
+footer{padding:0 24px 28px;color:var(--faint);font-family:var(--mono);font-size:11px}
+@media(max-width:980px){nav{display:none}.grid2,.grid3,.statrow{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <span class="wordmark"><span class="lens">[◎]</span> claude&nbsp;lens</span>
+  <nav>
+    <a href="dashboard.html" class="">Dashboard</a><a href="sessions.html" class="">Sessions</a><a href="projects.html" class="on">Projects</a><a href="models.html" class="">Models</a><a href="cache-lab.html" class="">Cache Lab</a><a href="trends.html" class="">Trends</a><a href="explore.html" class="">Explore</a><a href="data-health.html" class="">Health</a><a href="settings.html" class="">⚙</a>
+  </nav>
+  <span class="tier">tier: <b>transcript-only</b></span>
+</header>
+<div class="filters">
+  <div class="seg"><button>1D</button><button class="on">7D</button><button>30D</button><button>90D</button><button>Custom</button></div>
+  <div class="f"><span class="k">Project</span><span class="v">all</span><span class="car">▾</span></div>
+  <div class="f"><span class="k">Model</span><span class="v">all</span><span class="car">▾</span></div>
+  <div class="f"><span class="k">Branch</span><span class="v">all</span><span class="car">▾</span></div>
+  <span class="host">⌂ mac-mini-home</span>
+</div>
+<main>
+
+<section class="panel">
+  <h2>Spend composition over time
+    <div class="sw"><button class="on" data-show="area">stacked area</button><button data-show="bars">bars</button><button data-show="pct">100%</button></div>
+    <span class="badge computed">$ computed</span>
+  </h2>
+  <div data-variant="area">
+  <svg viewBox="0 0 720 180" preserveAspectRatio="none" style="width:100%;height:180px;margin-top:10px">
+    <path d="M0,180 L0,150 C120,148 240,120 360,110 C480,100 600,40 720,20 L720,180 Z" fill="#E8A33D" opacity=".85"/>
+    <path d="M0,180 L0,165 C120,163 240,150 360,145 C480,140 600,110 720,95 L720,180 Z" fill="#C9862B" opacity=".9"/>
+    <path d="M0,180 L0,172 C120,171 240,166 360,164 C480,162 600,150 720,140 L720,180 Z" fill="#8a6a2f"/>
+    <path d="M0,180 L0,176 C240,175 480,172 720,168 L720,180 Z" fill="#5A6675"/>
+    <g font-family="IBM Plex Mono" font-size="9" fill="#5A6675"><text x="4" y="176">Jun 26</text><text x="680" y="176" fill="#0E1116">Jul 3</text></g>
+  </svg>
+  <div style="display:flex;gap:14px;margin-top:8px;font-family:var(--mono);font-size:11px;color:var(--faint)">
+    <span><i style="display:inline-block;width:10px;height:10px;background:#E8A33D;margin-right:5px"></i>agentic-swe-vod</span>
+    <span><i style="display:inline-block;width:10px;height:10px;background:#C9862B;margin-right:5px"></i>tokenowl_docs</span>
+    <span><i style="display:inline-block;width:10px;height:10px;background:#8a6a2f;margin-right:5px"></i>skills</span>
+    <span><i style="display:inline-block;width:10px;height:10px;background:#5A6675;margin-right:5px"></i>other</span>
+  </div>
+  </div>
+  <div data-variant="bars" style="display:none;margin-top:14px;color:var(--faint);font-family:var(--mono);font-size:12px">grouped weekly bars — same series, same legend</div>
+  <div data-variant="pct" style="display:none;margin-top:14px;color:var(--faint);font-family:var(--mono);font-size:12px">share-of-total normalized to 100% — reveals mix shift independent of volume</div>
+</section>
+
+<section class="panel">
+  <h2>Projects</h2>
+  <table>
+    <thead><tr><th>Project</th><th class="r">Spend</th><th class="r">WoW</th><th class="r">Sessions</th><th class="r">$/session</th><th class="r">Cache %</th><th class="r">Tok/turn</th><th class="r">Gate pass</th></tr></thead>
+    <tbody>
+      <tr><td>agentic-swe-vod</td><td class="num money-cell">82.24</td><td class="num"><span class="delta up">▲ 212%</span></td><td class="num">6</td><td class="num">13.71</td><td class="num cache-cell">95.8</td><td class="num">96k</td><td class="num">71%</td></tr>
+      <tr><td>tokenowl_docs</td><td class="num money-cell">29.81</td><td class="num"><span class="delta down">▼ 18%</span></td><td class="num">4</td><td class="num">7.45</td><td class="num cache-cell">93.1</td><td class="num">61k</td><td class="num">88%</td></tr>
+      <tr><td>skills</td><td class="num money-cell">29.04</td><td class="num"><span class="delta up">▲ 64%</span></td><td class="num">5</td><td class="num">5.81</td><td class="num cache-cell">90.4</td><td class="num">44k</td><td class="num">92%</td></tr>
+      <tr><td>.claude (+scripts)</td><td class="num money-cell">19.61</td><td class="num"><span class="delta up">▲ 31%</span></td><td class="num">4</td><td class="num">4.90</td><td class="num cache-cell">97.2</td><td class="num">52k</td><td class="num">100%</td></tr>
+      <tr><td>aswe-lms</td><td class="num money-cell">9.00</td><td class="num">—</td><td class="num">2</td><td class="num">4.50</td><td class="num cache-cell">94.8</td><td class="num">39k</td><td class="num">100%</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="panel">
+  <h2>agentic-swe-vod · by branch <span class="badge">gitBranch from transcript</span></h2>
+  <div class="hbars">
+    <div class="hb"><span class="lbl">feat/vod-ingest</span><div class="rail"><div class="fill" style="width:100%"></div></div><span class="val">$61.28</span></div>
+    <div class="hb"><span class="lbl">main</span><div class="rail"><div class="fill" style="width:26%"></div></div><span class="val">$15.93</span></div>
+    <div class="hb"><span class="lbl">fix/upload-retry</span><div class="rail"><div class="fill" style="width:8%"></div></div><span class="val">$5.03</span></div>
+  </div>
+  <p style="font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:10px">feature-branch cost accounting — click branch → sessions</p>
+</section>
+
+</main>
+<footer>local-first · reading ~/.claude/projects · last scan 13:52 · 21 transcripts</footer>
+<script>
+document.querySelectorAll('.sw, .seg').forEach(g=>{g.addEventListener('click',e=>{
+  const b=e.target.closest('button'); if(!b)return;
+  g.querySelectorAll('button').forEach(x=>x.classList.remove('on')); b.classList.add('on');
+  const show=b.dataset.show; if(show){const p=b.closest('.panel')||document;
+    p.querySelectorAll('[data-variant]').forEach(v=>v.style.display = v.dataset.variant===show?'':'none');}
+});});
+</script>
+</body>
+</html>

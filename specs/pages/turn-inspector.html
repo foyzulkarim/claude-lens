@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude Lens — Turn 2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0E1116;--panel:#151A21;--panel-2:#11161D;--line:#232B36;--text:#E8EDF2;--muted:#8B98A9;--faint:#5A6675;
+--money:#E8A33D;--cache:#4FC3D9;--bad:#E05252;--warn:#D9B44F;--good:#55B87A;
+--mono:'IBM Plex Mono',monospace;--sans:'IBM Plex Sans',sans-serif;--r:6px}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;line-height:1.45}
+a{color:inherit;text-decoration:none}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+header{display:flex;align-items:center;gap:14px;padding:14px 24px;border-bottom:1px solid var(--line)}
+.wordmark{font-family:var(--mono);font-weight:600;font-size:15px}.wordmark .lens{color:var(--cache)}
+nav{display:flex;gap:2px;margin-left:24px}
+nav a{padding:6px 10px;border-radius:var(--r);color:var(--muted);font-size:13px}
+nav a:hover{color:var(--text);background:var(--panel)}nav a.on{color:var(--text);background:var(--panel)}
+.tier{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:99px;padding:4px 10px}
+.tier b{color:var(--text);font-weight:500}
+/* global filter bar */
+.filters{display:flex;gap:10px;align-items:center;padding:12px 24px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.f{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:var(--r);padding:7px 12px;background:var(--panel-2);font-size:12px;cursor:pointer}
+.f:hover{border-color:#3A4656}
+.f .k{font-family:var(--mono);font-size:10px;letter-spacing:.08em;color:var(--faint);text-transform:uppercase}
+.f .v{color:var(--text)}.f .car{color:var(--faint);font-size:10px}
+.seg{display:flex;border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.seg button{background:var(--panel-2);border:0;color:var(--muted);font-family:var(--mono);font-size:11px;padding:7px 11px;cursor:pointer}
+.seg button.on{background:var(--panel);color:var(--text)}
+.seg button:hover:not(.on){color:var(--text)}
+.host{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:var(--r);padding:6px 10px}
+main{padding:16px 24px 32px;display:grid;gap:16px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px;min-width:0}
+.panel h2{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.panel h2 .goto{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:11px;letter-spacing:0;text-transform:none;font-weight:400}
+.panel h2 .goto:hover{color:var(--text)}
+/* chart-type switcher */
+.sw{display:flex;border:1px solid var(--line);border-radius:4px;overflow:hidden;margin-left:auto}
+.sw+ .goto{margin-left:12px!important}
+.sw button{background:transparent;border:0;color:var(--faint);font-family:var(--mono);font-size:10px;padding:3px 8px;cursor:pointer;text-transform:none;letter-spacing:0}
+.sw button.on{background:var(--panel-2);color:var(--text)}
+.sw button:hover:not(.on){color:var(--muted)}
+.badge{font-family:var(--mono);font-size:10px;letter-spacing:0;text-transform:none;font-weight:400;padding:1px 6px;border-radius:3px;border:1px solid var(--line);color:var(--muted)}
+.badge.computed{color:var(--money);border-color:rgba(232,163,61,.35)}
+.badge.premium{color:var(--cache);border-color:rgba(79,195,217,.35)}
+.badge.fail{color:var(--bad);border-color:rgba(224,82,82,.4)}
+.badge.warn{color:var(--warn);border-color:rgba(217,180,79,.4)}
+.badge.pass{color:var(--good);border-color:rgba(85,184,122,.4)}
+.delta{font-family:var(--mono);font-size:11px}.delta.up{color:var(--bad)}.delta.down{color:var(--good)}.delta.upgood{color:var(--good)}
+table{width:100%;border-collapse:collapse;margin-top:10px}
+th{font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--faint);text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);font-weight:600}
+td{padding:8px;border-bottom:1px solid var(--line);font-size:13px}
+tr:hover td{background:var(--panel-2);cursor:pointer}
+td.num,th.r{text-align:right}.money-cell{color:var(--money)}.cache-cell{color:var(--cache)}
+.mchip{font-family:var(--mono);font-size:10px;padding:1px 6px;border-radius:3px;border:1px solid var(--line);color:var(--muted)}
+.hbars{margin-top:12px;display:flex;flex-direction:column;gap:10px}
+.hb{display:grid;grid-template-columns:150px 1fr 70px;gap:10px;align-items:center;cursor:pointer}
+.hb .lbl{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hb:hover .lbl{color:var(--text)}
+.hb .rail{height:8px;background:var(--panel-2);border-radius:99px;overflow:hidden}
+.hb .fill{height:100%;border-radius:99px;background:var(--money)}.hb .fill.c{background:var(--cache)}
+.hb .val{font-family:var(--mono);font-size:12px;text-align:right}
+.locked{position:relative;overflow:hidden}
+.locked .veil{position:absolute;inset:0;background:rgba(14,17,22,.72);backdrop-filter:blur(2px);display:flex;flex-direction:column;gap:8px;align-items:center;justify-content:center}
+.locked .veil p{color:var(--muted);font-size:12px}
+.locked .veil a{font-size:12px;color:var(--money);border:1px solid rgba(232,163,61,.4);border-radius:var(--r);padding:5px 12px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+.statrow{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.stat{background:var(--panel);padding:14px 16px}
+.stat .k{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+.stat .v{font-family:var(--mono);font-size:22px;font-weight:500;margin-top:4px;display:flex;align-items:baseline;gap:8px}
+.stat .v.money{color:var(--money)}.stat .v.cache{color:var(--cache)}
+.stat .sub{font-size:11px;color:var(--faint);margin-top:2px;font-family:var(--mono)}
+.gatecard{display:flex;gap:10px;padding:10px 4px;border-top:1px solid var(--line);align-items:flex-start}
+.gatecard .t{font-size:13px}.gatecard .t b{font-weight:500}
+.gatecard .w{font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:2px}
+footer{padding:0 24px 28px;color:var(--faint);font-family:var(--mono);font-size:11px}
+@media(max-width:980px){nav{display:none}.grid2,.grid3,.statrow{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <span class="wordmark"><span class="lens">[◎]</span> claude&nbsp;lens</span>
+  <nav>
+    <a href="dashboard.html" class="">Dashboard</a><a href="sessions.html" class="on">Sessions</a><a href="projects.html" class="">Projects</a><a href="models.html" class="">Models</a><a href="cache-lab.html" class="">Cache Lab</a><a href="trends.html" class="">Trends</a><a href="explore.html" class="">Explore</a><a href="data-health.html" class="">Health</a><a href="settings.html" class="">⚙</a>
+  </nav>
+  <span class="tier">tier: <b>transcript-only</b></span>
+</header>
+<div class="filters">
+  <div class="seg"><button>1D</button><button class="on">7D</button><button>30D</button><button>90D</button><button>Custom</button></div>
+  <div class="f"><span class="k">Project</span><span class="v">all</span><span class="car">▾</span></div>
+  <div class="f"><span class="k">Model</span><span class="v">all</span><span class="car">▾</span></div>
+  <div class="f"><span class="k">Branch</span><span class="v">all</span><span class="car">▾</span></div>
+  <span class="host">⌂ mac-mini-home</span>
+</div>
+<main>
+
+<section class="panel">
+  <h2>Turn 2 of 5 — session 081df792
+    <a class="goto" href="session-detail.html">← session</a>
+  </h2>
+  <div style="display:flex;gap:18px;align-items:baseline;margin-top:10px;flex-wrap:wrap">
+    <span class="num" style="font-size:26px;font-weight:600;color:var(--money)">$3.12</span>
+    <span class="badge fail">p97 of your turns</span>
+    <span class="badge">840k tokens</span><span class="badge">9 API calls</span><span class="badge">opus-4-8</span>
+    <span class="badge fail">K2</span><span class="badge warn">C3</span>
+    <span style="margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--muted)"><a href="#">← turn 1</a> · <a href="#">turn 3 →</a></span>
+  </div>
+  <p style="margin-top:10px;color:var(--muted);font-size:13px;border-left:2px solid var(--line);padding-left:10px">"refactor the statusline wrapper to buffer samples and flush on exit, keep the 5s cadence"</p>
+  <p style="font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:8px">wall 6m 41s · api time <span class="badge premium">needs cost capture</span> — widths below use timestamp deltas</p>
+</section>
+
+<section class="panel">
+  <h2>API-call waterfall
+    <div class="sw"><button class="on" data-show="time">by time</button><button data-show="tok">by tokens</button></div>
+    <span class="badge computed">$ computed</span>
+  </h2>
+  <div data-variant="time" style="margin-top:12px;font-family:var(--mono);font-size:11px">
+    <svg viewBox="0 0 720 240" style="width:100%;height:240px">
+      <g fill="#8B98A9" font-size="10">
+        <text x="0" y="22">c1</text><text x="0" y="48">c2</text><text x="0" y="74">c3</text><text x="0" y="100">c4</text>
+        <text x="0" y="126">c5</text><text x="0" y="152">c6</text><text x="0" y="178">c7</text><text x="0" y="204">c8</text><text x="0" y="230">c9</text>
+      </g>
+      <g rx="3">
+        <rect x="30" y="10" width="70" height="16" rx="3" fill="#C9862B"/>
+        <rect x="100" y="36" width="150" height="16" rx="3" fill="#D9B44F"/><text x="256" y="48" fill="#D9B44F" font-size="9">Read ·41k chars · C3</text>
+        <rect x="250" y="62" width="60" height="16" rx="3" fill="#C9862B"/><text x="316" y="74" fill="#5A6675" font-size="9">Edit×2</text>
+        <rect x="310" y="88" width="120" height="16" rx="3" fill="#E05252"/><text x="436" y="100" fill="#E05252" font-size="9">cache re-write 28.6k · K2</text>
+        <rect x="430" y="114" width="55" height="16" rx="3" fill="#C9862B"/><text x="491" y="126" fill="#5A6675" font-size="9">Edit×3</text>
+        <rect x="485" y="140" width="50" height="16" rx="3" fill="#C9862B"/><text x="541" y="152" fill="#5A6675" font-size="9">Edit×2</text>
+        <rect x="535" y="166" width="45" height="16" rx="3" fill="#4FC3D9" opacity=".7"/><text x="586" y="178" fill="#4FC3D9" font-size="9">sidechain</text>
+        <rect x="580" y="192" width="60" height="16" rx="3" fill="#C9862B"/><text x="646" y="204" fill="#5A6675" font-size="9">Bash</text>
+        <rect x="640" y="218" width="70" height="16" rx="3" fill="#C9862B"/>
+      </g>
+    </svg>
+  </div>
+  <div data-variant="tok" style="display:none;margin-top:12px">
+    <div class="hbars">
+      <div class="hb"><span class="lbl">c2 · Read</span><div class="rail"><div class="fill" style="width:100%;background:var(--warn)"></div></div><span class="val">212k</span></div>
+      <div class="hb"><span class="lbl">c4 · re-write</span><div class="rail"><div class="fill" style="width:74%;background:var(--bad)"></div></div><span class="val">156k</span></div>
+      <div class="hb"><span class="lbl">c7 · sidechain</span><div class="rail"><div class="fill c" style="width:41%"></div></div><span class="val">87k</span></div>
+      <div class="hb"><span class="lbl">c5 · Edit×3</span><div class="rail"><div class="fill" style="width:33%"></div></div><span class="val">71k</span></div>
+      <div class="hb"><span class="lbl">others (5)</span><div class="rail"><div class="fill" style="width:28%;background:var(--faint)"></div></div><span class="val">61k</span></div>
+    </div>
+  </div>
+</section>
+
+<div class="grid2">
+  <section class="panel">
+    <h2>Cache narrative</h2>
+    <div style="margin-top:6px">
+      <div class="gatecard"><span class="badge">c1</span><div class="t">Read 212k cached tokens (98% hit) — prefix stable from turn 1</div></div>
+      <div class="gatecard"><span class="badge fail">c4</span><div class="t"><b>28.6k tokens re-written.</b> Not first call, no model switch, no compaction cliff → <b>unexplained (K2)</b>. Likely prefix churn: CLAUDE.md or MCP config changed mid-session.<div class="w">classifier trace: first=no · switch=no · cliff=no</div></div></div>
+      <div class="gatecard"><span class="badge">c5–c9</span><div class="t">Hit rate recovers to 96% — new prefix stable</div></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Sidechain breakdown</h2>
+    <div style="margin-top:12px" class="hbars">
+      <div class="hb"><span class="lbl">main thread</span><div class="rail"><div class="fill" style="width:100%"></div></div><span class="val">$2.71</span></div>
+      <div class="hb"><span class="lbl">sidechain (1 agent)</span><div class="rail"><div class="fill c" style="width:15%"></div></div><span class="val">$0.41</span></div>
+    </div>
+    <p style="font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:10px">subagent: 87k tokens, 3 calls, sonnet-5</p>
+  </section>
+</div>
+
+<section class="panel">
+  <h2>Transcript peek <span class="badge">collapsed</span></h2>
+  <div style="margin-top:10px;font-family:var(--mono);font-size:12px;color:var(--muted);background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r);padding:12px">
+    <p style="color:var(--faint)">▸ assistant: "I'll buffer the samples in memory and flush on SIGTERM…"</p>
+    <p style="color:var(--faint)">▸ tool_use Read → statusline-wrapper.js <span style="color:var(--warn)">(41,203 chars)</span></p>
+    <p style="color:var(--faint)">▸ tool_use Edit ×9 across 3 files</p>
+    <p style="color:var(--faint)">▸ tool_use Bash → node --check statusline-wrapper.js ✓</p>
+  </div>
+</section>
+
+</main>
+<footer>local-first · reading ~/.claude/projects · last scan 13:52 · 21 transcripts</footer>
+<script>
+document.querySelectorAll('.sw, .seg').forEach(g=>{g.addEventListener('click',e=>{
+  const b=e.target.closest('button'); if(!b)return;
+  g.querySelectorAll('button').forEach(x=>x.classList.remove('on')); b.classList.add('on');
+  const show=b.dataset.show; if(show){const p=b.closest('.panel')||document;
+    p.querySelectorAll('[data-variant]').forEach(v=>v.style.display = v.dataset.variant===show?'':'none');}
+});});
+</script>
+</body>
+</html>

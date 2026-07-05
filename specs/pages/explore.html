@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude Lens — Explore</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0E1116;--panel:#151A21;--panel-2:#11161D;--line:#232B36;--text:#E8EDF2;--muted:#8B98A9;--faint:#5A6675;
+--money:#E8A33D;--cache:#4FC3D9;--bad:#E05252;--warn:#D9B44F;--good:#55B87A;
+--mono:'IBM Plex Mono',monospace;--sans:'IBM Plex Sans',sans-serif;--r:6px}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;line-height:1.45}
+a{color:inherit;text-decoration:none}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+header{display:flex;align-items:center;gap:14px;padding:14px 24px;border-bottom:1px solid var(--line)}
+.wordmark{font-family:var(--mono);font-weight:600;font-size:15px}.wordmark .lens{color:var(--cache)}
+nav{display:flex;gap:2px;margin-left:24px}
+nav a{padding:6px 10px;border-radius:var(--r);color:var(--muted);font-size:13px}
+nav a:hover{color:var(--text);background:var(--panel)}nav a.on{color:var(--text);background:var(--panel)}
+.tier{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:99px;padding:4px 10px}
+.tier b{color:var(--text);font-weight:500}
+/* global filter bar */
+.filters{display:flex;gap:10px;align-items:center;padding:12px 24px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.f{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:var(--r);padding:7px 12px;background:var(--panel-2);font-size:12px;cursor:pointer}
+.f:hover{border-color:#3A4656}
+.f .k{font-family:var(--mono);font-size:10px;letter-spacing:.08em;color:var(--faint);text-transform:uppercase}
+.f .v{color:var(--text)}.f .car{color:var(--faint);font-size:10px}
+.seg{display:flex;border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.seg button{background:var(--panel-2);border:0;color:var(--muted);font-family:var(--mono);font-size:11px;padding:7px 11px;cursor:pointer}
+.seg button.on{background:var(--panel);color:var(--text)}
+.seg button:hover:not(.on){color:var(--text)}
+.host{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:var(--r);padding:6px 10px}
+main{padding:16px 24px 32px;display:grid;gap:16px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px;min-width:0}
+.panel h2{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.panel h2 .goto{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:11px;letter-spacing:0;text-transform:none;font-weight:400}
+.panel h2 .goto:hover{color:var(--text)}
+/* chart-type switcher */
+.sw{display:flex;border:1px solid var(--line);border-radius:4px;overflow:hidden;margin-left:auto}
+.sw+ .goto{margin-left:12px!important}
+.sw button{background:transparent;border:0;color:var(--faint);font-family:var(--mono);font-size:10px;padding:3px 8px;cursor:pointer;text-transform:none;letter-spacing:0}
+.sw button.on{background:var(--panel-2);color:var(--text)}
+.sw button:hover:not(.on){color:var(--muted)}
+.badge{font-family:var(--mono);font-size:10px;letter-spacing:0;text-transform:none;font-weight:400;padding:1px 6px;border-radius:3px;border:1px solid var(--line);color:var(--muted)}
+.badge.computed{color:var(--money);border-color:rgba(232,163,61,.35)}
+.badge.premium{color:var(--cache);border-color:rgba(79,195,217,.35)}
+.badge.fail{color:var(--bad);border-color:rgba(224,82,82,.4)}
+.badge.warn{color:var(--warn);border-color:rgba(217,180,79,.4)}
+.badge.pass{color:var(--good);border-color:rgba(85,184,122,.4)}
+.delta{font-family:var(--mono);font-size:11px}.delta.up{color:var(--bad)}.delta.down{color:var(--good)}.delta.upgood{color:var(--good)}
+table{width:100%;border-collapse:collapse;margin-top:10px}
+th{font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--faint);text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);font-weight:600}
+td{padding:8px;border-bottom:1px solid var(--line);font-size:13px}
+tr:hover td{background:var(--panel-2);cursor:pointer}
+td.num,th.r{text-align:right}.money-cell{color:var(--money)}.cache-cell{color:var(--cache)}
+.mchip{font-family:var(--mono);font-size:10px;padding:1px 6px;border-radius:3px;border:1px solid var(--line);color:var(--muted)}
+.hbars{margin-top:12px;display:flex;flex-direction:column;gap:10px}
+.hb{display:grid;grid-template-columns:150px 1fr 70px;gap:10px;align-items:center;cursor:pointer}
+.hb .lbl{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hb:hover .lbl{color:var(--text)}
+.hb .rail{height:8px;background:var(--panel-2);border-radius:99px;overflow:hidden}
+.hb .fill{height:100%;border-radius:99px;background:var(--money)}.hb .fill.c{background:var(--cache)}
+.hb .val{font-family:var(--mono);font-size:12px;text-align:right}
+.locked{position:relative;overflow:hidden}
+.locked .veil{position:absolute;inset:0;background:rgba(14,17,22,.72);backdrop-filter:blur(2px);display:flex;flex-direction:column;gap:8px;align-items:center;justify-content:center}
+.locked .veil p{color:var(--muted);font-size:12px}
+.locked .veil a{font-size:12px;color:var(--money);border:1px solid rgba(232,163,61,.4);border-radius:var(--r);padding:5px 12px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+.statrow{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.stat{background:var(--panel);padding:14px 16px}
+.stat .k{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+.stat .v{font-family:var(--mono);font-size:22px;font-weight:500;margin-top:4px;display:flex;align-items:baseline;gap:8px}
+.stat .v.money{color:var(--money)}.stat .v.cache{color:var(--cache)}
+.stat .sub{font-size:11px;color:var(--faint);margin-top:2px;font-family:var(--mono)}
+.gatecard{display:flex;gap:10px;padding:10px 4px;border-top:1px solid var(--line);align-items:flex-start}
+.gatecard .t{font-size:13px}.gatecard .t b{font-weight:500}
+.gatecard .w{font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:2px}
+footer{padding:0 24px 28px;color:var(--faint);font-family:var(--mono);font-size:11px}
+@media(max-width:980px){nav{display:none}.grid2,.grid3,.statrow{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <span class="wordmark"><span class="lens">[◎]</span> claude&nbsp;lens</span>
+  <nav>
+    <a href="dashboard.html" class="">Dashboard</a><a href="sessions.html" class="">Sessions</a><a href="projects.html" class="">Projects</a><a href="models.html" class="">Models</a><a href="cache-lab.html" class="">Cache Lab</a><a href="trends.html" class="">Trends</a><a href="explore.html" class="on">Explore</a><a href="data-health.html" class="">Health</a><a href="settings.html" class="">⚙</a>
+  </nav>
+  <span class="tier">tier: <b>transcript-only</b></span>
+</header>
+<div class="filters">
+  <div class="seg"><button>1D</button><button class="on">7D</button><button>30D</button><button>90D</button><button>Custom</button></div>
+  <div class="f"><span class="k">Project</span><span class="v">all</span><span class="car">▾</span></div>
+  <div class="f"><span class="k">Model</span><span class="v">all</span><span class="car">▾</span></div>
+  <div class="f"><span class="k">Branch</span><span class="v">all</span><span class="car">▾</span></div>
+  <span class="host">⌂ mac-mini-home</span>
+</div>
+<main>
+
+<section class="panel">
+  <h2>Build a view</h2>
+  <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap">
+    <div class="f"><span class="k">Measure</span><span class="v">computed $</span><span class="car">▾</span></div>
+    <div class="f"><span class="k">Dimension</span><span class="v">tool name</span><span class="car">▾</span></div>
+    <div class="f"><span class="k">Grain</span><span class="v">day</span><span class="car">▾</span></div>
+    <div class="seg"><button class="on" data-show="bar">bar</button><button data-show="line">line</button><button data-show="area">area</button><button data-show="scatter">scatter</button><button data-show="tbl">table</button></div>
+    <button style="margin-left:auto;background:var(--panel-2);border:1px solid rgba(232,163,61,.4);border-radius:var(--r);color:var(--money);padding:7px 14px;font-size:12px;cursor:pointer">★ Save view</button>
+  </div>
+  <p style="font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:8px">measures: $ · tokens (by type) · calls · turns · sessions · cache % · minutes &nbsp;&nbsp; dimensions: time · project · model · branch · version · entrypoint · tool · sidechain · gate</p>
+</section>
+
+<section class="panel">
+  <h2>computed $ by tool name — last 7d <span class="badge computed">$ attributed per turn share</span></h2>
+  <div data-variant="bar">
+    <div class="hbars" style="margin-top:12px">
+      <div class="hb"><span class="lbl">Edit</span><div class="rail"><div class="fill" style="width:100%"></div></div><span class="val">$61.40</span></div>
+      <div class="hb"><span class="lbl">Bash</span><div class="rail"><div class="fill" style="width:64%"></div></div><span class="val">$39.10</span></div>
+      <div class="hb"><span class="lbl">Read</span><div class="rail"><div class="fill" style="width:48%"></div></div><span class="val">$29.60</span></div>
+      <div class="hb"><span class="lbl">Grep / Glob</span><div class="rail"><div class="fill" style="width:19%"></div></div><span class="val">$11.80</span></div>
+      <div class="hb"><span class="lbl">WebFetch</span><div class="rail"><div class="fill" style="width:11%"></div></div><span class="val">$6.90</span></div>
+      <div class="hb"><span class="lbl">no-tool turns</span><div class="rail"><div class="fill" style="width:34%;background:var(--faint)"></div></div><span class="val">$20.90</span></div>
+    </div>
+  </div>
+  <div data-variant="line" style="display:none;margin-top:14px;color:var(--faint);font-family:var(--mono);font-size:12px">one line per tool over days</div>
+  <div data-variant="area" style="display:none;margin-top:14px;color:var(--faint);font-family:var(--mono);font-size:12px">stacked area over days</div>
+  <div data-variant="scatter" style="display:none;margin-top:14px;color:var(--faint);font-family:var(--mono);font-size:12px">needs two measures — pick a second</div>
+  <div data-variant="tbl" style="display:none;margin-top:14px;color:var(--faint);font-family:var(--mono);font-size:12px">raw pivot table with export</div>
+  <p style="font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:12px">note: $ per tool is turn-share attribution, not exact — turns containing the tool, cost split by call</p>
+</section>
+
+<section class="panel">
+  <h2>Saved views</h2>
+  <div class="grid3" style="margin-top:12px">
+    <div style="background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r);padding:12px;cursor:pointer">
+      <p style="font-size:13px">tokens by branch · agentic-swe-vod</p>
+      <p style="font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:4px">bar · 30d · pinned to dashboard</p>
+    </div>
+    <div style="background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r);padding:12px;cursor:pointer">
+      <p style="font-size:13px">cache % by CC version</p>
+      <p style="font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:4px">line · 90d</p>
+    </div>
+    <div style="background:var(--panel-2);border:1px dashed var(--line);border-radius:var(--r);padding:12px;color:var(--faint);display:flex;align-items:center;justify-content:center">+ new</div>
+  </div>
+</section>
+
+</main>
+<footer>local-first · reading ~/.claude/projects · last scan 13:52 · 21 transcripts</footer>
+<script>
+document.querySelectorAll('.sw, .seg').forEach(g=>{g.addEventListener('click',e=>{
+  const b=e.target.closest('button'); if(!b)return;
+  g.querySelectorAll('button').forEach(x=>x.classList.remove('on')); b.classList.add('on');
+  const show=b.dataset.show; if(show){const p=b.closest('.panel')||document;
+    p.querySelectorAll('[data-variant]').forEach(v=>v.style.display = v.dataset.variant===show?'':'none');}
+});});
+</script>
+</body>
+</html>

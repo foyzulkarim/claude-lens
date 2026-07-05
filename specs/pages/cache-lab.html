@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude Lens — Cache Lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0E1116;--panel:#151A21;--panel-2:#11161D;--line:#232B36;--text:#E8EDF2;--muted:#8B98A9;--faint:#5A6675;
+--money:#E8A33D;--cache:#4FC3D9;--bad:#E05252;--warn:#D9B44F;--good:#55B87A;
+--mono:'IBM Plex Mono',monospace;--sans:'IBM Plex Sans',sans-serif;--r:6px}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;line-height:1.45}
+a{color:inherit;text-decoration:none}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+header{display:flex;align-items:center;gap:14px;padding:14px 24px;border-bottom:1px solid var(--line)}
+.wordmark{font-family:var(--mono);font-weight:600;font-size:15px}.wordmark .lens{color:var(--cache)}
+nav{display:flex;gap:2px;margin-left:24px}
+nav a{padding:6px 10px;border-radius:var(--r);color:var(--muted);font-size:13px}
+nav a:hover{color:var(--text);background:var(--panel)}nav a.on{color:var(--text);background:var(--panel)}
+.tier{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:99px;padding:4px 10px}
+.tier b{color:var(--text);font-weight:500}
+/* global filter bar */
+.filters{display:flex;gap:10px;align-items:center;padding:12px 24px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.f{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:var(--r);padding:7px 12px;background:var(--panel-2);font-size:12px;cursor:pointer}
+.f:hover{border-color:#3A4656}
+.f .k{font-family:var(--mono);font-size:10px;letter-spacing:.08em;color:var(--faint);text-transform:uppercase}
+.f .v{color:var(--text)}.f .car{color:var(--faint);font-size:10px}
+.seg{display:flex;border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.seg button{background:var(--panel-2);border:0;color:var(--muted);font-family:var(--mono);font-size:11px;padding:7px 11px;cursor:pointer}
+.seg button.on{background:var(--panel);color:var(--text)}
+.seg button:hover:not(.on){color:var(--text)}
+.host{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:var(--r);padding:6px 10px}
+main{padding:16px 24px 32px;display:grid;gap:16px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px;min-width:0}
+.panel h2{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.panel h2 .goto{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:11px;letter-spacing:0;text-transform:none;font-weight:400}
+.panel h2 .goto:hover{color:var(--text)}
+/* chart-type switcher */
+.sw{display:flex;border:1px solid var(--line);border-radius:4px;overflow:hidden;margin-left:auto}
+.sw+ .goto{margin-left:12px!important}
+.sw button{background:transparent;border:0;color:var(--faint);font-family:var(--mono);font-size:10px;padding:3px 8px;cursor:pointer;text-transform:none;letter-spacing:0}
+.sw button.on{background:var(--panel-2);color:var(--text)}
+.sw button:hover:not(.on){color:var(--muted)}
+.badge{font-family:var(--mono);font-size:10px;letter-spacing:0;text-transform:none;font-weight:400;padding:1px 6px;border-radius:3px;border:1px solid var(--line);color:var(--muted)}
+.badge.computed{color:var(--money);border-color:rgba(232,163,61,.35)}
+.badge.premium{color:var(--cache);border-color:rgba(79,195,217,.35)}
+.badge.fail{color:var(--bad);border-color:rgba(224,82,82,.4)}
+.badge.warn{color:var(--warn);border-color:rgba(217,180,79,.4)}
+.badge.pass{color:var(--good);border-color:rgba(85,184,122,.4)}
+.delta{font-family:var(--mono);font-size:11px}.delta.up{color:var(--bad)}.delta.down{color:var(--good)}.delta.upgood{color:var(--good)}
+table{width:100%;border-collapse:collapse;margin-top:10px}
+th{font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--faint);text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);font-weight:600}
+td{padding:8px;border-bottom:1px solid var(--line);font-size:13px}
+tr:hover td{background:var(--panel-2);cursor:pointer}
+td.num,th.r{text-align:right}.money-cell{color:var(--money)}.cache-cell{color:var(--cache)}
+.mchip{font-family:var(--mono);font-size:10px;padding:1px 6px;border-radius:3px;border:1px solid var(--line);color:var(--muted)}
+.hbars{margin-top:12px;display:flex;flex-direction:column;gap:10px}
+.hb{display:grid;grid-template-columns:150px 1fr 70px;gap:10px;align-items:center;cursor:pointer}
+.hb .lbl{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hb:hover .lbl{color:var(--text)}
+.hb .rail{height:8px;background:var(--panel-2);border-radius:99px;overflow:hidden}
+.hb .fill{height:100%;border-radius:99px;background:var(--money)}.hb .fill.c{background:var(--cache)}
+.hb .val{font-family:var(--mono);font-size:12px;text-align:right}
+.locked{position:relative;overflow:hidden}
+.locked .veil{position:absolute;inset:0;background:rgba(14,17,22,.72);backdrop-filter:blur(2px);display:flex;flex-direction:column;gap:8px;align-items:center;justify-content:center}
+.locked .veil p{color:var(--muted);font-size:12px}
+.locked .veil a{font-size:12px;color:var(--money);border:1px solid rgba(232,163,61,.4);border-radius:var(--r);padding:5px 12px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+.statrow{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.stat{background:var(--panel);padding:14px 16px}
+.stat .k{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+.stat .v{font-family:var(--mono);font-size:22px;font-weight:500;margin-top:4px;display:flex;align-items:baseline;gap:8px}
+.stat .v.money{color:var(--money)}.stat .v.cache{color:var(--cache)}
+.stat .sub{font-size:11px;color:var(--faint);margin-top:2px;font-family:var(--mono)}
+.gatecard{display:flex;gap:10px;padding:10px 4px;border-top:1px solid var(--line);align-items:flex-start}
+.gatecard .t{font-size:13px}.gatecard .t b{font-weight:500}
+.gatecard .w{font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:2px}
+footer{padding:0 24px 28px;color:var(--faint);font-family:var(--mono);font-size:11px}
+@media(max-width:980px){nav{display:none}.grid2,.grid3,.statrow{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <span class="wordmark"><span class="lens">[◎]</span> claude&nbsp;lens</span>
+  <nav>
+    <a href="dashboard.html" class="">Dashboard</a><a href="sessions.html" class="">Sessions</a><a href="projects.html" class="">Projects</a><a href="models.html" class="">Models</a><a href="cache-lab.html" class="on">Cache Lab</a><a href="trends.html" class="">Trends</a><a href="explore.html" class="">Explore</a><a href="data-health.html" class="">Health</a><a href="settings.html" class="">⚙</a>
+  </nav>
+  <span class="tier">tier: <b>transcript-only</b></span>
+</header>
+<div class="filters">
+  <div class="seg"><button>1D</button><button class="on">7D</button><button>30D</button><button>90D</button><button>Custom</button></div>
+  <div class="f"><span class="k">Project</span><span class="v">all</span><span class="car">▾</span></div>
+  <div class="f"><span class="k">Model</span><span class="v">all</span><span class="car">▾</span></div>
+  <div class="f"><span class="k">Branch</span><span class="v">all</span><span class="car">▾</span></div>
+  <span class="host">⌂ mac-mini-home</span>
+</div>
+<main>
+
+<div class="statrow">
+  <div class="stat"><div class="k">Cache read</div><div class="v cache num">61.9M</div><div class="sub">tokens · fleet</div></div>
+  <div class="stat"><div class="k">Cache written</div><div class="v cache num">3.0M</div><div class="sub">tokens · fleet</div></div>
+  <div class="stat"><div class="k">Hit rate</div><div class="v cache num">95.4% <span class="delta upgood">▲ 1.2</span></div><div class="sub">vs previous 7d</div></div>
+  <div class="stat"><div class="k">Saved by cache</div><div class="v money num">$412 <span class="delta upgood">est</span></div><div class="sub">uncached this week ≈ $581</div></div>
+</div>
+
+<section class="panel">
+  <h2>Input composition <span class="badge">87% of input served from cache</span></h2>
+  <div style="display:flex;height:14px;border-radius:99px;overflow:hidden;margin-top:12px">
+    <div style="width:87%;background:var(--cache)"></div>
+    <div style="width:9%;background:var(--warn)"></div>
+    <div style="width:4%;background:#3A4656"></div>
+  </div>
+  <div style="display:flex;gap:16px;margin-top:8px;font-family:var(--mono);font-size:11px;color:var(--faint)">
+    <span><i style="display:inline-block;width:10px;height:10px;background:var(--cache);margin-right:5px;border-radius:2px"></i>reads (discounted) 61.9M</span>
+    <span><i style="display:inline-block;width:10px;height:10px;background:var(--warn);margin-right:5px;border-radius:2px"></i>writes 3.0M</span>
+    <span><i style="display:inline-block;width:10px;height:10px;background:#3A4656;margin-right:5px;border-radius:2px"></i>uncached 1.4M</span>
+  </div>
+</section>
+
+<div class="grid2">
+  <section class="panel">
+    <h2>Saved vs lost to busts <span class="badge pass">NET +$405</span></h2>
+    <div class="hbars" style="margin-top:14px">
+      <div class="hb"><span class="lbl">saved by cache</span><div class="rail"><div class="fill c" style="width:100%"></div></div><span class="val">$412</span></div>
+      <div class="hb"><span class="lbl">lost to busts (7)</span><div class="rail"><div class="fill" style="width:2%;background:var(--bad)"></div></div><span class="val">−$7.10</span></div>
+    </div>
+    <p style="font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:10px">bust = invalidation re-write premium + forced re-reads · sessions that go net-negative get flagged in the gallery</p>
+  </section>
+
+  <section class="panel">
+    <h2>Cache miss attribution <span class="badge warn">mostly prefix change</span></h2>
+    <div class="grid3" style="margin-top:12px;gap:10px">
+      <div style="background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r);padding:10px">
+        <p style="font-family:var(--mono);font-size:10px;color:var(--faint)">TTL EXPIRY</p>
+        <p class="num" style="font-size:20px;margin-top:4px">2</p>
+        <p style="font-family:var(--mono);font-size:10px;color:var(--faint);margin-top:2px">idle gap &gt; TTL</p>
+      </div>
+      <div style="background:var(--panel-2);border:1px solid rgba(217,180,79,.35);border-radius:var(--r);padding:10px">
+        <p style="font-family:var(--mono);font-size:10px;color:var(--warn)">PREFIX CHANGE</p>
+        <p class="num" style="font-size:20px;margin-top:4px">5</p>
+        <p style="font-family:var(--mono);font-size:10px;color:var(--faint);margin-top:2px">K2 classifier</p>
+      </div>
+      <div style="background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r);padding:10px">
+        <p style="font-family:var(--mono);font-size:10px;color:var(--faint)">UNKNOWN</p>
+        <p class="num" style="font-size:20px;margin-top:4px">0</p>
+        <p style="font-family:var(--mono);font-size:10px;color:var(--faint);margin-top:2px">stable, within TTL</p>
+      </div>
+    </div>
+  </section>
+</div>
+
+<section class="panel">
+  <h2>TTL bucket mix <span class="badge">1h leaning</span></h2>
+  <div style="display:flex;height:12px;border-radius:99px;overflow:hidden;margin-top:12px">
+    <div style="width:97.4%;background:var(--cache)"></div>
+    <div style="width:2.6%;background:#9B7BD9"></div>
+  </div>
+  <p style="font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:8px"><span style="color:var(--cache)">1h 246.5k (97.4%)</span> · <span style="color:#9B7BD9">5m 6.7k (2.6%)</span> — from cache_creation.ephemeral fields · 5m-heavy mix + idle gaps would explain TTL misses; yours is 1h-leaning, so misses point at prefix churn</p>
+</section>
+
+<section class="panel">
+  <h2>Hit rate over time
+    <div class="sw"><button class="on" data-show="line">line</button><button data-show="bars">bars</button><button data-show="dist">histogram</button></div>
+  </h2>
+  <div data-variant="line">
+  <svg viewBox="0 0 720 130" preserveAspectRatio="none" style="width:100%;height:130px;margin-top:10px">
+    <line x1="0" y1="20" x2="720" y2="20" stroke="#1B222C"/>
+    <polyline points="0,55 90,48 180,60 270,40 360,35 450,44 540,30 630,26 720,24" fill="none" stroke="#4FC3D9" stroke-width="2"/>
+    <polyline points="0,62 90,55 180,58 270,48 360,42 450,45 540,36 630,30 720,27" fill="none" stroke="#4FC3D9" stroke-width="1" stroke-dasharray="3 4" opacity=".4"/>
+    <g font-family="IBM Plex Mono" font-size="9" fill="#5A6675"><text x="2" y="14">100%</text><text x="640" y="52" fill="#4FC3D9" opacity=".5">7d MA</text></g>
+  </svg>
+  </div>
+  <div data-variant="bars" style="display:none;margin-top:14px;color:var(--faint);font-family:var(--mono);font-size:12px">daily bars — same series</div>
+  <div data-variant="dist" style="display:none;margin-top:14px;color:var(--faint);font-family:var(--mono);font-size:12px">distribution of per-session hit rates</div>
+</section>
+
+<section class="panel">
+  <h2>Invalidation cost by cause
+    <div class="sw"><button class="on" data-show="stack">over time</button><button data-show="tot">totals</button></div>
+  </h2>
+  <div data-variant="stack">
+  <svg viewBox="0 0 720 140" style="width:100%;height:140px;margin-top:10px">
+    <g>
+      <rect x="20" y="90" width="60" height="40" fill="#5A6675"/><rect x="20" y="70" width="60" height="20" fill="#D9B44F"/>
+      <rect x="120" y="100" width="60" height="30" fill="#5A6675"/><rect x="120" y="80" width="60" height="20" fill="#D9B44F"/><rect x="120" y="65" width="60" height="15" fill="#E05252"/>
+      <rect x="220" y="95" width="60" height="35" fill="#5A6675"/>
+      <rect x="320" y="85" width="60" height="45" fill="#5A6675"/><rect x="320" y="55" width="60" height="30" fill="#D9B44F"/>
+      <rect x="420" y="60" width="60" height="70" fill="#5A6675"/><rect x="420" y="30" width="60" height="30" fill="#E05252"/>
+      <rect x="520" y="80" width="60" height="50" fill="#5A6675"/><rect x="520" y="60" width="60" height="20" fill="#D9B44F"/>
+      <rect x="620" y="50" width="60" height="80" fill="#5A6675"/><rect x="620" y="35" width="60" height="15" fill="#E05252"/>
+    </g>
+    <g font-family="IBM Plex Mono" font-size="9" fill="#5A6675"><text x="20" y="12">■ first-call (gray) · model-switch (yellow) · unexplained (red)</text></g>
+  </svg>
+  </div>
+  <div data-variant="tot" style="display:none;margin-top:14px">
+    <div class="hbars">
+      <div class="hb"><span class="lbl">first call (normal)</span><div class="rail"><div class="fill" style="width:100%;background:var(--faint)"></div></div><span class="val">$2.90</span></div>
+      <div class="hb"><span class="lbl">model switch</span><div class="rail"><div class="fill" style="width:44%;background:var(--warn)"></div></div><span class="val">$1.28</span></div>
+      <div class="hb"><span class="lbl">unexplained (K2)</span><div class="rail"><div class="fill" style="width:31%;background:var(--bad)"></div></div><span class="val">$0.91</span></div>
+      <div class="hb"><span class="lbl">post-compaction</span><div class="rail"><div class="fill" style="width:19%;background:var(--faint)"></div></div><span class="val">$0.55</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Invalidation gallery <span class="badge">every spike ≥10k tokens, cause-labeled</span></h2>
+  <div class="grid3" style="margin-top:12px">
+    <div style="background:var(--panel-2);border:1px solid rgba(224,82,82,.35);border-radius:var(--r);padding:12px">
+      <p><span class="badge fail">unexplained</span> <span class="num" style="color:var(--bad)">28.6k tok · ~$0.11</span></p>
+      <p style="font-size:12px;color:var(--muted);margin-top:6px">081df792 · turn 2 · today</p>
+      <p style="font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:4px">no switch, no compaction → prefix churn</p>
+    </div>
+    <div style="background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r);padding:12px">
+      <p><span class="badge warn">model switch</span> <span class="num" style="color:var(--warn)">12.3k tok · ~$0.05</span></p>
+      <p style="font-size:12px;color:var(--muted);margin-top:6px">081df792 · turn 4 · opus→sonnet</p>
+    </div>
+    <div style="background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r);padding:12px">
+      <p><span class="badge">compaction</span> <span class="num" style="color:var(--muted)">96.4k tok · ~$0.36</span></p>
+      <p style="font-size:12px;color:var(--muted);margin-top:6px">fbaf2dac · turn 11 · ctx 92%→31%</p>
+    </div>
+  </div>
+</section>
+
+<section class="panel locked" style="min-height:130px">
+  <h2>Context growth curves (session DNA)</h2>
+  <div class="veil"><p>True context_pct needs cost capture — token-based approximation available in Explore</p><a href="settings.html">Set up cost capture →</a></div>
+</section>
+
+</main>
+<footer>local-first · reading ~/.claude/projects · last scan 13:52 · 21 transcripts</footer>
+<script>
+document.querySelectorAll('.sw, .seg').forEach(g=>{g.addEventListener('click',e=>{
+  const b=e.target.closest('button'); if(!b)return;
+  g.querySelectorAll('button').forEach(x=>x.classList.remove('on')); b.classList.add('on');
+  const show=b.dataset.show; if(show){const p=b.closest('.panel')||document;
+    p.querySelectorAll('[data-variant]').forEach(v=>v.style.display = v.dataset.variant===show?'':'none');}
+});});
+</script>
+</body>
+</html>

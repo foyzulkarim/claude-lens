@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude Lens — Session 081df792</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0E1116;--panel:#151A21;--panel-2:#11161D;--line:#232B36;--text:#E8EDF2;--muted:#8B98A9;--faint:#5A6675;
+--money:#E8A33D;--cache:#4FC3D9;--bad:#E05252;--warn:#D9B44F;--good:#55B87A;
+--mono:'IBM Plex Mono',monospace;--sans:'IBM Plex Sans',sans-serif;--r:6px}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;line-height:1.45}
+a{color:inherit;text-decoration:none}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+header{display:flex;align-items:center;gap:14px;padding:14px 24px;border-bottom:1px solid var(--line)}
+.wordmark{font-family:var(--mono);font-weight:600;font-size:15px}.wordmark .lens{color:var(--cache)}
+nav{display:flex;gap:2px;margin-left:24px}
+nav a{padding:6px 10px;border-radius:var(--r);color:var(--muted);font-size:13px}
+nav a:hover{color:var(--text);background:var(--panel)}nav a.on{color:var(--text);background:var(--panel)}
+.tier{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:99px;padding:4px 10px}
+.tier b{color:var(--text);font-weight:500}
+/* global filter bar */
+.filters{display:flex;gap:10px;align-items:center;padding:12px 24px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.f{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:var(--r);padding:7px 12px;background:var(--panel-2);font-size:12px;cursor:pointer}
+.f:hover{border-color:#3A4656}
+.f .k{font-family:var(--mono);font-size:10px;letter-spacing:.08em;color:var(--faint);text-transform:uppercase}
+.f .v{color:var(--text)}.f .car{color:var(--faint);font-size:10px}
+.seg{display:flex;border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.seg button{background:var(--panel-2);border:0;color:var(--muted);font-family:var(--mono);font-size:11px;padding:7px 11px;cursor:pointer}
+.seg button.on{background:var(--panel);color:var(--text)}
+.seg button:hover:not(.on){color:var(--text)}
+.host{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:var(--r);padding:6px 10px}
+main{padding:16px 24px 32px;display:grid;gap:16px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px;min-width:0}
+.panel h2{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.panel h2 .goto{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:11px;letter-spacing:0;text-transform:none;font-weight:400}
+.panel h2 .goto:hover{color:var(--text)}
+/* chart-type switcher */
+.sw{display:flex;border:1px solid var(--line);border-radius:4px;overflow:hidden;margin-left:auto}
+.sw+ .goto{margin-left:12px!important}
+.sw button{background:transparent;border:0;color:var(--faint);font-family:var(--mono);font-size:10px;padding:3px 8px;cursor:pointer;text-transform:none;letter-spacing:0}
+.sw button.on{background:var(--panel-2);color:var(--text)}
+.sw button:hover:not(.on){color:var(--muted)}
+.badge{font-family:var(--mono);font-size:10px;letter-spacing:0;text-transform:none;font-weight:400;padding:1px 6px;border-radius:3px;border:1px solid var(--line);color:var(--muted)}
+.badge.computed{color:var(--money);border-color:rgba(232,163,61,.35)}
+.badge.premium{color:var(--cache);border-color:rgba(79,195,217,.35)}
+.badge.fail{color:var(--bad);border-color:rgba(224,82,82,.4)}
+.badge.warn{color:var(--warn);border-color:rgba(217,180,79,.4)}
+.badge.pass{color:var(--good);border-color:rgba(85,184,122,.4)}
+.delta{font-family:var(--mono);font-size:11px}.delta.up{color:var(--bad)}.delta.down{color:var(--good)}.delta.upgood{color:var(--good)}
+table{width:100%;border-collapse:collapse;margin-top:10px}
+th{font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--faint);text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);font-weight:600}
+td{padding:8px;border-bottom:1px solid var(--line);font-size:13px}
+tr:hover td{background:var(--panel-2);cursor:pointer}
+td.num,th.r{text-align:right}.money-cell{color:var(--money)}.cache-cell{color:var(--cache)}
+.mchip{font-family:var(--mono);font-size:10px;padding:1px 6px;border-radius:3px;border:1px solid var(--line);color:var(--muted)}
+.hbars{margin-top:12px;display:flex;flex-direction:column;gap:10px}
+.hb{display:grid;grid-template-columns:150px 1fr 70px;gap:10px;align-items:center;cursor:pointer}
+.hb .lbl{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hb:hover .lbl{color:var(--text)}
+.hb .rail{height:8px;background:var(--panel-2);border-radius:99px;overflow:hidden}
+.hb .fill{height:100%;border-radius:99px;background:var(--money)}.hb .fill.c{background:var(--cache)}
+.hb .val{font-family:var(--mono);font-size:12px;text-align:right}
+.locked{position:relative;overflow:hidden}
+.locked .veil{position:absolute;inset:0;background:rgba(14,17,22,.72);backdrop-filter:blur(2px);display:flex;flex-direction:column;gap:8px;align-items:center;justify-content:center}
+.locked .veil p{color:var(--muted);font-size:12px}
+.locked .veil a{font-size:12px;color:var(--money);border:1px solid rgba(232,163,61,.4);border-radius:var(--r);padding:5px 12px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+.statrow{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.stat{background:var(--panel);padding:14px 16px}
+.stat .k{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+.stat .v{font-family:var(--mono);font-size:22px;font-weight:500;margin-top:4px;display:flex;align-items:baseline;gap:8px}
+.stat .v.money{color:var(--money)}.stat .v.cache{color:var(--cache)}
+.stat .sub{font-size:11px;color:var(--faint);margin-top:2px;font-family:var(--mono)}
+.gatecard{display:flex;gap:10px;padding:10px 4px;border-top:1px solid var(--line);align-items:flex-start}
+.gatecard .t{font-size:13px}.gatecard .t b{font-weight:500}
+.gatecard .w{font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:2px}
+footer{padding:0 24px 28px;color:var(--faint);font-family:var(--mono);font-size:11px}
+@media(max-width:980px){nav{display:none}.grid2,.grid3,.statrow{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <span class="wordmark"><span class="lens">[◎]</span> claude&nbsp;lens</span>
+  <nav>
+    <a href="dashboard.html" class="">Dashboard</a><a href="sessions.html" class="on">Sessions</a><a href="projects.html" class="">Projects</a><a href="models.html" class="">Models</a><a href="cache-lab.html" class="">Cache Lab</a><a href="trends.html" class="">Trends</a><a href="explore.html" class="">Explore</a><a href="data-health.html" class="">Health</a><a href="settings.html" class="">⚙</a>
+  </nav>
+  <span class="tier">tier: <b>transcript-only</b></span>
+</header>
+<div class="filters">
+  <div class="seg"><button>1D</button><button class="on">7D</button><button>30D</button><button>90D</button><button>Custom</button></div>
+  <div class="f"><span class="k">Project</span><span class="v">all</span><span class="car">▾</span></div>
+  <div class="f"><span class="k">Model</span><span class="v">all</span><span class="car">▾</span></div>
+  <div class="f"><span class="k">Branch</span><span class="v">all</span><span class="car">▾</span></div>
+  <span class="host">⌂ mac-mini-home</span>
+</div>
+<main>
+
+<section class="panel">
+  <h2>Session 081df792 <span class="badge computed">$ computed</span><a class="goto" href="sessions.html">← all sessions</a></h2>
+  <div style="display:flex;gap:18px;align-items:baseline;margin-top:10px;flex-wrap:wrap">
+    <span class="num" style="font-size:30px;font-weight:600;color:var(--money)">$7.97</span>
+    <span style="font-family:var(--mono);font-size:13px;color:var(--muted)">agentic-swe-vod · main · today 10:12–10:42 · CC v3.18.2</span>
+    <span class="badge">5 turns</span><span class="badge">opus-4-8 + sonnet-5</span><span class="badge">ctx 16%</span>
+    <span class="badge warn">p87 of your sessions</span>
+    <span class="badge fail">Report card: 2 fail · 2 warn</span>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Cost timeline
+    <div class="sw"><button class="on" data-show="cum">cumulative</button><button data-show="turns">per-turn</button></div>
+    <div class="sw"><button class="on">$</button><button>tokens</button><button>calls</button></div>
+  </h2>
+  <div data-variant="cum">
+    <svg viewBox="0 0 720 170" preserveAspectRatio="none" style="width:100%;height:170px;margin-top:8px">
+      <g stroke="#1B222C"><line x1="0" y1="42" x2="720" y2="42"/><line x1="0" y1="84" x2="720" y2="84"/><line x1="0" y1="126" x2="720" y2="126"/></g>
+      <rect x="596" y="0" width="124" height="170" fill="#8B98A9" opacity="0.07"/>
+      <g stroke="#3A4656" stroke-dasharray="2 4"><line x1="118" y1="0" x2="118" y2="170"/><line x1="428" y1="0" x2="428" y2="170"/><line x1="474" y1="0" x2="474" y2="170"/><line x1="596" y1="0" x2="596" y2="170"/></g>
+      <g font-family="IBM Plex Mono" font-size="9" fill="#5A6675"><text x="8" y="12">t1</text><text x="126" y="12">t2</text><text x="436" y="12">t3</text><text x="482" y="12">t4</text><text x="604" y="12">tail</text></g>
+      <polyline points="0,166 60,161 118,160 200,157 300,152 428,148 474,147 560,144 596,143 660,142 720,141" fill="none" stroke="#4FC3D9" stroke-width="1.5" opacity="0.55"/>
+      <polyline points="0,168 30,166 60,120 90,104 118,96 180,88 240,79 300,68 360,60 428,52 450,50 474,47 520,42 560,37 596,33 640,26 680,17 720,10" fill="none" stroke="#E8A33D" stroke-width="2.5" stroke-linejoin="round"/>
+      <circle cx="60" cy="120" r="4" fill="#E05252"/>
+    </svg>
+  </div>
+  <div data-variant="turns" style="display:none;margin-top:12px">
+    <svg viewBox="0 0 720 160" style="width:100%;height:160px">
+      <g>
+        <rect x="30" y="95" width="90" height="45" fill="#C9862B"/><rect x="30" y="80" width="90" height="15" fill="#4FC3D9" opacity=".6"/>
+        <rect x="160" y="20" width="90" height="105" fill="#E05252"/><rect x="160" y="5" width="90" height="15" fill="#4FC3D9" opacity=".6"/>
+        <rect x="290" y="110" width="90" height="30" fill="#C9862B"/>
+        <rect x="420" y="120" width="90" height="20" fill="#C9862B"/>
+        <rect x="550" y="60" width="90" height="80" fill="#5A6675"/>
+      </g>
+      <g font-family="IBM Plex Mono" font-size="10" fill="#8B98A9" text-anchor="middle">
+        <text x="75" y="155">t1 $0.92</text><text x="205" y="155">t2 $3.12</text><text x="335" y="155">t3 $0.71</text><text x="465" y="155">t4 $0.52</text><text x="595" y="155">tail $2.30</text>
+      </g>
+    </svg>
+    <p style="font-family:var(--mono);font-size:11px;color:var(--faint)">cyan = sidechain share · red = anomaly (4.2× median) · gray = unassigned tail</p>
+  </div>
+</section>
+
+<div class="grid2">
+  <section class="panel">
+    <h2>Report card <span class="badge fail">2 fail</span><span class="badge warn">2 warn</span><span class="badge pass">2 pass</span><a class="goto" href="#">gate specs →</a></h2>
+    <div style="margin-top:6px">
+      <div class="gatecard"><span class="badge fail">V1</span><div class="t"><b>Edit without verify</b> — 12 edits in turn 3, no command after last edit<div class="w">evidence: turn 3, statusline-wrapper.js →</div></div></div>
+      <div class="gatecard"><span class="badge fail">K2</span><div class="t"><b>Unexplained cache invalidation</b> — 28.6k tokens re-written, no switch/compaction<div class="w">evidence: turn 2, call 4 →</div></div></div>
+      <div class="gatecard"><span class="badge warn">C3</span><div class="t"><b>Fat tool result</b> — 41k-char read, ~10k tok re-billed every later call<div class="w">evidence: turn 2, call 2 →</div></div></div>
+      <div class="gatecard"><span class="badge warn">E2</span><div class="t"><b>CLAUDE.md bloat</b> — 6.2k chars / 94 lines (checked now)<div class="w">~/personal/agentic-swe-vod/CLAUDE.md</div></div></div>
+      <div class="gatecard"><span class="badge pass">V2</span><div class="t"><b>No failing-command loops</b></div></div>
+      <div class="gatecard"><span class="badge pass">P3</span><div class="t"><b>All edited files were read first</b></div></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Turns</h2>
+    <table>
+      <thead><tr><th>#</th><th>Prompt</th><th class="r">$</th><th class="r">pctl*</th><th class="r">Tok</th><th class="r">Hit%</th><th>Tools</th><th class="r">Flags</th></tr></thead>
+      <tbody>
+        <tr><td class="num">1</td><td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">wire up the cost logger to…</td><td class="num money-cell">0.92</td><td class="num">p61</td><td class="num">310k</td><td class="num cache-cell">91</td><td><span class="mchip">Read×4</span></td><td class="num">—</td></tr>
+        <tr><td class="num">2</td><td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">refactor the statusline wra…</td><td class="num money-cell">3.12</td><td class="num" style="color:var(--bad)">p97</td><td class="num">840k</td><td class="num cache-cell">88</td><td><span class="mchip">Edit×9</span> <span class="mchip">Bash×2</span></td><td class="num"><span class="badge fail">K2 C3</span></td></tr>
+        <tr><td class="num">3</td><td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">now update the turn logger…</td><td class="num money-cell">0.71</td><td class="num">p52</td><td class="num">200k</td><td class="num cache-cell">97</td><td><span class="mchip">Edit×12</span></td><td class="num"><span class="badge fail">V1</span></td></tr>
+        <tr><td class="num">4</td><td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">switch to sonnet and clean…</td><td class="num money-cell">0.52</td><td class="num">p40</td><td class="num">160k</td><td class="num cache-cell">96</td><td><span class="mchip">Edit×3</span> <span class="mchip">Bash×1</span></td><td class="num">—</td></tr>
+        <tr><td class="num">5</td><td style="color:var(--faint)">tail (in progress)</td><td class="num money-cell">2.30</td><td class="num">—</td><td class="num">390k</td><td class="num cache-cell">98</td><td>—</td><td class="num"><span class="badge">partial</span></td></tr>
+      </tbody>
+    </table>
+    <p style="font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:8px">*percentile vs your all-time turn distribution · row → turn inspector</p>
+  </section>
+</div>
+
+<div class="grid2">
+  <section class="panel">
+    <h2>Cache per API call
+      <div class="sw"><button class="on" data-show="line">hit rate</button><button data-show="wr">writes</button></div>
+    </h2>
+    <div data-variant="line">
+    <svg viewBox="0 0 340 110" style="width:100%;height:110px;margin-top:8px">
+      <line x1="0" y1="20" x2="340" y2="20" stroke="#1B222C"/>
+      <polyline points="5,95 30,40 55,28 80,24 105,70 130,26 155,22 180,20 205,24 230,60 255,26 280,22 305,20 335,20" fill="none" stroke="#4FC3D9" stroke-width="2"/>
+      <circle cx="105" cy="70" r="4" fill="#E05252"/><circle cx="230" cy="60" r="4" fill="#D9B44F"/>
+      <g font-family="IBM Plex Mono" font-size="9" fill="#5A6675"><text x="2" y="14">100%</text><text x="92" y="88">K2 unexplained</text><text x="218" y="78">model switch</text></g>
+    </svg>
+    </div>
+    <div data-variant="wr" style="display:none;margin-top:12px">
+    <svg viewBox="0 0 340 110" style="width:100%;height:110px">
+      <g fill="#4FC3D9" opacity=".8">
+        <rect x="8" y="30" width="14" height="75"/><rect x="32" y="95" width="14" height="10"/><rect x="56" y="98" width="14" height="7"/>
+        <rect x="104" y="45" width="14" height="60" fill="#E05252"/><rect x="128" y="97" width="14" height="8"/>
+        <rect x="224" y="70" width="14" height="35" fill="#D9B44F"/><rect x="248" y="99" width="14" height="6"/>
+      </g>
+      <g font-family="IBM Plex Mono" font-size="9" fill="#5A6675"><text x="4" y="24">first call</text><text x="96" y="40">28.6k K2</text><text x="212" y="64">12.3k switch</text></g>
+    </svg>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Workflow funnel <span class="badge">read → edit → verify</span></h2>
+    <div class="hbars" style="margin-top:14px">
+      <div class="hb"><span class="lbl">turns with edits</span><div class="rail"><div class="fill" style="width:100%"></div></div><span class="val">4/4</span></div>
+      <div class="hb"><span class="lbl">…files read first</span><div class="rail"><div class="fill" style="width:100%"></div></div><span class="val">4/4</span></div>
+      <div class="hb"><span class="lbl">…verified after edit</span><div class="rail"><div class="fill" style="width:50%;background:var(--bad)"></div></div><span class="val">2/4</span></div>
+      <div class="hb"><span class="lbl">…committed</span><div class="rail"><div class="fill" style="width:25%;background:var(--faint)"></div></div><span class="val">1/4</span></div>
+    </div>
+    <p style="font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:10px">same signals as gates V1/P3, rendered as coverage</p>
+  </section>
+</div>
+
+<div class="grid2">
+  <section class="panel">
+    <h2>Token funnel</h2>
+    <div class="hbars" style="margin-top:14px">
+      <div class="hb" style="grid-template-columns:130px 1fr 70px"><span class="lbl">context offered</span><div class="rail"><div class="fill" style="width:100%;background:#3A4656"></div></div><span class="val">1.94M</span></div>
+      <div class="hb" style="grid-template-columns:130px 1fr 70px"><span class="lbl">served from cache</span><div class="rail"><div class="fill c" style="width:93%"></div></div><span class="val">1.81M</span></div>
+      <div class="hb" style="grid-template-columns:130px 1fr 70px"><span class="lbl">fresh-billed</span><div class="rail"><div class="fill" style="width:7%"></div></div><span class="val">131k</span></div>
+      <div class="hb" style="grid-template-columns:130px 1fr 70px"><span class="lbl">output</span><div class="rail"><div class="fill" style="width:1%;background:var(--good)"></div></div><span class="val">19.4k</span></div>
+    </div>
+    <p style="font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:10px">output is 1% of wire — the rest is context logistics</p>
+  </section>
+
+  <section class="panel">
+    <h2>Context composition <span class="badge">tool_result bytes</span></h2>
+    <div class="hbars" style="margin-top:14px">
+      <div class="hb"><span class="lbl">Read</span><div class="rail"><div class="fill" style="width:100%;background:var(--warn)"></div></div><span class="val">96k</span></div>
+      <div class="hb"><span class="lbl">Bash output</span><div class="rail"><div class="fill" style="width:31%"></div></div><span class="val">30k</span></div>
+      <div class="hb"><span class="lbl">Grep / Glob</span><div class="rail"><div class="fill" style="width:12%"></div></div><span class="val">11k</span></div>
+      <div class="hb"><span class="lbl">Edit acks</span><div class="rail"><div class="fill" style="width:6%;background:var(--faint)"></div></div><span class="val">6k</span></div>
+    </div>
+    <p style="font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:10px">this session's context is 67% file reads — the 41k-char C3 read is most of it</p>
+  </section>
+</div>
+
+</main>
+<footer>local-first · reading ~/.claude/projects · last scan 13:52 · 21 transcripts</footer>
+<script>
+document.querySelectorAll('.sw, .seg').forEach(g=>{g.addEventListener('click',e=>{
+  const b=e.target.closest('button'); if(!b)return;
+  g.querySelectorAll('button').forEach(x=>x.classList.remove('on')); b.classList.add('on');
+  const show=b.dataset.show; if(show){const p=b.closest('.panel')||document;
+    p.querySelectorAll('[data-variant]').forEach(v=>v.style.display = v.dataset.variant===show?'':'none');}
+});});
+</script>
+</body>
+</html>

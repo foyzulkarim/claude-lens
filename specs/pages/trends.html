@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude Lens — Trends</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0E1116;--panel:#151A21;--panel-2:#11161D;--line:#232B36;--text:#E8EDF2;--muted:#8B98A9;--faint:#5A6675;
+--money:#E8A33D;--cache:#4FC3D9;--bad:#E05252;--warn:#D9B44F;--good:#55B87A;
+--mono:'IBM Plex Mono',monospace;--sans:'IBM Plex Sans',sans-serif;--r:6px}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;line-height:1.45}
+a{color:inherit;text-decoration:none}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+header{display:flex;align-items:center;gap:14px;padding:14px 24px;border-bottom:1px solid var(--line)}
+.wordmark{font-family:var(--mono);font-weight:600;font-size:15px}.wordmark .lens{color:var(--cache)}
+nav{display:flex;gap:2px;margin-left:24px}
+nav a{padding:6px 10px;border-radius:var(--r);color:var(--muted);font-size:13px}
+nav a:hover{color:var(--text);background:var(--panel)}nav a.on{color:var(--text);background:var(--panel)}
+.tier{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:99px;padding:4px 10px}
+.tier b{color:var(--text);font-weight:500}
+/* global filter bar */
+.filters{display:flex;gap:10px;align-items:center;padding:12px 24px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.f{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:var(--r);padding:7px 12px;background:var(--panel-2);font-size:12px;cursor:pointer}
+.f:hover{border-color:#3A4656}
+.f .k{font-family:var(--mono);font-size:10px;letter-spacing:.08em;color:var(--faint);text-transform:uppercase}
+.f .v{color:var(--text)}.f .car{color:var(--faint);font-size:10px}
+.seg{display:flex;border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.seg button{background:var(--panel-2);border:0;color:var(--muted);font-family:var(--mono);font-size:11px;padding:7px 11px;cursor:pointer}
+.seg button.on{background:var(--panel);color:var(--text)}
+.seg button:hover:not(.on){color:var(--text)}
+.host{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:var(--r);padding:6px 10px}
+main{padding:16px 24px 32px;display:grid;gap:16px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px;min-width:0}
+.panel h2{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.panel h2 .goto{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:11px;letter-spacing:0;text-transform:none;font-weight:400}
+.panel h2 .goto:hover{color:var(--text)}
+/* chart-type switcher */
+.sw{display:flex;border:1px solid var(--line);border-radius:4px;overflow:hidden;margin-left:auto}
+.sw+ .goto{margin-left:12px!important}
+.sw button{background:transparent;border:0;color:var(--faint);font-family:var(--mono);font-size:10px;padding:3px 8px;cursor:pointer;text-transform:none;letter-spacing:0}
+.sw button.on{background:var(--panel-2);color:var(--text)}
+.sw button:hover:not(.on){color:var(--muted)}
+.badge{font-family:var(--mono);font-size:10px;letter-spacing:0;text-transform:none;font-weight:400;padding:1px 6px;border-radius:3px;border:1px solid var(--line);color:var(--muted)}
+.badge.computed{color:var(--money);border-color:rgba(232,163,61,.35)}
+.badge.premium{color:var(--cache);border-color:rgba(79,195,217,.35)}
+.badge.fail{color:var(--bad);border-color:rgba(224,82,82,.4)}
+.badge.warn{color:var(--warn);border-color:rgba(217,180,79,.4)}
+.badge.pass{color:var(--good);border-color:rgba(85,184,122,.4)}
+.delta{font-family:var(--mono);font-size:11px}.delta.up{color:var(--bad)}.delta.down{color:var(--good)}.delta.upgood{color:var(--good)}
+table{width:100%;border-collapse:collapse;margin-top:10px}
+th{font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--faint);text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);font-weight:600}
+td{padding:8px;border-bottom:1px solid var(--line);font-size:13px}
+tr:hover td{background:var(--panel-2);cursor:pointer}
+td.num,th.r{text-align:right}.money-cell{color:var(--money)}.cache-cell{color:var(--cache)}
+.mchip{font-family:var(--mono);font-size:10px;padding:1px 6px;border-radius:3px;border:1px solid var(--line);color:var(--muted)}
+.hbars{margin-top:12px;display:flex;flex-direction:column;gap:10px}
+.hb{display:grid;grid-template-columns:150px 1fr 70px;gap:10px;align-items:center;cursor:pointer}
+.hb .lbl{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hb:hover .lbl{color:var(--text)}
+.hb .rail{height:8px;background:var(--panel-2);border-radius:99px;overflow:hidden}
+.hb .fill{height:100%;border-radius:99px;background:var(--money)}.hb .fill.c{background:var(--cache)}
+.hb .val{font-family:var(--mono);font-size:12px;text-align:right}
+.locked{position:relative;overflow:hidden}
+.locked .veil{position:absolute;inset:0;background:rgba(14,17,22,.72);backdrop-filter:blur(2px);display:flex;flex-direction:column;gap:8px;align-items:center;justify-content:center}
+.locked .veil p{color:var(--muted);font-size:12px}
+.locked .veil a{font-size:12px;color:var(--money);border:1px solid rgba(232,163,61,.4);border-radius:var(--r);padding:5px 12px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+.statrow{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.stat{background:var(--panel);padding:14px 16px}
+.stat .k{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+.stat .v{font-family:var(--mono);font-size:22px;font-weight:500;margin-top:4px;display:flex;align-items:baseline;gap:8px}
+.stat .v.money{color:var(--money)}.stat .v.cache{color:var(--cache)}
+.stat .sub{font-size:11px;color:var(--faint);margin-top:2px;font-family:var(--mono)}
+.gatecard{display:flex;gap:10px;padding:10px 4px;border-top:1px solid var(--line);align-items:flex-start}
+.gatecard .t{font-size:13px}.gatecard .t b{font-weight:500}
+.gatecard .w{font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:2px}
+footer{padding:0 24px 28px;color:var(--faint);font-family:var(--mono);font-size:11px}
+@media(max-width:980px){nav{display:none}.grid2,.grid3,.statrow{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <span class="wordmark"><span class="lens">[◎]</span> claude&nbsp;lens</span>
+  <nav>
+    <a href="dashboard.html" class="">Dashboard</a><a href="sessions.html" class="">Sessions</a><a href="projects.html" class="">Projects</a><a href="models.html" class="">Models</a><a href="cache-lab.html" class="">Cache Lab</a><a href="trends.html" class="on">Trends</a><a href="explore.html" class="">Explore</a><a href="data-health.html" class="">Health</a><a href="settings.html" class="">⚙</a>
+  </nav>
+  <span class="tier">tier: <b>transcript-only</b></span>
+</header>
+<div class="filters">
+  <div class="seg"><button>1D</button><button class="on">7D</button><button>30D</button><button>90D</button><button>Custom</button></div>
+  <div class="f"><span class="k">Project</span><span class="v">all</span><span class="car">▾</span></div>
+  <div class="f"><span class="k">Model</span><span class="v">all</span><span class="car">▾</span></div>
+  <div class="f"><span class="k">Branch</span><span class="v">all</span><span class="car">▾</span></div>
+  <span class="host">⌂ mac-mini-home</span>
+</div>
+<main>
+
+<div class="grid2">
+  <section class="panel">
+    <h2>Calendar
+      <div class="sw"><button class="on">$</button><button>tokens</button><button>sessions</button></div>
+    </h2>
+    <svg viewBox="0 0 340 110" style="width:100%;height:110px;margin-top:12px">
+      <g font-family="IBM Plex Mono" font-size="8" fill="#5A6675">
+        <text x="0" y="26">Mon</text><text x="0" y="56">Wed</text><text x="0" y="86">Fri</text>
+      </g>
+      <g>
+        <rect x="30" y="10" width="16" height="16" rx="2" fill="#1B222C"/><rect x="30" y="30" width="16" height="16" rx="2" fill="#3d3421"/><rect x="30" y="50" width="16" height="16" rx="2" fill="#1B222C"/><rect x="30" y="70" width="16" height="16" rx="2" fill="#5c4a24"/><rect x="30" y="90" width="16" height="16" rx="2" fill="#3d3421"/>
+        <rect x="50" y="10" width="16" height="16" rx="2" fill="#3d3421"/><rect x="50" y="30" width="16" height="16" rx="2" fill="#7a5f27"/><rect x="50" y="50" width="16" height="16" rx="2" fill="#1B222C"/><rect x="50" y="70" width="16" height="16" rx="2" fill="#997429"/><rect x="50" y="90" width="16" height="16" rx="2" fill="#5c4a24"/>
+        <rect x="70" y="10" width="16" height="16" rx="2" fill="#5c4a24"/><rect x="70" y="30" width="16" height="16" rx="2" fill="#997429"/><rect x="70" y="50" width="16" height="16" rx="2" fill="#3d3421"/><rect x="70" y="70" width="16" height="16" rx="2" fill="#E8A33D"/><rect x="70" y="90" width="16" height="16" rx="2" fill="#1B222C"/>
+        <rect x="90" y="10" width="16" height="16" rx="2" fill="#1B222C"/><rect x="90" y="30" width="16" height="16" rx="2" fill="#5c4a24"/><rect x="90" y="50" width="16" height="16" rx="2" fill="#7a5f27"/><rect x="90" y="70" width="16" height="16" rx="2" fill="#997429"/><rect x="90" y="90" width="16" height="16" rx="2" fill="#3d3421"/>
+      </g>
+      <text x="130" y="60" font-family="IBM Plex Mono" font-size="10" fill="#5A6675">← 4 weeks · darker = quieter · click day → sessions</text>
+    </svg>
+  </section>
+
+  <section class="panel">
+    <h2>When do I burn money <span class="badge">hour × weekday</span></h2>
+    <svg viewBox="0 0 340 110" style="width:100%;height:110px;margin-top:12px">
+      <g font-family="IBM Plex Mono" font-size="8" fill="#5A6675">
+        <text x="30" y="105">6a</text><text x="110" y="105">10a</text><text x="190" y="105">2p</text><text x="270" y="105">6p</text><text x="0" y="20">M</text><text x="0" y="40">W</text><text x="0" y="60">F</text><text x="0" y="80">S</text>
+      </g>
+      <g>
+        <rect x="30" y="10" width="18" height="14" fill="#1B222C"/><rect x="52" y="10" width="18" height="14" fill="#5c4a24"/><rect x="74" y="10" width="18" height="14" fill="#997429"/><rect x="96" y="10" width="18" height="14" fill="#E8A33D"/><rect x="118" y="10" width="18" height="14" fill="#997429"/><rect x="140" y="10" width="18" height="14" fill="#5c4a24"/><rect x="162" y="10" width="18" height="14" fill="#3d3421"/><rect x="184" y="10" width="18" height="14" fill="#7a5f27"/><rect x="206" y="10" width="18" height="14" fill="#5c4a24"/><rect x="228" y="10" width="18" height="14" fill="#1B222C"/>
+        <rect x="30" y="30" width="18" height="14" fill="#3d3421"/><rect x="52" y="30" width="18" height="14" fill="#7a5f27"/><rect x="74" y="30" width="18" height="14" fill="#E8A33D"/><rect x="96" y="30" width="18" height="14" fill="#997429"/><rect x="118" y="30" width="18" height="14" fill="#5c4a24"/><rect x="140" y="30" width="18" height="14" fill="#3d3421"/><rect x="162" y="30" width="18" height="14" fill="#5c4a24"/><rect x="184" y="30" width="18" height="14" fill="#997429"/><rect x="206" y="30" width="18" height="14" fill="#3d3421"/><rect x="228" y="30" width="18" height="14" fill="#1B222C"/>
+        <rect x="30" y="50" width="18" height="14" fill="#1B222C"/><rect x="52" y="50" width="18" height="14" fill="#3d3421"/><rect x="74" y="50" width="18" height="14" fill="#5c4a24"/><rect x="96" y="50" width="18" height="14" fill="#7a5f27"/><rect x="118" y="50" width="18" height="14" fill="#3d3421"/><rect x="140" y="50" width="18" height="14" fill="#1B222C"/><rect x="162" y="50" width="18" height="14" fill="#1B222C"/><rect x="184" y="50" width="18" height="14" fill="#3d3421"/><rect x="206" y="50" width="18" height="14" fill="#1B222C"/><rect x="228" y="50" width="18" height="14" fill="#1B222C"/>
+        <rect x="30" y="70" width="18" height="14" fill="#5c4a24"/><rect x="52" y="70" width="18" height="14" fill="#997429"/><rect x="74" y="70" width="18" height="14" fill="#7a5f27"/><rect x="96" y="70" width="18" height="14" fill="#3d3421"/><rect x="118" y="70" width="18" height="14" fill="#1B222C"/><rect x="140" y="70" width="18" height="14" fill="#1B222C"/><rect x="162" y="70" width="18" height="14" fill="#3d3421"/><rect x="184" y="70" width="18" height="14" fill="#5c4a24"/><rect x="206" y="70" width="18" height="14" fill="#997429"/><rect x="228" y="70" width="18" height="14" fill="#E8A33D"/>
+      </g>
+    </svg>
+    <p style="font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:6px">morning peaks weekdays · Saturday-evening spike = this project</p>
+  </section>
+</div>
+
+<div class="grid2">
+  <section class="panel">
+    <h2>Pareto — spend concentration
+      <div class="sw"><button class="on" data-show="curve">curve</button><button data-show="tbl">table</button></div>
+    </h2>
+    <div data-variant="curve">
+    <svg viewBox="0 0 340 130" style="width:100%;height:130px;margin-top:10px">
+      <g stroke="#1B222C"><line x1="30" y1="5" x2="30" y2="115"/><line x1="30" y1="115" x2="335" y2="115"/></g>
+      <path d="M30,115 C60,40 100,22 335,8" fill="none" stroke="#E8A33D" stroke-width="2"/>
+      <line x1="90" y1="115" x2="90" y2="30" stroke="#4FC3D9" stroke-dasharray="3 4"/>
+      <g font-family="IBM Plex Mono" font-size="9" fill="#5A6675"><text x="60" y="127">top 20% of turns</text><text x="96" y="40" fill="#4FC3D9">= 73% of spend</text></g>
+    </svg>
+    </div>
+    <div data-variant="tbl" style="display:none;margin-top:14px;color:var(--faint);font-family:var(--mono);font-size:12px">decile table: turns share vs $ share</div>
+  </section>
+
+  <section class="panel">
+    <h2>Budget & forecast <span class="badge">⚑ set in Settings</span></h2>
+    <div style="margin-top:14px">
+      <div class="hb" style="grid-template-columns:90px 1fr 110px">
+        <span class="lbl">July MTD</span>
+        <div class="rail" style="height:12px"><div class="fill" style="width:41%"></div></div>
+        <span class="val">$122 / $300</span>
+      </div>
+      <svg viewBox="0 0 340 90" style="width:100%;height:90px;margin-top:12px">
+        <line x1="0" y1="20" x2="340" y2="20" stroke="#E05252" stroke-dasharray="4 4" opacity=".6"/>
+        <path d="M10,80 L60,72 L110,55" fill="none" stroke="#E8A33D" stroke-width="2"/>
+        <path d="M110,55 C180,38 260,30 330,26" fill="none" stroke="#E8A33D" stroke-width="1.5" stroke-dasharray="2 4"/>
+        <path d="M110,55 C180,44 260,42 330,40 L330,12 C260,18 180,28 110,55 Z" fill="#E8A33D" opacity=".12"/>
+        <g font-family="IBM Plex Mono" font-size="9" fill="#5A6675"><text x="4" y="14" fill="#E05252">$300 cap</text><text x="230" y="60">proj. $268–$317</text></g>
+      </svg>
+      <p style="font-family:var(--mono);font-size:11px;color:var(--warn);margin-top:6px">⚠ upper band crosses cap around Jul 27 at current pace</p>
+    </div>
+  </section>
+</div>
+
+<div class="grid2">
+  <section class="panel">
+    <h2>Rolling efficiency
+      <div class="sw"><button class="on" data-show="l1">$/day 7d-MA</button><button data-show="l2">tokens per $</button><button data-show="l3">cache trend</button></div>
+    </h2>
+    <div data-variant="l1"><svg viewBox="0 0 340 110" style="width:100%;height:110px;margin-top:10px"><polyline points="5,90 50,86 95,80 140,70 185,64 230,50 275,34 335,18" fill="none" stroke="#E8A33D" stroke-width="2"/></svg></div>
+    <div data-variant="l2" style="display:none;margin-top:14px;color:var(--faint);font-family:var(--mono);font-size:12px">output tokens per $ over time — the deflator</div>
+    <div data-variant="l3" style="display:none;margin-top:14px;color:var(--faint);font-family:var(--mono);font-size:12px">weekly cache hit-rate line</div>
+  </section>
+
+  <section class="panel">
+    <h2>Gate pass rate per week <span class="badge">habits</span></h2>
+    <svg viewBox="0 0 340 110" style="width:100%;height:110px;margin-top:10px">
+      <line x1="0" y1="15" x2="340" y2="15" stroke="#1B222C"/>
+      <polyline points="10,70 90,62 170,55 250,38 330,30" fill="none" stroke="#55B87A" stroke-width="2"/>
+      <g font-family="IBM Plex Mono" font-size="9" fill="#5A6675"><text x="2" y="12">100%</text><text x="240" y="55" fill="#55B87A">84% ▲</text></g>
+    </svg>
+    <p style="font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:6px">V1 (edit-without-verify) drives most failures — trending down</p>
+  </section>
+</div>
+
+</main>
+<footer>local-first · reading ~/.claude/projects · last scan 13:52 · 21 transcripts</footer>
+<script>
+document.querySelectorAll('.sw, .seg').forEach(g=>{g.addEventListener('click',e=>{
+  const b=e.target.closest('button'); if(!b)return;
+  g.querySelectorAll('button').forEach(x=>x.classList.remove('on')); b.classList.add('on');
+  const show=b.dataset.show; if(show){const p=b.closest('.panel')||document;
+    p.querySelectorAll('[data-variant]').forEach(v=>v.style.display = v.dataset.variant===show?'':'none');}
+});});
+</script>
+</body>
+</html>
