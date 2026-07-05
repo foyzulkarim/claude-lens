@@ -38,6 +38,9 @@ cp .env.example .env
 
 Edit `.env` and set `CLAUDE_DIR` to your Claude data directory (defaults to `~/.claude`).
 
+Important: If ~/.claude does not work in your environment, use the absolute path. You can find this by running echo $HOME/.claude in your terminal.
+Example: CLAUDE_DIR="/Users/foyzul/.claude"
+
 ```bash
 node server.js
 ```
