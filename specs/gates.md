@@ -1,13 +1,15 @@
-# Claude Lens — Best-Practice Gates (V1)
+# Claude Lens — Best-Practice Gates (initial gate set)
 
-Deterministic rules evaluated over the canonical `parseSession()` output (`turns[]`, `calls[]`) plus a filesystem check of the project dir. Fixed built-in set for V1 — not pluggable. All gates are transcript-only (🟢); no cost capture required.
+**Terminology (read first — "V1"/"V2" are overloaded):** gate IDs (**V1, V2, P3, C3, K2, E1, E2**) are check identifiers and have nothing to do with product versions. When a product version is meant, this doc says "product V1" (the legacy app) or "product V2" (this spec generation). The initial set has **six gate IDs across five checks** — E1 and E2 share one check with three outcomes, which is also why only four checks appear in the constants table (gates V1 and P3 are threshold-free).
+
+Deterministic rules evaluated over the canonical `parseSession()` output (`turns[]`, `calls[]`) plus a filesystem check of the project dir. Fixed built-in set for now — not pluggable. All gates are transcript-only (🟢); no cost capture required.
 
 Each gate emits: `{ gateId, status: pass|warn|fail, evidence: [{turnN?, callId?, filePath?, detail}] }`. `turnN` is present for the turn-scoped gates (V1, V2, P3, C3, K2) and their evidence deep-links to Turn Inspector (`/session/:id/turn/:n`). **E1/E2 is session-scoped**: its evidence is a filesystem check with no `turnN`/`callId` (`filePath` + `detail` only) and does not deep-link to a turn — consumers (Report Card UI, Dashboard gate feed) must not assume evidence is turn-keyed. Session score = weighted pass rate shown on the Report Card (Session Detail).
 
 **Shared preprocessing (applies to every gate):**
 - Dedup API calls by `message.id` before any counting.
 - "Edit calls" = tool_use with name `Edit` or `Write`. "Command calls" = name `Bash`.
-- Exclude `isSidechain: true` calls from V1 gates (subagent behavior isn't the user's prompting habit). Revisit in V2.
+- Exclude `isSidechain: true` calls from all gates in this set (subagent behavior isn't the user's prompting habit). Revisit when sidechain gate coverage lands (see deferred list).
 - A "turn" = calls grouped by `promptId`.
 
 ---
@@ -50,7 +52,7 @@ Each gate emits: `{ gateId, status: pass|warn|fail, evidence: [{turnN?, callId?,
 **Rule:** For each call with `cache_creation_input_tokens > K2_SPIKE` tokens, run the cause classifier (already built for Cache Lab):
 1. first call of session → explained
 2. `model` differs from previous call → explained (model switch)
-3. previous call's `cache_read` cliff (drop > 50% vs its predecessor) → explained (compaction)
+3. the previous call's `cache_read` is more than 50% lower than the call immediately before it → explained (compaction)
 4. otherwise → **fail** (unexplained invalidation)
 **Default:** `K2_SPIKE = 10000`.
 **Evidence:** the call, spike size, classifier trace (which checks ran and their values).
@@ -85,6 +87,6 @@ Each gate emits: `{ gateId, status: pass|warn|fail, evidence: [{turnN?, callId?,
 | `K2_SPIKE` | 10000 tokens | K2 |
 | `E2_MAX_CHARS` / `E2_MAX_LINES` | 4000 / 60 | E2 |
 
-## Deferred to V2+ (recorded so they're not re-litigated)
+## Deferred to later gate sets (recorded so they're not re-litigated)
 
 V3 unverified session end · V4 pasted-error ping-pong · P1 big-bang without plan · P2 plan overhead · C1 context ceiling · C2 compaction cost · C4 re-read churn · C5 session sprawl · K1 cache hit floor · K3 model/task mismatch · E3 rule-violation grep · S1/S2 prompt-specificity proxies · pluggable `gates/*.js` registry · sidechain gate coverage.

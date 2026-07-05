@@ -4,7 +4,7 @@ Companion to `claude-lens-architecture.md` (how), `claude-lens-pages.md` (what),
 
 **How to use this doc:** each numbered task below becomes one GitHub issue, filed with its phase label (`phase-0` … `phase-5`). Issues are implemented sequentially in the order listed unless the dependency notes say otherwise. When starting a phase, re-read that phase's section here plus the spec sections it references. Check off tasks here as their issues close, so this file always shows where we are.
 
-**Status legend:** `[ ]` not started · `[~]` in progress · `[x]` done
+**Status legend:** `[ ]` not started · `[~]` in progress · `[x]` done · `[.]` delivered-as-spec (no implementation issue needed)
 
 ---
 
@@ -27,10 +27,10 @@ Phases 0–3 are strictly sequential. Within Phase 4, pages can proceed in the l
 
 Everything here unblocks later phases; none of it is throwaway.
 
-- [x] **#P0-1 — `gates.md` written** — done (six V1 gates, thresholds, Report Card scoring).
+- [.] **#P0-1 — `gates.md` written** — delivered in PR #5 (six gate IDs, thresholds, Report Card scoring).
 - [ ] **#P0-2 — Move V1 app into `legacy/`**
-  Move the current V1 (`index.html`, `server.js`, `llm-cache-cost.html`, `images/`, and V1-specific bits of `package.json`) into `legacy/`. Root `README.md` gets a one-line pointer. V1 must still run from `legacy/` (`node legacy/server.js`).
-  *Acceptance:* repo root is clean for the V2 scaffold; V1 still boots from `legacy/`.
+  Move the **entire** V1 app into `legacy/`: `index.html`, `server.js`, `llm-cache-cost.html`, `images/`, `README.md`, `CHANGELOG.md`, `suggestions.md`, `.env.example`, `package.json`, `package-lock.json` — the whole current package is V1; the V2 scaffold starts a fresh root `package.json` in #P1-1. New root `README.md` gets a one-line pointer to `legacy/`. V1 must still run from `legacy/` (`node legacy/server.js`).
+  *Acceptance:* repo root contains only `specs/`, `legacy/`, and repo config; V1 still boots from `legacy/`.
 - [ ] **#P0-3 — Anonymized JSONL fixtures**
   Produce anonymized fixtures from real `~/.claude/projects` data covering: a multi-turn transcript with sidechains, model switches, cache TTL fields (`cache_creation.ephemeral_5m_input_tokens` / `ephemeral_1h_input_tokens`), malformed lines, and a partial trailing line; plus the three premium file types — dot-separated names per architecture §4: `<uuid>.cost.jsonl`, `<uuid>.turn-boundaries.jsonl`, and `cost-log.jsonl` (note: lives at `~/.claude/cost-log.jsonl`, outside the projects root). Land under `test/fixtures/` with a README describing what each fixture exercises. Every parser/metrics/gates test depends on these.
   *Acceptance:* fixtures contain no real prompt text, paths, or identifiers; each edge case above is represented and documented; fixture filenames match the real capture output exactly.
@@ -65,7 +65,7 @@ Target layout is architecture §3 exactly. No feature code — just a booting sk
   Storybook (Vite builder) wired to the client root as a devDependency: Tailwind styles loaded, dark/light theme toggle matching the dashboard aesthetic. Dev workbench only — no test-runner/play functions for now (revisit if UI regressions bite). Stories and `.storybook/` never enter the published `dist/`.
   *Acceptance:* `npm run storybook` renders a sample story with Tailwind applied in both themes.
 - [ ] **#P1-5 — Linting + formatting**
-  One tool across all three TS roots, wired into CI (#P1-3) and an npm script. Decide at task start: Biome (single fast tool, fits the minimal-tooling ethos) vs ESLint + Prettier (bigger ecosystem). Config lives at repo root; `legacy/` excluded.
+  One tool across all three TS roots, wired into CI (#P1-3) and an npm script. **Default: Biome** (single fast tool for lint+format, fits the minimal-tooling ethos); switch to ESLint + Prettier at task start only if a concretely needed rule/plugin is missing — record either outcome in the decisions log. Config lives at repo root; `legacy/` excluded.
   *Acceptance:* `npm run lint` and `npm run format:check` pass on the skeleton; a deliberately misformatted file fails CI.
 
 **Exit criteria:** `npx .` from a fresh clone boots the skeleton on one port; Storybook runs; lint enforced; CI green.
@@ -139,7 +139,11 @@ One vertical slice proving every layer. Nothing page-specific begins until this 
 
 Pages are cheap by design: filter state + preset `MetricsQuery`s + layout. The HTML mockups in `specs/pages/` are the visual acceptance targets; `claude-lens-pages.md` defines each page's sections, deps, and tier behavior — treat its section tables as the per-issue checklist. Order below front-loads shared components; after #P4-2, remaining pages could parallelize, but sequential is fine.
 
-**Standing rule for every page task (#P4-2, #P4-4 … #P4-16):** acceptance includes a Cypress smoke spec — the route renders its key sections from fixture data and at least one drill-link navigates to the right filtered destination. Component-state coverage belongs in Storybook stories, not Cypress.
+**Standing rules for the 11 page tasks** (#P4-2 Dashboard, #P4-4 Sessions, #P4-5 Session Detail, #P4-6 Turn Inspector, #P4-7 Projects, #P4-8 Models, #P4-9 Cache Lab, #P4-10 Trends, #P4-14 Data Health, #P4-15 Settings, #P4-16 Explore — the other Phase 4 tasks are engine/feature work, not pages):
+
+1. Acceptance includes a Cypress smoke spec — the route renders its key sections from fixture data and at least one drill-link navigates to the right filtered destination. Component-state coverage belongs in Storybook stories, not Cypress.
+2. **The pages spec's section table is the binding section list; the mockup is the visual reference, not an exhaustive contract.** Six known spec-vs-mockup gaps (mockups predate the spec): dashboard — failed-work stat; sessions — compare mode + tags; session-detail — tool mix panel/timeline; cache-lab — baseline weight trend; models — throughput + entrypoint breakdown; trends — stacked weekly bars. Implement these from the spec table.
+3. "Matches the mockup" means: manual visual review sign-off against `specs/pages/X.html` on real data, recorded by flipping the task checkbox — plus the smoke spec green. No automated visual regression (consciously skipped).
 
 - [ ] **#P4-1 — Shared dashboard primitives**
   `components/`: stat-card (delta + sparkline), data-table (TanStack Table + virtualization), tier-badge, locked-card ("Set up cost capture" CTA), empty-state, chip. Tailwind, no component library. Built in Storybook first.
@@ -151,7 +155,7 @@ Pages are cheap by design: filter state + preset `MetricsQuery`s + layout. The H
   `GET /api/search-index` + MiniSearch client integration; results deep-link to Session Detail at the matching turn.
   *Acceptance:* search-as-you-type over full history with no server round-trip per keystroke.
 - [ ] **#P4-4 — Sessions page** *(§2)*
-  Table (sortable, tier-dependent columns), timeline/gantt toggle, efficiency scatter with regression, cost histogram with percentile markers, compare mode. Tags column stubs until #P4-15.
+  Table (sortable, tier-dependent columns), timeline/gantt toggle, efficiency scatter with regression, cost histogram with percentile markers, compare mode. Tags column stubs until #P4-15. Tier-dependent columns (lines ±, observed $, ctx %) light up when C/L files are present — pages spec §2 row 3.
   *Acceptance:* matches `sessions.html`; drill-in from Dashboard lands filtered.
 - [ ] **#P4-5 — Session Detail page** *(§3)*
   All sections except Report Card (lands in #P4-12): header, cumulative timeline, per-turn bars, turn table, turn-vs-history distribution, cache strip, tool mix, prompt list, workflow funnel, token funnel, context composition. Needs `GET /api/sessions/:id`.
@@ -179,7 +183,7 @@ Pages are cheap by design: filter state + preset `MetricsQuery`s + layout. The H
   *Acceptance:* evidence links land on the exact turn in Turn Inspector.
 - [ ] **#P4-13 — Premium tier: C/B/L parsers + upgrades**
   `parse-premium.ts`; per-session tier detection wiring through to `TierFlags`; every 🟡 upgrade path lights up: observed $, intra-day resolution, true ctx %, waterfall widths from `api_duration_ms`, Δlines/api-vs-wall columns, latency/throughput on Models, context growth curves on Cache Lab; drift badge on Session Detail.
-  *Acceptance:* fixture set with C/B/L present flips tier badges and values; transcript-only sessions unaffected; tier-upgrade component states (🟡 columns lighting up, drift badge) covered by Storybook stories — these are hard to reproduce on demand with real data.
+  *Acceptance:* verified upgrade-by-upgrade, not as one blob — run the Cypress harness twice (T-only fixture set, then T+C/B/L) and confirm each listed 🟡 upgrade flips: value changes where expected, tier badge updates, transcript-only sessions unaffected. Tier-upgrade component states (🟡 columns lighting up, drift badge) additionally covered by Storybook stories — these are hard to reproduce on demand with real data.
 - [ ] **#P4-14 — Data Health page + `/api/health`** *(§9)*
   Dedup stats, pricing coverage, scan coverage, parse errors; reconciliation and boundary/capture-gap sections (🔴, needs #P4-13).
   *Acceptance:* matches `data-health.html`; malformed-line counters from #P2-2 surface here.
@@ -196,7 +200,7 @@ Pages are cheap by design: filter state + preset `MetricsQuery`s + layout. The H
   The journeys that span pages, run against the fixture-root harness from #P3-5: prompt search → Session Detail at the matching turn; drill-anywhere from a Dashboard chart slice → Sessions filtered to that slice; permalink copy → paste reproduces the exact view; CSV export downloads; gate evidence link → Turn Inspector at the exact turn.
   *Acceptance:* all five flows green in CI.
 
-**Exit criteria:** all 11 pages match their mockups on real data; §13 test priorities 1–4 all green; page smoke specs and #P4-18 flows green in CI.
+**Exit criteria:** all 11 page tasks signed off per standing rule 3 (manual mockup review on real data + smoke spec green); §13 test priorities 1–4 all green; #P4-18 flows green in CI.
 
 ---
 
@@ -226,6 +230,8 @@ Pages are cheap by design: filter state + preset `MetricsQuery`s + layout. The H
 
 ## Decisions log
 
+Current as of the dated rows; re-scan at each phase exit and prune rows that have become moot.
+
 | Date | Decision | Where reflected |
 |---|---|---|
 | 2026-07-06 | V1 app moves to `legacy/`, stays runnable | #P0-2 |
@@ -234,4 +240,6 @@ Pages are cheap by design: filter state + preset `MetricsQuery`s + layout. The H
 | 2026-07-06 | Cypress for E2E only, booting built app via `--roots test/fixtures`; component states stay in Storybook (no duplication) | #P3-5, Phase 4 standing rule, #P4-18 |
 | 2026-07-06 | Review fixes (PR #5): premium filenames are **dot-separated** (`<uuid>.cost.jsonl` — verified against real `~/.claude/projects` files and V1 `server.js`); `cost-log.jsonl` lives at `~/.claude/`, not under the projects root; global filters use the **query string**, never URL hash; gates evidence `turnN` is optional — E1/E2 is session-scoped | architecture §1/§4, pages §0/§7, gates §1/E1-E2, #P0-3 |
 | 2026-07-06 | Lint/format enforced from Phase 1 (Biome vs ESLint+Prettier decided at #P1-5 start); LICENSE + runtime pinning in Phase 0; GitHub labels/milestones/issue template scaffolded in Phase 0 | #P0-5, #P0-6, #P1-5 |
+| 2026-07-06 | Full PR #5 review remediation: mockups carry MOCKUP disclaimers with shared chrome extracted to `specs/pages/_chrome.css/.js`; **pages spec wins over mockups on section presence** (6 known mockup gaps listed in the Phase 4 standing rules); gates doc disambiguates gate IDs from product versions; `.serena/project.yml` trimmed + populated; #P1-5 defaults to Biome; model ID strings in mockups (`claude-opus-4-8`, `claude-sonnet-5`, `claude-fable-5`) confirmed as real Claude Code model IDs | mockups, gates.md, plan Phase 4 rules, `.serena/` |
+| 2026-07-06 | Review findings **adjudicated and rejected** (recorded so they're not re-raised): M11 mid-file `---` rules (frontmatter is only parsed at byte 0 — a mid-file `---` is a plain horizontal rule to any compliant parser); L3 `[--no-open]` bracket notation (standard optional-flag convention); L12 constraints-table granularity (already a two-column constraint/consequence table) | — |
 | 2026-07-06 | **Consciously skipped** (recorded so they're not re-litigated): CI OS/Node matrix (single OS/Node; cross-platform checked manually in Phase 5) · automated npx-tarball smoke in CI (manual in #P5-2) · npm provenance/OIDC + Dependabot · release automation (manual v0.1.0) · telemetry decision doc · global Definition-of-Done rule · a11y addon/audit · visual regression · Docker/staging · feature flags/i18n/APM · CONTRIBUTING/CODEOWNERS | — |

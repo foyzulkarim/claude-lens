@@ -50,7 +50,7 @@ Claude Lens is a **local-first analytics dashboard** for Claude Code usage. One 
 | `open` | Launch browser on boot (`--no-open` to suppress) |
 | `pino-pretty` | Terminal log formatting (pino ships with Fastify) |
 
-Deliberately excluded: **chokidar** (polling replaces watching, §5.2), **any database driver** (§6), **zod** (we own both sides of the API; ingest validates by hand because malformed lines are counters, not errors), **commander/yargs** (CLI surface is `--port`, `--no-open`, `--roots`; parse `process.argv` directly), server-side date libraries (bucket on epoch ms; `Intl` for labels).
+Deliberately excluded: **chokidar** (§5.2), **any database driver** (§6), **zod** (we own both sides of the API; ingest validates by hand because malformed lines are counters, not errors), **commander/yargs** (CLI surface is `--port`, `--no-open`, `--roots`; parse `process.argv` directly), server-side date libraries (bucket on epoch ms; `Intl` for labels).
 
 ### Client (devDependencies — compiled into static assets)
 
@@ -118,7 +118,7 @@ claude-lens/
 │   │   └── distributions.ts  # percentiles, histograms, pareto
 │   ├── gates/
 │   │   ├── engine.ts         # run gates per session; score
-│   │   └── gates/            # one file per V1 gate (six — see gates.md)
+│   │   └── gates/            # one file per gate (initial set of six; later gates from gates.md's deferred list land here too)
 │   ├── routes/
 │   │   ├── metrics.ts        # POST /api/metrics
 │   │   ├── sessions.ts       # list, detail, compare
@@ -315,13 +315,13 @@ Covers every ⚑N item in the page spec except the optional hostname field in co
 
 ## 11. Frontend architecture
 
-- **Routing:** wouter, history mode (we own the server, so SPA fallback is trivial). Global filters live in the **query string** (`/sessions?range=7d&project=x&model=sonnet`) — this satisfies the spec's persistence/permalink requirement with cleaner URLs than hash routing. `filters/` owns URL ↔ state sync; filter state survives page navigation.
-- **Data:** every remote read goes through TanStack Query with keys from one factory (`api/`). The WS handler invalidates by key prefix. Identical `MetricsQuery`s across chart instances dedupe automatically.
+- **Routing:** wouter, history mode (we own the server, so SPA fallback is trivial). Global filters live in the **query string** (`/sessions?range=7d&project=claude-lens&model=claude-sonnet-5`) — this satisfies the spec's persistence/permalink requirement with cleaner URLs than hash routing. `filters/` owns URL ↔ state sync; filter state survives page navigation.
+- **Data:** every remote read goes through TanStack Query with keys from one factory (`api/`). The WS handler invalidates by key prefix. Identical `MetricsQuery`s across chart instances dedupe automatically — TanStack Query dedupes by query key, so the key factory must serialize the full query (measures, dimensions, grain, range, filters, compare, smoothing, mode) into the key.
 - **Charts:** one generic chart component (`charts/`) that takes `Series[]` + a chart-family option builder (timeseries / heatmap / calendar / scatter / pareto / funnel / distribution). Unit switcher, compare ghost, smoothing toggle, granularity control, and click-to-drill (→ Sessions filtered to the clicked slice) are implemented in this layer once and appear on every chart for free.
 - **Tables:** TanStack Table headless + shared `data-table` component; virtualized where rows can reach thousands (turn table, prompt list).
 - **Search:** index fetched once from `/api/search-index`, MiniSearch runs in-browser — search-as-you-type without server round-trips. Result rows deep-link to Session Detail at the matching turn.
 - **Tier awareness:** components render 🟢/🟡/🔴 states from per-session/fleet tier flags in API payloads — `locked-card` with "Set up cost capture" CTA for 🔴, upgraded columns/values lighting up when C/B/L present (🟡).
-- **Styling:** Tailwind; dense-data-dashboard aesthetic; ~10 hand-built primitives (stat-card with delta + sparkline, filter bar, chip, tier badge, empty state, locked card).
+- **Styling:** Tailwind; dense-data-dashboard aesthetic; seven hand-built primitives (stat-card with delta + sparkline, data-table, filter bar, chip, tier badge, empty state, locked card).
 
 ## 12. Build, dev, distribution
 
@@ -339,7 +339,7 @@ Highest-value, in order:
 3. **Metrics engine:** grain bucketing, period-over-period alignment, percentiles, computed-vs-observed labeling.
 4. **Gate engine** per `gates.md` specs.
 
-UI testing is manual against real data initially; the mockup HTML pages define the visual acceptance target.
+UI testing: Storybook stories cover component states, Cypress covers the E2E smoke and cross-page flows (see the build plan), and manual review against the mockup HTML pages remains the final visual check — no automated visual regression (consciously skipped, see plan decisions log).
 
 ## 14. Build order (suggested for implementation agent)
 

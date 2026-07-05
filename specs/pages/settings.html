@@ -1,4 +1,13 @@
 <!DOCTYPE html>
+<!--
+  MOCKUP — visual acceptance target only.
+  Layout, hierarchy, and section presence are the binding contract for the
+  matching page task in specs/claude-lens-plan.md (Phase 4).
+  Inline styles, hardcoded numbers/session IDs, and decorative SVGs are
+  SAMPLE DATA, not implementation contracts.
+  Where specs/claude-lens-pages.md lists a section missing here, the spec wins.
+  Shared chrome lives in _chrome.css / _chrome.js.
+-->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -6,81 +15,7 @@
 <title>Claude Lens — Settings</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-<style>
-:root{--bg:#0E1116;--panel:#151A21;--panel-2:#11161D;--line:#232B36;--text:#E8EDF2;--muted:#8B98A9;--faint:#5A6675;
---money:#E8A33D;--cache:#4FC3D9;--bad:#E05252;--warn:#D9B44F;--good:#55B87A;
---mono:'IBM Plex Mono',monospace;--sans:'IBM Plex Sans',sans-serif;--r:6px}
-*{margin:0;padding:0;box-sizing:border-box}
-body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;line-height:1.45}
-a{color:inherit;text-decoration:none}
-.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
-header{display:flex;align-items:center;gap:14px;padding:14px 24px;border-bottom:1px solid var(--line)}
-.wordmark{font-family:var(--mono);font-weight:600;font-size:15px}.wordmark .lens{color:var(--cache)}
-nav{display:flex;gap:2px;margin-left:24px}
-nav a{padding:6px 10px;border-radius:var(--r);color:var(--muted);font-size:13px}
-nav a:hover{color:var(--text);background:var(--panel)}nav a.on{color:var(--text);background:var(--panel)}
-.tier{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:99px;padding:4px 10px}
-.tier b{color:var(--text);font-weight:500}
-/* global filter bar */
-.filters{display:flex;gap:10px;align-items:center;padding:12px 24px;border-bottom:1px solid var(--line);flex-wrap:wrap}
-.f{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:var(--r);padding:7px 12px;background:var(--panel-2);font-size:12px;cursor:pointer}
-.f:hover{border-color:#3A4656}
-.f .k{font-family:var(--mono);font-size:10px;letter-spacing:.08em;color:var(--faint);text-transform:uppercase}
-.f .v{color:var(--text)}.f .car{color:var(--faint);font-size:10px}
-.seg{display:flex;border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
-.seg button{background:var(--panel-2);border:0;color:var(--muted);font-family:var(--mono);font-size:11px;padding:7px 11px;cursor:pointer}
-.seg button.on{background:var(--panel);color:var(--text)}
-.seg button:hover:not(.on){color:var(--text)}
-.host{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:var(--r);padding:6px 10px}
-main{padding:16px 24px 32px;display:grid;gap:16px}
-.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px;min-width:0}
-.panel h2{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.panel h2 .goto{margin-left:auto;color:var(--faint);font-family:var(--mono);font-size:11px;letter-spacing:0;text-transform:none;font-weight:400}
-.panel h2 .goto:hover{color:var(--text)}
-/* chart-type switcher */
-.sw{display:flex;border:1px solid var(--line);border-radius:4px;overflow:hidden;margin-left:auto}
-.sw+ .goto{margin-left:12px!important}
-.sw button{background:transparent;border:0;color:var(--faint);font-family:var(--mono);font-size:10px;padding:3px 8px;cursor:pointer;text-transform:none;letter-spacing:0}
-.sw button.on{background:var(--panel-2);color:var(--text)}
-.sw button:hover:not(.on){color:var(--muted)}
-.badge{font-family:var(--mono);font-size:10px;letter-spacing:0;text-transform:none;font-weight:400;padding:1px 6px;border-radius:3px;border:1px solid var(--line);color:var(--muted)}
-.badge.computed{color:var(--money);border-color:rgba(232,163,61,.35)}
-.badge.premium{color:var(--cache);border-color:rgba(79,195,217,.35)}
-.badge.fail{color:var(--bad);border-color:rgba(224,82,82,.4)}
-.badge.warn{color:var(--warn);border-color:rgba(217,180,79,.4)}
-.badge.pass{color:var(--good);border-color:rgba(85,184,122,.4)}
-.delta{font-family:var(--mono);font-size:11px}.delta.up{color:var(--bad)}.delta.down{color:var(--good)}.delta.upgood{color:var(--good)}
-table{width:100%;border-collapse:collapse;margin-top:10px}
-th{font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--faint);text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);font-weight:600}
-td{padding:8px;border-bottom:1px solid var(--line);font-size:13px}
-tr:hover td{background:var(--panel-2);cursor:pointer}
-td.num,th.r{text-align:right}.money-cell{color:var(--money)}.cache-cell{color:var(--cache)}
-.mchip{font-family:var(--mono);font-size:10px;padding:1px 6px;border-radius:3px;border:1px solid var(--line);color:var(--muted)}
-.hbars{margin-top:12px;display:flex;flex-direction:column;gap:10px}
-.hb{display:grid;grid-template-columns:150px 1fr 70px;gap:10px;align-items:center;cursor:pointer}
-.hb .lbl{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.hb:hover .lbl{color:var(--text)}
-.hb .rail{height:8px;background:var(--panel-2);border-radius:99px;overflow:hidden}
-.hb .fill{height:100%;border-radius:99px;background:var(--money)}.hb .fill.c{background:var(--cache)}
-.hb .val{font-family:var(--mono);font-size:12px;text-align:right}
-.locked{position:relative;overflow:hidden}
-.locked .veil{position:absolute;inset:0;background:rgba(14,17,22,.72);backdrop-filter:blur(2px);display:flex;flex-direction:column;gap:8px;align-items:center;justify-content:center}
-.locked .veil p{color:var(--muted);font-size:12px}
-.locked .veil a{font-size:12px;color:var(--money);border:1px solid rgba(232,163,61,.4);border-radius:var(--r);padding:5px 12px}
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
-.statrow{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
-.stat{background:var(--panel);padding:14px 16px}
-.stat .k{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
-.stat .v{font-family:var(--mono);font-size:22px;font-weight:500;margin-top:4px;display:flex;align-items:baseline;gap:8px}
-.stat .v.money{color:var(--money)}.stat .v.cache{color:var(--cache)}
-.stat .sub{font-size:11px;color:var(--faint);margin-top:2px;font-family:var(--mono)}
-.gatecard{display:flex;gap:10px;padding:10px 4px;border-top:1px solid var(--line);align-items:flex-start}
-.gatecard .t{font-size:13px}.gatecard .t b{font-weight:500}
-.gatecard .w{font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:2px}
-footer{padding:0 24px 28px;color:var(--faint);font-family:var(--mono);font-size:11px}
-@media(max-width:980px){nav{display:none}.grid2,.grid3,.statrow{grid-template-columns:1fr}}
-</style>
+<link rel="stylesheet" href="_chrome.css">
 </head>
 <body>
 <header>
@@ -154,14 +89,8 @@ footer{padding:0 24px 28px;color:var(--faint);font-family:var(--mono);font-size:
 </div>
 
 </main>
+<!-- sample data: scan time and transcript count are filled by the implementation -->
 <footer>local-first · reading ~/.claude/projects · last scan 13:52 · 21 transcripts</footer>
-<script>
-document.querySelectorAll('.sw, .seg').forEach(g=>{g.addEventListener('click',e=>{
-  const b=e.target.closest('button'); if(!b)return;
-  g.querySelectorAll('button').forEach(x=>x.classList.remove('on')); b.classList.add('on');
-  const show=b.dataset.show; if(show){const p=b.closest('.panel')||document;
-    p.querySelectorAll('[data-variant]').forEach(v=>v.style.display = v.dataset.variant===show?'':'none');}
-});});
-</script>
+<script src="_chrome.js"></script>
 </body>
 </html>

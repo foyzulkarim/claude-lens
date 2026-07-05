@@ -1,4 +1,4 @@
-# Claude Lens — Pages, Sections & Data Dependencies (v2)
+# Claude Lens — Pages, Sections & Data Dependencies (V2)
 
 ## Data source legend
 
@@ -173,7 +173,8 @@ Any dimension × any measure is a valid chart — the pages below are the curate
 | Pricing table editor | P | 🟢 | |
 | Scan roots with labels (label = host/machine dimension) | fs | 🟢 | Multi-machine without new capture |
 | Budget & alert thresholds | ⚑N | 🟢 | |
-| Anomaly + gate thresholds | — | 🟢 | `gates.md` |
+| Gate thresholds (`V2_REPEAT`, `C3_MAX_CHARS`, `K2_SPIKE`, `E2_MAX_CHARS/LINES`) | — | 🟢 | `gates.md` |
+| Anomaly thresholds — the "expensive turn" detector feeding the Dashboard anomaly feed and Session Detail red bars; independent of gates | — | 🟢 | e.g. turn > N× user's median turn cost |
 | Saved views manager · tags manager | ⚑N | 🟢 | |
 | Cost-capture setup guide (+ optional hostname field for true multi-host capture ⚑N) | — | 🟢 enables 🔴 | |
 
