@@ -1,0 +1,27 @@
+---
+title: "#P4-1 — Shared dashboard primitives"
+labels: phase-4
+milestone: Phase 4 — Pages & features
+status: filed
+issue: 33
+url: https://github.com/foyzulkarim/claude-lens/issues/33
+---
+
+Task **#P4-1** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 4.
+
+## Summary
+The six shared dashboard primitives (stat-card, data-table, tier-badge, locked-card, empty-state, chip), built stories-first in Storybook — every Phase 4 page composes these.
+
+## Scope
+- `components/`: stat-card (delta + sparkline), data-table (TanStack Table + virtualization), tier-badge, locked-card ("Set up cost capture" CTA), empty-state, chip. Tailwind, no component library. Built in Storybook first.
+
+## Acceptance criteria
+- each primitive has stories covering its states (stat-card delta up/down/flat + sparkline, tier-badge 🟢/🟡/🔴, locked-card CTA, empty-state, chip active/inactive/removable, table loading/virtualized rows); visual check against the mockups' shared elements.
+
+## Dependencies
+- Depends on: P1-4 (Storybook — primitives are built stories-first); P3-5
+- Unblocks: P4-2
+
+## References
+- [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md)
+- [specs/claude-lens-architecture.md](../blob/main/specs/claude-lens-architecture.md) §11:324 (six primitives, hand-built, no component library)

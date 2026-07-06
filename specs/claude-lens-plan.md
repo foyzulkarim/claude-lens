@@ -28,23 +28,26 @@ Phases 0–3 are strictly sequential. Within Phase 4, pages can proceed in the l
 Everything here unblocks later phases; none of it is throwaway.
 
 - [.] **#P0-1 — `gates.md` written** — delivered in PR #5 (seven gate IDs across six checks, thresholds, Report Card scoring).
-- [ ] **#P0-2 — Move V1 app into `legacy/`**
-  Move the **entire** V1 app into `legacy/`: `index.html`, `server.js`, `llm-cache-cost.html`, `images/`, `README.md`, `CHANGELOG.md`, `suggestions.md`, `.env.example`, `package.json`, `package-lock.json` — the whole current package is V1; the V2 scaffold starts a fresh root `package.json` in #P1-1. New root `README.md` gets a one-line pointer to `legacy/`. V1 must still run from `legacy/` (`node legacy/server.js`).
-  *Acceptance:* repo root contains only `specs/`, `legacy/`, and repo config; V1 still boots from `legacy/`.
+- [ ] **#P0-2 — Move V1 app into legacy/**
+  Move the **entire** V1 app into `legacy/`: `index.html`, `server.js`, `llm-cache-cost.html`, `images/`, `README.md`, `CHANGELOG.md`, `suggestions.md`, `.env.example`, `package.json`, `package-lock.json` — the whole current package is V1. Nothing code-related stays at root; the V2 scaffold will create a fresh root `package.json` in #P1-1. New root `README.md` gets a one-line pointer to `legacy/`. V1 must still run from `legacy/` (`node legacy/server.js`).
+  *Acceptance:* no V1 code or assets remain at root; root contains only `specs/`, `legacy/`, and repo-level config; V1 still boots from `legacy/`.
+- [ ] **#P0-7 — Data model & contracts spec** *(added 2026-07-06; ordered here — before #P0-3 — because the field investigation and the fixture cut are the same pass over real data)*
+  Investigate real `~/.claude/projects` JSONL (plus the three premium capture files) and write `specs/claude-lens-data-model.md` — the field-level contract the architecture doc names but never defines. Contents: (1) source inventory of observed raw record shapes with anonymized examples; (2) `CompactCall` field-for-field — type, source JSON path, nullability, tier; (3) `Turn`/`Session` derivation rules incl. edge cases (sidechains, mid-session model switch, compaction); (4) `TierFlags` + premium file schemas; (5) measure catalog with formulas and dimension catalog with source fields; (6) API envelopes (`Series`, sessions list/detail, health, `config.json`/`local.json`); (7) behavior contracts (dedupe, malformed/truncation handling, time bucketing & timezone, query-key serialization, rounding). Design only — no implementation; #P2-1 implements this doc verbatim and Phase 4 pages cite its catalogs.
+  *Acceptance:* `specs/claude-lens-data-model.md` merged; every type named in architecture §3/§5/§8 is defined field-for-field with source provenance; each measure/dimension in pages.md's Data source legend (lines 19-20) has a formula or source field; every claim about raw data cites an observed example; #P2-1's acceptance re-pointed to this doc.
 - [ ] **#P0-3 — Anonymized JSONL fixtures**
-  Produce anonymized fixtures from real `~/.claude/projects` data covering: a multi-turn transcript with sidechains, model switches, cache TTL fields (`cache_creation.ephemeral_5m_input_tokens` / `ephemeral_1h_input_tokens`), malformed lines, and a partial trailing line; plus the three premium file types — dot-separated names per architecture §4: `<uuid>.cost.jsonl`, `<uuid>.turn-boundaries.jsonl`, and `cost-log.jsonl` (note: lives at `~/.claude/cost-log.jsonl`, outside the projects root). Land under `test/fixtures/` with a README describing what each fixture exercises. Every parser/metrics/gates test depends on these.
+  Produce anonymized fixtures from real `~/.claude/projects` data covering: a multi-turn transcript with sidechains, model switches, cache TTL fields (`cache_creation.ephemeral_5m_input_tokens` / `ephemeral_1h_input_tokens`), malformed lines, and a partial trailing line; plus the three premium file types — dot-separated names per architecture §4: `<uuid>.cost.jsonl`, `<uuid>.turn-boundaries.jsonl`, and `cost-log.jsonl` (note: lives at `~/.claude/cost-log.jsonl`, outside the projects root). Land under `test/fixtures/` with a README describing what each fixture exercises. Every Phase 2 parser/metrics test depends on these; gate-scenario fixtures (per-gate pass/fail transcripts, error tool_results for the failed-work stat) are added later by #P4-11/#P4-2 under the same README convention.
   *Acceptance:* fixtures contain no real prompt text, paths, or identifiers; each edge case above is represented and documented; fixture filenames match the real capture output exactly.
 - [ ] **#P0-4 — npm name check**
   Verify `claude-lens` availability on npm (and decide fallback name if taken). Reserve with a placeholder publish if needed. Cheap now, painful in Phase 5.
   *Acceptance:* package name decided and secured.
 - [ ] **#P0-5 — LICENSE + repo hygiene**
-  Choose and commit a license (MIT unless decided otherwise); add `engines` field (Node ≥ 18), `.nvmrc`, and `packageManager` so contributors and CI agree on runtime versions.
-  *Acceptance:* LICENSE at repo root; `npm pkg get engines packageManager` returns the pinned values.
+  Choose and commit a license (MIT unless decided otherwise); add `.nvmrc` so contributors and CI agree on the Node version. The `engines` and `packageManager` pins move to #P1-1 — between #P0-2 and #P1-1 there is no root `package.json` to carry them.
+  *Acceptance:* LICENSE at repo root; `.nvmrc` present.
 - [ ] **#P0-6 — GitHub project scaffolding**
-  Create the `phase-0`…`phase-5` labels, one milestone per phase, and an issue template that links back to this plan doc and carries the task ID + acceptance criteria structure. This is what makes "tasks become issues" real. *(The static issue template was later superseded by the `/create-issue` skill — see decisions log 2026-07-06.)*
-  *Acceptance:* labels + milestones exist; a test issue filed from the template renders correctly and auto-links here.
+  Create the `phase-0`…`phase-5` labels and one milestone per phase. Issue creation is handled by the existing `/create-issue` skill (`.claude/skills/create-issue/`), so no static issue template is required. Labels and milestones must exist **before** `.claude/skills/create-issue/scripts/publish.sh` files the drafted issues — `gh issue create` fails if a label or milestone doesn't exist yet.
+  *Acceptance:* labels + milestones exist and match the plan (`phase-0`…`phase-5` + six phase milestones); `/create-issue` skill remains the issue-creation path; no static GitHub issue template is added.
 
-**Exit criteria:** repo root empty of V1; fixtures merged; package name locked; license committed; issue tracking scaffolded.
+**Exit criteria:** repo root empty of V1; data-model spec merged; fixtures merged; package name locked; license committed; issue tracking scaffolded.
 
 ---
 
@@ -53,14 +56,14 @@ Everything here unblocks later phases; none of it is throwaway.
 Target layout is architecture §3 exactly. No feature code — just a booting skeleton.
 
 - [ ] **#P1-1 — Scaffold three-root TS package**
-  `shared/`, `server/`, `client/` per §3; strict TypeScript everywhere; production deps limited to the §2 server list; client deps as devDependencies.
-  *Acceptance:* `tsc --noEmit` passes across all three roots; dependency lists match §2 (deviations require editing the architecture doc first).
+  `shared/`, `server/`, `client/` per §3; strict TypeScript everywhere; production deps limited to the §2 server list; client deps as devDependencies. Root `package.json` carries the `engines` (Node ≥ 18) and `packageManager` pins (moved here from #P0-5 — no root `package.json` exists before this task).
+  *Acceptance:* `tsc --noEmit` passes across all three roots; dependency lists match §2 (deviations require editing the architecture doc first); `npm pkg get engines packageManager` returns the pinned values.
 - [ ] **#P1-2 — Dev & build toolchain**
   `tsx watch` dev server; `vite dev` with `/api` + `/ws` proxy; `scripts/build.ts` running vite build → esbuild server bundle → assembled `dist/` (`cli.js` + `public/`). CLI flags `--port`, `--no-open`, `--roots` parsed by hand (no commander).
   *Acceptance:* `node dist/cli.js` serves a hello-world SPA, an `/api/ping` route, and a WS upgrade on **one port**; dev mode hot-reloads client and restarts server.
 - [ ] **#P1-3 — CI**
-  GitHub Actions: typecheck + vitest on push/PR to main, plus a `storybook build` smoke step (once #P1-4 lands) and lint/format checks (once #P1-5 lands). The Cypress E2E job is added later by #P3-5. Single OS/Node version by decision (see decisions log).
-  *Acceptance:* red CI blocks merge; typecheck+test stage runs in under ~2 min.
+  GitHub Actions: typecheck + vitest on push/PR to `main`. The workflow is designed so lint/format checks can be added by #P1-5 and the Cypress E2E job by #P3-5. Storybook build smoke is **not** a CI gate; it runs as a separate non-blocking script once #P1-4 lands. Single OS/Node version by decision (see decisions log).
+  *Acceptance:* red CI blocks merge; typecheck+test stage runs in under ~2 min; Storybook build is not part of the blocking CI job.
 - [ ] **#P1-4 — Storybook setup**
   Storybook (Vite builder) wired to the client root as a devDependency: Tailwind styles loaded, dark/light theme toggle matching the dashboard aesthetic. Dev workbench only — no test-runner/play functions for now (revisit if UI regressions bite). Stories and `.storybook/` never enter the published `dist/`.
   *Acceptance:* `npm run storybook` renders a sample story with Tailwind applied in both themes.
@@ -77,14 +80,14 @@ Target layout is architecture §3 exactly. No feature code — just a booting sk
 Everything downstream assumes the parser, store, and metrics engine are correct. Ordered by dependency; each task's tests use the Phase 0 fixtures. Reference: architecture §4–§6, §8.
 
 - [ ] **#P2-1 — Shared contracts**
-  `shared/types.ts` (`CompactCall`, `Turn`, `Session`, `TierFlags`), `shared/metrics-contract.ts` (`MetricsQuery`, `Series` per §8), `shared/ws-protocol.ts` (three message shapes per §7).
-  *Acceptance:* types compile and are imported by both server and client stubs; contract shapes match §7/§8 field-for-field.
+  `shared/types.ts` (`CompactCall`, `Turn`, `Session`, `TierFlags`), `shared/metrics-contract.ts` (`MetricsQuery`, `Series` per §8), `shared/ws-protocol.ts` (three message shapes per §7). Field definitions come from `specs/claude-lens-data-model.md` (#P0-7) — this task transcribes, it does not design.
+  *Acceptance:* types compile and are imported by both server and client stubs; contract shapes match `claude-lens-data-model.md` (and §7/§8 where it defers to them) field-for-field.
 - [ ] **#P2-2 — Transcript parser + dedupe**
   `parse-transcript.ts`: line → `CompactCall`; in-stream `message.id` dedupe with per-session seen-set; retain prompt text, drop tool_result bodies keeping byte sizes; malformed lines increment a per-file counter, never throw.
   *Acceptance:* fixture tests pin the compact-record contract (call counts, dedupe counts, token fields incl. `ephemeral_5m/1h`, error counters).
 - [ ] **#P2-3 — Discovery + polling**
-  `discovery.ts` (fast-glob over roots, filename classification T/C/B/L) and `poller.ts` (fast stat loop 2–5s, slow re-glob ~30s). Mid-run discovery registers brand-new session files.
-  *Acceptance:* unit tests for classification; a file created after boot is picked up within one slow-loop interval.
+  `discovery.ts` (fast-glob over roots, filename classification T/C/B/L) and `poller.ts` (fast stat loop 2–5s, slow re-glob ~30s). Mid-run discovery registers brand-new session files; deleted files are pruned and overlapping roots are deduped by absolute path.
+  *Acceptance:* unit tests for classification; a file created after boot is picked up within one slow-loop interval; deleted sessions are pruned on the next discovery pass; overlapping scan roots do not duplicate sessions; app boots cleanly when a root is missing or empty.
 - [ ] **#P2-4 — Tailer**
   `tailer.ts`: byte-offset map; read-from-offset on growth; truncation fallback (drop + full reparse); advance offset only to last newline (partial-line rule).
   *Acceptance:* tests cover partial trailing line, mid-write reads, truncation/rewrite, offset advancement — the §13 priority list.
@@ -95,10 +98,10 @@ Everything downstream assumes the parser, store, and metrics engine are correct.
   `store.ts` columnar arrays; `derive-turns.ts` (promptId grouping, sidechain attribution); `derive-session.ts` (rollups, per-session tier detection); `invalidation.ts` (dirty-set, 200–500ms per-session debounce, emit hook). Incremental updates touch only the affected session; cross-session aggregates invalidate lazily.
   *Acceptance:* fixture tests for turn grouping and rollups; appending calls to one session leaves other sessions' derived state untouched.
 - [ ] **#P2-7 — Boot & memory validation on real data** *(checkpoint task)*
-  Run ingest against the real `~/.claude/projects`. Measure cold boot, warm boot, RSS.
+  Assemble the Phase 2 modules (discovery → poller → tailer → parser → store) into a runnable ingest entry point — that wiring is in scope here, not implicit; #P3-1's `app.ts` reuses it. Run ingest against the real `~/.claude/projects`. Measure cold boot, warm boot, RSS.
   *Acceptance:* results recorded in this doc (below); memory in the expected "low hundreds of MB" band or a paging decision is escalated **before** Phase 3. This is the only assumption in the architecture that can force a redesign — fail fast here.
 - [ ] **#P2-8 — Metrics engine: measures, dimensions, grain**
-  `engine.ts` + `measures.ts` + `dimensions.ts` + `grain.ts`: the single `metrics(query) → Series[]` function; hour/day/week/month bucketing on epoch ms; period-over-period; computed-vs-observed cost labeling.
+  `engine.ts` + `measures.ts` + `dimensions.ts` + `grain.ts`: the single `metrics(query) → Series[]` function; hour/day/week/month bucketing on epoch ms; period-over-period; computed-vs-observed cost labeling. Ships the default pricing table (model → per-1M rates) that computed-$ multiplies against, per the #P0-7 measure catalog; the #P4-15 editor overrides it.
   *Acceptance:* hand-computed numbers from fixtures match engine output for every measure × a sample of dimensions; unit switching is a measure swap only.
 - [ ] **#P2-9 — Distributions + smoothing + compare**
   `distributions.ts`: percentiles, histograms, pareto (`mode: "distribution"`); `ma7` smoothing; `compare: "previous-period"` alignment.
@@ -137,11 +140,11 @@ One vertical slice proving every layer. Nothing page-specific begins until this 
 
 ## Phase 4 — Pages & features
 
-Pages are cheap by design: filter state + preset `MetricsQuery`s + layout. The HTML mockups in `specs/pages/` are the visual acceptance targets; `claude-lens-pages.md` defines each page's sections, deps, and tier behavior — treat its section tables as the per-issue checklist. Order below front-loads shared components; after #P4-2, remaining pages could parallelize, but sequential is fine.
+Pages are cheap by design: filter state + preset `MetricsQuery`s + layout. The HTML mockups in `specs/pages/` are the visual acceptance targets (each also has a matching `.png` screenshot for a quick look without opening the HTML); `claude-lens-pages.md` defines each page's sections, deps, and tier behavior — treat its section tables as the per-issue checklist. Order below front-loads shared components; after #P4-2, remaining pages could parallelize, but sequential is fine.
 
 **Standing rules for the 11 page tasks** (#P4-2 Dashboard, #P4-4 Sessions, #P4-5 Session Detail, #P4-6 Turn Inspector, #P4-7 Projects, #P4-8 Models, #P4-9 Cache Lab, #P4-10 Trends, #P4-14 Data Health, #P4-15 Settings, #P4-16 Explore — the other Phase 4 tasks are engine/feature work, not pages):
 
-1. Acceptance includes a Cypress smoke spec — the route renders its key sections from fixture data and at least one drill-link navigates to the right filtered destination. Component-state coverage belongs in Storybook stories, not Cypress.
+1. Definition of done includes a Cypress smoke spec — the route renders its key sections from fixture data and at least one drill-link navigates to the right filtered destination. Component-state coverage belongs in Storybook stories, not Cypress.
 2. **The pages spec's section table is the binding section list; the mockup is the visual reference, not an exhaustive contract.** Six known spec-vs-mockup gaps (mockups predate the spec): dashboard — failed-work stat; sessions — compare mode + tags; session-detail — tool mix panel/timeline; cache-lab — baseline weight trend; models — throughput + entrypoint breakdown; trends — stacked weekly bars. Implement these from the spec table.
 3. "Matches the mockup" means: manual visual review sign-off against `specs/pages/X.html` on real data, recorded by flipping the task checkbox — plus the smoke spec green. No automated visual regression (consciously skipped).
 
@@ -149,13 +152,13 @@ Pages are cheap by design: filter state + preset `MetricsQuery`s + layout. The H
   `components/`: stat-card (delta + sparkline), data-table (TanStack Table + virtualization), tier-badge, locked-card ("Set up cost capture" CTA), empty-state, chip. Tailwind, no component library. Built in Storybook first.
   *Acceptance:* each primitive has stories covering its states (stat-card delta up/down/flat + sparkline, tier-badge 🟢/🟡/🔴, locked-card CTA, empty-state, table loading/virtualized rows); visual check against the mockups' shared elements.
 - [ ] **#P4-2 — Dashboard page** *(pages spec §1)*
-  All 12 sections incl. stat cards, burn-rate, leaderboards, records strip, subscription window tracker, leverage ratio, savings decomposition, failed-work stat, capture CTA. Anomaly/gate-feed items may stub until #P4-11.
+  All 12 sections incl. stat cards, burn-rate, leaderboards, records strip, subscription window tracker, leverage ratio, savings decomposition, failed-work stat, capture CTA. Anomaly/gate-feed items may stub until #P4-11. The anomaly detector itself (turn > N× the user's median turn cost; thresholds configurable in #P4-15) is built here — it feeds this feed and #P4-5's red bars.
   *Acceptance:* matches `specs/pages/dashboard.html` against real data; every card deep-links per the spec's "→" column.
 - [ ] **#P4-3 — Search index + prompt search**
   `GET /api/search-index` + MiniSearch client integration; results deep-link to Session Detail at the matching turn.
   *Acceptance:* search-as-you-type over full history with no server round-trip per keystroke.
 - [ ] **#P4-4 — Sessions page** *(§2)*
-  Table (sortable, tier-dependent columns), timeline/gantt toggle, efficiency scatter with regression, cost histogram with percentile markers, compare mode. Tags column stubs until #P4-15. Tier-dependent columns (lines ±, observed $, ctx %) light up when C/L files are present — pages spec §2 row 3.
+  Includes the `GET /api/sessions` list route (architecture §9 — the sortable, tier-dependent list payload). Table (sortable, tier-dependent columns), timeline/gantt toggle, efficiency scatter with regression, cost histogram with percentile markers, compare mode. Tags column stubs until #P4-15; gate-score column stubs until #P4-11 (filled by #P4-12). Tier-dependent columns (lines ±, observed $, ctx %) light up when C/L files are present — pages spec §2 row 3.
   *Acceptance:* matches `sessions.html`; drill-in from Dashboard lands filtered.
 - [ ] **#P4-5 — Session Detail page** *(§3)*
   All sections except Report Card (lands in #P4-12): header, cumulative timeline, per-turn bars, turn table, turn-vs-history distribution, cache strip, tool mix, prompt list, workflow funnel, token funnel, context composition. Needs `GET /api/sessions/:id`.
@@ -164,7 +167,7 @@ Pages are cheap by design: filter state + preset `MetricsQuery`s + layout. The H
   Turn summary, API-call waterfall (timestamp-delta fallback widths), cache narrative, transcript peek (lazy raw-file read route), sidechain breakdown. Needs `GET /api/sessions/:id/turns/:n` and `/transcript?turn=n`.
   *Acceptance:* matches `turn-inspector.html`; reachable from Session Detail and gate evidence links.
 - [ ] **#P4-7 — Projects page** *(§5)*
-  Spend + WoW, stacked-area composition, efficiency table, per-branch breakdown, → Sessions links.
+  Spend + WoW, stacked-area composition, efficiency table, per-branch breakdown, → Sessions links. Gate pass-rate column in the efficiency table stubs until #P4-11.
   *Acceptance:* matches `projects.html`.
 - [ ] **#P4-8 — Models page** *(§6)*
   Token/$ split, model mix over time, efficiency ratios, CC-version dimension, entrypoint breakdown; latency/throughput sections render 🟡 fallback (timestamp deltas) until premium (#P4-13) upgrades them.
@@ -173,14 +176,14 @@ Pages are cheap by design: filter state + preset `MetricsQuery`s + layout. The H
   Fleet totals + hit-rate histogram/trend, input composition, busts net panel, **miss-attribution classifier (K2 base + TTL-lapse heuristic)**, TTL bucket mix, baseline weight trend, $ saved + counterfactual, invalidation gallery + cost-by-cause trend. The classifier built here is reused by gate K2.
   *Acceptance:* matches `cache-lab.html`; classifier has unit tests on fixtures.
 - [ ] **#P4-10 — Trends, Calendar & Budget page** *(§8)*
-  Calendar heatmap, hour×weekday heatmap, stacked weekly bars, Pareto, rolling efficiency, forecast (EWMA, labeled naive), budget config + projection band + Dashboard threshold alert. Gate pass-rate trend stubs until #P4-11.
+  Calendar heatmap, hour×weekday heatmap, stacked weekly bars, Pareto, rolling efficiency, forecast (EWMA, labeled naive), budget config + projection band + Dashboard threshold alert. Includes a minimal `settings.ts` + `GET/PUT /api/config` limited to the budget value (#P4-15 extends it to the full config surface). Gate pass-rate trend stubs until #P4-11.
   *Acceptance:* matches `trends.html`; budget value persists in `~/.claude-lens/config.json`.
 - [ ] **#P4-11 — Gates engine** *(gates.md)*
-  `gates/engine.ts` + six gate files (V1, V2, P3, C3, K2, E1/E2); shared preprocessing (dedupe, sidechain exclusion, edit/command call classification); evidence with Turn Inspector deep-links; session scoring per gates.md; configurable thresholds.
-  *Acceptance:* per-gate fixture tests including N/A-turn denominators and E1/E2 filesystem checks (labeled "as of now").
+  `gates/engine.ts` + six gate files (V1, V2, P3, C3, K2, E1/E2); shared preprocessing (dedupe, sidechain exclusion, edit/command call classification); evidence with Turn Inspector deep-links; session scoring per gates.md; configurable thresholds. Adds the gate-scenario fixtures (per-gate pass/fail transcripts) under the #P0-3 `test/fixtures/` README convention.
+  *Acceptance:* per-gate fixture tests including N/A-turn denominators and E1/E2 filesystem checks (labeled "as of now"); E1/E2 follows `@import` one level; P3 treats user-message attachments containing the path as a prior read; V2 detects repeated failing commands via `tool_result.is_error` and exit-code markers.
 - [ ] **#P4-12 — Report Card UI + gate feeds**
   Report Card section on Session Detail; anomaly & gate-failure feed on Dashboard; gate pass-rate trend on Trends; gate-status filter/column on Sessions.
-  *Acceptance:* evidence links land on the exact turn in Turn Inspector.
+  *Acceptance:* turn-keyed evidence (V1/V2/P3/C3/K2) deep-links to Turn Inspector at the exact turn; session-keyed E1/E2 evidence links to Session Detail with `filePath`+`detail` (it has no `turnN` — gates.md §1, decisions log 2026-07-06).
 - [ ] **#P4-13 — Premium tier: C/B/L parsers + upgrades**
   `parse-premium.ts`; per-session tier detection wiring through to `TierFlags`; every 🟡 upgrade path lights up: observed $, intra-day resolution, true ctx %, waterfall widths from `api_duration_ms`, Δlines/api-vs-wall columns, latency/throughput on Models, context growth curves on Cache Lab; drift badge on Session Detail.
   *Acceptance:* verified upgrade-by-upgrade, not as one blob — run the Cypress harness twice (T-only fixture set, then T+C/B/L) and confirm each listed 🟡 upgrade flips: value changes where expected, tier badge updates, transcript-only sessions unaffected. Tier-upgrade component states (🟡 columns lighting up, drift badge) additionally covered by Storybook stories — these are hard to reproduce on demand with real data.
@@ -188,7 +191,7 @@ Pages are cheap by design: filter state + preset `MetricsQuery`s + layout. The H
   Dedup stats, pricing coverage, scan coverage, parse errors; reconciliation and boundary/capture-gap sections (🔴, needs #P4-13).
   *Acceptance:* matches `data-health.html`; malformed-line counters from #P2-2 surface here.
 - [ ] **#P4-15 — Settings page + config/local-store** *(§10)*
-  `~/.claude-lens/config.json` + `local.json` (settings.ts, local-store.ts); pricing table editor, labeled scan roots (host dimension), budget/anomaly/gate thresholds, saved-views + tags managers, cost-capture setup guide. `GET/PUT /api/config`, `/api/views`, `/api/tags`.
+  `~/.claude-lens/config.json` + `local.json` (settings.ts, local-store.ts — extends #P4-10's minimal budget-only config store); pricing table editor, labeled scan roots (host dimension), budget/anomaly/gate thresholds, saved-views + tags managers, cost-capture setup guide. `GET/PUT /api/config`, `/api/views`, `/api/tags`.
   *Acceptance:* matches `settings.html`; root relabeling reflects in the host dimension without restart; tags now filterable on Sessions.
 - [ ] **#P4-16 — Explore page** *(§11)*
   Pivot builder over the existing engine: measure × dimension × grain × chart type; distribution mode; save-as-Saved-View pinned to Dashboard.
@@ -225,8 +228,8 @@ Pages are cheap by design: filter state + preset `MetricsQuery`s + layout. The H
 
 | Date | Task | Cold boot | Warm boot | RSS | Data size | Notes |
 |---|---|---|---|---|---|---|
-| — | #P2-7 | | | | | |
-| — | #P5-1 | | | | | |
+| — | #P2-7 | | | | | baseline |
+| — | #P5-1 | | | | | compare against #P2-7 baseline row above |
 
 ## Decisions log
 
@@ -243,5 +246,7 @@ Current as of the dated rows; re-scan at each phase exit and prune rows that hav
 | 2026-07-06 | Full PR #5 review remediation: mockups carry MOCKUP disclaimers with shared chrome extracted to `specs/pages/_chrome.css/.js`; **pages spec wins over mockups on section presence** (6 known mockup gaps listed in the Phase 4 standing rules); gates doc disambiguates gate IDs from product versions; `.serena/project.yml` trimmed + populated; #P1-5 defaults to Biome; model ID strings in mockups (`claude-opus-4-8`, `claude-sonnet-5`, `claude-fable-5`) confirmed as real Claude Code model IDs | mockups, gates.md, plan Phase 4 rules, `.serena/` |
 | 2026-07-06 | Delivery pipeline codified in root `CLAUDE.md`: specs decide what, issues track what, start-time skills (`/start-task` → `/plan-architecture` → `/generate-tasks` → `/implement`) decide how, this plan doc decides when; `/plan-requirements` runs **before filing** for fuzzy ad-hoc enhancements only | `CLAUDE.md` |
 | 2026-07-06 | Issues are filed by the `/create-issue` skill (`.claude/skills/create-issue/`), not a static GitHub form template — issue shapes differ by work type (plan task, page, spike, bug, enhancement, chore) and content is sourced from the specs at filing time; the #P0-6 `phase-task.yml` template was removed before ever being committed. Labels + milestones from #P0-6 stay. Issues are drafted locally under `specs/issues/` (`status: draft → ready → filed`) and published to GitHub in one batch by the skill's `publish.sh` | #P0-6, `.claude/skills/create-issue/` |
+| 2026-07-06 | **#P0-7 added — data-model & contracts spec before any contract code.** The architecture doc names `CompactCall`/`Turn`/`Session`/`TierFlags`/`Series` but defines none of them field-for-field, and §8's "parser contract in claude-lens-pages.md" reference points at one prose paragraph — #P2-1 as written would invent fields at implementation time and Phase 4 pages would drift ad-hoc. `specs/claude-lens-data-model.md` becomes the fourth authoritative doc (what the data *is*); #P2-1 transcribes it, pages cite its measure/dimension catalogs; runs before #P0-3 since the field investigation and fixture cut are one pass over real data | #P0-7, #P0-3, #P2-1 |
 | 2026-07-06 | Review findings **adjudicated and rejected** (recorded so they're not re-raised): M11 mid-file `---` rules (frontmatter is only parsed at byte 0 — a mid-file `---` is a plain horizontal rule to any compliant parser); L3 `[--no-open]` bracket notation (standard optional-flag convention); L12 constraints-table granularity (already a two-column constraint/consequence table) | — |
 | 2026-07-06 | **Consciously skipped** (recorded so they're not re-litigated): CI OS/Node matrix (single OS/Node; cross-platform checked manually in Phase 5) · automated npx-tarball smoke in CI (manual in #P5-2) · npm provenance/OIDC + Dependabot · release automation (manual v0.1.0) · telemetry decision doc · global Definition-of-Done rule · a11y addon/audit · visual regression · Docker/staging · feature flags/i18n/APM · CONTRIBUTING/CODEOWNERS | — |
+| 2026-07-06 | Issue-draft dry-run adjudications: `engines`/`packageManager` pins moved #P0-5→#P1-1 (no root `package.json` between #P0-2 and #P1-1); #P0-6 must precede the draft batch publish (`gh` fails on missing labels/milestones); ingest assembly made explicit in #P2-7; default pricing table ships in #P2-8; `GET /api/sessions` list route owned by #P4-4; #P4-10 gets a budget-only config carve-out that #P4-15 extends; anomaly detector built in #P4-2; gate-scenario fixtures land with #P4-11 | #P0-5, #P0-6, #P1-1, #P2-7, #P2-8, #P4-2, #P4-4, #P4-10, #P4-11, #P4-15 |

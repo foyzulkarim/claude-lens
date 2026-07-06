@@ -2,7 +2,9 @@
 title: "#P4-2 — Dashboard page"
 labels: phase-4
 milestone: Phase 4 — Pages & features
-status: draft
+status: filed
+issue: 34
+url: https://github.com/foyzulkarim/claude-lens/issues/34
 ---
 
 
@@ -14,6 +16,7 @@ Build the Dashboard page (pages spec §1): all 12 sections, from stat cards to t
 ## Scope
 - All 12 sections per pages spec §1: stat cards, cost-over-time chart, burn-rate card, most-recent-session card, mini-leaderboards, anomaly & gate-failure feed (stub OK), records strip, subscription window tracker, leverage ratio headline, savings decomposition stack, failed-work stat, "Set up cost capture" banner
 - Every card deep-links per the spec's "→" column
+- The anomaly detector itself (turn > N× the user's median turn cost; thresholds configurable in #P4-15) is built here — it feeds the anomaly feed and #P4-5's red per-turn bars
 
 ## Acceptance criteria
 - matches `specs/pages/dashboard.html` against real data; every card deep-links per the spec's "→" column
@@ -48,4 +51,5 @@ Spec-vs-mockup gaps to implement from the spec table: **failed-work stat** (mock
 
 ## References
 - pages spec §0 (global analytics layer) and §1; mockup `specs/pages/dashboard.html` (visual reference, not exhaustive contract)
+- `specs/pages/dashboard.png` — static screenshot of the mockup
 - Decisions log 2026-07-06: pages spec wins over mockups on section presence
