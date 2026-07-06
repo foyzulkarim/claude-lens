@@ -41,3 +41,4 @@ Spec-vs-mockup gaps to implement from the spec table: Models — throughput + en
 ## References
 - [specs/claude-lens-pages.md](../blob/main/specs/claude-lens-pages.md)
 - `specs/pages/models.html` (visual reference, not exhaustive contract)
+- `specs/pages/models.png` — static screenshot of the mockup

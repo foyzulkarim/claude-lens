@@ -140,7 +140,7 @@ One vertical slice proving every layer. Nothing page-specific begins until this 
 
 ## Phase 4 — Pages & features
 
-Pages are cheap by design: filter state + preset `MetricsQuery`s + layout. The HTML mockups in `specs/pages/` are the visual acceptance targets; `claude-lens-pages.md` defines each page's sections, deps, and tier behavior — treat its section tables as the per-issue checklist. Order below front-loads shared components; after #P4-2, remaining pages could parallelize, but sequential is fine.
+Pages are cheap by design: filter state + preset `MetricsQuery`s + layout. The HTML mockups in `specs/pages/` are the visual acceptance targets (each also has a matching `.png` screenshot for a quick look without opening the HTML); `claude-lens-pages.md` defines each page's sections, deps, and tier behavior — treat its section tables as the per-issue checklist. Order below front-loads shared components; after #P4-2, remaining pages could parallelize, but sequential is fine.
 
 **Standing rules for the 11 page tasks** (#P4-2 Dashboard, #P4-4 Sessions, #P4-5 Session Detail, #P4-6 Turn Inspector, #P4-7 Projects, #P4-8 Models, #P4-9 Cache Lab, #P4-10 Trends, #P4-14 Data Health, #P4-15 Settings, #P4-16 Explore — the other Phase 4 tasks are engine/feature work, not pages):
 

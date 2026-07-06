@@ -38,3 +38,4 @@ Spec-vs-mockup gaps to implement from the spec table: none for this page
 ## References
 - [specs/claude-lens-pages.md](../blob/main/specs/claude-lens-pages.md)
 - `specs/pages/projects.html` (visual reference, not exhaustive contract)
+- `specs/pages/projects.png` — static screenshot of the mockup

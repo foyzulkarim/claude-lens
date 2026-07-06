@@ -45,3 +45,4 @@ Spec-vs-mockup gaps to implement from the spec table: Session Detail — tool mi
 ## References
 - [specs/claude-lens-pages.md](../blob/main/specs/claude-lens-pages.md)
 - `specs/pages/session-detail.html` (visual reference, not exhaustive contract)
+- `specs/pages/session-detail.png` — static screenshot of the mockup

@@ -39,3 +39,4 @@ Spec-vs-mockup gaps to implement from the spec table: none for this page
 - [specs/claude-lens-pages.md](../blob/main/specs/claude-lens-pages.md)
 - [specs/claude-lens-architecture.md](../blob/main/specs/claude-lens-architecture.md) §9 (`GET /api/health`)
 - `specs/pages/data-health.html` (visual reference, not exhaustive contract)
+- `specs/pages/data-health.png` — static screenshot of the mockup

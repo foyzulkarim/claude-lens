@@ -43,3 +43,4 @@ Spec-vs-mockup gaps to implement from the spec table: Cache Lab — baseline wei
 ## References
 - [specs/claude-lens-pages.md](../blob/main/specs/claude-lens-pages.md)
 - `specs/pages/cache-lab.html` (visual reference, not exhaustive contract)
+- `specs/pages/cache-lab.png` — static screenshot of the mockup

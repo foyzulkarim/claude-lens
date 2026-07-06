@@ -49,4 +49,5 @@ Spec-vs-mockup gaps to implement from the spec table: **failed-work stat** (mock
 
 ## References
 - pages spec §0 (global analytics layer) and §1; mockup `specs/pages/dashboard.html` (visual reference, not exhaustive contract)
+- `specs/pages/dashboard.png` — static screenshot of the mockup
 - Decisions log 2026-07-06: pages spec wins over mockups on section presence
