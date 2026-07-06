@@ -1,8 +1,10 @@
 ---
 title: "#P2-9 — Distributions + smoothing + compare"
 labels: phase-2
-milestone: Phase 2 — Data engine (the risk phase)
-status: draft
+milestone: Phase 2 — Data engine
+status: filed
+issue: 26
+url: https://github.com/foyzulkarim/claude-lens/issues/26
 ---
 
 Task **#P2-9** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 2.

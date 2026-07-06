@@ -1,8 +1,10 @@
 ---
 title: "#P2-10 — `POST /api/metrics` route"
 labels: phase-2
-milestone: Phase 2 — Data engine (the risk phase)
-status: draft
+milestone: Phase 2 — Data engine
+status: filed
+issue: 27
+url: https://github.com/foyzulkarim/claude-lens/issues/27
 ---
 
 Task **#P2-10** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 2.

@@ -1,8 +1,10 @@
 ---
 title: "#P2-7 — Boot & memory validation on real data"
 labels: phase-2
-milestone: Phase 2 — Data engine (the risk phase)
-status: draft
+milestone: Phase 2 — Data engine
+status: filed
+issue: 24
+url: https://github.com/foyzulkarim/claude-lens/issues/24
 ---
 
 Task **#P2-7** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 2.

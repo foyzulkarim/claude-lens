@@ -2,7 +2,9 @@
 title: "#P4-2 — Dashboard page"
 labels: phase-4
 milestone: Phase 4 — Pages & features
-status: draft
+status: filed
+issue: 34
+url: https://github.com/foyzulkarim/claude-lens/issues/34
 ---
 
 

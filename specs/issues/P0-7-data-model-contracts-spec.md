@@ -2,7 +2,9 @@
 title: "#P0-7 — Data model & contracts spec"
 labels: phase-0
 milestone: Phase 0 — Spec closure & repo prep
-status: draft
+status: filed
+issue: 12
+url: https://github.com/foyzulkarim/claude-lens/issues/12
 ---
 
 Task **#P0-7** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 0.

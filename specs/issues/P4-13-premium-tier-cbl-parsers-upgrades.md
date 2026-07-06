@@ -2,7 +2,9 @@
 title: "#P4-13 — Premium tier: C/B/L parsers + upgrades"
 labels: phase-4
 milestone: Phase 4 — Pages & features
-status: draft
+status: filed
+issue: 45
+url: https://github.com/foyzulkarim/claude-lens/issues/45
 ---
 
 Task **#P4-13** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 4.

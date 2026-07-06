@@ -2,7 +2,9 @@
 title: "#P4-4 — Sessions page"
 labels: phase-4
 milestone: Phase 4 — Pages & features
-status: draft
+status: filed
+issue: 36
+url: https://github.com/foyzulkarim/claude-lens/issues/36
 ---
 
 Task **#P4-4** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 4.

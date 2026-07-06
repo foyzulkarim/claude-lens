@@ -2,7 +2,9 @@
 title: "#P4-15 — Settings page + config/local-store"
 labels: phase-4
 milestone: Phase 4 — Pages & features
-status: draft
+status: filed
+issue: 47
+url: https://github.com/foyzulkarim/claude-lens/issues/47
 ---
 
 Task **#P4-15** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 4.

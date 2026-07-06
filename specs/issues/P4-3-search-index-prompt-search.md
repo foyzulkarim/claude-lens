@@ -2,7 +2,9 @@
 title: "#P4-3 — Search index + prompt search"
 labels: phase-4
 milestone: Phase 4 — Pages & features
-status: draft
+status: filed
+issue: 35
+url: https://github.com/foyzulkarim/claude-lens/issues/35
 ---
 
 Task **#P4-3** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 4.

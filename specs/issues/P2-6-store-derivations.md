@@ -1,8 +1,10 @@
 ---
 title: "#P2-6 — Store + derivations"
 labels: phase-2
-milestone: Phase 2 — Data engine (the risk phase)
-status: draft
+milestone: Phase 2 — Data engine
+status: filed
+issue: 23
+url: https://github.com/foyzulkarim/claude-lens/issues/23
 ---
 
 Task **#P2-6** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 2.

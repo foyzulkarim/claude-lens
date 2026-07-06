@@ -2,7 +2,9 @@
 title: "#P0-5 — LICENSE + repo hygiene"
 labels: phase-0
 milestone: Phase 0 — Spec closure & repo prep
-status: draft
+status: filed
+issue: 10
+url: https://github.com/foyzulkarim/claude-lens/issues/10
 ---
 
 Task **#P0-5** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 0.

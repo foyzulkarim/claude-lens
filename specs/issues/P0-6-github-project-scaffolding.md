@@ -2,7 +2,9 @@
 title: "#P0-6 — GitHub project scaffolding"
 labels: phase-0
 milestone: Phase 0 — Spec closure & repo prep
-status: draft
+status: filed
+issue: 11
+url: https://github.com/foyzulkarim/claude-lens/issues/11
 ---
 
 Task **#P0-6** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 0.

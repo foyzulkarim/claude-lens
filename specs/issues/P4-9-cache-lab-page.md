@@ -2,7 +2,9 @@
 title: "#P4-9 — Cache Lab page"
 labels: phase-4
 milestone: Phase 4 — Pages & features
-status: draft
+status: filed
+issue: 41
+url: https://github.com/foyzulkarim/claude-lens/issues/41
 ---
 
 Task **#P4-9** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 4.

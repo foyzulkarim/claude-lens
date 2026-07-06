@@ -2,7 +2,9 @@
 title: "#P0-2 — Move V1 app into legacy/"
 labels: phase-0
 milestone: Phase 0 — Spec closure & repo prep
-status: draft
+status: filed
+issue: 7
+url: https://github.com/foyzulkarim/claude-lens/issues/7
 ---
 
 

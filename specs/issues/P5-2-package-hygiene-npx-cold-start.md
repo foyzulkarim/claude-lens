@@ -2,7 +2,9 @@
 title: "#P5-2 — Package hygiene + npx cold-start"
 labels: phase-5
 milestone: Phase 5 — Finalize & publish
-status: draft
+status: filed
+issue: 52
+url: https://github.com/foyzulkarim/claude-lens/issues/52
 ---
 
 Task **#P5-2** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 5.

@@ -2,7 +2,9 @@
 title: "#P1-1 — Scaffold three-root TS package"
 labels: phase-1
 milestone: Phase 1 — Bootstrapping
-status: draft
+status: filed
+issue: 13
+url: https://github.com/foyzulkarim/claude-lens/issues/13
 ---
 
 Task **#P1-1** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 1.

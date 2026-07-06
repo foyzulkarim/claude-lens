@@ -1,8 +1,10 @@
 ---
 title: "#P2-4 — Tailer"
 labels: phase-2
-milestone: Phase 2 — Data engine (the risk phase)
-status: draft
+milestone: Phase 2 — Data engine
+status: filed
+issue: 21
+url: https://github.com/foyzulkarim/claude-lens/issues/21
 ---
 
 Task **#P2-4** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 2.

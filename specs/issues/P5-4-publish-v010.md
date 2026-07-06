@@ -2,7 +2,9 @@
 title: "#P5-4 — Publish v0.1.0"
 labels: phase-5
 milestone: Phase 5 — Finalize & publish
-status: draft
+status: filed
+issue: 54
+url: https://github.com/foyzulkarim/claude-lens/issues/54
 ---
 
 Task **#P5-4** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 5.

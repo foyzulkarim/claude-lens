@@ -2,7 +2,9 @@
 title: "#P1-5 — Linting + formatting"
 labels: phase-1
 milestone: Phase 1 — Bootstrapping
-status: draft
+status: filed
+issue: 17
+url: https://github.com/foyzulkarim/claude-lens/issues/17
 ---
 
 Task **#P1-5** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 1.

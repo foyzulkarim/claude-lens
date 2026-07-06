@@ -2,7 +2,9 @@
 title: "#P1-2 — Dev & build toolchain"
 labels: phase-1
 milestone: Phase 1 — Bootstrapping
-status: draft
+status: filed
+issue: 14
+url: https://github.com/foyzulkarim/claude-lens/issues/14
 ---
 
 Task **#P1-2** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 1.

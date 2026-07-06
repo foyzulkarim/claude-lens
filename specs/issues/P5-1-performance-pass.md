@@ -2,7 +2,9 @@
 title: "#P5-1 — Performance pass"
 labels: phase-5
 milestone: Phase 5 — Finalize & publish
-status: draft
+status: filed
+issue: 51
+url: https://github.com/foyzulkarim/claude-lens/issues/51
 ---
 
 Task **#P5-1** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 5.

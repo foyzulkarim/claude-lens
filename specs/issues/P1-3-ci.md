@@ -2,7 +2,9 @@
 title: "#P1-3 — CI"
 labels: phase-1
 milestone: Phase 1 — Bootstrapping
-status: draft
+status: filed
+issue: 15
+url: https://github.com/foyzulkarim/claude-lens/issues/15
 ---
 
 Task **#P1-3** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 1.

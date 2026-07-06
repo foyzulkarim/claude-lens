@@ -2,7 +2,9 @@
 title: "#P0-3 — Anonymized JSONL fixtures"
 labels: phase-0
 milestone: Phase 0 — Spec closure & repo prep
-status: draft
+status: filed
+issue: 8
+url: https://github.com/foyzulkarim/claude-lens/issues/8
 ---
 
 Task **#P0-3** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 0.
