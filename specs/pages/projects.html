@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<!--
+  MOCKUP — visual acceptance target only.
+  Layout, hierarchy, and section presence are the binding contract for the
+  matching page task in specs/claude-lens-plan.md (Phase 4).
+  Inline styles, hardcoded numbers/session IDs, and decorative SVGs are
+  SAMPLE DATA, not implementation contracts.
+  Where specs/claude-lens-pages.md lists a section missing here, the spec wins.
+  Shared chrome lives in _chrome.css / _chrome.js.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude Lens — Projects</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="_chrome.css">
+</head>
+<body>
+<header>
+  <span class="wordmark"><span class="lens">[◎]</span> claude&nbsp;lens</span>
+  <nav>
+    <a href="dashboard.html" class="">Dashboard</a><a href="sessions.html" class="">Sessions</a><a href="projects.html" class="on">Projects</a><a href="models.html" class="">Models</a><a href="cache-lab.html" class="">Cache Lab</a><a href="trends.html" class="">Trends</a><a href="explore.html" class="">Explore</a><a href="data-health.html" class="">Health</a><a href="settings.html" class="">⚙</a>
+  </nav>
+  <span class="tier">tier: <b>transcript-only</b></span>
+</header>
+<div class="filters">
+  <div class="seg"><button>1D</button><button class="on">7D</button><button>30D</button><button>90D</button><button>Custom</button></div>
+  <div class="f"><span class="k">Project</span><span class="v">all</span><span class="car">▾</span></div>
+  <div class="f"><span class="k">Model</span><span class="v">all</span><span class="car">▾</span></div>
+  <div class="f"><span class="k">Branch</span><span class="v">all</span><span class="car">▾</span></div>
+  <span class="host">⌂ mac-mini-home</span>
+</div>
+<main>
+
+<section class="panel">
+  <h2>Spend composition over time
+    <div class="sw"><button class="on" data-show="area">stacked area</button><button data-show="bars">bars</button><button data-show="pct">100%</button></div>
+    <span class="badge computed">$ computed</span>
+  </h2>
+  <div data-variant="area">
+  <svg viewBox="0 0 720 180" preserveAspectRatio="none" style="width:100%;height:180px;margin-top:10px">
+    <path d="M0,180 L0,150 C120,148 240,120 360,110 C480,100 600,40 720,20 L720,180 Z" fill="#E8A33D" opacity=".85"/>
+    <path d="M0,180 L0,165 C120,163 240,150 360,145 C480,140 600,110 720,95 L720,180 Z" fill="#C9862B" opacity=".9"/>
+    <path d="M0,180 L0,172 C120,171 240,166 360,164 C480,162 600,150 720,140 L720,180 Z" fill="#8a6a2f"/>
+    <path d="M0,180 L0,176 C240,175 480,172 720,168 L720,180 Z" fill="#5A6675"/>
+    <g font-family="IBM Plex Mono" font-size="9" fill="#5A6675"><text x="4" y="176">Jun 26</text><text x="680" y="176" fill="#0E1116">Jul 3</text></g>
+  </svg>
+  <div style="display:flex;gap:14px;margin-top:8px;font-family:var(--mono);font-size:11px;color:var(--faint)">
+    <span><i style="display:inline-block;width:10px;height:10px;background:#E8A33D;margin-right:5px"></i>agentic-swe-vod</span>
+    <span><i style="display:inline-block;width:10px;height:10px;background:#C9862B;margin-right:5px"></i>tokenowl_docs</span>
+    <span><i style="display:inline-block;width:10px;height:10px;background:#8a6a2f;margin-right:5px"></i>skills</span>
+    <span><i style="display:inline-block;width:10px;height:10px;background:#5A6675;margin-right:5px"></i>other</span>
+  </div>
+  </div>
+  <div data-variant="bars" style="display:none;margin-top:14px;color:var(--faint);font-family:var(--mono);font-size:12px">grouped weekly bars — same series, same legend</div>
+  <div data-variant="pct" style="display:none;margin-top:14px;color:var(--faint);font-family:var(--mono);font-size:12px">share-of-total normalized to 100% — reveals mix shift independent of volume</div>
+</section>
+
+<section class="panel">
+  <h2>Projects</h2>
+  <table>
+    <thead><tr><th>Project</th><th class="r">Spend</th><th class="r">WoW</th><th class="r">Sessions</th><th class="r">$/session</th><th class="r">Cache %</th><th class="r">Tok/turn</th><th class="r">Gate pass</th></tr></thead>
+    <tbody>
+      <tr><td>agentic-swe-vod</td><td class="num money-cell">82.24</td><td class="num"><span class="delta up">▲ 212%</span></td><td class="num">6</td><td class="num">13.71</td><td class="num cache-cell">95.8</td><td class="num">96k</td><td class="num">71%</td></tr>
+      <tr><td>tokenowl_docs</td><td class="num money-cell">29.81</td><td class="num"><span class="delta down">▼ 18%</span></td><td class="num">4</td><td class="num">7.45</td><td class="num cache-cell">93.1</td><td class="num">61k</td><td class="num">88%</td></tr>
+      <tr><td>skills</td><td class="num money-cell">29.04</td><td class="num"><span class="delta up">▲ 64%</span></td><td class="num">5</td><td class="num">5.81</td><td class="num cache-cell">90.4</td><td class="num">44k</td><td class="num">92%</td></tr>
+      <tr><td>.claude (+scripts)</td><td class="num money-cell">19.61</td><td class="num"><span class="delta up">▲ 31%</span></td><td class="num">4</td><td class="num">4.90</td><td class="num cache-cell">97.2</td><td class="num">52k</td><td class="num">100%</td></tr>
+      <tr><td>aswe-lms</td><td class="num money-cell">9.00</td><td class="num">—</td><td class="num">2</td><td class="num">4.50</td><td class="num cache-cell">94.8</td><td class="num">39k</td><td class="num">100%</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="panel">
+  <h2>agentic-swe-vod · by branch <span class="badge">gitBranch from transcript</span></h2>
+  <div class="hbars">
+    <div class="hb"><span class="lbl">feat/vod-ingest</span><div class="rail"><div class="fill" style="width:100%"></div></div><span class="val">$61.28</span></div>
+    <div class="hb"><span class="lbl">main</span><div class="rail"><div class="fill" style="width:26%"></div></div><span class="val">$15.93</span></div>
+    <div class="hb"><span class="lbl">fix/upload-retry</span><div class="rail"><div class="fill" style="width:8%"></div></div><span class="val">$5.03</span></div>
+  </div>
+  <p style="font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:10px">feature-branch cost accounting — click branch → sessions</p>
+</section>
+
+</main>
+<!-- sample data: scan time and transcript count are filled by the implementation -->
+<footer>local-first · reading ~/.claude/projects · last scan 13:52 · 21 transcripts</footer>
+<script src="_chrome.js"></script>
+</body>
+</html>

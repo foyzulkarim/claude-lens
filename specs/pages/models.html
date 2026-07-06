@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<!--
+  MOCKUP — visual acceptance target only.
+  Layout, hierarchy, and section presence are the binding contract for the
+  matching page task in specs/claude-lens-plan.md (Phase 4).
+  Inline styles, hardcoded numbers/session IDs, and decorative SVGs are
+  SAMPLE DATA, not implementation contracts.
+  Where specs/claude-lens-pages.md lists a section missing here, the spec wins.
+  Shared chrome lives in _chrome.css / _chrome.js.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude Lens — Models</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="_chrome.css">
+</head>
+<body>
+<header>
+  <span class="wordmark"><span class="lens">[◎]</span> claude&nbsp;lens</span>
+  <nav>
+    <a href="dashboard.html" class="">Dashboard</a><a href="sessions.html" class="">Sessions</a><a href="projects.html" class="">Projects</a><a href="models.html" class="on">Models</a><a href="cache-lab.html" class="">Cache Lab</a><a href="trends.html" class="">Trends</a><a href="explore.html" class="">Explore</a><a href="data-health.html" class="">Health</a><a href="settings.html" class="">⚙</a>
+  </nav>
+  <span class="tier">tier: <b>transcript-only</b></span>
+</header>
+<div class="filters">
+  <div class="seg"><button>1D</button><button class="on">7D</button><button>30D</button><button>90D</button><button>Custom</button></div>
+  <div class="f"><span class="k">Project</span><span class="v">all</span><span class="car">▾</span></div>
+  <div class="f"><span class="k">Model</span><span class="v">all</span><span class="car">▾</span></div>
+  <div class="f"><span class="k">Branch</span><span class="v">all</span><span class="car">▾</span></div>
+  <span class="host">⌂ mac-mini-home</span>
+</div>
+<main>
+
+<div class="statrow">
+  <div class="stat"><div class="k">Fable 5</div><div class="v money num">$99.20 <span class="delta up">▲ new</span></div><div class="sub">58% of spend · 11 sessions</div></div>
+  <div class="stat"><div class="k">Opus 4.8</div><div class="v money num">$61.51 <span class="delta down">▼ 41%</span></div><div class="sub">36% · 6 sessions</div></div>
+  <div class="stat"><div class="k">Sonnet 4.6</div><div class="v money num">$6.45 <span class="delta down">▼ 12%</span></div><div class="sub">4% · 3 sessions</div></div>
+  <div class="stat"><div class="k">Sonnet 5</div><div class="v money num">$2.55 <span class="delta up">▲ new</span></div><div class="sub">2% · sidechains mostly</div></div>
+</div>
+
+<section class="panel">
+  <h2>Model mix over time
+    <div class="sw"><button class="on" data-show="area">stacked area</button><button data-show="line">lines</button></div>
+    <div class="sw"><button class="on">$</button><button>tokens</button><button>calls</button></div>
+  </h2>
+  <div data-variant="area">
+  <svg viewBox="0 0 720 170" preserveAspectRatio="none" style="width:100%;height:170px;margin-top:10px">
+    <path d="M0,170 L0,168 C180,166 360,160 480,120 C600,70 660,40 720,15 L720,170 Z" fill="#E8A33D" opacity=".85"/>
+    <path d="M0,170 L0,90 C180,95 360,110 480,140 C600,160 660,164 720,166 L720,170 Z" fill="#C9862B" opacity=".85"/>
+    <path d="M0,170 L0,160 C240,162 480,166 720,168 L720,170 Z" fill="#5A6675"/>
+    <g font-family="IBM Plex Mono" font-size="9"><text x="60" y="140" fill="#0E1116">opus 4.8</text><text x="600" y="120" fill="#0E1116">fable 5</text></g>
+  </svg>
+  <p style="font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:6px">the Fable 5 release visibly displaced Opus mid-week</p>
+  </div>
+  <div data-variant="line" style="display:none;margin-top:14px;color:var(--faint);font-family:var(--mono);font-size:12px">per-model daily lines, unstacked — better for rate-of-change</div>
+</section>
+
+<div class="grid2">
+  <section class="panel">
+    <h2>Efficiency by model</h2>
+    <table>
+      <thead><tr><th>Model</th><th class="r">Out tok / $</th><th class="r">Cache %</th><th class="r">Tok/turn</th><th class="r">$/turn</th></tr></thead>
+      <tbody>
+        <tr><td><span class="mchip">Fable 5</span></td><td class="num">1,410</td><td class="num cache-cell">96.2</td><td class="num">88k</td><td class="num money-cell">1.02</td></tr>
+        <tr><td><span class="mchip">Opus 4.8</span></td><td class="num">890</td><td class="num cache-cell">93.7</td><td class="num">74k</td><td class="num money-cell">1.31</td></tr>
+        <tr><td><span class="mchip">Sonnet 4.6</span></td><td class="num">4,120</td><td class="num cache-cell">94.1</td><td class="num">51k</td><td class="num money-cell">0.22</td></tr>
+        <tr><td><span class="mchip">Sonnet 5</span></td><td class="num">3,860</td><td class="num cache-cell">97.0</td><td class="num">29k</td><td class="num money-cell">0.14</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="panel">
+    <h2>Before / after Claude Code update <span class="badge">version from transcript</span></h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;margin-top:12px">
+      <div style="background:var(--panel-2);padding:14px">
+        <p style="font-family:var(--mono);font-size:11px;color:var(--faint)">v3.17.x · before Jul 1</p>
+        <p class="num" style="font-size:20px;margin-top:6px">71k <span style="font-size:12px;color:var(--muted)">tok/turn</span></p>
+        <p class="num" style="font-size:13px;color:var(--cache);margin-top:4px">93.9% cache</p>
+      </div>
+      <div style="background:var(--panel-2);padding:14px">
+        <p style="font-family:var(--mono);font-size:11px;color:var(--faint)">v3.18.x · after</p>
+        <p class="num" style="font-size:20px;margin-top:6px">84k <span style="font-size:12px;color:var(--muted)">tok/turn</span> <span class="delta up">▲ 18%</span></p>
+        <p class="num" style="font-size:13px;color:var(--cache);margin-top:4px">96.0% cache <span class="delta upgood">▲</span></p>
+      </div>
+    </div>
+    <p style="font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:10px">bigger system prompt, better caching — net $/turn flat</p>
+  </section>
+</div>
+
+<section class="panel locked" style="min-height:120px">
+  <h2>Latency by model (p50 / p90)</h2>
+  <div class="veil"><p>Requires cost capture — api_duration_ms per sample</p><a href="settings.html">Set up cost capture →</a></div>
+</section>
+
+</main>
+<!-- sample data: scan time and transcript count are filled by the implementation -->
+<footer>local-first · reading ~/.claude/projects · last scan 13:52 · 21 transcripts</footer>
+<script src="_chrome.js"></script>
+</body>
+</html>

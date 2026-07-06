@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<!--
+  MOCKUP — visual acceptance target only.
+  Layout, hierarchy, and section presence are the binding contract for the
+  matching page task in specs/claude-lens-plan.md (Phase 4).
+  Inline styles, hardcoded numbers/session IDs, and decorative SVGs are
+  SAMPLE DATA, not implementation contracts.
+  Where specs/claude-lens-pages.md lists a section missing here, the spec wins.
+  Shared chrome lives in _chrome.css / _chrome.js.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude Lens — Data Health</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="_chrome.css">
+</head>
+<body>
+<header>
+  <span class="wordmark"><span class="lens">[◎]</span> claude&nbsp;lens</span>
+  <nav>
+    <a href="dashboard.html" class="">Dashboard</a><a href="sessions.html" class="">Sessions</a><a href="projects.html" class="">Projects</a><a href="models.html" class="">Models</a><a href="cache-lab.html" class="">Cache Lab</a><a href="trends.html" class="">Trends</a><a href="explore.html" class="">Explore</a><a href="data-health.html" class="on">Health</a><a href="settings.html" class="">⚙</a>
+  </nav>
+  <span class="tier">tier: <b>transcript-only</b></span>
+</header>
+<div class="filters">
+  <div class="seg"><button>1D</button><button class="on">7D</button><button>30D</button><button>90D</button><button>Custom</button></div>
+  <div class="f"><span class="k">Project</span><span class="v">all</span><span class="car">▾</span></div>
+  <div class="f"><span class="k">Model</span><span class="v">all</span><span class="car">▾</span></div>
+  <div class="f"><span class="k">Branch</span><span class="v">all</span><span class="car">▾</span></div>
+  <span class="host">⌂ mac-mini-home</span>
+</div>
+<main>
+
+<div class="statrow">
+  <div class="stat"><div class="k">Transcripts found</div><div class="v num">21</div><div class="sub">2 roots scanned · 0 parse failures</div></div>
+  <div class="stat"><div class="k">Dedup</div><div class="v num">335 → 116</div><div class="sub">raw lines → distinct API calls (081df792)</div></div>
+  <div class="stat"><div class="k">Pricing coverage</div><div class="v num" style="color:var(--warn)">1 gap</div><div class="sub">fable-5 has no price entry yet</div></div>
+  <div class="stat"><div class="k">Sidecar coverage</div><div class="v num">5 / 21</div><div class="sub">sessions with premium data</div></div>
+</div>
+
+<section class="panel">
+  <h2>Pricing coverage <span class="badge warn">action needed</span></h2>
+  <table>
+    <thead><tr><th>Model string</th><th class="r">Calls</th><th class="r">Tokens</th><th>Price entry</th></tr></thead>
+    <tbody>
+      <tr><td class="num">claude-opus-4-8</td><td class="num">1,204</td><td class="num">31.2M</td><td><span class="badge pass">ok</span></td></tr>
+      <tr><td class="num">claude-sonnet-5</td><td class="num">318</td><td class="num">4.1M</td><td><span class="badge pass">ok</span></td></tr>
+      <tr><td class="num">claude-fable-5</td><td class="num">2,860</td><td class="num">42.8M</td><td><span class="badge warn">missing → $ excluded from computed totals</span></td></tr>
+    </tbody>
+  </table>
+  <p style="font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:8px">add the price in Settings → totals recompute instantly</p>
+</section>
+
+<section class="panel">
+  <h2>Reconciliation — computed vs sampled vs logged <span class="badge premium">premium</span></h2>
+  <table>
+    <thead><tr><th>Session</th><th class="r">Computed (T×P)</th><th class="r">Σ samples (C)</th><th class="r">Logged (L)</th><th class="r">Drift</th></tr></thead>
+    <tbody>
+      <tr><td class="num">081df792</td><td class="num money-cell">7.71</td><td class="num money-cell">7.97</td><td class="num money-cell">7.97</td><td class="num"><span class="badge pass">3.3%</span></td></tr>
+      <tr><td class="num">866138e1</td><td class="num money-cell">11.02</td><td class="num money-cell">11.31</td><td class="num money-cell">11.43</td><td class="num"><span class="badge pass">3.6%</span></td></tr>
+      <tr><td class="num">5e2164f5</td><td class="num money-cell">28.90</td><td class="num money-cell">—</td><td class="num money-cell">30.64</td><td class="num"><span class="badge warn">5.7% · no samples</span></td></tr>
+    </tbody>
+  </table>
+  <p style="font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:8px">samples missing on 5e2164f5 → statusline never refreshed; logged total is the safety net</p>
+</section>
+
+<div class="grid2">
+  <section class="panel">
+    <h2>Turn bucketing coverage <span class="badge premium">premium</span></h2>
+    <div class="hbars" style="margin-top:12px">
+      <div class="hb"><span class="lbl">boundaries = promptId</span><div class="rail"><div class="fill" style="width:80%;background:var(--good)"></div></div><span class="val">4 / 5</span></div>
+      <div class="hb"><span class="lbl">unassigned tail $</span><div class="rail"><div class="fill" style="width:29%;background:var(--warn)"></div></div><span class="val">$2.30</span></div>
+    </div>
+    <p style="font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:10px">081df792 · last Stop never fired — tail shown as partial turn</p>
+  </section>
+
+  <section class="panel locked" style="min-height:120px">
+    <h2>Capture gaps — sample interval histogram</h2>
+    <div class="veil"><p>Needs cost samples on more sessions</p><a href="settings.html">Set up cost capture →</a></div>
+  </section>
+</div>
+
+</main>
+<!-- sample data: scan time and transcript count are filled by the implementation -->
+<footer>local-first · reading ~/.claude/projects · last scan 13:52 · 21 transcripts</footer>
+<script src="_chrome.js"></script>
+</body>
+</html>

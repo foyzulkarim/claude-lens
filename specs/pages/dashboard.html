@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<!--
+  MOCKUP — visual acceptance target only.
+  Layout, hierarchy, and section presence are the binding contract for the
+  matching page task in specs/claude-lens-plan.md (Phase 4).
+  Inline styles, hardcoded numbers/session IDs, and decorative SVGs are
+  SAMPLE DATA, not implementation contracts.
+  Where specs/claude-lens-pages.md lists a section missing here, the spec wins.
+  Shared chrome lives in _chrome.css / _chrome.js.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude Lens — Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="_chrome.css">
+</head>
+<body>
+<header>
+  <span class="wordmark"><span class="lens">[◎]</span> claude&nbsp;lens</span>
+  <nav>
+    <a href="dashboard.html" class="on">Dashboard</a><a href="sessions.html" class="">Sessions</a><a href="projects.html" class="">Projects</a><a href="models.html" class="">Models</a><a href="cache-lab.html" class="">Cache Lab</a><a href="trends.html" class="">Trends</a><a href="explore.html" class="">Explore</a><a href="data-health.html" class="">Health</a><a href="settings.html" class="">⚙</a>
+  </nav>
+  <span class="tier">tier: <b>transcript-only</b></span>
+</header>
+<div class="filters">
+  <div class="seg"><button>1D</button><button class="on">7D</button><button>30D</button><button>90D</button><button>Custom</button></div>
+  <div class="f"><span class="k">Project</span><span class="v">all</span><span class="car">▾</span></div>
+  <div class="f"><span class="k">Model</span><span class="v">all</span><span class="car">▾</span></div>
+  <div class="f"><span class="k">Branch</span><span class="v">all</span><span class="car">▾</span></div>
+  <span class="host">⌂ mac-mini-home</span>
+</div>
+<main>
+
+<div class="statrow" style="grid-template-columns:repeat(5,1fr)">
+  <div class="stat"><div class="k">Total spend · 7d</div><div class="v money num">$169.70 <span class="delta up">▲ 189%</span></div>
+    <svg viewBox="0 0 100 22" style="width:100%;height:22px;margin-top:6px"><polyline points="0,18 14,16 28,8 42,20 56,7 70,12 84,20 100,2" fill="none" stroke="#E8A33D" stroke-width="1.5"/></svg></div>
+  <div class="stat"><div class="k">Total tokens</div><div class="v num">78.2M <span class="delta up">▲ 114%</span></div>
+    <svg viewBox="0 0 100 22" style="width:100%;height:22px;margin-top:6px"><polyline points="0,18 14,15 28,10 42,19 56,9 70,13 84,18 100,4" fill="none" stroke="#8B98A9" stroke-width="1.5"/></svg></div>
+  <div class="stat"><div class="k">Cache hit rate</div><div class="v cache num">95.4% <span class="delta upgood">▲ 1.2</span></div>
+    <svg viewBox="0 0 100 22" style="width:100%;height:22px;margin-top:6px"><polyline points="0,14 20,12 40,13 60,9 80,7 100,5" fill="none" stroke="#4FC3D9" stroke-width="1.5"/></svg></div>
+  <div class="stat"><div class="k">Sessions</div><div class="v num">21 <span class="delta upgood">▲ 144%</span></div>
+    <svg viewBox="0 0 100 22" style="width:100%;height:22px;margin-top:6px"><polyline points="0,20 14,18 28,12 42,20 56,10 70,14 84,20 100,4" fill="none" stroke="#8B98A9" stroke-width="1.5"/></svg></div>
+  <div class="stat"><div class="k">Cache leverage</div><div class="v cache num">20.6×</div><div class="sub">served from cache ÷ fresh-billed</div></div>
+</div>
+
+<section class="panel">
+  <h2>Subscription window <span class="badge">estimated — calibrate in Settings</span><span class="badge pass">active</span></h2>
+  <div class="grid2" style="margin-top:12px;gap:24px">
+    <div>
+      <div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px"><span style="color:var(--faint)">5-HOUR WINDOW</span><span style="color:var(--good)">7.0%</span></div>
+      <div class="rail" style="height:8px;background:var(--panel-2);border-radius:99px;overflow:hidden;margin-top:6px"><div style="width:7%;height:100%;background:var(--good);border-radius:99px"></div></div>
+      <p style="font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:6px">resets in 3h 58m · vs your peak window</p>
+    </div>
+    <div>
+      <div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px"><span style="color:var(--faint)">7-DAY WINDOW</span><span style="color:var(--good)">33.0%</span></div>
+      <div class="rail" style="height:8px;background:var(--panel-2);border-radius:99px;overflow:hidden;margin-top:6px"><div style="width:33%;height:100%;background:var(--good);border-radius:99px"></div></div>
+      <p style="font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:6px">resets in 121h 8m · trailing token sum from transcripts</p>
+    </div>
+  </div>
+</section>
+
+<div class="grid2" style="grid-template-columns:1.9fr 1.1fr">
+  <section class="panel">
+    <h2>Cost over time
+      <div class="sw"><button class="on" data-show="area">area</button><button data-show="bars">bars</button></div>
+      <div class="sw"><button class="on">$</button><button>tokens</button><button>calls</button></div>
+      <a class="goto" href="trends.html">trends →</a>
+    </h2>
+    <div data-variant="area">
+    <svg viewBox="0 0 720 190" preserveAspectRatio="none" style="width:100%;height:190px;margin-top:10px">
+      <g stroke="#1B222C"><line x1="0" y1="47" x2="720" y2="47"/><line x1="0" y1="94" x2="720" y2="94"/><line x1="0" y1="141" x2="720" y2="141"/></g>
+      <path d="M0,185 L0,182 C50,181 90,180 103,178 C150,172 190,160 206,155 C250,158 280,185 309,185 C360,168 400,158 412,152 C460,162 480,170 515,173 C540,180 570,185 618,185 C660,110 690,40 720,8 L720,190 L0,190 Z" fill="#E8A33D" opacity=".18"/>
+      <path d="M0,182 C50,181 90,180 103,178 C150,172 190,160 206,155 C250,158 280,185 309,185 C360,168 400,158 412,152 C460,162 480,170 515,173 C540,180 570,185 618,185 C660,110 690,40 720,8" fill="none" stroke="#E8A33D" stroke-width="2"/>
+      <path d="M0,184 C100,183 200,178 309,186 C400,175 500,180 618,186 C660,150 690,120 720,95" fill="none" stroke="#8B98A9" stroke-width="1" stroke-dasharray="3 4" opacity=".4"/>
+      <g font-family="IBM Plex Mono" font-size="9" fill="#5A6675">
+        <text x="4" y="180">26</text><text x="100" y="180">27</text><text x="200" y="180">28</text><text x="300" y="180">29</text><text x="405" y="180">30</text><text x="510" y="180">1</text><text x="612" y="180">2</text><text x="700" y="180">3</text>
+        <text x="560" y="110" opacity=".7">◌ previous 7d</text>
+      </g>
+    </svg>
+    </div>
+    <div data-variant="bars" style="display:none;margin-top:14px">
+      <div style="display:flex;align-items:flex-end;gap:8px;height:150px">
+        <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:6px;height:100%"><span class="num" style="font-size:10px;color:var(--muted)">1.82</span><div style="width:100%;height:2%;background:#C9862B;border-radius:3px 3px 0 0"></div><span class="num" style="font-size:10px;color:var(--faint)">26</span></div>
+        <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:6px;height:100%"><span class="num" style="font-size:10px;color:var(--muted)">4.41</span><div style="width:100%;height:4%;background:#C9862B;border-radius:3px 3px 0 0"></div><span class="num" style="font-size:10px;color:var(--faint)">27</span></div>
+        <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:6px;height:100%"><span class="num" style="font-size:10px;color:var(--muted)">19.64</span><div style="width:100%;height:18%;background:#C9862B;border-radius:3px 3px 0 0"></div><span class="num" style="font-size:10px;color:var(--faint)">28</span></div>
+        <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:6px;height:100%"><span class="num" style="font-size:10px;color:var(--muted)">0</span><div style="width:100%;height:0%"></div><span class="num" style="font-size:10px;color:var(--faint)">29</span></div>
+        <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:6px;height:100%"><span class="num" style="font-size:10px;color:var(--muted)">20.95</span><div style="width:100%;height:19%;background:#C9862B;border-radius:3px 3px 0 0"></div><span class="num" style="font-size:10px;color:var(--faint)">30</span></div>
+        <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:6px;height:100%"><span class="num" style="font-size:10px;color:var(--muted)">12.98</span><div style="width:100%;height:12%;background:#C9862B;border-radius:3px 3px 0 0"></div><span class="num" style="font-size:10px;color:var(--faint)">1</span></div>
+        <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:6px;height:100%"><span class="num" style="font-size:10px;color:var(--muted)">0</span><div style="width:100%;height:0%"></div><span class="num" style="font-size:10px;color:var(--faint)">2</span></div>
+        <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:6px;height:100%"><span class="num" style="font-size:10px;color:var(--muted)">109.92</span><div style="width:100%;height:100%;background:linear-gradient(180deg,#F0B65A,#C9862B);border-radius:3px 3px 0 0"></div><span class="num" style="font-size:10px;color:var(--faint)">3</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel" style="grid-row:span 2;display:flex;flex-direction:column">
+    <h2>Anomalies & gate failures<a class="goto" href="data-health.html">all →</a></h2>
+    <div style="margin-top:6px">
+      <div class="gatecard"><span class="badge fail">V1</span><div class="t"><b>Edit without verify</b> — 12 edits, no command after<div class="w">081df792 · turn 3 · today →</div></div></div>
+      <div class="gatecard"><span class="badge fail">K2</span><div class="t"><b>Unexplained invalidation</b> — 28.6k re-written<div class="w">081df792 · turn 2 · today →</div></div></div>
+      <div class="gatecard"><span class="badge warn">$</span><div class="t"><b>Expensive turn</b> — $3.12, p97 of your turns<div class="w">081df792 · turn 2 · today →</div></div></div>
+      <div class="gatecard"><span class="badge warn">C3</span><div class="t"><b>Fat tool result</b> — 41k chars re-billed onward<div class="w">081df792 · turn 2 · today →</div></div></div>
+      <div class="gatecard"><span class="badge warn">E2</span><div class="t"><b>CLAUDE.md bloat</b> — 6.2k chars / 94 lines<div class="w">agentic-swe-vod · checked now →</div></div></div>
+      <div class="gatecard"><span class="badge">i</span><div class="t"><b>Explained spike</b> — model switch cost 12.3k write<div class="w">081df792 · turn 4 →</div></div></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Most recent session <span class="badge computed">$ computed</span><a class="goto" href="session-detail.html">open →</a></h2>
+    <div style="display:flex;gap:16px;align-items:baseline;margin-top:8px;flex-wrap:wrap">
+      <span class="num" style="font-size:26px;font-weight:600;color:var(--money)">$7.97</span>
+      <span style="font-family:var(--mono);font-size:12px;color:var(--muted)">081df792 · agentic-swe-vod · 10:12–10:42</span>
+      <span class="badge">5 turns</span><span class="badge fail">2F 2W</span><span class="badge">ctx 16%</span>
+    </div>
+    <svg viewBox="0 0 720 90" preserveAspectRatio="none" style="width:100%;height:90px;margin-top:8px">
+      <rect x="596" y="0" width="124" height="90" fill="#8B98A9" opacity="0.07"/>
+      <g stroke="#3A4656" stroke-dasharray="2 4"><line x1="118" y1="0" x2="118" y2="90"/><line x1="428" y1="0" x2="428" y2="90"/><line x1="474" y1="0" x2="474" y2="90"/><line x1="596" y1="0" x2="596" y2="90"/></g>
+      <polyline points="0,88 30,87 60,62 90,54 118,50 180,46 240,41 300,35 360,31 428,27 474,24 520,22 560,19 596,17 640,13 680,9 720,5" fill="none" stroke="#E8A33D" stroke-width="2"/>
+      <circle cx="60" cy="62" r="3.5" fill="#E05252"/>
+    </svg>
+  </section>
+</div>
+
+<div class="grid2" style="grid-template-columns:1.9fr 1.1fr">
+  <section class="panel">
+    <h2>Leaderboards
+      <div class="sw"><button class="on" data-show="ls">sessions</button><button data-show="lp">projects</button><button data-show="lm">models</button></div>
+    </h2>
+    <div data-variant="ls">
+      <table>
+        <thead><tr><th>Session</th><th>Project</th><th class="r">$</th><th class="r">Min</th><th class="r">Cache</th></tr></thead>
+        <tbody>
+          <tr><td class="num">fbaf2dac</td><td>agentic-swe-vod</td><td class="num money-cell">30.64</td><td class="num">209</td><td class="num cache-cell">12.9M</td></tr>
+          <tr><td class="num">5e2164f5</td><td>agentic-swe-vod</td><td class="num money-cell">30.64</td><td class="num">369</td><td class="num cache-cell">—</td></tr>
+          <tr><td class="num">84509ee5</td><td>tokenowl_docs</td><td class="num money-cell">15.49</td><td class="num">237</td><td class="num cache-cell">4.8M</td></tr>
+          <tr><td class="num">866138e1</td><td>.claude</td><td class="num money-cell">11.43</td><td class="num">76</td><td class="num cache-cell">5.9M</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div data-variant="lp" style="display:none">
+      <div class="hbars" style="margin-top:12px">
+        <div class="hb"><span class="lbl">agentic-swe-vod</span><div class="rail"><div class="fill" style="width:100%"></div></div><span class="val">$82.24</span></div>
+        <div class="hb"><span class="lbl">tokenowl_docs</span><div class="rail"><div class="fill" style="width:36%"></div></div><span class="val">$29.81</span></div>
+        <div class="hb"><span class="lbl">skills</span><div class="rail"><div class="fill" style="width:35%"></div></div><span class="val">$29.04</span></div>
+        <div class="hb"><span class="lbl">.claude (+scripts)</span><div class="rail"><div class="fill" style="width:24%"></div></div><span class="val">$19.61</span></div>
+      </div>
+    </div>
+    <div data-variant="lm" style="display:none">
+      <div class="hbars" style="margin-top:12px">
+        <div class="hb"><span class="lbl">Fable 5</span><div class="rail"><div class="fill" style="width:100%"></div></div><span class="val">$99.20</span></div>
+        <div class="hb"><span class="lbl">Opus 4.8</span><div class="rail"><div class="fill" style="width:62%"></div></div><span class="val">$61.51</span></div>
+        <div class="hb"><span class="lbl">Sonnet 4.6</span><div class="rail"><div class="fill" style="width:7%"></div></div><span class="val">$6.45</span></div>
+        <div class="hb"><span class="lbl">Sonnet 5</span><div class="rail"><div class="fill" style="width:3%"></div></div><span class="val">$2.55</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Burn rate <span class="badge">⚑ budget in Settings</span><a class="goto" href="trends.html">budget →</a></h2>
+    <div class="hb" style="grid-template-columns:80px 1fr 100px;margin-top:14px">
+      <span class="lbl">July MTD</span>
+      <div class="rail" style="height:12px"><div class="fill" style="width:41%"></div></div>
+      <span class="val">$122 / $300</span>
+    </div>
+    <p style="font-family:var(--mono);font-size:11px;color:var(--warn);margin-top:10px">⚠ projected $268–317 by Jul 31 — upper band crosses cap ~Jul 27</p>
+    <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">
+      <p style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);font-weight:600">What you didn't pay · 7d</p>
+      <div class="hbars" style="margin-top:10px;gap:8px">
+        <div class="hb" style="grid-template-columns:110px 1fr 60px"><span class="lbl">cache discount</span><div class="rail"><div class="fill c" style="width:100%"></div></div><span class="val">$412</span></div>
+        <div class="hb" style="grid-template-columns:110px 1fr 60px"><span class="lbl">cheap-model routing</span><div class="rail"><div class="fill c" style="width:12%"></div></div><span class="val">$49</span></div>
+      </div>
+      <p style="font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:6px">vs all-Opus, uncached counterfactual</p>
+    </div>
+    <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">
+      <p style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);font-weight:600">Records</p>
+      <p style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:8px">most expensive day <span class="money-cell">$109.92</span> · today<br>most expensive session <span class="money-cell">$30.64</span> · fbaf2dac<br>longest session <span style="color:var(--text)">6h 09m</span> · 5e2164f5<br>biggest cache save <span class="cache-cell">$71 est</span> · fbaf2dac</p>
+    </div>
+  </section>
+</div>
+
+<!-- conditional: render only when no C/B/L capture files are present (tier 🔴 CTA, pages spec §1 last row) -->
+<div class="cta" data-tier="transcript-only" style="margin:0">
+  <span class="dot"></span>
+  <p><b>Dollar figures are computed</b> from tokens × pricing. Cost capture adds observed $, latency waterfalls, and lines-changed metrics.</p>
+  <a href="settings.html">Set up cost capture →</a>
+</div>
+
+</main>
+<!-- sample data: scan time and transcript count are filled by the implementation -->
+<footer>local-first · reading ~/.claude/projects · last scan 13:52 · 21 transcripts</footer>
+<script src="_chrome.js"></script>
+</body>
+</html>

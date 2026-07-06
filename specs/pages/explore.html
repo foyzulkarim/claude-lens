@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<!--
+  MOCKUP — visual acceptance target only.
+  Layout, hierarchy, and section presence are the binding contract for the
+  matching page task in specs/claude-lens-plan.md (Phase 4).
+  Inline styles, hardcoded numbers/session IDs, and decorative SVGs are
+  SAMPLE DATA, not implementation contracts.
+  Where specs/claude-lens-pages.md lists a section missing here, the spec wins.
+  Shared chrome lives in _chrome.css / _chrome.js.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude Lens — Explore</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="_chrome.css">
+</head>
+<body>
+<header>
+  <span class="wordmark"><span class="lens">[◎]</span> claude&nbsp;lens</span>
+  <nav>
+    <a href="dashboard.html" class="">Dashboard</a><a href="sessions.html" class="">Sessions</a><a href="projects.html" class="">Projects</a><a href="models.html" class="">Models</a><a href="cache-lab.html" class="">Cache Lab</a><a href="trends.html" class="">Trends</a><a href="explore.html" class="on">Explore</a><a href="data-health.html" class="">Health</a><a href="settings.html" class="">⚙</a>
+  </nav>
+  <span class="tier">tier: <b>transcript-only</b></span>
+</header>
+<div class="filters">
+  <div class="seg"><button>1D</button><button class="on">7D</button><button>30D</button><button>90D</button><button>Custom</button></div>
+  <div class="f"><span class="k">Project</span><span class="v">all</span><span class="car">▾</span></div>
+  <div class="f"><span class="k">Model</span><span class="v">all</span><span class="car">▾</span></div>
+  <div class="f"><span class="k">Branch</span><span class="v">all</span><span class="car">▾</span></div>
+  <span class="host">⌂ mac-mini-home</span>
+</div>
+<main>
+
+<section class="panel">
+  <h2>Build a view</h2>
+  <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap">
+    <div class="f"><span class="k">Measure</span><span class="v">computed $</span><span class="car">▾</span></div>
+    <div class="f"><span class="k">Dimension</span><span class="v">tool name</span><span class="car">▾</span></div>
+    <div class="f"><span class="k">Grain</span><span class="v">day</span><span class="car">▾</span></div>
+    <div class="seg"><button class="on" data-show="bar">bar</button><button data-show="line">line</button><button data-show="area">area</button><button data-show="scatter">scatter</button><button data-show="tbl">table</button></div>
+    <button style="margin-left:auto;background:var(--panel-2);border:1px solid rgba(232,163,61,.4);border-radius:var(--r);color:var(--money);padding:7px 14px;font-size:12px;cursor:pointer">★ Save view</button>
+  </div>
+  <p style="font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:8px">measures: $ · tokens (by type) · calls · turns · sessions · cache % · minutes &nbsp;&nbsp; dimensions: time · project · model · branch · version · entrypoint · tool · sidechain · gate</p>
+</section>
+
+<section class="panel">
+  <h2>computed $ by tool name — last 7d <span class="badge computed">$ attributed per turn share</span></h2>
+  <div data-variant="bar">
+    <div class="hbars" style="margin-top:12px">
+      <div class="hb"><span class="lbl">Edit</span><div class="rail"><div class="fill" style="width:100%"></div></div><span class="val">$61.40</span></div>
+      <div class="hb"><span class="lbl">Bash</span><div class="rail"><div class="fill" style="width:64%"></div></div><span class="val">$39.10</span></div>
+      <div class="hb"><span class="lbl">Read</span><div class="rail"><div class="fill" style="width:48%"></div></div><span class="val">$29.60</span></div>
+      <div class="hb"><span class="lbl">Grep / Glob</span><div class="rail"><div class="fill" style="width:19%"></div></div><span class="val">$11.80</span></div>
+      <div class="hb"><span class="lbl">WebFetch</span><div class="rail"><div class="fill" style="width:11%"></div></div><span class="val">$6.90</span></div>
+      <div class="hb"><span class="lbl">no-tool turns</span><div class="rail"><div class="fill" style="width:34%;background:var(--faint)"></div></div><span class="val">$20.90</span></div>
+    </div>
+  </div>
+  <div data-variant="line" style="display:none;margin-top:14px;color:var(--faint);font-family:var(--mono);font-size:12px">one line per tool over days</div>
+  <div data-variant="area" style="display:none;margin-top:14px;color:var(--faint);font-family:var(--mono);font-size:12px">stacked area over days</div>
+  <div data-variant="scatter" style="display:none;margin-top:14px;color:var(--faint);font-family:var(--mono);font-size:12px">needs two measures — pick a second</div>
+  <div data-variant="tbl" style="display:none;margin-top:14px;color:var(--faint);font-family:var(--mono);font-size:12px">raw pivot table with export</div>
+  <p style="font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:12px">note: $ per tool is turn-share attribution, not exact — turns containing the tool, cost split by call</p>
+</section>
+
+<section class="panel">
+  <h2>Saved views</h2>
+  <div class="grid3" style="margin-top:12px">
+    <div style="background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r);padding:12px;cursor:pointer">
+      <p style="font-size:13px">tokens by branch · agentic-swe-vod</p>
+      <p style="font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:4px">bar · 30d · pinned to dashboard</p>
+    </div>
+    <div style="background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r);padding:12px;cursor:pointer">
+      <p style="font-size:13px">cache % by CC version</p>
+      <p style="font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:4px">line · 90d</p>
+    </div>
+    <div style="background:var(--panel-2);border:1px dashed var(--line);border-radius:var(--r);padding:12px;color:var(--faint);display:flex;align-items:center;justify-content:center">+ new</div>
+  </div>
+</section>
+
+</main>
+<!-- sample data: scan time and transcript count are filled by the implementation -->
+<footer>local-first · reading ~/.claude/projects · last scan 13:52 · 21 transcripts</footer>
+<script src="_chrome.js"></script>
+</body>
+</html>

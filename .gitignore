@@ -13,3 +13,6 @@ npm-debug.log*
 # OS
 .DS_Store
 Thumbs.db
+
+# Serena (local agent config)
+.serena/

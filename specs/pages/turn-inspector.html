@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<!--
+  MOCKUP — visual acceptance target only.
+  Layout, hierarchy, and section presence are the binding contract for the
+  matching page task in specs/claude-lens-plan.md (Phase 4).
+  Inline styles, hardcoded numbers/session IDs, and decorative SVGs are
+  SAMPLE DATA, not implementation contracts.
+  Where specs/claude-lens-pages.md lists a section missing here, the spec wins.
+  Shared chrome lives in _chrome.css / _chrome.js.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude Lens — Turn 2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="_chrome.css">
+</head>
+<body>
+<header>
+  <span class="wordmark"><span class="lens">[◎]</span> claude&nbsp;lens</span>
+  <nav>
+    <a href="dashboard.html" class="">Dashboard</a><a href="sessions.html" class="on">Sessions</a><a href="projects.html" class="">Projects</a><a href="models.html" class="">Models</a><a href="cache-lab.html" class="">Cache Lab</a><a href="trends.html" class="">Trends</a><a href="explore.html" class="">Explore</a><a href="data-health.html" class="">Health</a><a href="settings.html" class="">⚙</a>
+  </nav>
+  <span class="tier">tier: <b>transcript-only</b></span>
+</header>
+<div class="filters">
+  <div class="seg"><button>1D</button><button class="on">7D</button><button>30D</button><button>90D</button><button>Custom</button></div>
+  <div class="f"><span class="k">Project</span><span class="v">all</span><span class="car">▾</span></div>
+  <div class="f"><span class="k">Model</span><span class="v">all</span><span class="car">▾</span></div>
+  <div class="f"><span class="k">Branch</span><span class="v">all</span><span class="car">▾</span></div>
+  <span class="host">⌂ mac-mini-home</span>
+</div>
+<main>
+
+<section class="panel">
+  <h2>Turn 2 of 5 — session 081df792
+    <a class="goto" href="session-detail.html">← session</a>
+  </h2>
+  <div style="display:flex;gap:18px;align-items:baseline;margin-top:10px;flex-wrap:wrap">
+    <span class="num" style="font-size:26px;font-weight:600;color:var(--money)">$3.12</span>
+    <span class="badge fail">p97 of your turns</span>
+    <span class="badge">840k tokens</span><span class="badge">9 API calls</span><span class="badge">opus-4-8</span>
+    <span class="badge fail">K2</span><span class="badge warn">C3</span>
+    <span style="margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--muted)"><a href="#">← turn 1</a> · <a href="#">turn 3 →</a></span>
+  </div>
+  <p style="margin-top:10px;color:var(--muted);font-size:13px;border-left:2px solid var(--line);padding-left:10px">"refactor the statusline wrapper to buffer samples and flush on exit, keep the 5s cadence"</p>
+  <p style="font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:8px">wall 6m 41s · api time <span class="badge premium">needs cost capture</span> — widths below use timestamp deltas</p>
+</section>
+
+<section class="panel">
+  <h2>API-call waterfall
+    <div class="sw"><button class="on" data-show="time">by time</button><button data-show="tok">by tokens</button></div>
+    <span class="badge computed">$ computed</span>
+  </h2>
+  <div data-variant="time" style="margin-top:12px;font-family:var(--mono);font-size:11px">
+    <svg viewBox="0 0 720 240" style="width:100%;height:240px">
+      <g fill="#8B98A9" font-size="10">
+        <text x="0" y="22">c1</text><text x="0" y="48">c2</text><text x="0" y="74">c3</text><text x="0" y="100">c4</text>
+        <text x="0" y="126">c5</text><text x="0" y="152">c6</text><text x="0" y="178">c7</text><text x="0" y="204">c8</text><text x="0" y="230">c9</text>
+      </g>
+      <g rx="3">
+        <rect x="30" y="10" width="70" height="16" rx="3" fill="#C9862B"/>
+        <rect x="100" y="36" width="150" height="16" rx="3" fill="#D9B44F"/><text x="256" y="48" fill="#D9B44F" font-size="9">Read ·41k chars · C3</text>
+        <rect x="250" y="62" width="60" height="16" rx="3" fill="#C9862B"/><text x="316" y="74" fill="#5A6675" font-size="9">Edit×2</text>
+        <rect x="310" y="88" width="120" height="16" rx="3" fill="#E05252"/><text x="436" y="100" fill="#E05252" font-size="9">cache re-write 28.6k · K2</text>
+        <rect x="430" y="114" width="55" height="16" rx="3" fill="#C9862B"/><text x="491" y="126" fill="#5A6675" font-size="9">Edit×3</text>
+        <rect x="485" y="140" width="50" height="16" rx="3" fill="#C9862B"/><text x="541" y="152" fill="#5A6675" font-size="9">Edit×2</text>
+        <rect x="535" y="166" width="45" height="16" rx="3" fill="#4FC3D9" opacity=".7"/><text x="586" y="178" fill="#4FC3D9" font-size="9">sidechain</text>
+        <rect x="580" y="192" width="60" height="16" rx="3" fill="#C9862B"/><text x="646" y="204" fill="#5A6675" font-size="9">Bash</text>
+        <rect x="640" y="218" width="70" height="16" rx="3" fill="#C9862B"/>
+      </g>
+    </svg>
+  </div>
+  <div data-variant="tok" style="display:none;margin-top:12px">
+    <div class="hbars">
+      <div class="hb"><span class="lbl">c2 · Read</span><div class="rail"><div class="fill" style="width:100%;background:var(--warn)"></div></div><span class="val">212k</span></div>
+      <div class="hb"><span class="lbl">c4 · re-write</span><div class="rail"><div class="fill" style="width:74%;background:var(--bad)"></div></div><span class="val">156k</span></div>
+      <div class="hb"><span class="lbl">c7 · sidechain</span><div class="rail"><div class="fill c" style="width:41%"></div></div><span class="val">87k</span></div>
+      <div class="hb"><span class="lbl">c5 · Edit×3</span><div class="rail"><div class="fill" style="width:33%"></div></div><span class="val">71k</span></div>
+      <div class="hb"><span class="lbl">others (5)</span><div class="rail"><div class="fill" style="width:28%;background:var(--faint)"></div></div><span class="val">61k</span></div>
+    </div>
+  </div>
+</section>
+
+<div class="grid2">
+  <section class="panel">
+    <h2>Cache narrative</h2>
+    <div style="margin-top:6px">
+      <div class="gatecard"><span class="badge">c1</span><div class="t">Read 212k cached tokens (98% hit) — prefix stable from turn 1</div></div>
+      <div class="gatecard"><span class="badge fail">c4</span><div class="t"><b>28.6k tokens re-written.</b> Not first call, no model switch, no compaction cliff → <b>unexplained (K2)</b>. Likely prefix churn: CLAUDE.md or MCP config changed mid-session.<div class="w">classifier trace: first=no · switch=no · cliff=no</div></div></div>
+      <div class="gatecard"><span class="badge">c5–c9</span><div class="t">Hit rate recovers to 96% — new prefix stable</div></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Sidechain breakdown</h2>
+    <div style="margin-top:12px" class="hbars">
+      <div class="hb"><span class="lbl">main thread</span><div class="rail"><div class="fill" style="width:100%"></div></div><span class="val">$2.71</span></div>
+      <div class="hb"><span class="lbl">sidechain (1 agent)</span><div class="rail"><div class="fill c" style="width:15%"></div></div><span class="val">$0.41</span></div>
+    </div>
+    <p style="font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:10px">subagent: 87k tokens, 3 calls, sonnet-5</p>
+  </section>
+</div>
+
+<section class="panel">
+  <h2>Transcript peek <span class="badge">collapsed</span></h2>
+  <div style="margin-top:10px;font-family:var(--mono);font-size:12px;color:var(--muted);background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r);padding:12px">
+    <p style="color:var(--faint)">▸ assistant: "I'll buffer the samples in memory and flush on SIGTERM…"</p>
+    <p style="color:var(--faint)">▸ tool_use Read → statusline-wrapper.js <span style="color:var(--warn)">(41,203 chars)</span></p>
+    <p style="color:var(--faint)">▸ tool_use Edit ×9 across 3 files</p>
+    <p style="color:var(--faint)">▸ tool_use Bash → node --check statusline-wrapper.js ✓</p>
+  </div>
+</section>
+
+</main>
+<!-- sample data: scan time and transcript count are filled by the implementation -->
+<footer>local-first · reading ~/.claude/projects · last scan 13:52 · 21 transcripts</footer>
+<script src="_chrome.js"></script>
+</body>
+</html>

@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<!--
+  MOCKUP — visual acceptance target only.
+  Layout, hierarchy, and section presence are the binding contract for the
+  matching page task in specs/claude-lens-plan.md (Phase 4).
+  Inline styles, hardcoded numbers/session IDs, and decorative SVGs are
+  SAMPLE DATA, not implementation contracts.
+  Where specs/claude-lens-pages.md lists a section missing here, the spec wins.
+  Shared chrome lives in _chrome.css / _chrome.js.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude Lens — Sessions</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="_chrome.css">
+</head>
+<body>
+<header>
+  <span class="wordmark"><span class="lens">[◎]</span> claude&nbsp;lens</span>
+  <nav>
+    <a href="dashboard.html" class="">Dashboard</a><a href="sessions.html" class="on">Sessions</a><a href="projects.html" class="">Projects</a><a href="models.html" class="">Models</a><a href="cache-lab.html" class="">Cache Lab</a><a href="trends.html" class="">Trends</a><a href="explore.html" class="">Explore</a><a href="data-health.html" class="">Health</a><a href="settings.html" class="">⚙</a>
+  </nav>
+  <span class="tier">tier: <b>transcript-only</b></span>
+</header>
+<div class="filters">
+  <div class="seg"><button>1D</button><button class="on">7D</button><button>30D</button><button>90D</button><button>Custom</button></div>
+  <div class="f"><span class="k">Project</span><span class="v">all</span><span class="car">▾</span></div>
+  <div class="f"><span class="k">Model</span><span class="v">all</span><span class="car">▾</span></div>
+  <div class="f"><span class="k">Branch</span><span class="v">all</span><span class="car">▾</span></div>
+  <span class="host">⌂ mac-mini-home</span>
+</div>
+<main>
+
+<section class="panel">
+  <h2>Search prompts across all sessions</h2>
+  <div style="display:flex;gap:10px;margin-top:10px">
+    <input type="text" placeholder='try: "oauth callback" or "fix the statusline"' style="flex:1;background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r);padding:9px 12px;color:var(--text);font-family:var(--mono);font-size:13px">
+    <button style="background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r);color:var(--muted);padding:0 16px;font-size:13px;cursor:pointer">Search</button>
+  </div>
+  <p style="font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:8px">matches open the session at the exact turn</p>
+</section>
+
+<section class="panel">
+  <h2>21 sessions
+    <span class="badge computed">$ computed</span>
+    <div class="sw"><button class="on" data-show="table">table</button><button data-show="gantt">gantt</button></div>
+  </h2>
+  <div data-variant="table">
+  <table>
+    <thead><tr><th>Session</th><th>Project</th><th>Branch</th><th>Models</th><th class="r">$</th><th class="r">Turns</th><th class="r">Tokens</th><th class="r">Cache %</th><th class="r">Gates</th><th class="r">Min</th></tr></thead>
+    <tbody>
+      <tr><td class="num">081df792</td><td>agentic-swe-vod</td><td class="num">main</td><td><span class="mchip">opus-4-8</span> <span class="mchip">sonnet-5</span></td><td class="num money-cell">7.97</td><td class="num">5</td><td class="num">1.9M</td><td class="num cache-cell">96.1</td><td class="num"><span class="badge fail">2F 2W</span></td><td class="num">30</td></tr>
+      <tr><td class="num">fbaf2dac</td><td>agentic-swe-vod</td><td class="num">feat/vod-ingest</td><td><span class="mchip">fable-5</span></td><td class="num money-cell">30.64</td><td class="num">18</td><td class="num">13.4M</td><td class="num cache-cell">95.6</td><td class="num"><span class="badge fail">1F 1W</span></td><td class="num">209</td></tr>
+      <tr><td class="num">866138e1</td><td>.claude</td><td class="num">—</td><td><span class="mchip">fable-5</span></td><td class="num money-cell">11.43</td><td class="num">9</td><td class="num">6.0M</td><td class="num cache-cell">98.1</td><td class="num"><span class="badge pass">pass</span></td><td class="num">76</td></tr>
+      <tr><td class="num">5dc83085</td><td>skills</td><td class="num">main</td><td><span class="mchip">fable-5</span></td><td class="num money-cell">10.45</td><td class="num">7</td><td class="num">0.3M</td><td class="num cache-cell">89.0</td><td class="num"><span class="badge warn">2W</span></td><td class="num">85</td></tr>
+      <tr><td class="num">84509ee5</td><td>tokenowl_docs</td><td class="num">main</td><td><span class="mchip">opus-4-8</span></td><td class="num money-cell">15.49</td><td class="num">14</td><td class="num">5.2M</td><td class="num cache-cell">93.3</td><td class="num"><span class="badge warn">1W</span></td><td class="num">237</td></tr>
+      <tr><td class="num">2f91c07a</td><td>aswe-lms</td><td class="num">feat/quiz</td><td><span class="mchip">sonnet-4-6</span></td><td class="num money-cell">4.36</td><td class="num">11</td><td class="num">2.1M</td><td class="num cache-cell">94.8</td><td class="num"><span class="badge pass">pass</span></td><td class="num">64</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div data-variant="gantt" style="display:none;margin-top:14px">
+    <svg viewBox="0 0 720 150" style="width:100%;height:150px" aria-label="Sessions gantt for July 3">
+      <g font-family="IBM Plex Mono" font-size="9" fill="#5A6675">
+        <text x="0" y="10">09:00</text><text x="170" y="10">11:00</text><text x="350" y="10">13:00</text><text x="530" y="10">15:00</text><text x="700" y="10">17:00</text>
+      </g>
+      <g stroke="#1B222C"><line x1="0" y1="16" x2="0" y2="150"/><line x1="180" y1="16" x2="180" y2="150"/><line x1="360" y1="16" x2="360" y2="150"/><line x1="540" y1="16" x2="540" y2="150"/><line x1="718" y1="16" x2="718" y2="150"/></g>
+      <rect x="20" y="26" width="290" height="14" rx="3" fill="#E8A33D" opacity=".8"/><text x="24" y="37" font-family="IBM Plex Mono" font-size="9" fill="#0E1116">fbaf2dac · $30.64</text>
+      <rect x="95" y="48" width="60" height="14" rx="3" fill="#C9862B" opacity=".8"/><text x="99" y="59" font-family="IBM Plex Mono" font-size="9" fill="#0E1116">081df792</text>
+      <rect x="150" y="70" width="510" height="14" rx="3" fill="#8a6a2f"/><text x="154" y="81" font-family="IBM Plex Mono" font-size="9" fill="#E8EDF2">5e2164f5 · $30.64 · overlaps 2 sessions</text>
+      <rect x="330" y="92" width="105" height="14" rx="3" fill="#C9862B" opacity=".8"/><text x="334" y="103" font-family="IBM Plex Mono" font-size="9" fill="#0E1116">866138e1</text>
+      <rect x="470" y="114" width="120" height="14" rx="3" fill="#E8A33D" opacity=".8"/><text x="474" y="125" font-family="IBM Plex Mono" font-size="9" fill="#0E1116">5dc83085</text>
+    </svg>
+    <p style="font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:6px">overlapping bars = parallel sessions</p>
+  </div>
+</section>
+
+<div class="grid2">
+  <section class="panel">
+    <h2>Session cost distribution
+      <div class="sw"><button class="on" data-show="hist">histogram</button><button data-show="pct">percentiles</button></div>
+    </h2>
+    <div data-variant="hist">
+      <svg viewBox="0 0 340 130" style="width:100%;height:130px;margin-top:10px">
+        <g fill="#C9862B">
+          <rect x="10" y="40" width="30" height="80"/><rect x="46" y="20" width="30" height="100"/><rect x="82" y="60" width="30" height="60"/>
+          <rect x="118" y="90" width="30" height="30"/><rect x="154" y="100" width="30" height="20"/><rect x="190" y="110" width="30" height="10"/>
+          <rect x="262" y="110" width="30" height="10" fill="#E05252"/>
+        </g>
+        <g font-family="IBM Plex Mono" font-size="9" fill="#5A6675">
+          <text x="10" y="128">$0–2</text><text x="82" y="128">$4–6</text><text x="154" y="128">$8–10</text><text x="255" y="128">$30+ ←outliers</text>
+        </g>
+      </svg>
+    </div>
+    <div data-variant="pct" style="display:none;margin-top:14px">
+      <div class="hbars">
+        <div class="hb"><span class="lbl">p50</span><div class="rail"><div class="fill" style="width:14%"></div></div><span class="val">$4.41</span></div>
+        <div class="hb"><span class="lbl">p90</span><div class="rail"><div class="fill" style="width:51%"></div></div><span class="val">$15.49</span></div>
+        <div class="hb"><span class="lbl">p99</span><div class="rail"><div class="fill" style="width:100%"></div></div><span class="val">$30.64</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Efficiency scatter
+      <div class="sw"><button class="on">$ × duration</button><button>tokens × turns</button><button>cache × $</button></div>
+    </h2>
+    <svg viewBox="0 0 340 130" style="width:100%;height:130px;margin-top:10px">
+      <g stroke="#1B222C"><line x1="30" y1="5" x2="30" y2="115"/><line x1="30" y1="115" x2="335" y2="115"/></g>
+      <g fill="#E8A33D" opacity=".85">
+        <circle cx="60" cy="105" r="4"/><circle cx="75" cy="100" r="3"/><circle cx="90" cy="98" r="5"/><circle cx="110" cy="90" r="4"/>
+        <circle cx="140" cy="80" r="6"/><circle cx="165" cy="86" r="3"/><circle cx="200" cy="60" r="7"/><circle cx="240" cy="38" r="8"/>
+        <circle cx="300" cy="30" r="9"/><circle cx="290" cy="12" r="9" fill="#E05252"/>
+      </g>
+      <line x1="35" y1="108" x2="330" y2="20" stroke="#4FC3D9" stroke-dasharray="3 4" opacity=".5"/>
+      <g font-family="IBM Plex Mono" font-size="9" fill="#5A6675"><text x="300" y="126">min</text><text x="2" y="12">$</text></g>
+    </svg>
+    <p style="font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:6px">size = cache read · red = above trend · click to filter table</p>
+  </section>
+</div>
+
+</main>
+<!-- sample data: scan time and transcript count are filled by the implementation -->
+<footer>local-first · reading ~/.claude/projects · last scan 13:52 · 21 transcripts</footer>
+<script src="_chrome.js"></script>
+</body>
+</html>

@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<!--
+  MOCKUP — visual acceptance target only.
+  Layout, hierarchy, and section presence are the binding contract for the
+  matching page task in specs/claude-lens-plan.md (Phase 4).
+  Inline styles, hardcoded numbers/session IDs, and decorative SVGs are
+  SAMPLE DATA, not implementation contracts.
+  Where specs/claude-lens-pages.md lists a section missing here, the spec wins.
+  Shared chrome lives in _chrome.css / _chrome.js.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude Lens — Settings</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="_chrome.css">
+</head>
+<body>
+<header>
+  <span class="wordmark"><span class="lens">[◎]</span> claude&nbsp;lens</span>
+  <nav>
+    <a href="dashboard.html" class="">Dashboard</a><a href="sessions.html" class="">Sessions</a><a href="projects.html" class="">Projects</a><a href="models.html" class="">Models</a><a href="cache-lab.html" class="">Cache Lab</a><a href="trends.html" class="">Trends</a><a href="explore.html" class="">Explore</a><a href="data-health.html" class="">Health</a><a href="settings.html" class="on">⚙</a>
+  </nav>
+  <span class="tier">tier: <b>transcript-only</b></span>
+</header>
+<div class="filters">
+  <div class="seg"><button>1D</button><button class="on">7D</button><button>30D</button><button>90D</button><button>Custom</button></div>
+  <div class="f"><span class="k">Project</span><span class="v">all</span><span class="car">▾</span></div>
+  <div class="f"><span class="k">Model</span><span class="v">all</span><span class="car">▾</span></div>
+  <div class="f"><span class="k">Branch</span><span class="v">all</span><span class="car">▾</span></div>
+  <span class="host">⌂ mac-mini-home</span>
+</div>
+<main>
+
+<div class="grid2">
+  <section class="panel">
+    <h2>Pricing table <span class="badge">$/MTok</span></h2>
+    <table>
+      <thead><tr><th>Model</th><th class="r">Input</th><th class="r">Output</th><th class="r">Cache read</th><th class="r">Cache write</th></tr></thead>
+      <tbody>
+        <tr><td class="num">claude-opus-4-8</td><td class="num">15.00</td><td class="num">75.00</td><td class="num">1.50</td><td class="num">18.75</td></tr>
+        <tr><td class="num">claude-sonnet-5</td><td class="num">3.00</td><td class="num">15.00</td><td class="num">0.30</td><td class="num">3.75</td></tr>
+        <tr><td class="num">claude-fable-5</td><td class="num" style="color:var(--warn)">— add</td><td class="num" style="color:var(--warn)">—</td><td class="num" style="color:var(--warn)">—</td><td class="num" style="color:var(--warn)">—</td></tr>
+      </tbody>
+    </table>
+    <p style="font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:8px">ships with defaults · unknown model strings surface in Data Health</p>
+  </section>
+
+  <section class="panel">
+    <h2>Scan roots <span class="badge">label = host dimension</span></h2>
+    <table>
+      <thead><tr><th>Path</th><th>Label</th><th class="r">Transcripts</th></tr></thead>
+      <tbody>
+        <tr><td class="num">~/.claude/projects</td><td><span class="mchip">mac-mini-home</span></td><td class="num">21</td></tr>
+        <tr><td class="num">/Volumes/work-sync/.claude/projects</td><td><span class="mchip">mbp-work</span></td><td class="num">0 · not mounted</td></tr>
+      </tbody>
+    </table>
+    <p style="font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:8px">multi-machine via labeled roots — no capture change needed</p>
+  </section>
+</div>
+
+<div class="grid2">
+  <section class="panel">
+    <h2>Budget & thresholds</h2>
+    <table>
+      <thead><tr><th>Setting</th><th class="r">Value</th></tr></thead>
+      <tbody>
+        <tr><td>Monthly budget</td><td class="num money-cell">$300</td></tr>
+        <tr><td>Anomaly multiplier (× session median)</td><td class="num">3.0</td></tr>
+        <tr><td>V2 repeat count</td><td class="num">3</td></tr>
+        <tr><td>C3 max result chars</td><td class="num">15,000</td></tr>
+        <tr><td>K2 spike floor (tokens)</td><td class="num">10,000</td></tr>
+        <tr><td>E2 CLAUDE.md max chars / lines</td><td class="num">4,000 / 60</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="panel">
+    <h2>Cost capture setup <span class="badge premium">unlocks 🔴 features</span></h2>
+    <div style="margin-top:10px;font-size:13px;color:var(--muted)">
+      <div class="gatecard"><span class="badge">1</span><div class="t">Copy <span class="num">cost-logger.js</span> + <span class="num">turn-logger.js</span> to <span class="num">~/.claude/scripts</span></div></div>
+      <div class="gatecard"><span class="badge">2</span><div class="t">Add statusline wrapper + Stop hook to <span class="num">settings.json</span> <span class="badge">copy snippet</span></div></div>
+      <div class="gatecard"><span class="badge">3</span><div class="t">Run one session → verify below</div></div>
+      <div class="gatecard"><span class="badge pass">✓</span><div class="t">Last verified: today 10:42 · 5 sessions capturing</div></div>
+    </div>
+  </section>
+</div>
+
+</main>
+<!-- sample data: scan time and transcript count are filled by the implementation -->
+<footer>local-first · reading ~/.claude/projects · last scan 13:52 · 21 transcripts</footer>
+<script src="_chrome.js"></script>
+</body>
+</html>
