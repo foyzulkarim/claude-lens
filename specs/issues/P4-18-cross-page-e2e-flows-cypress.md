@@ -8,7 +8,7 @@ status: draft
 Task **#P4-18** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 4.
 
 ## Summary
-Cross-page E2E flows (Cypress)
+The five cross-page Cypress journeys (search→detail, drill, permalink, export, gate evidence) green in CI — the Phase 4 exit guard.
 
 ## Scope
 - The journeys that span pages, run against the fixture-root harness from #P3-5: prompt search → Session Detail at the matching turn; drill-anywhere from a Dashboard chart slice → Sessions filtered to that slice; permalink copy → paste reproduces the exact view; CSV export downloads; gate evidence link → Turn Inspector at the exact turn.

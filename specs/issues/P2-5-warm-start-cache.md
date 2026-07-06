@@ -8,7 +8,7 @@ status: draft
 Task **#P2-5** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 2.
 
 ## Summary
-Warm-start cache
+Warm-start cache of parsed compact records keyed on `(path,size,mtime)`, so unchanged files skip parsing on reboot.
 
 ## Scope
 - `warm-cache.ts`: `(path,size,mtime)`-keyed NDJSON compact-record cache under `~/.claude-lens/cache/`; best-effort writes; deleting the dir is always safe.
@@ -22,3 +22,4 @@ Warm-start cache
 
 ## References
 - [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md)
+- [specs/claude-lens-architecture.md](../blob/main/specs/claude-lens-architecture.md) §5.6 (NDJSON format; revisit msgpack only if #P2-7 boot profiling demands it)

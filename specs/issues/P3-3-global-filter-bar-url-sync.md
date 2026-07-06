@@ -8,7 +8,7 @@ status: draft
 Task **#P3-3** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 3.
 
 ## Summary
-Global filter bar + URL sync
+The global filter bar with query-string state — permalinks and cross-page filter persistence (spec §0 requirement).
 
 ## Scope
 - `filters/`: range presets (1D/7D/30D/90D/custom), project/model/branch/host chips; filter state lives in the query string and survives navigation (spec §0 permalink requirement).
@@ -22,3 +22,5 @@ Global filter bar + URL sync
 
 ## References
 - [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md)
+- [specs/claude-lens-pages.md](../blob/main/specs/claude-lens-pages.md) §0 (global analytics layer)
+- [specs/claude-lens-architecture.md](../blob/main/specs/claude-lens-architecture.md) §11 (query string, not URL hash — decisions log 2026-07-06)

@@ -8,7 +8,7 @@ status: draft
 Task **#P1-5** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 1.
 
 ## Summary
-Linting + formatting
+Adopt one lint+format tool (default: Biome) across all three TS roots and enforce it in CI.
 
 ## Scope
 - One tool across all three TS roots, wired into CI (#P1-3) and an npm script. **Default: Biome** (single fast tool for lint+format, fits the minimal-tooling ethos); switch to ESLint + Prettier at task start only if a concretely needed rule/plugin is missing — record either outcome in the decisions log. Config lives at repo root; `legacy/` excluded.

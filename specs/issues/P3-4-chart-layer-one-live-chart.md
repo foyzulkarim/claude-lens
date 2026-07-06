@@ -8,7 +8,7 @@ status: draft
 Task **#P3-4** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 3.
 
 ## Summary
-Chart layer + one live chart
+The hand-rolled ECharts layer plus the first live chart on the Dashboard stub — the go/no-go demo milestone for Phase 4.
 
 ## Scope
 - *(the demo milestone)* ECharts wrapper (~50-line mount/setOption/ResizeObserver/dispose — no `echarts-for-react`); timeseries option builder; unit switcher, compare ghost, smoothing, granularity, click-to-drill implemented **in this layer** per §11. Mount one cost-over-time chart on the Dashboard stub.
@@ -22,3 +22,4 @@ Chart layer + one live chart
 
 ## References
 - [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md)
+- [specs/claude-lens-architecture.md](../blob/main/specs/claude-lens-architecture.md) §11 (charts layer spec)

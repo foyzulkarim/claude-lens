@@ -8,13 +8,13 @@ status: draft
 Task **#P4-6** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 4.
 
 ## Summary
-Turn Inspector page
+Build the Turn Inspector page (pages spec §4): the deepest drill level — one turn's API-call waterfall, cache narrative, transcript peek, and sidechain breakdown.
 
 ## Scope
 - *(§4)* Turn summary, API-call waterfall (timestamp-delta fallback widths), cache narrative, transcript peek (lazy raw-file read route), sidechain breakdown. Needs `GET /api/sessions/:id/turns/:n` and `/transcript?turn=n`.
 
 ## Acceptance criteria
-- matches `turn-inspector.html`; reachable from Session Detail and gate evidence links.
+- matches `turn-inspector.html`; reachable from Session Detail and gate evidence links (the gate-evidence path is downstream-gated on #P4-11/#P4-12 — this task ships the route wiring-ready for those to plug into, not a testable end-to-end link yet).
 
 ## Page contract (pages spec §4)
 | Section | Deps | Tier | Notes |

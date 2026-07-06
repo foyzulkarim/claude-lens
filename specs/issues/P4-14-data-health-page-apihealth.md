@@ -8,10 +8,11 @@ status: draft
 Task **#P4-14** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 4.
 
 ## Summary
-Data Health page + `/api/health`
+Build the Data Health page (pages spec §9) and `GET /api/health`: trust indicators for everything the dashboard shows.
 
 ## Scope
 - *(§9)* Dedup stats, pricing coverage, scan coverage, parse errors; reconciliation and boundary/capture-gap sections (🔴, needs #P4-13).
+- Owns the `GET /api/health` route (dedup stats, parse errors, scan coverage, reconciliation).
 
 ## Acceptance criteria
 - matches `data-health.html`; malformed-line counters from #P2-2 surface here.
@@ -36,4 +37,5 @@ Spec-vs-mockup gaps to implement from the spec table: none for this page
 
 ## References
 - [specs/claude-lens-pages.md](../blob/main/specs/claude-lens-pages.md)
+- [specs/claude-lens-architecture.md](../blob/main/specs/claude-lens-architecture.md) §9 (`GET /api/health`)
 - `specs/pages/data-health.html` (visual reference, not exhaustive contract)

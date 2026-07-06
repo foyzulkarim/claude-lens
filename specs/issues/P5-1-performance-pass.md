@@ -8,13 +8,18 @@ status: draft
 Task **#P5-1** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 5.
 
 ## Summary
-Performance pass
+Measure cold/warm boot and RSS on a large real history; profile only if the numbers miss targets.
 
 ## Scope
 - Cold/warm boot and RSS on a large real history; warm-cache hit verification; profile only if numbers miss targets (single-threaded until proven otherwise, §5.7).
 
 ## Acceptance criteria
-- numbers recorded below; warm boot near-instant.
+- cold boot, warm boot, RSS, and data size recorded in the benchmark log below, compared against the #P2-7 baseline (recorded in `specs/claude-lens-plan.md`'s Benchmark log table); warm boot near-instant.
+
+## Benchmark log
+| Date | Task | Cold boot | Warm boot | RSS | Data size | Notes |
+|---|---|---|---|---|---|---|
+| — | #P5-1 | | | | | |
 
 ## Dependencies
 - Depends on: P4-18

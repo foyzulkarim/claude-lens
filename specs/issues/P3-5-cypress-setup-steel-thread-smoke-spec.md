@@ -8,7 +8,7 @@ status: draft
 Task **#P3-5** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 3.
 
 ## Summary
-Cypress setup + steel-thread smoke spec
+Cypress harness booting the built app on fixture roots, plus the steel-thread smoke spec (render, filter/URL sync, live update) wired into CI.
 
 ## Scope
 - Cypress (devDependency) with a boot harness that launches the built app deterministically: `node dist/cli.js --roots test/fixtures --no-open --port <test-port>`. Smoke spec asserts: Dashboard renders the chart from fixture data; filter changes sync to the URL and survive navigation; appending a line to a fixture JSONL mid-test live-updates the chart (regression guard on the full ingest → store → WS → refetch loop). Add the E2E job to CI.
@@ -22,3 +22,4 @@ Cypress setup + steel-thread smoke spec
 
 ## References
 - [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md)
+- [specs/claude-lens-architecture.md](../blob/main/specs/claude-lens-architecture.md) §13 (testing priorities — Cypress covers E2E smoke and cross-page flows)

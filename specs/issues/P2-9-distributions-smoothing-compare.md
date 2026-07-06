@@ -8,7 +8,7 @@ status: draft
 Task **#P2-9** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 2.
 
 ## Summary
-Distributions + smoothing + compare
+Distribution mode (percentiles, histograms, pareto), `ma7` smoothing, and previous-period compare alignment for the metrics engine.
 
 ## Scope
 - `distributions.ts`: percentiles, histograms, pareto (`mode: "distribution"`); `ma7` smoothing; `compare: "previous-period"` alignment.
@@ -22,3 +22,5 @@ Distributions + smoothing + compare
 
 ## References
 - [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md)
+- [specs/claude-lens-architecture.md](../blob/main/specs/claude-lens-architecture.md) §8 (mode/compare/smoothing in `MetricsQuery`), §13 (testing priorities)
+- [specs/claude-lens-pages.md](../blob/main/specs/claude-lens-pages.md) §8 (Pareto panel definition)

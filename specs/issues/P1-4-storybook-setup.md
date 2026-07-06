@@ -8,7 +8,7 @@ status: draft
 Task **#P1-4** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 1.
 
 ## Summary
-Storybook setup
+Stand up Storybook as the component workbench: Vite builder, Tailwind loaded, dark/light toggle; never enters the published `dist/`.
 
 ## Scope
 - Storybook (Vite builder) wired to the client root as a devDependency: Tailwind styles loaded, dark/light theme toggle matching the dashboard aesthetic. Dev workbench only — no test-runner/play functions for now (revisit if UI regressions bite). Stories and `.storybook/` never enter the published `dist/`.

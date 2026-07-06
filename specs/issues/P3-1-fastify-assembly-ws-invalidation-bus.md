@@ -8,7 +8,7 @@ status: draft
 Task **#P3-1** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 3.
 
 ## Summary
-Fastify assembly + WS invalidation bus
+Assemble the Fastify app: static SPA serving, `/ws` upgrade, and the ingest→invalidation→WS wiring (invalidation bus only — three message types, never data).
 
 ## Scope
 - `app.ts`: static assets + SPA fallback, `/ws` upgrade, ingest→invalidation→WS wiring (three message types, never data).
@@ -22,3 +22,4 @@ Fastify assembly + WS invalidation bus
 
 ## References
 - [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md)
+- [specs/claude-lens-architecture.md](../blob/main/specs/claude-lens-architecture.md) §7 (WS protocol), §9 (route ownership: `/ws` + SPA fallback)

@@ -8,10 +8,12 @@ status: draft
 Task **#P4-4** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 4.
 
 ## Summary
-Sessions page
+Build the Sessions page (pages spec §2): the sortable sessions table plus timeline, scatter, histogram, and compare views over all sessions — and the `GET /api/sessions` list route that feeds it.
 
 ## Scope
-- *(§2)* Table (sortable, tier-dependent columns), timeline/gantt toggle, efficiency scatter with regression, cost histogram with percentile markers, compare mode. Tags column stubs until #P4-15. Tier-dependent columns (lines ±, observed $, ctx %) light up when C/L files are present — pages spec §2 row 3.
+- *(§2)* Table (sortable, tier-dependent columns), timeline/gantt toggle, efficiency scatter with regression, cost histogram with percentile markers, compare mode. Tags column stubs until #P4-15; gate-score column stubs until #P4-11 (filled by #P4-12). Tier-dependent columns (lines ±, observed $, ctx %) light up when C/L files are present — pages spec §2 row 3.
+- Includes the `GET /api/sessions` list route (architecture §9 — the sortable, tier-dependent list payload).
+- The page contract's first row (full-text prompt search) is built by #P4-3 and mounted on this page — this issue does not re-implement search.
 
 ## Acceptance criteria
 - matches `sessions.html`; drill-in from Dashboard lands filtered.
@@ -40,4 +42,5 @@ Spec-vs-mockup gaps to implement from the spec table: Sessions — compare mode 
 
 ## References
 - [specs/claude-lens-pages.md](../blob/main/specs/claude-lens-pages.md)
+- [specs/claude-lens-architecture.md](../blob/main/specs/claude-lens-architecture.md) §9 (sortable, tier-dependent list payload)
 - `specs/pages/sessions.html` (visual reference, not exhaustive contract)

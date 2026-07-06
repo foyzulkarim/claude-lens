@@ -8,17 +8,19 @@ status: draft
 Task **#P0-6** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 0.
 
 ## Summary
-GitHub project scaffolding
+Create the phase labels and milestones on GitHub that issue tracking — and the batch publish of these very drafts — depends on.
 
 ## Scope
-- Create the `phase-0`…`phase-5` labels, one milestone per phase, and an issue template that links back to this plan doc and carries the task ID + acceptance criteria structure. This is what makes "tasks become issues" real. *(The static issue template was later superseded by the `/create-issue` skill — see decisions log 2026-07-06.)*
+- Create the `phase-0`…`phase-5` labels and one milestone per phase. Issue creation is handled by the existing `/create-issue` skill (`.claude/skills/create-issue/`), so no static issue template is required. Labels and milestones must exist **before** `.claude/skills/create-issue/scripts/publish.sh` files the drafted issues — `gh issue create` fails if a label or milestone doesn't exist yet.
+- Milestone titles must match the draft frontmatter strings exactly (em-dash included — `publish.sh` passes the string verbatim to `gh --milestone`): `Phase 0 — Spec closure & repo prep`, `Phase 1 — Bootstrapping`, `Phase 2 — Data engine (the risk phase)`, `Phase 3 — Steel thread (milestone)`, `Phase 4 — Pages & features`, `Phase 5 — Finalize & publish`.
 
 ## Acceptance criteria
-- labels + milestones exist; a test issue filed from the template renders correctly and auto-links here.
+- labels + milestones exist and match the plan (`phase-0`…`phase-5` + six phase milestones)
+- `/create-issue` skill remains the issue-creation path; no static GitHub issue template is added
 
 ## Dependencies
-- Depends on: P0-5
-- Unblocks: none — last in phase
+- Depends on: none — independent of the other Phase 0 tasks
+- Unblocks: the batch publish of all drafted issues (`.claude/skills/create-issue/scripts/publish.sh` passes `--label`/`--milestone`, which must already exist)
 
 ## References
 - [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md)

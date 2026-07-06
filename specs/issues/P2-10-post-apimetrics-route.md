@@ -8,7 +8,7 @@ status: draft
 Task **#P2-10** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 2.
 
 ## Summary
-`POST /api/metrics` route
+Expose the metrics engine over HTTP as `POST /api/metrics`, respecting the §3 module boundary.
 
 ## Scope
 - Wire the engine to Fastify. Route handlers import only `store/` per the §3 module boundary.
@@ -22,3 +22,4 @@ Task **#P2-10** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-
 
 ## References
 - [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md)
+- [specs/claude-lens-architecture.md](../blob/main/specs/claude-lens-architecture.md) §3 (module boundaries), §9 (HTTP API surface)

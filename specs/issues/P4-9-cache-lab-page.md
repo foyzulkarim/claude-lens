@@ -8,7 +8,7 @@ status: draft
 Task **#P4-9** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 4.
 
 ## Summary
-Cache Lab page
+Build the Cache Lab page (pages spec §7): cache economics end-to-end, including the miss-attribution classifier that gate K2 reuses.
 
 ## Scope
 - *(§7)* Fleet totals + hit-rate histogram/trend, input composition, busts net panel, **miss-attribution classifier (K2 base + TTL-lapse heuristic)**, TTL bucket mix, baseline weight trend, $ saved + counterfactual, invalidation gallery + cost-by-cause trend. The classifier built here is reused by gate K2.

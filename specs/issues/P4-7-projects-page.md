@@ -8,10 +8,10 @@ status: draft
 Task **#P4-7** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 4.
 
 ## Summary
-Projects page
+Build the Projects page (pages spec §5): spend, composition, and efficiency by project and branch.
 
 ## Scope
-- *(§5)* Spend + WoW, stacked-area composition, efficiency table, per-branch breakdown, → Sessions links.
+- *(§5)* Spend + WoW, stacked-area composition, efficiency table, per-branch breakdown, → Sessions links. Gate pass-rate column in the efficiency table stubs until #P4-11.
 
 ## Acceptance criteria
 - matches `projects.html`.

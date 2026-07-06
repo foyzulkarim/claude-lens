@@ -8,7 +8,7 @@ status: draft
 Task **#P4-16** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 4.
 
 ## Summary
-Explore page
+Build the Explore page (pages spec §11): a free-form pivot builder over the same metrics engine every curated page uses.
 
 ## Scope
 - *(§11)* Pivot builder over the existing engine: measure × dimension × grain × chart type; distribution mode; save-as-Saved-View pinned to Dashboard.
@@ -17,6 +17,12 @@ Explore page
 - matches `explore.html`; any curated chart is reproducible as an Explore query.
 
 ## Page contract (pages spec §11)
+| Section | Deps | Tier | Notes |
+|---|---|---|---|
+| Pivot builder: pick measure × dimension × time grain × chart type (bar/line/area/scatter/table) | T+P | 🟢 | The generic layer exposed directly; every curated chart is a preset of this |
+| Percentile/distribution mode for any measure | T+P | 🟢 | |
+| Save result as a Saved View (pins to Dashboard) | ⚑N (local config) | 🟢 | |
+
 Spec-vs-mockup gaps to implement from the spec table: none for this page
 
 ## Definition of done (Phase 4 standing rules)
@@ -25,7 +31,7 @@ Spec-vs-mockup gaps to implement from the spec table: none for this page
 - [ ] Manual visual sign-off vs `specs/pages/explore.html` on real data; plan checkbox flipped
 
 ## Dependencies
-- Depends on: P4-15
+- Depends on: P4-15; #P4-2 (save-as-Saved-View pins to the Dashboard built in #P4-2 — cross-task write)
 - Unblocks: P4-17
 
 ## References

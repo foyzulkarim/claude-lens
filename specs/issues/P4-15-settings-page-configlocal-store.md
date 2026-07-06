@@ -8,10 +8,10 @@ status: draft
 Task **#P4-15** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 4.
 
 ## Summary
-Settings page + config/local-store
+Build the Settings page (pages spec §10) and the config/local-store it edits: pricing, scan roots, thresholds, saved views, tags.
 
 ## Scope
-- *(§10)* `~/.claude-lens/config.json` + `local.json` (settings.ts, local-store.ts); pricing table editor, labeled scan roots (host dimension), budget/anomaly/gate thresholds, saved-views + tags managers, cost-capture setup guide. `GET/PUT /api/config`, `/api/views`, `/api/tags`.
+- *(§10)* `~/.claude-lens/config.json` + `local.json` (settings.ts, local-store.ts — extends #P4-10's minimal budget-only config store); pricing table editor, labeled scan roots (host dimension), budget/anomaly/gate thresholds, saved-views + tags managers, cost-capture setup guide. `GET/PUT /api/config`, `/api/views`, `/api/tags`.
 
 ## Acceptance criteria
 - matches `settings.html`; root relabeling reflects in the host dimension without restart; tags now filterable on Sessions.
@@ -39,4 +39,5 @@ Spec-vs-mockup gaps to implement from the spec table: none for this page
 
 ## References
 - [specs/claude-lens-pages.md](../blob/main/specs/claude-lens-pages.md)
+- [specs/claude-lens-architecture.md](../blob/main/specs/claude-lens-architecture.md) §9 (`GET/PUT /api/config`, `/api/views`, `/api/tags`), §10 (local configuration)
 - `specs/pages/settings.html` (visual reference, not exhaustive contract)

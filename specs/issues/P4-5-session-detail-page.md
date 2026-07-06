@@ -8,7 +8,7 @@ status: draft
 Task **#P4-5** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 4.
 
 ## Summary
-Session Detail page
+Build the Session Detail page (pages spec §3): everything about one session, from cumulative cost timeline to context composition; the Report Card section lands later in #P4-12.
 
 ## Scope
 - *(§3)* All sections except Report Card (lands in #P4-12): header, cumulative timeline, per-turn bars, turn table, turn-vs-history distribution, cache strip, tool mix, prompt list, workflow funnel, token funnel, context composition. Needs `GET /api/sessions/:id`.

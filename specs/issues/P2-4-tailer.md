@@ -8,7 +8,7 @@ status: draft
 Task **#P2-4** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 2.
 
 ## Summary
-Tailer
+Byte-offset incremental tailer: read only appended bytes, never consume a partial trailing line, fall back to full reparse on truncation.
 
 ## Scope
 - `tailer.ts`: byte-offset map; read-from-offset on growth; truncation fallback (drop + full reparse); advance offset only to last newline (partial-line rule).
@@ -22,3 +22,4 @@ Tailer
 
 ## References
 - [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md)
+- [specs/claude-lens-architecture.md](../blob/main/specs/claude-lens-architecture.md) §5.3 (byte offsets not line counts; no remainder buffer)

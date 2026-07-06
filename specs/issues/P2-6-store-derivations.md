@@ -8,7 +8,7 @@ status: draft
 Task **#P2-6** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 2.
 
 ## Summary
-Store + derivations
+The in-memory columnar store plus turn/session derivations and debounced per-session invalidation.
 
 ## Scope
 - `store.ts` columnar arrays; `derive-turns.ts` (promptId grouping, sidechain attribution); `derive-session.ts` (rollups, per-session tier detection); `invalidation.ts` (dirty-set, 200–500ms per-session debounce, emit hook). Incremental updates touch only the affected session; cross-session aggregates invalidate lazily.
@@ -21,4 +21,4 @@ Store + derivations
 - Unblocks: P2-7
 
 ## References
-- [specs/gates.md](../blob/main/specs/gates.md)
+- [specs/claude-lens-architecture.md](../blob/main/specs/claude-lens-architecture.md) §5.5 (store update + emit), §6 (in-memory store), §4 (per-session tier-detection contract)

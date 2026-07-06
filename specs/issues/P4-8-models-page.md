@@ -8,7 +8,7 @@ status: draft
 Task **#P4-8** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 4.
 
 ## Summary
-Models page
+Build the Models page (pages spec §6): token/$ split, mix over time, and efficiency by model, with 🟡 latency/throughput fallbacks until #P4-13 upgrades them.
 
 ## Scope
 - *(§6)* Token/$ split, model mix over time, efficiency ratios, CC-version dimension, entrypoint breakdown; latency/throughput sections render 🟡 fallback (timestamp deltas) until premium (#P4-13) upgrades them.

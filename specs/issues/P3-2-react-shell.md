@@ -8,7 +8,7 @@ status: draft
 Task **#P3-2** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 3.
 
 ## Summary
-React shell
+The React shell: wouter routes for all 11 page stubs, TanStack Query with a query-key factory, and the reconnecting WS client that invalidates by key prefix.
 
 ## Scope
 - `main.tsx`/`App.tsx`: wouter routes (all 11 page stubs), `QueryClientProvider`, query-key factory in `api/`, `ws.ts` with hand-rolled reconnect/backoff invalidating by key prefix, layout chrome.
@@ -22,3 +22,4 @@ React shell
 
 ## References
 - [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md)
+- [specs/claude-lens-architecture.md](../blob/main/specs/claude-lens-architecture.md) §7 (invalidation bus, key-prefix invalidation), §11 (frontend architecture — the 11 page-stub routes)
