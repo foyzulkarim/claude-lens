@@ -28,7 +28,7 @@ Phases 0–3 are strictly sequential. Within Phase 4, pages can proceed in the l
 Everything here unblocks later phases; none of it is throwaway.
 
 - [.] **#P0-1 — `gates.md` written** — delivered in PR #5 (seven gate IDs across six checks, thresholds, Report Card scoring).
-- [ ] **#P0-2 — Move V1 app into legacy/**
+- [x] **#P0-2 — Move V1 app into legacy/**
   Move the **entire** V1 app into `legacy/`: `index.html`, `server.js`, `llm-cache-cost.html`, `images/`, `README.md`, `CHANGELOG.md`, `suggestions.md`, `.env.example`, `package.json`, `package-lock.json` — the whole current package is V1. Nothing code-related stays at root; the V2 scaffold will create a fresh root `package.json` in #P1-1. New root `README.md` gets a one-line pointer to `legacy/`. V1 must still run from `legacy/` (`node legacy/server.js`).
   *Acceptance:* no V1 code or assets remain at root; root contains only `specs/`, `legacy/`, and repo-level config; V1 still boots from `legacy/`.
 - [ ] **#P0-7 — Data model & contracts spec** *(added 2026-07-06; ordered here — before #P0-3 — because the field investigation and the fixture cut are the same pass over real data)*
