@@ -1,7 +1,7 @@
 # Claude Lens — Data Model & Contracts
 
 > **Source:** Task `#P0-7` / issue #12, per `specs/requirements/REQ-data-model-contracts-spec.md` and `specs/architecture/ARCH-data-model-contracts-spec.md` (T1/T2).
-> **Status:** §1–§6 drafted (T1). §7–§11 pending (T2) — see placeholders at the end of this document.
+> **Status:** Merged. §1–§11 complete (T1 + T2); §8.1 and §8.2 have received explicit developer sign-off.
 > **Method:** every field/rule below was verified against real local data (`~/.claude/projects/**/*.jsonl` and the three premium capture files) at investigation time, ordered by walking `specs/claude-lens-pages.md`'s 11 pages (ARCH Decision 11/A16). No JSONL content, real or synthetic, is embedded anywhere in this document — see §7 (N1) once T2 lands; until then, treat this rule as already in force throughout §1–§6.
 > **Corpus at investigation time:** 106 real transcript (T) files (18,851 lines, 0 malformed, 0 zero-byte), 94 `.cost.jsonl` (C) files (3,285 lines), 34 `.turn-boundaries.jsonl` (B) files (180 lines), 1 `cost-log.jsonl` (L) file (47 lines) at `~/.claude/cost-log.jsonl`. These counts will drift as more sessions are recorded; re-run the investigation method (ad hoc `find`/Python/jq, not committed — ARCH A4) to refresh them on revision, per ARCH A14 (append, don't silently overwrite).
 
@@ -38,7 +38,7 @@
 | `worktree-state` | 18 | No |
 | `custom-title` | 4 | No |
 
-**Correction candidate for §11 (T2):** `architecture.md` §4 describes T as containing "assistant/user/summary lines." Zero `"type": "summary"` records were observed (0/18,851). The actual compaction mechanism is a `type: "user"` record carrying `isCompactSummary: true` — see §3 Rule 5.
+**Note:** the filed GitHub issue #12's scope text (not `architecture.md`, which was checked directly and makes no such claim) describes T as containing "assistant/user/summary lines." Zero `"type": "summary"` records were observed (0/18,851) — the actual compaction mechanism is a `type: "user"` record carrying `isCompactSummary: true` (§3 Rule 5). This is not an `architecture.md`/`pages.md` correction (R13 doesn't apply — neither doc makes the claim); it's already tracked as a stale-issue-text follow-up separate from this doc (see project memory `p0-7-req-supersedes-filed-issue`).
 
 ### 1.3 `assistant`/`user` top-level field table (10,864 records)
 
@@ -197,7 +197,7 @@ One `CompactCall` per real `assistant`-type API response (keyed by `message.id`)
 
 **Rule 4 — Model-switch / session-level attribution.** 6 of 71 real sessions in this corpus (~8.5%) use more than one distinct model, **after** excluding the `<synthetic>` placeholder (11/71 before exclusion — the unfiltered count overstates this by including rate-limit-retry markers as if they were a "model"). 8.5% is common enough to need an explicit default, not a rare edge case worth hand-waving. The default itself is sign-off-gated — see §8 (T2).
 
-**Rule 5 — Compaction.** Compaction is **not** a distinct `"type": "summary"` record, contrary to `architecture.md` §4's phrasing (0/18,851 lines observed with that type — §1.2). It is a `type: "user"` record carrying `isCompactSummary: true` and `isVisibleInTranscriptOnly: true`, with its own ordinary `promptId` (both observed instances in this corpus had one). Treat it as a turn boundary marker on an otherwise normal user-turn record, not a separate record kind. **Correction candidate for §11 (T2).**
+**Rule 5 — Compaction.** Compaction is **not** a distinct `"type": "summary"` record — `architecture.md` itself makes no such claim (checked directly, §1.2 note); the "summary lines" phrasing traces only to filed issue #12's scope text, already tracked separately as stale. In real data (0/18,851 lines with that type), the actual compaction mechanism is a `type: "user"` record carrying `isCompactSummary: true` and `isVisibleInTranscriptOnly: true`, with its own ordinary `promptId` (both observed instances in this corpus had one). Treat it as a turn boundary marker on an otherwise normal user-turn record, not a separate record kind.
 
 **Rule 6 — Session rollup.** A session is every `CompactCall` (and the turns they resolve into per Rule 1) sharing one `sessionId` (always present, §1.3). A session's tier is derived per §4, not redefined here.
 
@@ -301,7 +301,7 @@ Per architecture §8's `MetricsQuery` contract (cited, not redefined): request s
 
 ### 6.2 Sessions list / detail (`GET /api/sessions`, `GET /api/sessions/:id`)
 
-**List row:** `sessionId`, `cwd`, `gitBranch`, primary `model` (per §8's sign-off-gated attribution default, T2), computed $, observed $ (nullable — absent without `TierFlags.hasCost`/`hasCostLog`), token totals, turn count, duration (wall-minutes), cache hit %, gate score (cites `gates.md`), `TierFlags`.
+**List row:** `sessionId`, `cwd`, `gitBranch`, `models: string[]` (all distinct real models used in the session, per §8.1 — decided, not a single dominant value), computed $, observed $ (nullable — absent without `TierFlags.hasCost`/`hasCostLog`), token totals, turn count, duration (wall-minutes), cache hit %, gate score (cites `gates.md`), `TierFlags`.
 
 **Detail payload:** list row fields plus the full turn array (each turn: resolved `promptId`, `CompactCall[]` in that turn, `isCompactSummary` boundary flags per §3 Rule 5, per-turn measures from §5.2).
 
@@ -315,12 +315,90 @@ Per architecture §10, not redefined here — field-level detail for these is a 
 
 ---
 
-# 7–11: Pending (Task T2)
+## 7. Behavior Contracts
 
-The following sections are scoped to T2 (`specs/architecture/ARCH-data-model-contracts-spec.md`) and are not yet written:
+**Dedupe scope.** Per-session, by `message.id` (architecture §5.4, confirmed correct against real data — see §10). Within-session raw duplication is real and substantial (3,793 duplicate `message.id` occurrences observed across 2,936 distinct ids in the T corpus — roughly 2.3 raw lines per distinct call on average), confirming dedupe is necessary; a per-session `Set<message.id>` (seen-set) at parse time is sufficient — no cross-session tracking is needed (§10 found zero cross-session collisions).
 
-- **§7 Behavior contracts** — dedupe scope, malformed/0-byte/garbage file handling, time bucketing & timezone, query-key serialization, rounding.
-- **§8 Sign-off decisions** — multi-model/sidechain attribution default (informed by §3 Rule 4's 8.5% finding), premium coverage granularity default (informed by §1.1's L-tier coverage gap).
-- **§9 Prompt-text size finding** — distribution measurement, cap decision if warranted.
-- **§10 `message.id` collision finding** — cross-session dedupe scope check.
-- **§11 Corrections** — at minimum, two candidates already surfaced during T1: (a) `architecture.md` §4's "assistant/user/summary lines" phrasing (§1.2, §3 Rule 5 — no `summary` type exists; compaction is a flagged `user` record), and (b) `architecture.md` §4's "promptId is the turn-grouping key" phrasing undersells the parentUuid-chain resolution required (§3 Rule 1).
+**0-byte file.** Treated as a valid, empty session: zero `CompactCall`s, zero turns, no parse error recorded. Not an error condition — a session file can legitimately be created by Claude Code and not yet written to at discovery time (architecture §5.1's discovery/poll race).
+
+**Malformed-first-line file.** The per-file malformed-line counter (architecture §5.4) increments as normal; parsing continues from line 2 onward. A malformed first line does not invalidate the rest of the file — there is no "give up on this file" path. (Not observed in this corpus — 0/106 T files — but the contract holds regardless of local observation, per REQ R12.)
+
+**Garbage-format file** (right extension, entirely non-JSONL content). Every line fails to parse; the malformed-line counter reaches the file's total line count. The file produces zero `CompactCall`s and surfaces on Data Health (`pages.md` §9) as 100% malformed for that file — same mechanism as the malformed-first-line case, just exhaustive rather than partial. No special-cased "garbage file" detection is needed; it falls out of the general malformed-line counter naturally.
+
+**Time bucketing & timezone.** All source timestamps are ISO 8601 UTC (`Z` suffix, observed with and without millisecond precision — e.g. second-precision in C/B/L, millisecond-precision in T's `message`-level timestamps). Bucketing (`hour`/`day`/`week`/`month` per architecture §8) uses the **server process's local timezone**, not UTC — this is a single-user, local-first tool (CLAUDE.md: "one npm package, one port," no multi-tenancy), and a user's "day" boundary should match their own clock, not an arbitrary UTC cutoff. Investigator's call per REQ Decision 2 — no sign-off required.
+
+**Query-key serialization.** Per architecture §11's requirement that "the key factory must serialize the full query... into the key": the concrete rule is `JSON.stringify` over the `MetricsQuery` object with **object keys sorted** before serialization, so two logically-identical queries built with different property insertion order produce the same cache key. Array-valued fields (`measures`, `dimensions`, filter value arrays) are not re-sorted — their order is significant (e.g. measure display order) and already deterministic from the caller.
+
+**Rounding.** `$` values: stored at full floating-point precision internally (raw values like `1.8167905999999998` observed in real L-tier data are floating-point artifacts of the source, not a rounding bug to fix at parse time); rounded to 2 decimal places only at display/API-response time. Token counts: integers, no rounding applicable. Percentages (cache hit %, gate pass rate): rounded to 1 decimal place at display time. Investigator's call per REQ Decision 2 — no sign-off required.
+
+---
+
+## 8. Sign-Off Decisions
+
+**⚠️ Both decisions below are proposed defaults, not final.** Per REQ R8/R9 and ARCH Cross-Cutting Concerns → Migrations/rollout, this document is not "merged" until the developer explicitly signs off on both.
+
+### 8.1 Multi-model / sidechain session-level attribution (R8)
+
+**Finding:** 6 of 71 real sessions in this corpus (~8.5%) use more than one distinct real model (after excluding the `<synthetic>` error-marker placeholder — §1.3, §3 Rule 4). This is common enough to matter for the Dashboard/Sessions "model" column, not a rare edge case.
+
+**Decided (developer sign-off received):**
+- **Session-level "model" attribution:** show **all** distinct real models used in the session (`models: string[]`, excluding the `isSyntheticOrError` placeholder), not a single dominant value. Dashboard/Sessions "model" column renders every model the session touched (e.g. as multiple chips) rather than collapsing to one. This changes §6.2's session list/detail row shape: `model: string` becomes `models: string[]`.
+- **Sidechain calls in default aggregates:** approved as proposed — excluded from default turn/wall-minute aggregates (main-chain only), available via the existing main-vs-sidechain dimension filter (§5.1).
+
+**Status:** decided (developer sign-off received).
+
+### 8.2 Premium coverage granularity (R9)
+
+**Finding:** the L tier (`cost-log.jsonl`) has only 47 lines total, covering a small fraction of the 94 sessions that have C-tier coverage — a real, observed coverage gap, not a hypothetical one. File-presence (`TierFlags.hasCost`/`hasCostLog`/`hasTurnBoundaries`) doesn't guarantee the premium file covers the *entire* session (e.g. cost-logger enabled mid-session, or a hook that crashed partway through).
+
+**Decided (developer sign-off received):** file-presence-only for this pass (matches current `TierFlags` design in §4.1) — a session with *any* C/B/L coverage is labeled with that tier's badge, with a known-limitation note that "observed" may reflect partial coverage, not full-session coverage. True per-turn coverage checking is deferred to the Data Health page work (`#P4-14`), consistent with REQ's original suggested default.
+
+**Status:** decided (developer sign-off received).
+
+---
+
+## 9. Prompt-Text Size Finding (R10)
+
+Measured against 856 genuine user prompts in this corpus (tool-result-continuation and compaction-summary records excluded — §1.3, §3 Rule 1):
+
+| Percentile | Size (bytes, UTF-8) |
+|---|---|
+| min | 1 |
+| p50 | 130 |
+| p90 | 2,644 |
+| p99 | 12,990 |
+| mean | 2,123 |
+| max | 603,252 |
+
+Only 19 prompts (2.2%) exceed 10 KB; only 2 (0.23%) exceed 100 KB; none exceed 1 MB. The tail is real (p99→max is a ~46× jump — a handful of large pastes) but small in absolute terms relative to architecture §6's stated "low hundreds of MB" acceptable footprint for months of heavy usage.
+
+**Decision: no cap.** At this corpus's observed scale, a 590 KB outlier prompt is not a meaningful memory or payload-size threat, and introducing a cap adds truncation-handling complexity (partial-prompt display, "truncated" indicators in search results) for a 0.23%-frequency case. Per REQ R10/Decision 2, "no cap" is the investigator's call and requires no sign-off.
+
+---
+
+## 10. `message.id` Collision Finding (R11)
+
+Checked across all 106 real T files (2,936 distinct `message.id` values, 6,689 total assistant records before dedupe):
+
+- **Cross-session collisions found: 0.** No `message.id` value appears under more than one `sessionId`.
+- **Within-session duplication: 3,793 occurrences** (real, and already accounted for by the per-session dedupe contract in §7 — this is the normal "raw lines collapse to distinct calls" behavior architecture §5.4 already expects, not a new problem).
+
+**Outcome:** `architecture.md`'s per-session dedupe scope stands as documented — no revision needed. Per REQ R11's suggested default ("if no collisions are found in real data, architecture.md's per-session dedupe stands as documented"), this does not require developer sign-off; only a *found* collision would have triggered that gate.
+
+---
+
+## 11. Corrections to `architecture.md` / `pages.md`
+
+One genuine correction surfaced during investigation:
+
+**`architecture.md` §4** currently states: *"`promptId` is the turn-grouping key."* This is true but incomplete in a way that matters for `#P2-1`'s implementation: `promptId` is present **only** on `type: "user"` records (0/6,689 assistant records carry it directly — §1.3). Every `assistant` record's turn membership must be resolved by walking its `parentUuid` chain to the nearest ancestor carrying `promptId` (§3 Rule 1) — a real algorithm, not a direct field read. Suggested amendment to §4: *"`promptId` is the turn-grouping key, present only on `user`-type records; `assistant` records resolve their turn via the `parentUuid` ancestor chain (see `claude-lens-data-model.md` §3 Rule 1)."*
+
+**Filed issues citing `architecture.md` §4** (per ARCH A15 — listed so this correction's ripple is visible, not silently absorbed): `#P2-3` (discovery/polling), `#P4-13` (premium tier C/B/L parsers). Neither issue's citation depends on the specific sentence being corrected (both cite §4 for the filename-pattern/tier-detection rules, which are unchanged), so this correction does not invalidate either citation — noted for completeness per A15, not because a citation actually broke.
+
+**No correction needed for `pages.md`** — nothing investigated during T1/T2 conflicted with its content; its coarse dependency marks (§5.3 of this document) were confirmed accurate at the field level throughout.
+
+**One open item carried forward, not a correction (§3 Rule 2):** ~21% of assistant records don't resolve to a `promptId` via the parentUuid chain, root cause not conclusively determined. This isn't a documented claim in either spec to correct — it's a genuine gap in current understanding, flagged for follow-up investigation (larger corpus, or instrumented capture) before `#P2-1` treats the turn-derivation algorithm as fully specified for that ~21%.
+
+---
+
+**Document status:** §1–§11 complete. §8.1 and §8.2 have received explicit developer sign-off (REQ R8, R9) — this document is merged.

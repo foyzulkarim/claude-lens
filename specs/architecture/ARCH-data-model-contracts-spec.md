@@ -271,7 +271,7 @@ Investigate real `~/.claude/projects` T/C/B/L data and draft §1–§6 of `specs
 
 ## Task T2: Cross-cutting hardening — sign-offs, behavior contracts, corrections
 
-> **Status:** not started
+> **Status:** done
 > **Verification:** checklist
 > **Effort:** m
 > **Priority:** critical
