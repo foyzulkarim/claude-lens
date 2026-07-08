@@ -210,7 +210,7 @@ No open questions remain.
 
 ## Task T1: Model drafting via page-ordered investigation
 
-> **Status:** not started
+> **Status:** done
 > **Verification:** checklist
 > **Effort:** l
 > **Priority:** critical
