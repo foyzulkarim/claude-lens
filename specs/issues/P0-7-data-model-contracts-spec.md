@@ -7,6 +7,8 @@ issue: 12
 url: https://github.com/foyzulkarim/claude-lens/issues/12
 ---
 
+> **⚠️ SUPERSEDED 2026-07-09.** This local draft captures the originally-filed scope of GitHub issue #12. The issue has since been re-scoped to **#P0-7 — Data inventory (observed-field evidence)** (pure evidence catalog, no derived contracts). The originally-planned 7-point contract scope was hallucinated from the filed issue text; the user's actual intent is an observed-field inventory only. The live GitHub issue title/body and the local context file at [`specs/context/12.md`](../blob/main/specs/context/12.md) reflect the re-scoped content; this draft body is retained verbatim as audit trail only — do not treat it as the current task description. The REQ + ARCH docs that scaffolded the contract version (`specs/requirements/REQ-data-model-contracts-spec.md`, `specs/architecture/ARCH-data-model-contracts-spec.md`) have been deleted. See [`specs/context/plan-data-inventory.md`](../blob/main/specs/context/plan-data-inventory.md) for the governing plan.
+
 Task **#P0-7** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 0.
 
 ## Summary

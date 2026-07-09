@@ -1,404 +1,926 @@
-# Claude Lens — Data Model & Contracts
+# Claude Lens — Data Inventory (observed-field evidence)
 
-> **Source:** Task `#P0-7` / issue #12, per `specs/requirements/REQ-data-model-contracts-spec.md` and `specs/architecture/ARCH-data-model-contracts-spec.md` (T1/T2).
-> **Status:** Merged. §1–§11 complete (T1 + T2); §8.1 and §8.2 have received explicit developer sign-off.
-> **Method:** every field/rule below was verified against real local data (`~/.claude/projects/**/*.jsonl` and the three premium capture files) at investigation time, ordered by walking `specs/claude-lens-pages.md`'s 11 pages (ARCH Decision 11/A16). No JSONL content, real or synthetic, is embedded anywhere in this document — see §7 (N1) once T2 lands; until then, treat this rule as already in force throughout §1–§6.
-> **Corpus at investigation time:** 106 real transcript (T) files (18,851 lines, 0 malformed, 0 zero-byte), 94 `.cost.jsonl` (C) files (3,285 lines), 34 `.turn-boundaries.jsonl` (B) files (180 lines), 1 `cost-log.jsonl` (L) file (47 lines) at `~/.claude/cost-log.jsonl`. These counts will drift as more sessions are recorded; re-run the investigation method (ad hoc `find`/Python/jq, not committed — ARCH A4) to refresh them on revision, per ARCH A14 (append, don't silently overwrite).
-
----
-
-## 1. Source Inventory
-
-### 1.1 File classification
-
-| Tier | Pattern | Location | Observed count | Notes |
-|---|---|---|---|---|
-| **T** | `<uuid>.jsonl` | `~/.claude/projects/**` | 106 files, 18,851 lines | 0 malformed lines, 0 zero-byte files, 0 malformed-first-line files observed in this corpus — see §7/R12 (T2) for the contract anyway, since absence of an example in one corpus doesn't mean the case can't occur |
-| **C** | `<uuid>.cost.jsonl` | same dirs as T | 94 files, 3,285 lines | Two mutually-exclusive-per-line schema shapes observed — §1.7 |
-| **B** | `<uuid>.turn-boundaries.jsonl` | same dirs as T | 34 files, 180 lines | Single stable shape, no drift |
-| **L** | `cost-log.jsonl` | `~/.claude/` (parent of the projects scan root — confirmed) | 1 file, 47 lines | **One shared file across all sessions**, not per-session — a single line per (session, log event); only 47 lines vs. 94 C-covered sessions is a real coverage gap, not a sampling artifact — relevant to §8/R9 (T2) |
-
-### 1.2 T-tier record `type` distribution (18,851 lines)
-
-| `type` value | Count | Relevant to `CompactCall`? |
-|---|---|---|
-| `assistant` | 6,689 | Yes — primary source |
-| `user` | 4,175 | Yes — supplies `promptId`, prompt text, tool-result byte sizes |
-| `attachment` | 1,324 | No — not investigated further (out of scope: no page in `pages.md` consumes it) |
-| `system` | 1,132 | No |
-| `mode` | 1,002 | No |
-| `file-history-snapshot` | 980 | No |
-| `last-prompt` | 959 | No |
-| `ai-title` | 900 | No |
-| `permission-mode` | 811 | No |
-| `bridge-session` | 483 | No |
-| `queue-operation` | 240 | No — possible explanation for multi-"genuine-user"-record `promptId` groups observed in §3 Rule 2; not conclusively confirmed, flagged there |
-| `agent-name` | 123 | No |
-| `pr-link` | 20 | No |
-| `worktree-state` | 18 | No |
-| `custom-title` | 4 | No |
-
-**Note:** the filed GitHub issue #12's scope text (not `architecture.md`, which was checked directly and makes no such claim) describes T as containing "assistant/user/summary lines." Zero `"type": "summary"` records were observed (0/18,851) — the actual compaction mechanism is a `type: "user"` record carrying `isCompactSummary: true` (§3 Rule 5). This is not an `architecture.md`/`pages.md` correction (R13 doesn't apply — neither doc makes the claim); it's already tracked as a stale-issue-text follow-up separate from this doc (see project memory `p0-7-req-supersedes-filed-issue`).
-
-### 1.3 `assistant`/`user` top-level field table (10,864 records)
-
-| Field | Type | Present in | Notes |
-|---|---|---|---|
-| `type` | string (`"assistant"` \| `"user"`) | 10,864/10,864 | |
-| `uuid` | string | 10,864/10,864 | This record's own id — distinct from `message.id` |
-| `parentUuid` | string \| null | 10,864/10,864 | `null` only for a genuine session-opening record |
-| `isSidechain` | boolean | 10,864/10,864 | Always present, never absent — no null-check needed |
-| `sessionId` | string | 10,864/10,864 | |
-| `timestamp` | string (ISO 8601, ms precision) | 10,864/10,864 | |
-| `cwd` | string | 10,864/10,864 | |
-| `gitBranch` | string | 10,864/10,864 | Observed value `"HEAD"` for detached-HEAD state |
-| `version` | string | 10,864/10,864 | Claude Code version |
-| `entrypoint` | string | 10,864/10,864 | Observed value: `"cli"` |
-| `userType` | string | 10,864/10,864 | Observed value: `"external"` |
-| `message` | object | 10,864/10,864 | See §1.4 |
-| `promptId` | string | 4,171/10,864 — **only ever on `user`-type records** (4,171/4,175 user records; 0/6,689 assistant records) | Turn-grouping key — see §3 Rule 1 for the resolution algorithm this asymmetry requires |
-| `requestId` | string | 6,612/10,864 (~99% of real, non-synthetic assistant calls) | |
-| `isCompactSummary` | boolean | 2 occurrences in this corpus, both `true`, both on `type: "user"` records | See §3 Rule 5 |
-| `isVisibleInTranscriptOnly` | boolean | 2 occurrences, co-occurring with `isCompactSummary: true` both times | |
-| `agentId` | string | 828/10,864 | Correlates 1:1 with `isSidechain: true` (495/495 in the refined check — see §3 Rule 3) |
-| `sourceToolAssistantUUID` | string | 3,316/10,864 | Sidechain/subagent correlation field, not in `architecture.md` |
-| `sourceToolUseID` | string | 12/10,864 | Low-frequency; not investigated further |
-| `toolUseResult` | present | 3,261/10,864 | Raw tool-result payload — excluded from `CompactCall` per architecture §5.4, byte size retained only |
-| `attributionSkill` / `attributionAgent` / `attributionMcpServer` / `attributionMcpTool` / `attributionPlugin` | string | 774 / 494 / 215 / 215 / 134 of 10,864 | **Not in `architecture.md`.** Attributes a call to the skill/subagent/MCP tool/plugin that triggered it |
-| `isMeta` | boolean | 164/10,864 | Not investigated further — flagged as observed, low-frequency |
-| `permissionMode` | string | 463/10,864 | |
-| `promptSource` | string | 463/10,864 | Co-occurs with `permissionMode` at identical count — possibly the same origin event, not confirmed |
-| `origin` | string | 283/10,864 | |
-| `slug` | string | 4,467/10,864 | Human-readable session slug |
-| `session_id` (snake_case) | string | 4,284/10,864 | **Distinct from `sessionId`** (camelCase) — both present together on a subset of records; exact sub-population not fully resolved, flagged for follow-up rather than guessed |
-| `imagePasteIds` | array | 17/10,864 | |
-| `isApiErrorMessage` | boolean | 10/10,864 | See "synthetic/error calls" below |
-| `error` | string | 7/10,864 | Observed value: `"rate_limit"` |
-| `apiErrorStatus` | number | 7/10,864 | Observed value: `429` |
-| `toolDenialKind` | string | 7/10,864 | |
-| `interruptedMessageId` | string | 4/10,864 | |
-
-**Synthetic/error calls:** `message.model === "<synthetic>"` (co-occurring with `isApiErrorMessage: true` in observed cases) marks a non-billable, non-real API call — e.g. a rate-limit retry marker. These records carry no `usage` block. They must be excluded before computing token/cost measures and before computing a session's distinct-model set for §8's multi-model attribution decision (T2) — an unfiltered count overstates multi-model sessions (11/71 raw vs. 6/71 after exclusion, in this corpus).
-
-### 1.4 `message.*` field table (assistant + user)
-
-| Field | Type | Present in | Notes |
-|---|---|---|---|
-| `role` | string (`"user"` \| `"assistant"`) | 10,864/10,864 | |
-| `content` | string \| array | 10,864/10,864 | String form: 750 occurrences (simple text); array of content blocks otherwise — see §1.7 |
-| `model` | string | 6,689/6,689 assistant records | Includes the `<synthetic>` placeholder — see above |
-| `id` | string | 6,689/6,689 assistant records | The API response id — this is `message.id`, the dedupe key (architecture §5.4). Never present on `user` records |
-| `usage` | object | 6,629/6,689 assistant records (missing on synthetic/error calls) | See §1.5 |
-| `stop_reason` | string | 6,644/6,704 real (non-synthetic) assistant calls (~99%) | |
-| `stop_details` | object | 6,629/6,689 | |
-| `stop_sequence` | string \| null | 6,593/6,689 | |
-| `diagnostics` | object | 6,568/6,689 | Not investigated further — low priority, no page consumes it per `pages.md` |
-| `container` | object | 10/10,864 | Rare/experimental |
-| `context_management` | object | 10/10,864 | Rare/experimental, co-occurs with `container` |
-
-### 1.5 `message.usage.*` field table (6,629 assistant records with a usage block)
-
-| Field | Type | Present in | Notes |
-|---|---|---|---|
-| `input_tokens` | number | 6,629/6,629 | |
-| `output_tokens` | number | 6,629/6,629 | |
-| `cache_creation_input_tokens` | number | 6,629/6,629 | |
-| `cache_read_input_tokens` | number | 6,629/6,629 | |
-| `service_tier` | string | 6,629/6,629 | |
-| `cache_creation` | object | 6,629/6,629 | See §1.6 |
-| `inference_geo` | string | 6,629/6,629 | Not in `architecture.md` |
-| `server_tool_use` | object | 6,331/6,629 | Not in `architecture.md` |
-| `iterations` | number | 6,331/6,629 | Not in `architecture.md` |
-| `speed` | number \| string | 6,331/6,629 | Not in `architecture.md` |
-
-### 1.6 `message.usage.cache_creation.*` field table
-
-| Field | Type | Present in | Notes |
-|---|---|---|---|
-| `ephemeral_5m_input_tokens` | number | 6,629/6,629 | Confirms `architecture.md` §4's claim (exact field name verified) |
-| `ephemeral_1h_input_tokens` | number | 6,629/6,629 | Same |
-
-### 1.7 Content block types (`message.content` array elements)
-
-| Block `type` | Count | Notes |
-|---|---|---|
-| `tool_use` | 3,326 | On `assistant` records |
-| `tool_result` | 3,317 | On `user` records — this is the tool-result-continuation shape (see §3 Rule 1); body excluded per architecture §5.4, byte size retained |
-| `thinking` | 1,824 | |
-| `text` | 1,649 | |
-| `image` | 19 | Multimodal input observed in real data — not previously called out in `architecture.md` or `pages.md` |
-
-### 1.8 C-tier (`.cost.jsonl`) schema — two mutually-exclusive-per-line shapes
-
-All 94 files, 3,285 lines, 0 malformed. Every line has the common core; exactly one of the two indexing schemes below, never both on the same line (0/3,285 lines have both).
-
-**Common core (94/94 files, 3,285/3,285 lines):** `session_id` (string) · `timestamp` (string) · `cost_delta_usd` (number) · `cumulative_cost_usd` (number) · `api_duration_ms` (number) · `cache_read_tokens` (number) · `cache_write_tokens` (number) · `lines_added` (number) · `lines_removed` (number) · `context_pct` (number)
-
-**Turn-indexed shape:** `turn` (number) — present in 60/94 files (57 turn-only + 3 mixed)
-**Epoch-indexed shape:** `epoch` (number), `sample` (number) — present in 37/94 files (34 epoch-only + 3 mixed)
-
-3 files contain both shapes on different lines (a schema-version transition mid-session, likely a Claude Code version upgrade during a long-running or resumed session). Earliest observed timestamp in this corpus: `2026-06-07T09:25:30Z`; latest: `2026-07-08T00:38:34Z` — the two shapes are time-ordered eras, not randomly interleaved.
-
-### 1.9 B-tier (`.turn-boundaries.jsonl`) schema
-
-All 34 files, 180 lines, 0 malformed, single stable shape: `session_id` (string) · `transcript_path` (string) · `turn_end` (string, ISO 8601) · `turn_end_epoch` (number, Unix epoch seconds)
-
-### 1.10 L-tier (`cost-log.jsonl`) schema
-
-1 shared file, 47 lines, 0 malformed, single stable shape: `session_id` (string) · `timestamp` (string) · `cost_usd` (number) · `dir` (string — the `cwd` equivalent) · `model` (string) · `duration_ms` (number) · `cache_read` (number) · `cache_write` (number) · `lines_added` (number) · `lines_removed` (number) · `context_pct` (number)
-
-**Note for #P2-1:** L's field names do **not** match C's for the same concepts (`cache_read`/`cache_write` vs. C's `cache_read_tokens`/`cache_write_tokens`; `cost_usd` vs. C's `cost_delta_usd`/`cumulative_cost_usd`; `dir` vs. C's absence of a directory field, `duration_ms` vs. C's `api_duration_ms`). Do not assume a unified premium-tier vocabulary — see §4.
+> Evidence-only — every observed field across T/C/B/L, with name / type / presence / inline
+> anonymized example. **No** CompactCall contract, no Turn/Session derivation rules, no
+> TierFlags design, no measure formulas, no API envelopes, no behavior contracts, no sign-off
+> gates. Downstream `#P2-1` cites this as the field source-of-truth; the derived contract layer
+> is a separate future task.
+>
+> Draft — supersedes the merged "Data Model & Contracts" doc dated 2026-07-08 whose REQ/ARCH
+> scaffolding has been deleted.
+>
+> Corpus at investigation time (2026-07-09 snapshot): 108 T files (19,545 lines), 95 C files
+> (3,472 lines), 34 B files (242 lines), 1 L file (48 lines). Every count below is a snapshot,
+> not a contract — refresh by re-running `scripts/survey-fields.py`.
 
 ---
 
-## 2. `CompactCall` (field-for-field)
+## §1 File classification
 
-One `CompactCall` per real `assistant`-type API response (keyed by `message.id`), enriched with turn/session correlation resolved from its `user`-type ancestors. Synthetic/error records (§1.3) are parsed into `CompactCall` but flagged via `isSyntheticOrError` rather than dropped, so Data Health (§9 page) can still count them.
-
-| Field | Type | Source JSON path | Nullability | Tier | Notes |
+| Tier | Pattern | Location | File count | Line count | Notes |
 |---|---|---|---|---|---|
-| `id` | string | `message.id` | required | 🟢 | Dedupe key (architecture §5.4) |
-| `uuid` | string | `uuid` | required | 🟢 | This record's own id — used for `parentUuid` chain resolution, not the dedupe key |
-| `sessionId` | string | `sessionId` | required | 🟢 | |
-| `promptId` | string | resolved — see §3 Rule 1 | optional — claimed-not-always-resolvable (~21% of records in this corpus don't resolve; §3 Rule 2) | 🟢 | Never read directly off the assistant record — always resolved via ancestor walk |
-| `timestamp` | string (ISO 8601) | `timestamp` | required | 🟢 | |
-| `model` | string | `message.model` | required | 🟢 | Value `"<synthetic>"` observed — see `isSyntheticOrError` |
-| `isSyntheticOrError` | boolean | derived: `message.model === "<synthetic>"` or `isApiErrorMessage === true` | required (defaults false) | 🟢 | Excludes the record from cost/usage/multi-model aggregates |
-| `apiErrorStatus` | number | `apiErrorStatus` | optional — claimed-not-observed unless `isSyntheticOrError` | 🟢 | Observed value `429` |
-| `isSidechain` | boolean | `isSidechain` | required, always present | 🟢 | |
-| `agentId` | string | `agentId` | optional — present only when `isSidechain === true` (1:1 observed) | 🟢 | |
-| `cwd` | string | `cwd` | required | 🟢 | |
-| `gitBranch` | string | `gitBranch` | required | 🟢 | Observed value `"HEAD"` for detached-HEAD |
-| `version` | string | `version` | required | 🟢 | |
-| `entrypoint` | string | `entrypoint` | required | 🟢 | |
-| `promptText` | string | resolved from the initiating `user` ancestor's `message.content` (string form or joined `text` blocks); tool-result-continuation `user` records excluded from this resolution | optional — present only on the call that begins a turn | 🟢 | Retained in full per architecture §5.4; size distribution measured in §9 (T2) |
-| `inputTokens` / `outputTokens` | number | `message.usage.input_tokens` / `output_tokens` | optional — absent iff `isSyntheticOrError` | 🟢 | |
-| `cacheReadInputTokens` / `cacheCreationInputTokens` | number | `message.usage.cache_read_input_tokens` / `cache_creation_input_tokens` | optional — same rule | 🟢 | |
-| `cacheCreation5mTokens` / `cacheCreation1hTokens` | number | `message.usage.cache_creation.ephemeral_5m_input_tokens` / `ephemeral_1h_input_tokens` | optional — same rule | 🟢 | Confirms architecture §4's claim |
-| `serviceTier` | string | `message.usage.service_tier` | optional — same rule | 🟢 | |
-| `stopReason` | string | `message.stop_reason` | optional — present on ~99% of real calls (6,644/6,704) | 🟢 | |
-| `toolUseCount` | number | derived: count of `tool_use` blocks in `message.content` | required (defaults 0) | 🟢 | |
-| `toolNames` | string[] | derived: `name` of each `tool_use` block | required (defaults `[]`) | 🟢 | Feeds tool-mix panel (Session Detail, `pages.md` §3) |
-| `toolResultByteSize` | number | derived: summed byte length of `tool_result` blocks in the **following** `user` record(s) that continue this call | required (defaults 0) | 🟢 | The architecture §5.4 exclusion — body dropped, size kept. Cross-record join, not a direct field read |
-| `requestId` | string | `requestId` | optional — present on ~99% of real calls (6,612/6,689... /6,704 real) | 🟢 | |
-| `attributionSkill` / `attributionAgent` / `attributionMcpServer` / `attributionMcpTool` / `attributionPlugin` | string | same-named top-level fields | optional — low-frequency (774/494/215/215/134 of 10,864 assistant+user records) | 🟢 | **Not in `architecture.md`** — attributes the call to the skill/subagent/MCP tool/plugin that triggered it |
+| **T** | `<uuid>.jsonl` | `~/.claude/projects/**` | 108 | 19,545 | Default — every user has this |
+| **C** | `<uuid>.cost.jsonl` | same dirs as T | 95 | 3,472 | Premium — opt-in via statusline setup; two mutually-exclusive indexing shapes (turn-indexed / epoch-indexed) |
+| **B** | `<uuid>.turn-boundaries.jsonl` | same dirs as T | 34 | 242 | Premium — opt-in via stop-hook setup; single stable shape |
+| **L** | `cost-log.jsonl` | `~/.claude/` (parent of projects scan root — discovery must search explicitly) | 1 | 48 | Premium — opt-in via statusline setup; **one shared file across all sessions**, not per-session |
 
-**Deliberate exclusions (architecture §5.4):** `toolUseResult` (raw tool-result body) is never retained — only `toolResultByteSize`. `attachment`/`system`/`mode`/`file-history-snapshot`/`last-prompt`/`ai-title`/`permission-mode`/`bridge-session`/`queue-operation`/`agent-name`/`pr-link`/`worktree-state`/`custom-title` record types (§1.2) are not parsed into `CompactCall` at all — no page in `pages.md` consumes them.
+**Defensive note:** Absence of C/B/L files is **not corruption** — they appear only when the user has set up cost-capturing statuslines/stop-hooks. Their optional nature is exactly why they need their own first-class tables.
 
 ---
 
-## 3. `Turn` / `Session` Derivation Rules
+## §2 T line-type distribution
 
-**Rule 1 — Turn grouping.** A turn is the set of records sharing one `promptId`. `promptId` is present **only** on `type: "user"` records — never on `assistant` records (0/6,689 observed). Every `assistant` record's turn membership must therefore be resolved by walking its `parentUuid` chain upward (via the `uuid`/`parentUuid` links within the same session file) until a record carrying `promptId` is found; memoize per session to avoid re-walking shared ancestors. This is a real resolution algorithm, not a direct field read — `architecture.md`'s "promptId is the turn-grouping key" undersells the indirection required (§11 correction candidate, T2).
+> **Note on counts:** every count below is the observation at 2026-07-09. Re-run `scripts/survey-fields.py` to refresh; these are placeholders the script regenerates, not constants.
 
-**Rule 2 — Unresolved chains (flagged, not silently resolved).** In this corpus, 1,402 of 6,689 assistant records (~21%) do not resolve to any `promptId` even after walking the full `parentUuid` chain to the root of their session file. This is overwhelmingly a main-chain phenomenon (1,343/1,402, ~96%), not a sidechain one — ruling out "sidechain roots don't carry `promptId`" as the primary explanation. Root cause not conclusively determined during this investigation; candidate explanations include `/clear`/context-reset events severing the visible chain, or `queue-operation` records (§1.2) batching multiple human inputs under mechanics not yet understood (165 `promptId` groups in this corpus contain more than one non-tool-result `user` record, which is inconsistent with "one `promptId` = one human-submitted message" as a strict rule). **Contract:** an assistant record whose chain doesn't resolve gets `promptId: null` and is excluded from turn-grouped measures (turns count, per-turn cost bars) but still counts toward session-level and dimension-only aggregates. **This needs verification against a larger corpus before `#P2-1` treats it as final.**
-
-**Rule 3 — Sidechain handling.** `isSidechain` is always present (boolean, never absent) — no null-check needed. `isSidechain: true` correlates 1:1 with presence of `agentId` in this corpus (495/495). Whether sidechain calls count toward main-chain turn/wall-minute aggregates by default is a sign-off-gated decision — see §8 (T2), not decided here.
-
-**Rule 4 — Model-switch / session-level attribution.** 6 of 71 real sessions in this corpus (~8.5%) use more than one distinct model, **after** excluding the `<synthetic>` placeholder (11/71 before exclusion — the unfiltered count overstates this by including rate-limit-retry markers as if they were a "model"). 8.5% is common enough to need an explicit default, not a rare edge case worth hand-waving. The default itself is sign-off-gated — see §8 (T2).
-
-**Rule 5 — Compaction.** Compaction is **not** a distinct `"type": "summary"` record — `architecture.md` itself makes no such claim (checked directly, §1.2 note); the "summary lines" phrasing traces only to filed issue #12's scope text, already tracked separately as stale. In real data (0/18,851 lines with that type), the actual compaction mechanism is a `type: "user"` record carrying `isCompactSummary: true` and `isVisibleInTranscriptOnly: true`, with its own ordinary `promptId` (both observed instances in this corpus had one). Treat it as a turn boundary marker on an otherwise normal user-turn record, not a separate record kind.
-
-**Rule 6 — Session rollup.** A session is every `CompactCall` (and the turns they resolve into per Rule 1) sharing one `sessionId` (always present, §1.3). A session's tier is derived per §4, not redefined here.
+| `type/subtype` | Count (at investigation time) | See |
+|---|---|---|
+| `assistant` | 6928 | §3.1 |
+| `user` | 4327 | §3.2 |
+| `attachment` | 1434 | §3.3 |
+| `mode` | 1032 | §3.4 |
+| `last-prompt` | 989 | §3.5 |
+| `file-history-snapshot` | 988 | §3.6 |
+| `ai-title` | 929 | §3.7 |
+| `permission-mode` | 811 | §3.8 |
+| `system/stop_hook_summary` | 546 | §3.9 |
+| `system/turn_duration` | 492 | §3.10 |
+| `bridge-session` | 484 | §3.11 |
+| `queue-operation` | 252 | §3.12 |
+| `agent-name` | 123 | §3.13 |
+| `system/away_summary` | 94 | §3.14 |
+| `system/local_command` | 63 | §3.15 |
+| `pr-link` | 20 | §3.16 |
+| `worktree-state` | 18 | §3.17 |
+| `system/informational` | 6 | §3.18 |
+| `custom-title` | 4 | §3.19 |
+| `system/api_error` | 3 | §3.20 |
+| `system/compact_boundary` | 2 | §3.21 |
 
 ---
 
-## 4. `TierFlags` + Premium Schemas (C/B/L)
+## §3 Per-line-type field tables
 
-### 4.1 `TierFlags` (derived per session, file-presence-only for this pass — granularity default is sign-off-gated, §8/R9, T2)
+One sub-section per line type, ordered by count desc. Columns: `field | type | presence (n/N) | example | notes`. Nested objects recur up to two levels with `####` sub-tables.
 
-| Field | Type | Derivation | Nullability | Tier |
+### §3.1 `assistant`  (n=6928 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
 |---|---|---|---|---|
-| `hasCost` | boolean | a `<sessionId>.cost.jsonl` file exists | required (defaults false) | 🟢 |
-| `hasTurnBoundaries` | boolean | a `<sessionId>.turn-boundaries.jsonl` file exists | required (defaults false) | 🟢 |
-| `hasCostLog` | boolean | `sessionId` appears as a `session_id` value in the **shared** `cost-log.jsonl` (§1.10 — this is a lookup, not a file-existence check, since L is one file for all sessions) | required (defaults false) | 🟢 |
-| `tier` | `"🟢"` \| `"🟡"` \| `"🔴"` | per architecture §4's existing tier rules — not redefined here | required | 🟢 |
+| `cwd` | str | 6928/6928 | /Users/<redacted>/.claude |  |
+| `entrypoint` | str | 6928/6928 | cli |  |
+| `gitBranch` | str | 6928/6928 | HEAD |  |
+| `isSidechain` | bool | 6928/6928 | false |  |
+| `message` | object | 6928/6928 | {"model": "claude-fable-5", "id": "msg_012JtQfM1vSG5VTRuxRsiZ2R", "type": "me... |  |
+| `parentUuid` | str | 6928/6928 | <uuid:f2c41044...> |  |
+| `sessionId` | str | 6928/6928 | <uuid:866138e1...> |  |
+| `timestamp` | str | 6928/6928 | 2026-07-03T04:46:51.065Z |  |
+| `type` | str | 6928/6928 | assistant |  |
+| `userType` | str | 6928/6928 | external |  |
+| `uuid` | str | 6928/6928 | <uuid:ab50aab8...> |  |
+| `version` | str | 6928/6928 | 2.1.199 |  |
+| `requestId` | str | 6853/6928 | req_011CceWx7gqgbJxLfwZ4d6pS |  |
+| `session_id` | str | 2982/6928 | <uuid:866138e1...> |  |
+| `slug` | str | 2800/6928 | peaceful-weaving-grove |  |
+| `attributionSkill` | str | 791/6928 | session-stats |  |
+| `agentId` | str | 542/6928 | a26c705418923abca |  |
+| `attributionAgent` | str | 541/6928 | Explore |  |
+| `attributionMcpServer` | str | 215/6928 | claude-in-chrome |  |
+| `attributionMcpTool` | str | 215/6928 | tabs_context_mcp |  |
+| `attributionPlugin` | str | 134/6928 | dev-pipeline |  |
+| `isApiErrorMessage` | bool | 11/6928 | true |  |
+| `apiErrorStatus` | int | 8/6928 | 429 |  |
+| `error` | str | 8/6928 | rate_limit |  |
 
-### 4.2 C schema (`.cost.jsonl`) — see §1.8 for the full field table and the two-shape finding.
+#### `message.* (assistant)`  (n=6928 at investigation time)
 
-### 4.3 B schema (`.turn-boundaries.jsonl`) — see §1.9.
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `content` | array[1] | 6928/6928 | [{"type": "thinking", "thinking": "", "signature": "CAIShAMKYggPGAIqQJ2Rfgz/b... |  |
+| `id` | str | 6928/6928 | msg_012JtQfM1vSG5VTRuxRsiZ2R |  |
+| `model` | str | 6928/6928 | claude-fable-5 |  |
+| `role` | str | 6928/6928 | assistant |  |
+| `type` | str | 6928/6928 | message |  |
+| `usage` | object | 6928/6928 | {"input_tokens": 12031, "cache_creation_input_tokens": 17176, "cache_read_inp... |  |
+| `stop_details` | null | 6868/6928 | null |  |
+| `stop_reason` | str | 6868/6928 | tool_use |  |
+| `stop_sequence` | null | 6832/6928 | null |  |
+| `diagnostics` | null | 6806/6928 | null |  |
+| `container` | null | 11/6928 | null |  |
+| `context_management` | null | 11/6928 | null |  |
 
-### 4.4 L schema (`cost-log.jsonl`) — see §1.10, including the field-name mismatch note against C.
+##### `content[]` block shapes (assistant)
+
+_Per-shape counts at investigation time: see scope names below. Each block-type's keys tabulated in its own sub-table._
+
+#### `content[text].*`  (n=1616 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `text` | str | 1616/1616 | Let me look at what's actually in your skills directory to see the extent of ... |  |
+| `type` | str | 1616/1616 | text |  |
+
+#### `content[thinking].*`  (n=1905 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `signature` | str | 1905/1905 | CAIShAMKYggPGAIqQJ2Rfgz/bQvzL2clJRAGLvcDQ29UMev1iSx+TBLLFIOuAttZ7PrmSSiFnRvAi... |  |
+| `thinking` | str | 1905/1905 |  |  |
+| `type` | str | 1905/1905 | thinking |  |
+
+#### `content[tool_use].*`  (n=3407 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `id` | str | 3407/3407 | toolu_016pRW2fK9gdjj3qkH6uc2FK |  |
+| `input` | object | 3407/3407 | {"command": "ls -la /Users/<redacted>/.claude/skills/", "description": "List ... |  |
+| `name` | str | 3407/3407 | Bash |  |
+| `type` | str | 3407/3407 | tool_use |  |
+| `caller` | object | 3354/3407 | {"type": "direct"} |  |
+
+#### `message.usage.*`  (n=6928 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `input_tokens` | int | 6928/6928 | 12031 |  |
+| `output_tokens` | int | 6928/6928 | 184 |  |
+| `cache_creation` | object | 6868/6928 | {"ephemeral_1h_input_tokens": 17176, "ephemeral_5m_input_tokens": 0} |  |
+| `cache_creation_input_tokens` | int | 6868/6928 | 17176 |  |
+| `cache_read_input_tokens` | int | 6868/6928 | 0 |  |
+| `inference_geo` | str | 6868/6928 | not_available |  |
+| `service_tier` | str | 6868/6928 | standard |  |
+| `iterations` | array[1] | 6543/6928 | [{"input_tokens": 12031, "output_tokens": 184, "cache_read_input_tokens": 0, ... |  |
+| `server_tool_use` | object | 6543/6928 | {"web_search_requests": 0, "web_fetch_requests": 0} |  |
+| `speed` | str | 6543/6928 | standard |  |
+
+#### `message.usage.cache_creation.*`  (n=6868 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `ephemeral_1h_input_tokens` | int | 6868/6868 | 17176 |  |
+| `ephemeral_5m_input_tokens` | int | 6868/6868 | 0 |  |
+
+#### `message.usage.iterations[0].*  — only [0] surveyed; `[0]` is real subscript not '≥1 by convention'`  (n=6520 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `cache_creation` | object | 6520/6520 | {"ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 17176} |  |
+| `cache_creation_input_tokens` | int | 6520/6520 | 17176 |  |
+| `cache_read_input_tokens` | int | 6520/6520 | 0 |  |
+| `input_tokens` | int | 6520/6520 | 12031 |  |
+| `output_tokens` | int | 6520/6520 | 184 |  |
+| `type` | str | 6520/6520 | message |  |
+
+#### `message.usage.iterations[0].cache_creation.*`  (n=6520 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `ephemeral_1h_input_tokens` | int | 6520/6520 | 17176 |  |
+| `ephemeral_5m_input_tokens` | int | 6520/6520 | 0 |  |
+
+#### `message.usage.server_tool_use.*`  (n=6543 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `web_fetch_requests` | int | 6543/6543 | 0 |  |
+| `web_search_requests` | int | 6543/6543 | 0 |  |
+
+##### `tool_use.input` keys per tool — top 10 by occurrence count (n = tool_use blocks observed with a dict `input`)
+
+#### `tool_use.input[Bash].*`  (n=1309 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `command` | str | 1309/1309 | ls -la /Users/<redacted>/.claude/skills/ |  |
+| `description` | str | 1071/1309 | List personal skills directory |  |
+| `timeout` | int | 26/1309 | 300000 |  |
+| `run_in_background` | bool | 3/1309 | true |  |
+
+#### `tool_use.input[Read].*`  (n=788 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `file_path` | str | 788/788 | /Users/<redacted>/.claude/scripts/turn-logger.js |  |
+| `limit` | int | 198/788 | 6 |  |
+| `offset` | int | 175/788 | 24 |  |
+| `pages` | str | 2/788 | 1-6 |  |
+
+#### `tool_use.input[Edit].*`  (n=778 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `file_path` | str | 778/778 | /Users/<redacted>/.claude/scripts/cost-logger.js |  |
+| `new_string` | str | 778/778 |   // Activity detection — fires when API_DURATION_MS changes since last poll.... |  |
+| `old_string` | str | 778/778 |   // Turn detection — fires when API_DURATION_MS changes since last poll
+  le... |  |
+| `replace_all` | bool | 778/778 | false |  |
+
+#### `tool_use.input[Write].*`  (n=199 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `content` | str | 199/199 | #!/usr/bin/env node
+
+// Cost logger — the single source of truth for capturin... |  |
+| `file_path` | str | 199/199 | /Users/<redacted>/.claude/scripts/cost-logger.js |  |
+
+#### `tool_use.input[AskUserQuestion].*`  (n=59 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `questions` | array[2] | 59/59 | [{"question": "What should I do with the 8 Cloudflare skills sitting in ~/.cl... |  |
+
+#### `tool_use.input[mcp__claude-in-chrome__computer].*`  (n=54 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `action` | str | 54/54 | screenshot |  |
+| `tabId` | int | 54/54 | 1155364964 |  |
+| `coordinate` | array[2] | 11/54 | [746, 15] |  |
+| `ref` | str | 11/54 | ref_7 |  |
+| `text` | str | 6/54 | F5 |  |
+| `region` | array[4] | 2/54 | [680, 0, 970, "..."] |  |
+
+#### `tool_use.input[TaskUpdate].*`  (n=50 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `status` | str | 50/50 | in_progress |  |
+| `taskId` | str | 50/50 | 1 |  |
+
+#### `tool_use.input[TaskCreate].*`  (n=30 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `description` | str | 29/30 | package.json, tsconfig, src/ layout, prices/prices.json seeded per SPEC §5.3,... |  |
+| `subject` | str | 29/30 | S0 — Bootstrap: scaffold + CLAUDE.md + price seed |  |
+| `activeForm` | str | 9/30 | Scaffolding project |  |
+| `tasks` | str | 1/30 | [{"description":"Scaffold Vite + React + TS app in project root"},{"descripti... |  |
+
+#### `tool_use.input[Agent].*`  (n=29 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `description` | str | 29/29 | Verify distillation completeness |  |
+| `prompt` | str | 29/29 | I'm verifying that a distillation of 7 planning docs into 4 new docs is compl... |  |
+| `subagent_type` | str | 19/29 | Explore |  |
+| `run_in_background` | bool | 13/29 | true |  |
+
+#### `tool_use.input[ToolSearch].*`  (n=27 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `query` | str | 27/27 | select:TaskCreate,TaskUpdate |  |
+| `max_results` | int | 23/27 | 2 |  |
+
+### §3.2 `user`  (n=4327 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `cwd` | str | 4327/4327 | /Users/<redacted>/.claude |  |
+| `entrypoint` | str | 4327/4327 | cli |  |
+| `gitBranch` | str | 4327/4327 | HEAD |  |
+| `isSidechain` | bool | 4327/4327 | false |  |
+| `message` | object | 4327/4327 | {"role": "user", "content": "it seems when i mistakenly installed cloudfalre ... |  |
+| `parentUuid` | null | 4327/4327 | null |  |
+| `sessionId` | str | 4327/4327 | <uuid:866138e1...> |  |
+| `timestamp` | str | 4327/4327 | 2026-07-03T04:46:46.767Z |  |
+| `type` | str | 4327/4327 | user |  |
+| `userType` | str | 4327/4327 | external |  |
+| `uuid` | str | 4327/4327 | <uuid:7c50ba86...> |  |
+| `version` | str | 4327/4327 | 2.1.199 |  |
+| `promptId` | str | 4324/4327 | <uuid:c6c52da2...> |  |
+| `sourceToolAssistantUUID` | str | 3398/4327 | <uuid:227daa06...> |  |
+| `toolUseResult` | object | 3343/4327 | {"stdout": "total 16\ndrwx------  18 foyzul  staff   576 Jul  3 14:43 .\ndrwx... |  |
+| `slug` | str | 1667/4327 | peaceful-weaving-grove |  |
+| `session_id` | str | 1610/4327 | <uuid:866138e1...> |  |
+| `permissionMode` | str | 467/4327 | default |  |
+| `promptSource` | str | 467/4327 | typed |  |
+| `agentId` | str | 361/4327 | a26c705418923abca |  |
+| `origin` | object | 287/4327 | {"kind": "human"} |  |
+| `isMeta` | bool | 228/4327 | true |  |
+| `imagePasteIds` | array[2] | 17/4327 | [1, 2] |  |
+| `sourceToolUseID` | str | 12/4327 | toolu_01AYNZS2CV1ouV7CGuUWrufU |  |
+| `toolDenialKind` | str | 7/4327 | user-rejected |  |
+| `interruptedMessageId` | str | 4/4327 | msg_018EeczxckPT4ZZFxaf4qnAL |  |
+| `isCompactSummary` | bool | 2/4327 | true |  |
+| `isVisibleInTranscriptOnly` | bool | 2/4327 | true |  |
+
+#### `message.* (user)`  (n=4327 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `content` | str | 4327/4327 | it seems when i mistakenly installed cloudfalre skills or something similar i... |  |
+| `role` | str | 4327/4327 | user |  |
+
+##### `content[]` block shapes (user)
+
+#### `content[text].*`  (n=111 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `text` | str | 111/111 | Base directory for this skill: /Users/<redacted>/.claude/skills/session-stats... |  |
+| `type` | str | 111/111 | text |  |
+
+#### `content[tool_result].*`  (n=3398 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `content` | str | 3398/3398 | total 16
+drwx------  18 foyzul  staff   576 Jul  3 14:43 .
+drwxr-xr-x@ 46 foy... |  |
+| `tool_use_id` | str | 3398/3398 | toolu_016pRW2fK9gdjj3qkH6uc2FK |  |
+| `type` | str | 3398/3398 | tool_result |  |
+| `is_error` | bool | 1393/3398 | false |  |
+
+#### `content[image].*`  (n=19 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `source` | object | 19/19 | {"type": "base64", "media_type": "image/png", "data": "iVBORw0KGgoAAAANSUhEUg... |  |
+| `type` | str | 19/19 | image |  |
+
+#### `origin.*`  (n=287 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `kind` | str | 287/287 | human |  |
+
+#### `toolUseResult.*  — top-level field observed on user records; treated like any nested object`  (n=3094 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `interrupted` | bool | 1210/3094 | false |  |
+| `isImage` | bool | 1210/3094 | false |  |
+| `noOutputExpected` | bool | 1210/3094 | false |  |
+| `stderr` | str | 1210/3094 |  |  |
+| `stdout` | str | 1210/3094 | total 16
+drwx------  18 foyzul  staff   576 Jul  3 14:43 .
+drwxr-xr-x@ 46 foy... |  |
+| `type` | str | 948/3094 | text |  |
+| `filePath` | str | 913/3094 | /Users/<redacted>/.claude/scripts/cost-logger.js |  |
+| `originalFile` | null | 907/3094 | null |  |
+| `structuredPatch` | array[0] | 907/3094 | [] |  |
+| `userModified` | bool | 907/3094 | false |  |
+| `file` | object | 753/3094 | {"filePath": "/Users/<redacted>/.claude/scripts/turn-logger.js", "content": "... |  |
+| `newString` | str | 712/3094 |   // Activity detection — fires when API_DURATION_MS changes since last poll.... |  |
+| `oldString` | str | 712/3094 |   // Turn detection — fires when API_DURATION_MS changes since last poll
+  le... |  |
+| `replaceAll` | bool | 712/3094 | false |  |
+| `content` | str | 201/3094 | #!/usr/bin/env node
+
+// Cost logger — the single source of truth for capturin... |  |
+| `success` | bool | 62/3094 | true |  |
+| `answers` | object | 53/3094 | {"What should I do with the 8 Cloudflare skills sitting in ~/.claude/skills?"... |  |
+| `questions` | array[2] | 53/3094 | [{"question": "What should I do with the 8 Cloudflare skills sitting in ~/.cl... |  |
+| `statusChange` | object | 50/3094 | {"from": "pending", "to": "in_progress"} |  |
+| `taskId` | str | 50/3094 | 1 |  |
+| `updatedFields` | array[1] | 50/3094 | ["status"] |  |
+| `annotations` | object | 39/3094 | {} |  |
+| `gitOperation` | object | 37/3094 | {"commit": {"sha": "d7bd524", "kind": "committed"}} |  |
+| `agentId` | str | 29/3094 | a26c705418923abca |  |
+| `prompt` | str | 29/3094 | I'm verifying that a distillation of 7 planning docs into 4 new docs is compl... |  |
+| `status` | str | 29/3094 | completed |  |
+| `task` | object | 29/3094 | {"id": "1", "subject": "S0 \u2014 Bootstrap: scaffold + CLAUDE.md + price seed"} |  |
+| `query` | str | 28/3094 | select:TaskCreate,TaskUpdate |  |
+| `resolvedModel` | str | 28/3094 | claude-sonnet-5 |  |
+| `returnCodeInterpretation` | str | 28/3094 | No matches found |  |
+| `matches` | array[2] | 27/3094 | ["TaskCreate", "TaskUpdate"] |  |
+| `total_deferred_tools` | int | 27/3094 | 79 |  |
+| `canReadOutputFile` | bool | 23/3094 | true |  |
+| `description` | str | 23/3094 | Code-quality review of PR #1 diff |  |
+| `isAsync` | bool | 23/3094 | true |  |
+| `outputFile` | str | 23/3094 | /private/tmp/claude-501/-Users-foyzul-personal-llm-ledger/ee626025-be03-4fb4-... |  |
+| `persistedOutputPath` | str | 15/3094 | /Users/<redacted>/.claude/projects/-Users-foyzul-personal-llm-ledger/717ac411... |  |
+| `persistedOutputSize` | int | 15/3094 | 39217 |  |
+| `commandName` | str | 12/3094 | dev-pipeline:start-task |  |
+| `bytes` | int | 7/3094 | 0 |  |
+| `code` | int | 7/3094 | 404 |  |
+| `codeText` | str | 7/3094 | Not Found |  |
+| `durationMs` | int | 7/3094 | 573 |  |
+| `result` | str | 7/3094 | The server returned HTTP 404 Not Found.
+
+The response body was not retrieved.... |  |
+| `url` | str | 7/3094 | https://platform.claude.com/docs/en/pricing.md |  |
+| `agentType` | str | 6/3094 | Explore |  |
+| `isAgent` | bool | 6/3094 | false |  |
+| `message` | str | 6/3094 | Entered plan mode. You should now focus on exploring the codebase and designi... |  |
+| `plan` | str | 6/3094 | # Remove localStorage entirely (personal overlay + compare-selection)
+
+## Con... |  |
+| `planWasEdited` | bool | 6/3094 | true |  |
+| `toolStats` | object | 6/3094 | {"readCount": 13, "searchCount": 6, "bashCount": 17, "editFileCount": 0, "lin... |  |
+| `totalDurationMs` | int | 6/3094 | 242527 |  |
+| `totalTokens` | int | 6/3094 | 97244 |  |
+| `totalToolUseCount` | int | 6/3094 | 36 |  |
+| `usage` | object | 6/3094 | {"input_tokens": 363, "cache_creation_input_tokens": 0, "cache_read_input_tok... |  |
+| `backgroundTaskId` | str | 5/3094 | brpya8aao |  |
+| `allowedTools` | array[4] | 2/3094 | ["Read", "Grep", "Glob", "..."] |  |
+| `assistantAutoBackgrounded` | bool | 2/3094 | false |  |
+| `attachments` | array[1] | 2/3094 | [{"path": "/private/tmp/claude-501/-Users-foyzul-personal-skills/609c213b-32d... |  |
+| `caption` | str | 2/3094 | Titles-only card for the LinkedIn post — dark theme, sized 1200×630 for socia... |  |
+| `command` | str | 2/3094 | npx next dev -p 3001 > /tmp/hifz-dev.log 2>&1 |  |
+| `count` | int | 2/3094 | 3 |  |
+| `display` | str | 2/3094 | render |  |
+| `findings` | array[3] | 2/3094 | [{"file": "specs/claude-lens-data-model.md", "line": 301, "summary": "\u00a76... |  |
+| `localSent` | bool | 2/3094 | true |  |
+| `pushSent` | bool | 2/3094 | true |  |
+| `sentAt` | str | 2/3094 | 2026-07-08T21:20:41.100Z |  |
+| `task_id` | str | 2/3094 | b9q134jgd |  |
+| `task_type` | str | 2/3094 | local_bash |  |
+| `durationSeconds` | float | 1/3094 | 7.6251733329999265 |  |
+| `results` | array[2] | 1/3094 | [{"tool_use_id": "srvtoolu_01J3YdCzvaTDQKxxtvtWghfZ", "content": [{"title": "... |  |
+| `searchCount` | int | 1/3094 | 1 |  |
+| `source` | str | 1/3094 | seeded |  |
+| `worktreeBranch` | str | 1/3094 | audit-claude |  |
+| `worktreePath` | str | 1/3094 | /Users/<redacted>/personal/agentic-swe-vod/audit-claude |  |
+
+### §3.3 `attachment`  (n=1434 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `attachment` | object | 1434/1434 | {"type": "deferred_tools_delta", "addedNames": ["CronCreate", "CronDelete", "... |  |
+| `cwd` | str | 1434/1434 | /Users/<redacted>/.claude |  |
+| `entrypoint` | str | 1434/1434 | cli |  |
+| `gitBranch` | str | 1434/1434 | HEAD |  |
+| `isSidechain` | bool | 1434/1434 | false |  |
+| `parentUuid` | str | 1434/1434 | <uuid:7c50ba86...> |  |
+| `sessionId` | str | 1434/1434 | <uuid:866138e1...> |  |
+| `timestamp` | str | 1434/1434 | 2026-07-03T04:46:46.767Z |  |
+| `type` | str | 1434/1434 | attachment |  |
+| `userType` | str | 1434/1434 | external |  |
+| `uuid` | str | 1434/1434 | <uuid:733c9b9e...> |  |
+| `version` | str | 1434/1434 | 2.1.199 |  |
+| `session_id` | str | 577/1434 | <uuid:866138e1...> |  |
+| `slug` | str | 553/1434 | peaceful-weaving-grove |  |
+| `agentId` | str | 57/1434 | a26c705418923abca |  |
+
+#### `attachment.*  — many variant discriminator values; union of all keys shown`  (n=1434 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `type` | str | 1434/1434 | deferred_tools_delta |  |
+| `content` | str | 548/1434 | - agents-sdk: Build AI agents on Cloudflare Workers using the Agents SDK. Loa... |  |
+| `itemCount` | int | 380/1434 | 0 |  |
+| `durationMs` | int | 274/1434 | 117323 |  |
+| `command` | str | 261/1434 | rtk hook claude |  |
+| `exitCode` | int | 261/1434 | 127 |  |
+| `hookEvent` | str | 261/1434 | PreToolUse |  |
+| `hookName` | str | 261/1434 | PreToolUse:Bash |  |
+| `stderr` | str | 261/1434 | Failed with non-blocking status code: /bin/sh: rtk: command not found |  |
+| `stdout` | str | 261/1434 |  |  |
+| `toolUseID` | str | 261/1434 | toolu_019Picwe5zMnXWqM5RpzceVS |  |
+| `isInitial` | bool | 193/1434 | true |  |
+| `addedNames` | array[103] | 185/1434 | ["CronCreate", "CronDelete", "CronList", "..."] |  |
+| `removedNames` | array[0] | 185/1434 | [] |  |
+| `addedLines` | array[103] | 184/1434 | ["CronCreate", "CronDelete", "CronList", "..."] |  |
+| `filename` | str | 170/1434 | /Users/<redacted>/.claude/skills/sandbox-sdk/SKILL.md |  |
+| `names` | array[51] | 119/1434 | ["agents-sdk", "cloudflare", "cloudflare-email-service", "..."] |  |
+| `skillCount` | int | 119/1434 | 51 |  |
+| `readdedNames` | array[0] | 110/1434 | [] |  |
+| `condition` | str | 96/1434 | now scaffold the skill for teammates, copy the necessary files into the skill... |  |
+| `met` | bool | 96/1434 | false |  |
+| `pendingMcpServers` | array[0] | 80/1434 | [] |  |
+| `reason` | str | 80/1434 | The skill has been fully scaffolded and files copied into the directory struc... |  |
+| `addedBlocks` | array[2] | 75/1434 | ["## claude-in-chrome\n**IMPORTANT: If the Chrome browser tools are deferred ... |  |
+| `addedTypes` | array[8] | 74/1434 | ["claude", "claude-code-guide", "code-simplifier:code-simplifier", "..."] |  |
+| `removedTypes` | array[0] | 74/1434 | [] |  |
+| `showConcurrencyNote` | bool | 74/1434 | false |  |
+| `displayPath` | str | 57/1434 | llm-benchmark-tracker-prd.md |  |
+| `allowedTools` | array[0] | 53/1434 | [] |  |
+| `snippet` | str | 52/1434 | 9	  },
+10	  "license": "MIT",
+11	  "author": "Foyzul Karim <foyzulkarim@gmail... |  |
+| `planExists` | bool | 35/1434 | false |  |
+| `planFilePath` | str | 35/1434 | /Users/<redacted>/.claude/plans/peaceful-weaving-grove.md |  |
+| `commandMode` | str | 25/1434 | task-notification |  |
+| `prompt` | str | 25/1434 | <task-notification>
+<task-id>aaec2ded48a5eaa4a</task-id>
+<tool-use-id>toolu_0... |  |
+| `sentinel` | bool | 16/1434 | true |  |
+| `origin` | object | 14/1434 | {"kind": "human"} |  |
+| `iterations` | int | 13/1434 | 1 |  |
+| `tokens` | int | 13/1434 | 6472 |  |
+| `isSubAgent` | bool | 10/1434 | false |  |
+| `reminderType` | str | 10/1434 | full |  |
+| `timestamp` | str | 10/1434 | 2026-07-04T23:56:46.784Z |  |
+| `ideName` | str | 8/1434 | Visual Studio Code |  |
+| `lineEnd` | int | 8/1434 | 154 |  |
+| `lineStart` | int | 8/1434 | 154 |  |
+| `path` | str | 7/1434 | /Users/<redacted>/personal/llm-ledger/standalone |  |
+| `newDate` | str | 6/1434 | 2026-07-05 |  |
+| `tip` | object | 5/1434 | {"tip": "You're asking about the diffs \u2014 /diff shows all uncommitted cha... |  |
+| `needsAuthMcpServers` | array[5] | 3/1434 | ["claude.ai Cloudflare Developer Platform", "claude.ai Gmail", "claude.ai Goo... |  |
+| `source_uuid` | str | 2/1434 | <uuid:650f70bb...> |  |
+| `fileSize` | int | 1/1434 | 1026386 |  |
+| `imagePasteIds` | array[1] | 1/1434 | [4] |  |
+| `pageCount` | int | 1/1434 | 11 |  |
+| `skills` | array[3] | 1/1434 | [{"name": "plan-requirements", "path": "userSettings:plan-requirements", "con... |  |
+
+### §3.4 `mode`  (n=1032 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `mode` | str | 1032/1032 | normal |  |
+| `sessionId` | str | 1032/1032 | <uuid:866138e1...> |  |
+| `type` | str | 1032/1032 | mode |  |
+
+### §3.5 `last-prompt`  (n=989 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `leafUuid` | str | 989/989 | <uuid:f2c41044...> |  |
+| `sessionId` | str | 989/989 | <uuid:866138e1...> |  |
+| `type` | str | 989/989 | last-prompt |  |
+| `lastPrompt` | str | 933/989 | it seems when i mistakenly installed cloudfalre skills or something similar i... |  |
+
+### §3.6 `file-history-snapshot`  (n=988 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `isSnapshotUpdate` | bool | 988/988 | false |  |
+| `messageId` | str | 988/988 | <uuid:7c50ba86...> |  |
+| `snapshot` | object | 988/988 | {"messageId": "<uuid:7c50ba86...>", "trackedFileBackups": {}, "timestamp": "2... |  |
+| `type` | str | 988/988 | file-history-snapshot |  |
+
+#### `snapshot.*`  (n=988 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `messageId` | str | 988/988 | <uuid:7c50ba86...> |  |
+| `timestamp` | str | 988/988 | 2026-07-03T04:46:46.767Z |  |
+| `trackedFileBackups` | object | 988/988 | {} |  |
+
+### §3.7 `ai-title`  (n=929 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `aiTitle` | str | 929/929 | Clean up cluttered skills directory from misinstalled Cloudflare |  |
+| `sessionId` | str | 929/929 | <uuid:866138e1...> |  |
+| `type` | str | 929/929 | ai-title |  |
+
+### §3.8 `permission-mode`  (n=811 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `permissionMode` | str | 811/811 | default |  |
+| `sessionId` | str | 811/811 | <uuid:866138e1...> |  |
+| `type` | str | 811/811 | permission-mode |  |
+
+### §3.9 `system/stop_hook_summary`  (n=546 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `cwd` | str | 546/546 | /Users/<redacted>/.claude/skills |  |
+| `entrypoint` | str | 546/546 | cli |  |
+| `gitBranch` | str | 546/546 | HEAD |  |
+| `hasOutput` | bool | 546/546 | false |  |
+| `hookAdditionalContext` | array[0] | 546/546 | [] |  |
+| `hookCount` | int | 546/546 | 1 |  |
+| `hookErrors` | array[0] | 546/546 | [] |  |
+| `hookInfos` | array[1] | 546/546 | [{"command": "/opt/homebrew/bin/node /Users/<redacted>/.claude/scripts/turn-l... |  |
+| `isSidechain` | bool | 546/546 | false |  |
+| `level` | str | 546/546 | suggestion |  |
+| `parentUuid` | str | 546/546 | <uuid:eee2e2f7...> |  |
+| `preventedContinuation` | bool | 546/546 | false |  |
+| `sessionId` | str | 546/546 | <uuid:866138e1...> |  |
+| `stopReason` | str | 546/546 |  |  |
+| `subtype` | str | 546/546 | stop_hook_summary |  |
+| `timestamp` | str | 546/546 | 2026-07-03T04:50:42.485Z |  |
+| `toolUseID` | str | 546/546 | <uuid:50168a24...> |  |
+| `type` | str | 546/546 | system |  |
+| `userType` | str | 546/546 | external |  |
+| `uuid` | str | 546/546 | <uuid:ec6c42ac...> |  |
+| `version` | str | 546/546 | 2.1.199 |  |
+| `session_id` | str | 248/546 | <uuid:866138e1...> |  |
+| `slug` | str | 173/546 | peaceful-weaving-grove |  |
+
+#### `hookInfos[0].*`  (n=546 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `command` | str | 546/546 | /opt/homebrew/bin/node /Users/<redacted>/.claude/scripts/turn-logger.js |  |
+| `durationMs` | int | 546/546 | 40 |  |
+
+### §3.10 `system/turn_duration`  (n=492 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `cwd` | str | 492/492 | /Users/<redacted>/.claude/skills |  |
+| `durationMs` | int | 492/492 | 112778 |  |
+| `entrypoint` | str | 492/492 | cli |  |
+| `gitBranch` | str | 492/492 | HEAD |  |
+| `isMeta` | bool | 492/492 | false |  |
+| `isSidechain` | bool | 492/492 | false |  |
+| `messageCount` | int | 492/492 | 44 |  |
+| `parentUuid` | str | 492/492 | <uuid:ec6c42ac...> |  |
+| `sessionId` | str | 492/492 | <uuid:866138e1...> |  |
+| `subtype` | str | 492/492 | turn_duration |  |
+| `timestamp` | str | 492/492 | 2026-07-03T04:50:42.486Z |  |
+| `type` | str | 492/492 | system |  |
+| `userType` | str | 492/492 | external |  |
+| `uuid` | str | 492/492 | <uuid:cfc9e26a...> |  |
+| `version` | str | 492/492 | 2.1.199 |  |
+| `slug` | str | 173/492 | peaceful-weaving-grove |  |
+| `pendingBackgroundAgentCount` | int | 17/492 | 3 |  |
+
+### §3.11 `bridge-session`  (n=484 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `bridgeSessionId` | str | 484/484 | cse_01BT2V97zu3Q34e16Lk9Q7jJ |  |
+| `lastSequenceNum` | int | 484/484 | 0 |  |
+| `sessionId` | str | 484/484 | <uuid:866138e1...> |  |
+| `type` | str | 484/484 | bridge-session |  |
+
+### §3.12 `queue-operation`  (n=252 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `operation` | str | 252/252 | enqueue |  |
+| `sessionId` | str | 252/252 | <uuid:25814b88...> |  |
+| `timestamp` | str | 252/252 | 2026-07-03T21:33:43.539Z |  |
+| `type` | str | 252/252 | queue-operation |  |
+| `content` | str | 126/252 | <task-notification>
+<task-id>brpya8aao</task-id>
+<tool-use-id>toolu_01XnL54ib... |  |
+
+### §3.13 `agent-name`  (n=123 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `agentName` | str | 123/123 | remove-localstorage-overlay |  |
+| `sessionId` | str | 123/123 | <uuid:ee626025...> |  |
+| `type` | str | 123/123 | agent-name |  |
+
+### §3.14 `system/away_summary`  (n=94 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `content` | str | 94/94 | You wanted your cluttered ~/.claude/skills directory cleaned up. I deleted th... |  |
+| `cwd` | str | 94/94 | /Users/<redacted>/.claude/skills |  |
+| `entrypoint` | str | 94/94 | cli |  |
+| `gitBranch` | str | 94/94 | HEAD |  |
+| `isMeta` | bool | 94/94 | false |  |
+| `isSidechain` | bool | 94/94 | false |  |
+| `parentUuid` | str | 94/94 | <uuid:cfc9e26a...> |  |
+| `sessionId` | str | 94/94 | <uuid:866138e1...> |  |
+| `subtype` | str | 94/94 | away_summary |  |
+| `timestamp` | str | 94/94 | 2026-07-03T04:53:48.332Z |  |
+| `type` | str | 94/94 | system |  |
+| `userType` | str | 94/94 | external |  |
+| `uuid` | str | 94/94 | <uuid:88db7c62...> |  |
+| `version` | str | 94/94 | 2.1.199 |  |
+| `slug` | str | 35/94 | peaceful-weaving-grove |  |
+
+### §3.15 `system/local_command`  (n=63 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `content` | str | 63/63 | <local-command-stdout></local-command-stdout> |  |
+| `cwd` | str | 63/63 | /Users/<redacted>/personal/agentic-swe-vod/audit-claude |  |
+| `entrypoint` | str | 63/63 | cli |  |
+| `gitBranch` | str | 63/63 | audit-claude |  |
+| `isMeta` | bool | 63/63 | false |  |
+| `isSidechain` | bool | 63/63 | false |  |
+| `level` | str | 63/63 | info |  |
+| `parentUuid` | str | 63/63 | <uuid:e908ce63...> |  |
+| `sessionId` | str | 63/63 | <uuid:b5a9532c...> |  |
+| `subtype` | str | 63/63 | local_command |  |
+| `timestamp` | str | 63/63 | 2026-06-11T08:10:03.336Z |  |
+| `type` | str | 63/63 | system |  |
+| `userType` | str | 63/63 | external |  |
+| `uuid` | str | 63/63 | <uuid:11b3d970...> |  |
+| `version` | str | 63/63 | 2.1.169 |  |
+| `slug` | str | 12/63 | your-online-claude-code-expressive-bubble |  |
+
+### §3.16 `pr-link`  (n=20 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `prNumber` | int | 20/20 | 5 |  |
+| `prRepository` | str | 20/20 | foyzulkarim/claude-lens |  |
+| `prUrl` | str | 20/20 | https://github.com/foyzulkarim/claude-lens/pull/5 |  |
+| `sessionId` | str | 20/20 | <uuid:c985ab86...> |  |
+| `timestamp` | str | 20/20 | 2026-07-05T22:58:53.043Z |  |
+| `type` | str | 20/20 | pr-link |  |
+
+### §3.17 `worktree-state`  (n=18 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `sessionId` | str | 18/18 | <uuid:b5a9532c...> |  |
+| `type` | str | 18/18 | worktree-state |  |
+| `worktreeSession` | object | 18/18 | {"originalCwd": "/Users/<redacted>/personal/agentic-swe-vod", "worktreePath":... |  |
+
+#### `worktreeSession.*`  (n=16 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `enteredExisting` | bool | 16/16 | true |  |
+| `originalCwd` | str | 16/16 | /Users/<redacted>/personal/agentic-swe-vod |  |
+| `sessionId` | str | 16/16 | <uuid:7083ffca...> |  |
+| `worktreeBranch` | str | 16/16 | audit-claude |  |
+| `worktreeName` | str | 16/16 | audit-claude |  |
+| `worktreePath` | str | 16/16 | /Users/<redacted>/personal/agentic-swe-vod/audit-claude |  |
+
+### §3.18 `system/informational`  (n=6 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `content` | str | 6/6 | A hook blocked the turn from ending 9 consecutive times — overriding and endi... |  |
+| `cwd` | str | 6/6 | /Users/<redacted>/personal/claude-lens |  |
+| `entrypoint` | str | 6/6 | cli |  |
+| `gitBranch` | str | 6/6 | feat/12/data-model-contracts-spec |  |
+| `isMeta` | bool | 6/6 | false |  |
+| `isSidechain` | bool | 6/6 | false |  |
+| `level` | str | 6/6 | warning |  |
+| `parentUuid` | str | 6/6 | <uuid:389e1b6a...> |  |
+| `sessionId` | str | 6/6 | <uuid:630a8bd7...> |  |
+| `subtype` | str | 6/6 | informational |  |
+| `timestamp` | str | 6/6 | 2026-07-08T21:07:54.020Z |  |
+| `type` | str | 6/6 | system |  |
+| `userType` | str | 6/6 | external |  |
+| `uuid` | str | 6/6 | <uuid:08711e5a...> |  |
+| `version` | str | 6/6 | 2.1.202 |  |
+| `session_id` | str | 5/6 | <uuid:35dc3d64...> |  |
+
+### §3.19 `custom-title`  (n=4 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `customTitle` | str | 4/4 | Token Oscilloscope test 1 |  |
+| `sessionId` | str | 4/4 | <uuid:3ce44dfb...> |  |
+| `type` | str | 4/4 | custom-title |  |
+
+### §3.20 `system/api_error`  (n=3 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `cwd` | str | 3/3 | /Users/<redacted>/personal/tokenowl |  |
+| `entrypoint` | str | 3/3 | cli |  |
+| `error` | object | 3/3 | {"message": "401 {\"error\":{\"message\":\"Invalid API Key\",\"param\":\"Plea... |  |
+| `gitBranch` | str | 3/3 | main |  |
+| `isSidechain` | bool | 3/3 | false |  |
+| `level` | str | 3/3 | error |  |
+| `maxRetries` | int | 3/3 | 10 |  |
+| `parentUuid` | str | 3/3 | <uuid:f30b10ff...> |  |
+| `retryAttempt` | int | 3/3 | 1 |  |
+| `retryInMs` | float | 3/3 | 538.1610999314915 |  |
+| `sessionId` | str | 3/3 | <uuid:00e4ef67...> |  |
+| `subtype` | str | 3/3 | api_error |  |
+| `timestamp` | str | 3/3 | 2026-06-12T01:07:44.356Z |  |
+| `type` | str | 3/3 | system |  |
+| `userType` | str | 3/3 | external |  |
+| `uuid` | str | 3/3 | <uuid:0bc8cf30...> |  |
+| `version` | str | 3/3 | 2.1.173 |  |
+
+#### `error.*`  (n=3 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `connection` | null | 3/3 | null |  |
+| `formatted` | str | 3/3 | 401 Invalid API Key |  |
+| `isNetworkDown` | bool | 3/3 | false |  |
+| `message` | str | 3/3 | 401 {"error":{"message":"Invalid API Key","param":"Please provide valid API K... |  |
+| `rateLimits` | null | 3/3 | null |  |
+| `status` | int | 3/3 | 401 |  |
+
+### §3.21 `system/compact_boundary`  (n=2 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `compactMetadata` | object | 2/2 | {"trigger": "manual", "preTokens": 175304, "postTokens": 14725, "cumulativeDr... |  |
+| `content` | str | 2/2 | Conversation compacted |  |
+| `cwd` | str | 2/2 | /Users/<redacted>/personal/claude-lens |  |
+| `entrypoint` | str | 2/2 | cli |  |
+| `gitBranch` | str | 2/2 | feat/12/data-model-contracts-spec |  |
+| `isSidechain` | bool | 2/2 | false |  |
+| `level` | str | 2/2 | info |  |
+| `logicalParentUuid` | str | 2/2 | <uuid:d525834d...> |  |
+| `parentUuid` | null | 2/2 | null |  |
+| `sessionId` | str | 2/2 | <uuid:35dc3d64...> |  |
+| `slug` | str | 2/2 | goofy-churning-sun |  |
+| `subtype` | str | 2/2 | compact_boundary |  |
+| `timestamp` | str | 2/2 | 2026-07-07T22:52:16.737Z |  |
+| `type` | str | 2/2 | system |  |
+| `userType` | str | 2/2 | external |  |
+| `uuid` | str | 2/2 | <uuid:d70c5560...> |  |
+| `version` | str | 2/2 | 2.1.202 |  |
+| `isMeta` | bool | 1/2 | false |  |
+
+#### `compactMetadata.*`  (n=2 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `durationMs` | int | 2/2 | 145517 |  |
+| `postTokens` | int | 2/2 | 14725 |  |
+| `preTokens` | int | 2/2 | 175304 |  |
+| `preservedMessages` | object | 2/2 | {"anchorUuid": "<uuid:5c9f18f2...>", "uuids": ["<uuid:4795e4bd...>", "<uuid:0... |  |
+| `preservedSegment` | object | 2/2 | {"headUuid": "<uuid:4795e4bd...>", "anchorUuid": "<uuid:5c9f18f2...>", "tailU... |  |
+| `trigger` | str | 2/2 | manual |  |
+| `cumulativeDroppedTokens` | int | 1/2 | 160579 |  |
+
+#### `compactMetadata.preservedSegment.*  (two levels deep)`  (n=2 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `anchorUuid` | str | 2/2 | <uuid:5c9f18f2...> |  |
+| `headUuid` | str | 2/2 | <uuid:4795e4bd...> |  |
+| `tailUuid` | str | 2/2 | <uuid:d525834d...> |  |
+
+#### `compactMetadata.preservedMessages.*`  (n=2 at investigation time)
+
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `allUuids` | array[5] | 2/2 | ["<uuid:4795e4bd...>", "<uuid:0b8fdd2a...>", "<uuid:978fd30c...>", "..."] |  |
+| `anchorUuid` | str | 2/2 | <uuid:5c9f18f2...> |  |
+| `uuids` | array[4] | 2/2 | ["<uuid:4795e4bd...>", "<uuid:0b8fdd2a...>", "<uuid:ff467862...>", "..."] |  |
 
 ---
 
-## 5. Measure & Dimension Catalog
+## §4 C corpus field table (`.cost.jsonl`) — shared 10-field core + two mutually-exclusive indexing variants
 
-### 5.1 Dimensions
+_Single combined table; `notes` column carries the per-field shape flag._
 
-| Dimension | Source | Notes |
-|---|---|---|
-| time | `CompactCall.timestamp` | Bucketing/timezone rules land in §7 (T2) |
-| project | `CompactCall.cwd` | |
-| model | `CompactCall.model` | Exclude `isSyntheticOrError` rows |
-| gitBranch | `CompactCall.gitBranch` | |
-| ccVersion | `CompactCall.version` | |
-| entrypoint | `CompactCall.entrypoint` | Observed value: `"cli"` only in this corpus — `"ide"`/`"sdk"` named in `pages.md` not observed locally, claimed-not-observed |
-| mainVsSidechain | `CompactCall.isSidechain` | |
-| toolName | `CompactCall.toolNames` (fan-out) | |
-| gateStatus | Evaluated by `gates.md`, not a raw field | Cited, never redefined (REQ Decision 10 pattern) |
-| host | Not in any file | 🔴/⚑N — Settings labeled scan roots (architecture §4) |
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `api_duration_ms` | int | 3472/3472 | 7606 | core (all 3,472 lines) |
+| `cache_read_tokens` | int | 3472/3472 | 89165 | core (all 3,472 lines) |
+| `cache_write_tokens` | int | 3472/3472 | 1662 | core (all 3,472 lines) |
+| `context_pct` | int | 3472/3472 | 9 | core (all 3,472 lines) |
+| `cost_delta_usd` | float | 3472/3472 | 0.139625 | core (all 3,472 lines) |
+| `cumulative_cost_usd` | float | 3472/3472 | 6.682555999999999 | core (all 3,472 lines) |
+| `lines_added` | int | 3472/3472 | 0 | core (all 3,472 lines) |
+| `lines_removed` | int | 3472/3472 | 0 | core (all 3,472 lines) |
+| `session_id` | str | 3472/3472 | <uuid:8ab044f2...> | core (all 3,472 lines) |
+| `timestamp` | str | 3472/3472 | 2026-07-03T04:39:35Z | core (all 3,472 lines) |
+| `turn` | int | 1883/3472 | 43 | turn-indexed only (1,883/3,472) |
+| `epoch` | int | 1589/3472 | 1783057922 | epoch-indexed only (1,589/3,472) |
+| `sample` | int | 1589/3472 | 64 | epoch-indexed only (1,589/3,472) |
 
-### 5.2 Measures
-
-| Measure | Formula / Source | Tier |
-|---|---|---|
-| computed $ | tokens × pricing table (Settings `config.json`) | 🟢 |
-| observed $ | C: `cumulative_cost_usd` delta between samples, or L: `cost_usd` | 🟡 — requires `TierFlags.hasCost` or `hasCostLog` |
-| tokens by type | `CompactCall.inputTokens` / `outputTokens` / `cacheReadInputTokens` / `cacheCreationInputTokens`, split further by `cacheCreation5mTokens` / `cacheCreation1hTokens` | 🟢 |
-| API calls | count of `CompactCall` rows where `isSyntheticOrError === false` | 🟢 |
-| turns | count of distinct resolved `promptId` groups (§3 Rule 1); excludes unresolved-chain rows per Rule 2's contract | 🟢 |
-| sessions | count of distinct `sessionId` | 🟢 |
-| tool calls | sum of `CompactCall.toolUseCount` | 🟢 |
-| cache hit % | `cacheReadInputTokens` ÷ (`cacheReadInputTokens` + `inputTokens` + `cacheCreationInputTokens`) | 🟢 — exact formula/rounding convention finalized in §7 (T2) |
-| wall minutes | B: `turn_end`/`turn_end_epoch` deltas; fallback: consecutive `CompactCall.timestamp` deltas | 🟡 |
-| api ms | C: `api_duration_ms` | 🔴 — no transcript fallback for this specific field |
-| lines ± | C: `lines_added` / `lines_removed` | 🔴 — T tier carries no line-diff data |
-| gate pass rate | Cites `gates.md`'s existing rollup rule | 🟢 — never redefined here (REQ Decision 10) |
-
-### 5.3 Per-page field resolution
-
-Every row below cites a `pages.md` section and confirms it resolves to fields/measures already defined above — no row is left at a coarse `T+P`/`C`/`B` mark. Fields not yet in §2/§4 are called out explicitly rather than invented.
-
-**1. Dashboard** (`pages.md` §1) — stat cards, cost-over-time, burn-rate, most-recent-session, leaderboards, anomaly feed, records strip, subscription tracker, leverage ratio, savings decomposition, failed-work stat, cost-capture banner. All resolve to: computed/observed $ (§5.2), tokens by type, sessions/turns/API-calls counts, cache hit %, `TierFlags` (for the 🟡/🔴 badges and banner), `cwd`/model dimensions (leaderboards). Burn-rate's budget value and subscription tracker's calibration value are `⚑N` (Settings, out of this doc's scope per REQ). Failed-work stat needs `error tool_results` — resolves to `CompactCall.toolResultByteSize > 0` combined with tool-result content inspection at parse time (byte-size-only per §2 exclusion — a "failed" classification needs a lightweight heuristic on the tool_result before it's discarded, not stored; flagged as a parser-time concern, not a stored field).
-
-**2. Sessions** (§2) — full-text prompt search (`CompactCall.promptText`), filter bar (all §5.1 dimensions), sessions table (all §5.2 measures + `TierFlags`), timeline/gantt (`timestamp` + wall-minutes), efficiency scatter (any two measures), cost distribution histogram (computed/observed $ distribution — percentile mechanics land in §7 T2), compare mode (no new fields), tags (`⚑N`, out of scope).
-
-**3. Session Detail** (§3) — header (session rollup fields, §3 Rule 6, plus computed-vs-observed drift needs both `TierFlags.hasCost`/`hasCostLog` present simultaneously), cumulative $ timeline + compaction flags (`isCompactSummary`, §3 Rule 5), per-turn cost bars (turns measure, `isSidechain` split), turn table (all core measures per turn), turn cost percentile (needs full turn-cost distribution, §7 T2), cache strip (cache hit % per call), tool mix (`toolNames`), prompt list (`promptText` per turn), Report Card (cites `gates.md`, not redefined), workflow funnel (`toolNames` classified into read/plan/edit/verify/commit — classification rule is a `gates.md` concern, cited not redefined here), token funnel (tokens by type), context composition (`toolResultByteSize` grouped by tool name).
-
-**4. Turn Inspector** (§4) — turn summary (per-turn measures), API-call waterfall (`api_duration_ms` where available, else `timestamp` deltas — matches §5.2's wall-minutes fallback pattern), cache narrative (tokens by type + TTL split), transcript peek (raw file read, not a stored field — architecture §5.4 already specifies this is lazy/on-demand), sidechain breakdown (`isSidechain`, `agentId`).
-
-**5. Projects** (§5) — spend by project (`cwd` dimension), per-project efficiency table (measures grouped by `cwd`), per-branch breakdown (`gitBranch` dimension), project → sessions (no new fields).
-
-**6. Models** (§6) — call-level token/$ split, model mix over time, efficiency ratios, CC-version dimension (`version`), $/1k-lines (C `lines_added`/`lines_removed` — 🔴), latency by model (C `api_duration_ms` — 🔴, fallback timestamp deltas per §5.2's wall-minutes pattern), throughput (`outputTokens` ÷ `api_duration_ms` — 🔴), entrypoint breakdown (`entrypoint` dimension — noting only `"cli"` observed locally, §5.1).
-
-**7. Cache Lab** (§7) — fleet totals/hit-rate (cache hit % measure), input composition (tokens by type), busts headline (needs a cache-miss classifier — same "classification rule, not a stored field" pattern as the Dashboard's failed-work stat; flagged, not resolved to a field here), TTL bucket mix (`cacheCreation5mTokens`/`cacheCreation1hTokens` — directly confirmed in §1.6/§2), baseline weight trend (first `cacheCreationInputTokens` per session over time — no new field), $ saved (computed vs. counterfactual — derived from tokens by type, no new field), invalidation gallery/cost-by-cause (same classifier pattern as busts headline), context growth curves (C-tier only, 🔴 — `context_pct` field, §1.8).
-
-**8. Trends, Calendar & Budget** (§8) — calendar/hour-of-day heatmaps (`timestamp` bucketing, §7 T2), stacked weekly bars (`cwd`/`model` dimensions), Pareto panel (turn-level $ distribution, §7 T2 for percentile mechanics), rolling efficiency (time-series of existing measures), gate pass-rate trend (cites `gates.md`), budget/forecast (`⚑N`, out of scope).
-
-**9. Data Health** (§9) — dedup stats (parse-time counter, not a `CompactCall` field — architecture §5.4's "malformed line counter"), pricing coverage (cross-reference `CompactCall.model` against the Settings pricing table — no new field), scan coverage (`fs`, parser/discovery-layer state, not a data-model field), reconciliation (computed vs. C vs. L $ — needs all three simultaneously, 🔴), boundary/promptId mismatches (directly Rule 2's unresolved-chain finding — this page is where that gap becomes user-visible), capture gaps (`TierFlags` presence vs. actual data completeness — ties to §8/R9's granularity decision, T2).
-
-**10. Settings** (§10) — pricing table editor, scan roots, budget/alert thresholds, gate/anomaly thresholds, saved views/tags manager, cost-capture setup guide — all `config.json`/`local.json` concerns (§6.4) or `⚑N`, no `CompactCall`/`TierFlags` fields involved.
-
-**11. Explore** (§11) — pivot builder over any dimension (§5.1) × any measure (§5.2); no new fields, this page is explicitly the generic layer over everything already catalogued above.
-
-**No duplicate-with-drift check:** measures repeated across multiple pages above (computed/observed $, tokens by type, cache hit %, turns, sessions) resolve to exactly one definition each in §5.2, cited by section number in every page row rather than restated — consistent with ARCH A16 (page-ordered investigation, first-definition-wins).
+_Two line schemas observed (turn-indexed vs epoch-indexed); mutually exclusive within a single line. Both shapes co-occur in some files (3 files exhibit a version-era switchover — Claude Code version upgrade during a long-running or resumed session)._
 
 ---
 
-## 6. API Envelopes
+## §5 B corpus field table (`.turn-boundaries.jsonl`)
 
-### 6.1 `Series` (metrics engine output — `POST /api/metrics`)
-
-Per architecture §8's `MetricsQuery` contract (cited, not redefined): request shape is `{measures, dimensions, grain, range, filters, compare?, smoothing?, mode?}`. Response `Series[]`:
-
-| Field | Type | Notes |
-|---|---|---|
-| `measure` | string | One of §5.2's measure names |
-| `dimensionValues` | `Record<string, string>` | One entry per requested dimension |
-| `points` | `{bucket: string, value: number, tier: "🟢"\|"🟡"\|"🔴"}[]` | `bucket` format depends on `grain` — timezone/formatting rules land in §7 (T2) |
-| `compareTo`? | same shape as `points` | Only present when `compare: "previous-period"` was requested |
-
-### 6.2 Sessions list / detail (`GET /api/sessions`, `GET /api/sessions/:id`)
-
-**List row:** `sessionId`, `cwd`, `gitBranch`, `models: string[]` (all distinct real models used in the session, per §8.1 — decided, not a single dominant value), computed $, observed $ (nullable — absent without `TierFlags.hasCost`/`hasCostLog`), token totals, turn count, duration (wall-minutes), cache hit %, gate score (cites `gates.md`), `TierFlags`.
-
-**Detail payload:** list row fields plus the full turn array (each turn: resolved `promptId`, `CompactCall[]` in that turn, `isCompactSummary` boundary flags per §3 Rule 5, per-turn measures from §5.2).
-
-### 6.3 Health (`GET /api/health`)
-
-Per architecture §9: dedup stats (parse-time counters), parse errors (malformed-line counts per §1.1 — zero in this corpus, but the counter always exists), scan coverage (roots scanned, files found/parsed/failed), reconciliation (premium-only, 🔴 — needs C+L simultaneously per §5.3's Data Health row).
-
-### 6.4 `config.json` / `local.json`
-
-Per architecture §10, not redefined here — field-level detail for these is a Settings-page (`pages.md` §10) concern and doesn't touch `CompactCall`/`Turn`/`Session`/`TierFlags` at all (§5.3's Settings row).
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `session_id` | str | 242/242 | <uuid:866138e1...> |  |
+| `transcript_path` | str | 242/242 | /Users/<redacted>/.claude/projects/-Users-foyzul--claude/866138e1-998a-499b-b... |  |
+| `turn_end` | str | 242/242 | 2026-07-03T05:54:53Z |  |
+| `turn_end_epoch` | int | 242/242 | 1783058093 |  |
 
 ---
 
-## 7. Behavior Contracts
+## §6 L corpus field table (`cost-log.jsonl`)
 
-**Dedupe scope.** Per-session, by `message.id` (architecture §5.4, confirmed correct against real data — see §10). Within-session raw duplication is real and substantial (3,793 duplicate `message.id` occurrences observed across 2,936 distinct ids in the T corpus — roughly 2.3 raw lines per distinct call on average), confirming dedupe is necessary; a per-session `Set<message.id>` (seen-set) at parse time is sufficient — no cross-session tracking is needed (§10 found zero cross-session collisions).
+_L lives at `~/.claude/` — the parent of the projects scan root — not under `~/.claude/projects/`. Discovery must search it explicitly, not rely on the projects glob._
 
-**0-byte file.** Treated as a valid, empty session: zero `CompactCall`s, zero turns, no parse error recorded. Not an error condition — a session file can legitimately be created by Claude Code and not yet written to at discovery time (architecture §5.1's discovery/poll race).
-
-**Malformed-first-line file.** The per-file malformed-line counter (architecture §5.4) increments as normal; parsing continues from line 2 onward. A malformed first line does not invalidate the rest of the file — there is no "give up on this file" path. (Not observed in this corpus — 0/106 T files — but the contract holds regardless of local observation, per REQ R12.)
-
-**Garbage-format file** (right extension, entirely non-JSONL content). Every line fails to parse; the malformed-line counter reaches the file's total line count. The file produces zero `CompactCall`s and surfaces on Data Health (`pages.md` §9) as 100% malformed for that file — same mechanism as the malformed-first-line case, just exhaustive rather than partial. No special-cased "garbage file" detection is needed; it falls out of the general malformed-line counter naturally.
-
-**Time bucketing & timezone.** All source timestamps are ISO 8601 UTC (`Z` suffix, observed with and without millisecond precision — e.g. second-precision in C/B/L, millisecond-precision in T's `message`-level timestamps). Bucketing (`hour`/`day`/`week`/`month` per architecture §8) uses the **server process's local timezone**, not UTC — this is a single-user, local-first tool (CLAUDE.md: "one npm package, one port," no multi-tenancy), and a user's "day" boundary should match their own clock, not an arbitrary UTC cutoff. Investigator's call per REQ Decision 2 — no sign-off required.
-
-**Query-key serialization.** Per architecture §11's requirement that "the key factory must serialize the full query... into the key": the concrete rule is `JSON.stringify` over the `MetricsQuery` object with **object keys sorted** before serialization, so two logically-identical queries built with different property insertion order produce the same cache key. Array-valued fields (`measures`, `dimensions`, filter value arrays) are not re-sorted — their order is significant (e.g. measure display order) and already deterministic from the caller.
-
-**Rounding.** `$` values: stored at full floating-point precision internally (raw values like `1.8167905999999998` observed in real L-tier data are floating-point artifacts of the source, not a rounding bug to fix at parse time); rounded to 2 decimal places only at display/API-response time. Token counts: integers, no rounding applicable. Percentages (cache hit %, gate pass rate): rounded to 1 decimal place at display time. Investigator's call per REQ Decision 2 — no sign-off required.
-
----
-
-## 8. Sign-Off Decisions
-
-**⚠️ Both decisions below are proposed defaults, not final.** Per REQ R8/R9 and ARCH Cross-Cutting Concerns → Migrations/rollout, this document is not "merged" until the developer explicitly signs off on both.
-
-### 8.1 Multi-model / sidechain session-level attribution (R8)
-
-**Finding:** 6 of 71 real sessions in this corpus (~8.5%) use more than one distinct real model (after excluding the `<synthetic>` error-marker placeholder — §1.3, §3 Rule 4). This is common enough to matter for the Dashboard/Sessions "model" column, not a rare edge case.
-
-**Decided (developer sign-off received):**
-- **Session-level "model" attribution:** show **all** distinct real models used in the session (`models: string[]`, excluding the `isSyntheticOrError` placeholder), not a single dominant value. Dashboard/Sessions "model" column renders every model the session touched (e.g. as multiple chips) rather than collapsing to one. This changes §6.2's session list/detail row shape: `model: string` becomes `models: string[]`.
-- **Sidechain calls in default aggregates:** approved as proposed — excluded from default turn/wall-minute aggregates (main-chain only), available via the existing main-vs-sidechain dimension filter (§5.1).
-
-**Status:** decided (developer sign-off received).
-
-### 8.2 Premium coverage granularity (R9)
-
-**Finding:** the L tier (`cost-log.jsonl`) has only 47 lines total, covering a small fraction of the 94 sessions that have C-tier coverage — a real, observed coverage gap, not a hypothetical one. File-presence (`TierFlags.hasCost`/`hasCostLog`/`hasTurnBoundaries`) doesn't guarantee the premium file covers the *entire* session (e.g. cost-logger enabled mid-session, or a hook that crashed partway through).
-
-**Decided (developer sign-off received):** file-presence-only for this pass (matches current `TierFlags` design in §4.1) — a session with *any* C/B/L coverage is labeled with that tier's badge, with a known-limitation note that "observed" may reflect partial coverage, not full-session coverage. True per-turn coverage checking is deferred to the Data Health page work (`#P4-14`), consistent with REQ's original suggested default.
-
-**Status:** decided (developer sign-off received).
+| field | type | presence (n/N) | example | notes |
+|---|---|---|---|---|
+| `cache_read` | int | 48/48 | 3283204 |  |
+| `cache_write` | int | 48/48 | 85929 |  |
+| `context_pct` | int | 48/48 | 45 |  |
+| `cost_usd` | float | 48/48 | 1.8167905999999998 |  |
+| `dir` | str | 48/48 | /Users/<redacted>/personal/agentic-swe-vod |  |
+| `duration_ms` | int | 48/48 | 3521047 |  |
+| `lines_added` | int | 48/48 | 16 |  |
+| `lines_removed` | int | 48/48 | 16 |  |
+| `model` | str | 48/48 | Sonnet 4.6 |  |
+| `session_id` | str | 48/48 | <uuid:bedd1780...> |  |
+| `timestamp` | str | 48/48 | 2026-06-26T23:39:54Z |  |
 
 ---
 
-## 9. Prompt-Text Size Finding (R10)
+## §7 Cross-tier field-name collision table
 
-Measured against 856 genuine user prompts in this corpus (tool-result-continuation and compaction-summary records excluded — §1.3, §3 Rule 1):
+| Concept | C field | L field | Note |
+|---|---|---|---|
+| Cache reads | `cache_read_tokens` | `cache_read` | Same concept, different names |
+| Cache writes | `cache_write_tokens` | `cache_write` | Same concept, different names |
+| Cost (delta) | `cost_delta_usd` | (none — L only has cumulative) | L carries one row per session, no delta |
+| Cost (cumulative) | `cumulative_cost_usd` | `cost_usd` | L's per-session total; C's running cumulative |
+| API duration | `api_duration_ms` | `duration_ms` | L's is session-total wall; C's is per-sample |
+| Working directory | (none — C has no dir) | `dir` | L carries the cwd equivalent; C relies on the session-id mapping back to T's `cwd` |
+| Indexing | `epoch` + `sample` | (none — L is one row per session) | C uses both turn-indexed and epoch/sample schemes |
+| Indexing | `turn` | (none) | C turn-indexed shape only |
 
-| Percentile | Size (bytes, UTF-8) |
-|---|---|
-| min | 1 |
-| p50 | 130 |
-| p90 | 2,644 |
-| p99 | 12,990 |
-| mean | 2,123 |
-| max | 603,252 |
-
-Only 19 prompts (2.2%) exceed 10 KB; only 2 (0.23%) exceed 100 KB; none exceed 1 MB. The tail is real (p99→max is a ~46× jump — a handful of large pastes) but small in absolute terms relative to architecture §6's stated "low hundreds of MB" acceptable footprint for months of heavy usage.
-
-**Decision: no cap.** At this corpus's observed scale, a 590 KB outlier prompt is not a meaningful memory or payload-size threat, and introducing a cap adds truncation-handling complexity (partial-prompt display, "truncated" indicators in search results) for a 0.23%-frequency case. Per REQ R10/Decision 2, "no cap" is the investigator's call and requires no sign-off.
+_No interpretation, no remediation — just observed differences. The downstream `#P2-1` will reconcile at code-time._
 
 ---
 
-## 10. `message.id` Collision Finding (R11)
+## §8 Out of scope
 
-Checked across all 106 real T files (2,936 distinct `message.id` values, 6,689 total assistant records before dedupe):
-
-- **Cross-session collisions found: 0.** No `message.id` value appears under more than one `sessionId`.
-- **Within-session duplication: 3,793 occurrences** (real, and already accounted for by the per-session dedupe contract in §7 — this is the normal "raw lines collapse to distinct calls" behavior architecture §5.4 already expects, not a new problem).
-
-**Outcome:** `architecture.md`'s per-session dedupe scope stands as documented — no revision needed. Per REQ R11's suggested default ("if no collisions are found in real data, architecture.md's per-session dedupe stands as documented"), this does not require developer sign-off; only a *found* collision would have triggered that gate.
-
----
-
-## 11. Corrections to `architecture.md` / `pages.md`
-
-One genuine correction surfaced during investigation:
-
-**`architecture.md` §4** currently states: *"`promptId` is the turn-grouping key."* This is true but incomplete in a way that matters for `#P2-1`'s implementation: `promptId` is present **only** on `type: "user"` records (0/6,689 assistant records carry it directly — §1.3). Every `assistant` record's turn membership must be resolved by walking its `parentUuid` chain to the nearest ancestor carrying `promptId` (§3 Rule 1) — a real algorithm, not a direct field read. Suggested amendment to §4: *"`promptId` is the turn-grouping key, present only on `user`-type records; `assistant` records resolve their turn via the `parentUuid` ancestor chain (see `claude-lens-data-model.md` §3 Rule 1)."*
-
-**Filed issues citing `architecture.md` §4** (per ARCH A15 — listed so this correction's ripple is visible, not silently absorbed): `#P2-3` (discovery/polling), `#P4-13` (premium tier C/B/L parsers). Neither issue's citation depends on the specific sentence being corrected (both cite §4 for the filename-pattern/tier-detection rules, which are unchanged), so this correction does not invalidate either citation — noted for completeness per A15, not because a citation actually broke.
-
-**No correction needed for `pages.md`** — nothing investigated during T1/T2 conflicted with its content; its coarse dependency marks (§5.3 of this document) were confirmed accurate at the field level throughout.
-
-**One open item carried forward, not a correction (§3 Rule 2):** ~21% of assistant records don't resolve to a `promptId` via the parentUuid chain, root cause not conclusively determined. This isn't a documented claim in either spec to correct — it's a genuine gap in current understanding, flagged for follow-up investigation (larger corpus, or instrumented capture) before `#P2-1` treats the turn-derivation algorithm as fully specified for that ~21%.
-
----
-
-**Document status:** §1–§11 complete. §8.1 and §8.2 have received explicit developer sign-off (REQ R8, R9) — this document is merged.
+- Per-tool `tool_use.input` schemas beyond the top-10 (only the union of input keys is tabulated)
+- `attachment.*` per-type discriminator breakdown (only the key union is tabulated, not a per-`type` breakdown)
+- Any future JSONL fields not observed in the actual corpus surveyed
+- Interpretation of any field's *meaning*
+- Retain/drop decisions for `CompactCall` (that's `#P2-1`'s scope)
+- Tier assignment (`🟢`/`🟡`/`🔴` classification is a derived concept — not in this doc)
+- `CompactCall`, `Turn`, `Session`, `TierFlags` field-for-field contract design
+- Measure formulas (cache hit %, wall minutes, etc.)
+- API envelopes (`Series`, sessions list/detail, health)
+- Behavior contracts (dedupe semantics, malformed-line handling, time bucketing, query-key serialization, rounding)
+- Sign-off decisions (multi-model attribution, premium coverage granularity)
+- Corrections to `architecture.md` / `pages.md`
