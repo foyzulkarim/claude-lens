@@ -12,7 +12,7 @@
   },
   "packageManager": "npm@10.9.2",
   "scripts": {
-    "typecheck": "tsc -b --noEmit"
+    "typecheck": "tsc --noEmit -p shared/tsconfig.json && tsc --noEmit -p server/tsconfig.json && tsc --noEmit -p client/tsconfig.json"
   },
   "dependencies": {
     "@fastify/static": "^9.3.0",
