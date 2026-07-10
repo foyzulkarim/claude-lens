@@ -31,7 +31,7 @@ Claude Lens is a **local-first analytics dashboard** for Claude Code usage. One 
 |---|---|
 | Spin-up must be one command, near-instant | `npx claude-lens`; no global install; no native modules; warm-start cache |
 | No database | In-memory columnar store; disk is used only for a warm-start **cache** (deletable at any time, always safe) and a small JSON config |
-| Node is the only runtime | Every Claude Code user has Node. Bundle targets Node ≥ 18. Bun works via `bunx` as a bonus, never a requirement |
+| Node is the only runtime | Every Claude Code user has Node. Bundle targets Node ≥ 22. Bun works via `bunx` as a bonus, never a requirement |
 | Single port | Static assets, API, and WS share one Fastify server. No CORS, no proxy config in production |
 | Live updates designed in from day one | WS is an **invalidation bus**, never a data channel (see §7) |
 
@@ -326,7 +326,7 @@ Covers every ⚑N item in the page spec except the optional hostname field in co
 ## 12. Build, dev, distribution
 
 - **Dev:** `tsx watch server/cli.ts` + `vite dev` with proxy for `/api` and `/ws` → two ports in dev only.
-- **Build (`scripts/build.ts`):** `vite build` → `client/dist`; `esbuild server/cli.ts --bundle --platform=node --target=node18` → `dist/cli.js` (+ pino-pretty worker handling); assemble package with static assets under `dist/public/`.
+- **Build (`scripts/build.ts`):** `vite build` → `client/dist`; `esbuild server/cli.ts --bundle --platform=node --target=node22` → `dist/cli.js` (+ pino-pretty worker handling); assemble package with static assets under `dist/public/`.
 - **Package:** publish `dist/` only; goal is a few MB so npx cold-start stays fast. No postinstall scripts, no native modules — these are hard rules.
 - **Runtime flags:** `claude-lens [--port <n>] [--no-open] [--roots <paths…>]`. Default port auto-increments if taken; prints the URL; opens browser.
 

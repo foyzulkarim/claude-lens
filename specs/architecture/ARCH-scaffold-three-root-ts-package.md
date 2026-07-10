@@ -233,7 +233,7 @@ rationale so it isn't re-litigated.
 
 ## Task T1: Node-floor spec consistency edit
 
-> **Status:** not started
+> **Status:** done
 > **Verification:** checklist
 > **Effort:** xs
 > **Priority:** high
