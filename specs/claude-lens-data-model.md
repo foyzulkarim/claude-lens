@@ -6,6 +6,10 @@
 > gates. Downstream `#P2-1` cites this as the field source-of-truth; the derived contract layer
 > is a separate future task.
 >
+> **Field *meanings* live in the companion [`claude-lens-field-definitions.md`](./claude-lens-field-definitions.md)** —
+> kept separate on purpose so this inventory stays pure, regenerable evidence and interpretation is
+> never mistaken for a measured fact.
+>
 > Draft — supersedes the merged "Data Model & Contracts" doc dated 2026-07-08 whose REQ/ARCH
 > scaffolding has been deleted.
 >
@@ -210,17 +214,14 @@ _Per-shape counts at investigation time: see scope names below. Each block-type'
 |---|---|---|---|---|
 | `file_path` | str | 778/778 | /Users/<redacted>/.claude/scripts/cost-logger.js |  |
 | `new_string` | str | 778/778 |   // Activity detection — fires when API_DURATION_MS changes since last poll.... |  |
-| `old_string` | str | 778/778 |   // Turn detection — fires when API_DURATION_MS changes since last poll
-  le... |  |
+| `old_string` | str | 778/778 | // Turn detection — fires when API_DURATION_MS changes since last poll le... |  |
 | `replace_all` | bool | 778/778 | false |  |
 
 #### `tool_use.input[Write].*`  (n=199 at investigation time)
 
 | field | type | presence (n/N) | example | notes |
 |---|---|---|---|---|
-| `content` | str | 199/199 | #!/usr/bin/env node
-
-// Cost logger — the single source of truth for capturin... |  |
+| `content` | str | 199/199 | #!/usr/bin/env node // Cost logger — the single source of truth for capturin... |  |
 | `file_path` | str | 199/199 | /Users/<redacted>/.claude/scripts/cost-logger.js |  |
 
 #### `tool_use.input[AskUserQuestion].*`  (n=59 at investigation time)
@@ -325,9 +326,7 @@ _Per-shape counts at investigation time: see scope names below. Each block-type'
 
 | field | type | presence (n/N) | example | notes |
 |---|---|---|---|---|
-| `content` | str | 3398/3398 | total 16
-drwx------  18 foyzul  staff   576 Jul  3 14:43 .
-drwxr-xr-x@ 46 foy... |  |
+| `content` | str | 3398/3398 | total 16 drwx------ 18 foyzul staff 576 Jul 3 14:43 . drwxr-xr-x@ 46 foy... |  |
 | `tool_use_id` | str | 3398/3398 | toolu_016pRW2fK9gdjj3qkH6uc2FK |  |
 | `type` | str | 3398/3398 | tool_result |  |
 | `is_error` | bool | 1393/3398 | false |  |
@@ -353,9 +352,7 @@ drwxr-xr-x@ 46 foy... |  |
 | `isImage` | bool | 1210/3094 | false |  |
 | `noOutputExpected` | bool | 1210/3094 | false |  |
 | `stderr` | str | 1210/3094 |  |  |
-| `stdout` | str | 1210/3094 | total 16
-drwx------  18 foyzul  staff   576 Jul  3 14:43 .
-drwxr-xr-x@ 46 foy... |  |
+| `stdout` | str | 1210/3094 | total 16 drwx------ 18 foyzul staff 576 Jul 3 14:43 . drwxr-xr-x@ 46 foy... |  |
 | `type` | str | 948/3094 | text |  |
 | `filePath` | str | 913/3094 | /Users/<redacted>/.claude/scripts/cost-logger.js |  |
 | `originalFile` | null | 907/3094 | null |  |
@@ -363,12 +360,9 @@ drwxr-xr-x@ 46 foy... |  |
 | `userModified` | bool | 907/3094 | false |  |
 | `file` | object | 753/3094 | {"filePath": "/Users/<redacted>/.claude/scripts/turn-logger.js", "content": "... |  |
 | `newString` | str | 712/3094 |   // Activity detection — fires when API_DURATION_MS changes since last poll.... |  |
-| `oldString` | str | 712/3094 |   // Turn detection — fires when API_DURATION_MS changes since last poll
-  le... |  |
+| `oldString` | str | 712/3094 | // Turn detection — fires when API_DURATION_MS changes since last poll le... |  |
 | `replaceAll` | bool | 712/3094 | false |  |
-| `content` | str | 201/3094 | #!/usr/bin/env node
-
-// Cost logger — the single source of truth for capturin... |  |
+| `content` | str | 201/3094 | #!/usr/bin/env node // Cost logger — the single source of truth for capturin... |  |
 | `success` | bool | 62/3094 | true |  |
 | `answers` | object | 53/3094 | {"What should I do with the 8 Cloudflare skills sitting in ~/.claude/skills?"... |  |
 | `questions` | array[2] | 53/3094 | [{"question": "What should I do with the 8 Cloudflare skills sitting in ~/.cl... |  |
@@ -397,16 +391,12 @@ drwxr-xr-x@ 46 foy... |  |
 | `code` | int | 7/3094 | 404 |  |
 | `codeText` | str | 7/3094 | Not Found |  |
 | `durationMs` | int | 7/3094 | 573 |  |
-| `result` | str | 7/3094 | The server returned HTTP 404 Not Found.
-
-The response body was not retrieved.... |  |
+| `result` | str | 7/3094 | The server returned HTTP 404 Not Found. The response body was not retrieved.... |  |
 | `url` | str | 7/3094 | https://platform.claude.com/docs/en/pricing.md |  |
 | `agentType` | str | 6/3094 | Explore |  |
 | `isAgent` | bool | 6/3094 | false |  |
 | `message` | str | 6/3094 | Entered plan mode. You should now focus on exploring the codebase and designi... |  |
-| `plan` | str | 6/3094 | # Remove localStorage entirely (personal overlay + compare-selection)
-
-## Con... |  |
+| `plan` | str | 6/3094 | # Remove localStorage entirely (personal overlay + compare-selection) ## Con... |  |
 | `planWasEdited` | bool | 6/3094 | true |  |
 | `toolStats` | object | 6/3094 | {"readCount": 13, "searchCount": 6, "bashCount": 17, "editFileCount": 0, "lin... |  |
 | `totalDurationMs` | int | 6/3094 | 242527 |  |
@@ -487,15 +477,11 @@ The response body was not retrieved.... |  |
 | `showConcurrencyNote` | bool | 74/1434 | false |  |
 | `displayPath` | str | 57/1434 | llm-benchmark-tracker-prd.md |  |
 | `allowedTools` | array[0] | 53/1434 | [] |  |
-| `snippet` | str | 52/1434 | 9	  },
-10	  "license": "MIT",
-11	  "author": "Foyzul Karim <foyzulkarim@gmail... |  |
+| `snippet` | str | 52/1434 | 9 }, 10 "license": "MIT", 11 "author": "Foyzul Karim <foyzulkarim@gmail... |  |
 | `planExists` | bool | 35/1434 | false |  |
 | `planFilePath` | str | 35/1434 | /Users/<redacted>/.claude/plans/peaceful-weaving-grove.md |  |
 | `commandMode` | str | 25/1434 | task-notification |  |
-| `prompt` | str | 25/1434 | <task-notification>
-<task-id>aaec2ded48a5eaa4a</task-id>
-<tool-use-id>toolu_0... |  |
+| `prompt` | str | 25/1434 | <task-notification> <task-id>aaec2ded48a5eaa4a</task-id> <tool-use-id>toolu_0... |  |
 | `sentinel` | bool | 16/1434 | true |  |
 | `origin` | object | 14/1434 | {"kind": "human"} |  |
 | `iterations` | int | 13/1434 | 1 |  |
@@ -640,9 +626,7 @@ The response body was not retrieved.... |  |
 | `sessionId` | str | 252/252 | <uuid:25814b88...> |  |
 | `timestamp` | str | 252/252 | 2026-07-03T21:33:43.539Z |  |
 | `type` | str | 252/252 | queue-operation |  |
-| `content` | str | 126/252 | <task-notification>
-<task-id>brpya8aao</task-id>
-<tool-use-id>toolu_01XnL54ib... |  |
+| `content` | str | 126/252 | <task-notification> <task-id>brpya8aao</task-id> <tool-use-id>toolu_01XnL54ib... |  |
 
 ### §3.13 `agent-name`  (n=123 at investigation time)
 
@@ -915,7 +899,6 @@ _No interpretation, no remediation — just observed differences. The downstream
 - Per-tool `tool_use.input` schemas beyond the top-10 (only the union of input keys is tabulated)
 - `attachment.*` per-type discriminator breakdown (only the key union is tabulated, not a per-`type` breakdown)
 - Any future JSONL fields not observed in the actual corpus surveyed
-- Interpretation of any field's *meaning*
 - Retain/drop decisions for `CompactCall` (that's `#P2-1`'s scope)
 - Tier assignment (`🟢`/`🟡`/`🔴` classification is a derived concept — not in this doc)
 - `CompactCall`, `Turn`, `Session`, `TierFlags` field-for-field contract design

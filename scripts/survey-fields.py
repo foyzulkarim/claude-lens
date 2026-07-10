@@ -49,9 +49,10 @@ def anonymize_value(v, depth=0):
         s = v.replace(HOME_DIR, "/Users/<redacted>").replace(DASHED_HOME, "Users-<redacted>")
         if UUID_RE.match(s):
             return f"<uuid:{s[:8]}...>"
+        s = " ".join(s.split())  # collapse newlines/tabs/runs so a value never breaks a markdown row
         if len(s) > 80:
             s = s[:77] + "..."
-        return s
+        return s.replace("|", "\\|")  # escape pipes after truncation so the count is on visible chars
     if isinstance(v, list):
         if len(v) > 3:
             return [anonymize_value(x, depth + 1) for x in v[:3]] + ["..."]
