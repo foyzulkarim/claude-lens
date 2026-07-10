@@ -296,7 +296,7 @@ repo rule that architecture deviations are edited into the doc first, not left i
 
 ## Task T2: Package manifest & license
 
-> **Status:** not started
+> **Status:** done
 > **Verification:** checklist
 > **Effort:** s
 > **Priority:** critical
