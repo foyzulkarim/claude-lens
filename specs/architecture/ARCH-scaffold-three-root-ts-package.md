@@ -9,10 +9,12 @@
 
 Establish the V2 skeleton as **one npm package with three sibling TypeScript roots** (`shared/`,
 `server/`, `client/`) at the repo root — no workspaces, one `package.json`, one dependency set.
-Strict typechecking across all three is wired with **TypeScript project references**: a shared
-`tsconfig.base.json` holds the common strict options, a solution `tsconfig.json` (`files: []`)
-references three per-root **composite** configs, and one command — `tsc -b --noEmit` — typechecks
-the whole graph in dependency order. The package is **ESM** (`"type": "module"`, `NodeNext`
+Strict typechecking across all three roots is wired with **shared per-root configs**: one
+`tsconfig.base.json` holds the common strict options, each root `extends` it with its environment
+delta (server `types:["node"]`; client DOM `lib` + `jsx`), and one npm script chains `tsc --noEmit
+-p` across all three. _(Revised from the original project-references/composite shape — `tsc -b
+--noEmit` is incompatible with cross-root references in TS 7.0.2, TS6310; see # Tasks / T3.)_ The
+package is **ESM** (`"type": "module"`, `NodeNext`
 resolution), pinned to Node ≥ 22 and `npm@10.9.2`, with caret-ranged §2 dependencies and a committed
 lockfile. Each root ships a single self-contained typed placeholder so the typecheck is a real
 signal without pre-empting the tasks that own the real code (#P1-2 server/build, #P2-1 shared
@@ -28,16 +30,15 @@ claude-lens/
 ├── package-lock.json       # NEW — committed (R6)
 ├── LICENSE                 # NEW — MIT © 2026 Foyzul Karim (R7)
 ├── tsconfig.base.json      # NEW — common strict compiler options (strict, ES2022, NodeNext)
-├── tsconfig.json           # NEW — solution config: files:[], references [shared, server, client]
 ├── .gitignore              # MODIFIED — add dist/, *.tsbuildinfo
 ├── shared/
-│   ├── tsconfig.json       # NEW — extends base, composite:true, no DOM lib
+│   ├── tsconfig.json       # NEW — extends base, no DOM lib
 │   └── placeholder.ts      # NEW — typed const; removed by #P2-1
 ├── server/
-│   ├── tsconfig.json       # NEW — extends base, composite:true, types:["node"], references ../shared
+│   ├── tsconfig.json       # NEW — extends base, types:["node"]
 │   └── placeholder.ts      # NEW — typed const; removed by #P1-2
 └── client/
-    ├── tsconfig.json       # NEW — extends base, composite:true, lib DOM, jsx react-jsx, references ../shared
+    ├── tsconfig.json       # NEW — extends base, lib DOM, jsx react-jsx
     └── src/placeholder.ts  # NEW — typed const; removed by #P3-2 (client code lives under src/ per §3)
 ```
 
@@ -52,8 +53,8 @@ spec docs edited for R8 (`specs/claude-lens-architecture.md`, `specs/claude-lens
 | Area | Decision | Alternatives Considered | Rationale |
 |------|----------|-------------------------|-----------|
 | Package topology | Single package, three sibling roots, no workspaces | npm workspaces (multi-package) | REQ R1/R4/R5 mandate one manifest + one dependency set; workspaces add per-package manifests the spec avoids |
-| Typecheck config | TS **project references** (base + solution + 3 composite) | 3 independent tsconfigs; single tsconfig + include globs | Only shape that (a) gives client DOM/JSX vs server Node different compiler options AND (b) checks the cross-root graph once #P2-1 imports `shared/`. Matches §3's "three roots sharing one types module" |
-| Typecheck command | `tsc -b --noEmit` (npm script `typecheck`) | bare `tsc --noEmit`; `tsc -b` (emits) | `--noEmit` alone errors **TS5053** with `composite`; `-b --noEmit` (TS ≥5.6) checks the graph without emitting `.d.ts`/artifacts |
+| Typecheck config | Shared per-root configs (one base, `extends` per root) | project references/composite; 3 independent configs; single globbed config | (a) client DOM/JSX vs server Node compiler options via `extends` + env delta AND (b) cross-root imports resolve via NodeNext once #P2-1 adds them. _(Composite/references were the original plan but dropped — `tsc -b --noEmit` is incompatible with cross-root references in TS 7.0.2, TS6310; see T3.)_ |
+| Typecheck command | `tsc --noEmit -p <root>` ×3, chained (npm script `typecheck`) | `tsc -b --noEmit`; bare `tsc --noEmit`; `tsc -b` (emits) | The REQ R2/R3 literal `tsc --noEmit`; checks each root without emitting. (`tsc -b --noEmit` was rejected — TS6310 under references.) |
 | Module format | ESM — `"type":"module"`, `module/moduleResolution: NodeNext` | CommonJS | Node 22 target (§12), esbuild/vite defaults, and the whole §2 stack (fastify, fast-glob, open) are ESM-first |
 | Placeholder shape | Self-contained typed const per root (no cross-root import) | Cross-root import placeholder | Satisfies R2/R3 non-vacuously; keeps #P1-1 minimal; defers the import-path convention + bundler resolution to #P2-1/#P1-2 where they're actionable |
 | Node / npm pins | `engines.node ">=22"`, `packageManager "npm@10.9.2"` | ≥18 (spec); ≥20; pnpm/yarn | Node 18 EOL Apr 2025; 22 is active LTS shipping npm 10.9.x. Requires the R8 arch-doc edit |
@@ -62,8 +63,10 @@ spec docs edited for R8 (`specs/claude-lens-architecture.md`, `specs/claude-lens
 
 ## Patterns & Conventions
 
-- **Solution-style tsconfig** — root `tsconfig.json` owns no files, only `references`; the standard
-  TS multi-project pattern (`tsc -b` walks it). Applied so one command satisfies R2.
+- **Per-root configs sharing one base** — `tsconfig.base.json` holds strict options; each root
+  `extends` it and adds only its environment delta (Node types vs DOM/JSX lib). The npm `typecheck`
+  script chains `tsc --noEmit -p` across the three roots so one command satisfies R2. _(Was
+  solution-style composite/references; revised — see T3.)_
 - **Shared base config** — `tsconfig.base.json` centralizes strict flags; each root `extends` it and
   adds only its environment delta (Node types vs DOM/JSX lib). Avoids drift across roots (R3).
 - **Explicitly-temporary placeholders** — files named `placeholder.ts`, each removed by the task that
@@ -91,7 +94,7 @@ eventually, npm):
 | `packageManager` | `"npm@10.9.2"` | Corepack-enforced |
 | `license` | `"MIT"` | Matches root LICENSE |
 | `type` | `"module"` | ESM |
-| npm script `typecheck` | `tsc -b --noEmit` | The R2 acceptance command |
+| npm script `typecheck` | chained `tsc --noEmit -p <root>` | The R2/R3 acceptance command (REQ literally specifies `tsc --noEmit`) |
 
 ## Module Boundaries
 
@@ -113,13 +116,12 @@ real modules do.
 | `package.json` | Root manifest: name/bin/engines/packageManager/license/type, §2 deps+devDeps (caret), `typecheck` script | §2/§3; standard npm ESM package |
 | `package-lock.json` | Committed lockfile (R6) | generated by `npm install` |
 | `LICENSE` | MIT © 2026 Foyzul Karim (R7) | SPDX MIT text |
-| `tsconfig.base.json` | Common strict options (strict, target ES2022, `module`/`moduleResolution` NodeNext) | TS project-references base |
-| `tsconfig.json` | Solution config: `files: []`, `references` to all three roots | TS solution-style |
-| `shared/tsconfig.json` | `extends` base, `composite: true`, include `**/*.ts` | — |
+| `tsconfig.base.json` | Common strict options (strict, target ES2022, `module`/`moduleResolution` NodeNext) | Shared base, `extends` target |
+| `shared/tsconfig.json` | `extends` base, include `**/*.ts` | — |
 | `shared/placeholder.ts` | Typed const marker; removed by #P2-1 | — |
-| `server/tsconfig.json` | `extends` base, `composite: true`, `types: ["node"]`, `references: [{path:"../shared"}]` | — |
+| `server/tsconfig.json` | `extends` base, `types: ["node"]` | — |
 | `server/placeholder.ts` | Typed const marker; removed by #P1-2 | — |
-| `client/tsconfig.json` | `extends` base, `composite: true`, `lib` incl. DOM, `jsx: react-jsx`, `references: [{path:"../shared"}]`, include `src/**/*` | — |
+| `client/tsconfig.json` | `extends` base, `lib` incl. DOM, `jsx: react-jsx`, include `src/**/*` | — |
 | `client/src/placeholder.ts` | Typed const marker; removed by #P3-2 (client code under `src/` per §3) | — |
 
 ### Modified files / modules
@@ -141,7 +143,7 @@ None. (`legacy/` untouched; #P0-2 already isolated V1 there.)
 | #P1-2 (dev/build toolchain) | Inherits ESM + the tsconfig shape; esbuild target must be `node22` (R8); it decides the cross-root import convention when wiring vite/esbuild |
 | #P2-1 (shared contracts) | Removes `shared/placeholder.ts`, adds real types; first real cross-root import |
 | #P3-2 (React shell) | Removes `client/src/placeholder.ts`, adds `@types/react`/`@types/react-dom` + first `.tsx` |
-| #P1-3 (CI) | `typecheck` job runs `tsc -b --noEmit`; Node-version source is now `engines`/setup-node (the dropped-`.nvmrc` follow-up) |
+| #P1-3 (CI) | `typecheck` job runs the chained `tsc --noEmit -p` script; Node-version source is now `engines`/setup-node (the dropped-`.nvmrc` follow-up) |
 
 ## Areas of Impact
 
@@ -149,7 +151,7 @@ None. (`legacy/` untouched; #P0-2 already isolated V1 there.)
 |------|--------|------|-----|
 | #P1-2 dev/build toolchain | Builds directly on the tsconfig shape + ESM chosen here; esbuild `--target=node22` | **M** | If the config shape can't be bundled cleanly, #P1-2 reworks it |
 | #P2-1 / #P3-2 | Replace placeholders with real code; #P2-1 sets import-path convention | **L** | Additive; placeholders designed to be removed |
-| #P1-3 CI | Typecheck command + Node-version source both originate here | **L** | Single OS/Node job; `tsc -b --noEmit` is deterministic |
+| #P1-3 CI | Typecheck command + Node-version source both originate here | **L** | Single OS/Node job; the `tsc --noEmit -p` chain is deterministic |
 | Spec docs (arch §1/§12, plan) | R8 edits ripple to any reader relying on "Node ≥18"/`node18` | **L** | Internal docs; we control every consumer |
 | npm / package identity | Placeholder `name`; final rename before #P5-2 | **L** | Tracked (#P0-4/#P5-2); nothing published yet |
 
@@ -161,8 +163,8 @@ None. (`legacy/` untouched; #P0-2 already isolated V1 there.)
 
 ## Cross-Cutting Concerns
 
-- **Errors:** none at runtime (no runtime). Type errors surface via `tsc -b --noEmit`; a deliberately
-  unsound placeholder must fail the check (R3).
+- **Errors:** none at runtime (no runtime). Type errors surface via the `typecheck` script (chained
+  `tsc --noEmit -p`); a deliberately unsound placeholder must fail the check (R3).
 - **Logging & metrics:** N/A.
 - **Auth / authz:** N/A.
 - **Performance:** keep `dependencies` to exactly the §2 six (N1) for npx cold-start weight; no build
@@ -178,8 +180,8 @@ None. (`legacy/` untouched; #P0-2 already isolated V1 there.)
 | # | Decision | Alternatives | Chosen Because | Satisfies REQs |
 |---|----------|--------------|----------------|----------------|
 | A1 | Single package, three sibling roots, no workspaces | npm workspaces | One manifest/one dep set per REQ; no per-package overhead | R1, R4, R5 |
-| A2 | TS project references (base + solution + 3 composite) | 3 independent configs; single globbed config | Per-root compiler options + cross-root graph checking; matches §3 | R2, R3 |
-| A3 | Typecheck = `tsc -b --noEmit` (TS ≥5.6) | bare `tsc --noEmit`; `tsc -b` | Avoids TS5053 under `composite`; checks graph without emit | R2 |
+| A2 | Per-root strict configs sharing one base via `extends` (server `types:["node"]`; client DOM `lib`+`jsx`) | project references/composite; 3 independent configs; single globbed config | Per-root compiler options + cross-root graph checking (NodeNext resolves `../shared` once #P2-1 imports). _(Revised from composite/references at implementation — `tsc -b --noEmit` is incompatible with cross-root references in TS 7.0.2, TS6310; see T3.)_ | R2, R3 |
+| A3 | Typecheck = chained `tsc --noEmit -p <root>` (npm script `typecheck`) | `tsc -b --noEmit` (TS6310 under references); bare `tsc --noEmit` on composite (TS5053); `tsc -b` (emits) | The REQ R2/R3 literal `tsc --noEmit`; checks each root without emitting | R2 |
 | A4 | ESM (`type:module`, NodeNext) | CommonJS | Node 22 + ESM-first §2 stack + esbuild/vite | R1 (engines), §12 |
 | A5 | Self-contained typed-const placeholders | Cross-root import placeholder | Minimal; defers import convention + bundler resolution to #P2-1/#P1-2 | R2, R3 |
 | A6 | `@types/node` now; React stubs deferred | all @types now; none | Server is Node; no JSX until #P3-2; @types are devDeps so `dependencies` stays the §2 six | R3, R4, N1 |
@@ -191,12 +193,12 @@ None. (`legacy/` untouched; #P0-2 already isolated V1 there.)
 
 | Scenario | How the Design Handles It |
 |----------|---------------------------|
-| `tsc --noEmit` fails with TS5053 (`noEmit` + `composite`) | Use `tsc -b --noEmit` (TS ≥5.6, present via caret); documented as the R2 command |
+| `tsc -b --noEmit` fails with TS6310 (referenced project may not disable emit) in TS 7.0.2 | Use per-root `tsc --noEmit -p` (chained) — no composite/references, so neither TS5053 nor TS6310 can fire; this is the REQ R2/R3 literal command |
 | Contributor clones on Node 20/older | `engines.node ">=22"` → npm warns (non-fatal unless `engine-strict`); Corepack enforces `npm@10.9.2`. Documented floor |
 | `packageManager: "npm@10.9.2"` invalid/unavailable | 10.9.2 is a real published npm (Node 22 LTS line); bumpable to the implementer's local Node 22 npm — Corepack validates the exact string |
 | A dependency's caret resolve is incompatible with Node 22 | Floor is ≥22 (not a ceiling); lockfile pins exact resolved versions; deviating from §2 deps requires a §2 edit first |
 | `client/tsconfig` sets `jsx` but `@types/react` absent | No `.tsx`/JSX exists at #P1-1 (placeholder is `.ts`), so the react-jsx transform never triggers; stubs added by the first-JSX task |
-| `tsc -b` writes `*.tsbuildinfo` into the tree | `.gitignore` covers `*.tsbuildinfo` (+ `dist/`) |
+| Stray build artifacts written into the tree | `tsc --noEmit` writes nothing; `.gitignore` also covers `*.tsbuildinfo` (+ `dist/`) as a belt-and-braces guard |
 
 ### Backward — regression risk
 
