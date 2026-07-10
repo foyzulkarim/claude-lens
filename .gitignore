@@ -20,3 +20,7 @@ Thumbs.db
 
 # Serena (local agent config)
 .serena/
+
+# Build artifacts
+dist/
+*.tsbuildinfo
