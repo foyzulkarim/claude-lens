@@ -13,6 +13,7 @@
   "packageManager": "npm@10.9.2",
   "scripts": {
     "typecheck": "tsc --noEmit -p shared/tsconfig.json && tsc --noEmit -p server/tsconfig.json && tsc --noEmit -p client/tsconfig.json",
+    "test": "vitest run",
     "dev": "tsx watch server/cli.ts --port 4128 --no-open & vite --config client/vite.config.ts",
     "dev:server": "tsx watch server/cli.ts --port 4128 --no-open",
     "dev:client": "vite --config client/vite.config.ts",
