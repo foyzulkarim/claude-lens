@@ -11,20 +11,21 @@ const distDir = join(rootDir, "dist");
 async function main() {
   await rm(distDir, { recursive: true, force: true });
 
-  await viteBuild({ root: clientDir });
-
-  await esbuildBuild({
-    entryPoints: [join(rootDir, "server/cli.ts")],
-    outfile: join(distDir, "cli.js"),
-    bundle: true,
-    platform: "node",
-    target: "node22",
-    format: "esm",
-    // Keep npm "dependencies" (fastify, pino-pretty, ...) unbundled: they're
-    // installed as real node_modules packages at runtime, which is required
-    // for pino-pretty's worker thread to resolve itself.
-    packages: "external",
-  });
+  await Promise.all([
+    viteBuild({ root: clientDir }),
+    esbuildBuild({
+      entryPoints: [join(rootDir, "server/cli.ts")],
+      outfile: join(distDir, "cli.js"),
+      bundle: true,
+      platform: "node",
+      target: "node22",
+      format: "esm",
+      // Keep npm "dependencies" (fastify, pino-pretty, ...) unbundled: they're
+      // installed as real node_modules packages at runtime, which is required
+      // for pino-pretty's worker thread to resolve itself.
+      packages: "external",
+    }),
+  ]);
 
   await mkdir(join(distDir, "public"), { recursive: true });
   await cp(join(clientDir, "dist"), join(distDir, "public"), { recursive: true });

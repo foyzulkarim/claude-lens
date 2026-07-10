@@ -25,7 +25,13 @@ function parseArgs(argv: string[]): CliOptions {
     const [flag, inlineValue] = arg.split("=", 2);
 
     if (flag === "--port") {
-      options.port = Number(inlineValue ?? argv[++i]);
+      const raw = inlineValue ?? argv[++i];
+      const parsed = Number(raw);
+      if (raw === undefined || Number.isNaN(parsed)) {
+        console.error(`Invalid --port value: ${raw ?? "(missing)"}`);
+        process.exit(1);
+      }
+      options.port = parsed;
     } else if (flag === "--roots") {
       if (inlineValue) options.roots.push(inlineValue);
       while (argv[i + 1] && !argv[i + 1].startsWith("--")) {
@@ -65,7 +71,11 @@ async function main() {
   app.log.info(`claude-lens running at ${url}`);
 
   if (options.open) {
-    await open(url);
+    try {
+      await open(url);
+    } catch (err) {
+      app.log.warn({ err }, "failed to open browser");
+    }
   }
 }
 
