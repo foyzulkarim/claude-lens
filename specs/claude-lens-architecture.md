@@ -145,7 +145,7 @@ claude-lens/
 │           ├── data-health/ settings/ explore/
 │           └── (each: index.tsx + page-local sections/)
 ├── scripts/build.ts          # vite build → esbuild server → assemble dist/
-└── test/                     # anonymized jsonl fixtures; parser + metrics specs
+└── test/                     # synthetic jsonl fixtures; parser + metrics specs
 ```
 
 ### Module boundaries (enforced, not decorative)
@@ -334,7 +334,7 @@ Covers every ⚑N item in the page spec except the optional hostname field in co
 
 Highest-value, in order:
 
-1. **Parser + dedupe** (`parse-transcript`) against real anonymized fixtures — the compact-record contract must not regress.
+1. **Parser + dedupe** (`parse-transcript`) against synthetic fixtures — the compact-record contract must not regress.
 2. **Tailer edge cases:** partial trailing line, truncation/rewrite fallback, offset advancement.
 3. **Metrics engine:** grain bucketing, period-over-period alignment, percentiles, computed-vs-observed labeling.
 4. **Gate engine** per `gates.md` specs.
@@ -343,7 +343,7 @@ UI testing: Storybook stories cover component states, Cypress covers the E2E smo
 
 ## 14. Build order (suggested for implementation agent)
 
-1. `shared/` types + parser + tests (fixtures from real data)
+1. `shared/` types + parser + tests (synthetic fixtures)
 2. Ingest pipeline (poll, tail, warm cache) + store — verify boot time and memory on real `~/.claude/projects`
 3. Metrics engine + `/api/metrics` — validate against hand-computed numbers from the fixture data
 4. App shell: Fastify, static, WS bus, React shell with filter bar + one live chart (proves the whole loop end-to-end)
