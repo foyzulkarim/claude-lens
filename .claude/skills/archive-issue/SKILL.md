@@ -1,16 +1,28 @@
 ---
 name: archive-issue
 model: inherit
-description: Retire a closed issue's working artifacts out of specs/ into the docs/issue-NNN/ wiki-mirror structure — use when the user asks to archive a finished issue, empty out specs/ for a done task, or move an issue's requirements/architecture/review docs to the wiki.
+description: Retire a closed issue's working artifacts out of specs/ into the GitHub wiki — use when the user asks to archive a finished issue, empty out specs/ for a done task, or move an issue's requirements/architecture/review docs to the wiki.
 ---
 
 # Archive Issue
 
 Once an issue closes, GitHub is the source of truth for its scope — but its requirements,
 architecture, and code-review docs under `specs/` still hold reasoning worth keeping. This skill
-retires them out of `specs/` into `docs/`, mirroring the GitHub wiki's flat-file structure
-(`specs/wiki-structure.md` is the authoritative layout spec — read it before doing anything else if
-you haven't already; the **Correlation model** section there is what Steps 1–2 below execute).
+retires them out of `specs/` straight into the GitHub wiki (`specs/wiki-structure.md` is the
+authoritative layout spec — read it before doing anything else if you haven't already; the
+**Correlation model** section there is what Steps 1–2 below execute). **Nothing archived is ever
+committed to the main repo** — the wiki is the only place this content lives.
+
+## Step 0 — Ensure the local wiki clone is current
+
+Work happens in a local working clone of the wiki repo, conventionally at `.wiki/` in the main repo
+root (gitignored — never part of this repo's history):
+
+- If `.wiki/` doesn't exist: `git clone <repo>.wiki.git .wiki`.
+- If it exists: `git -C .wiki pull --ff-only` before making any changes, so you're not archiving on
+  top of a stale copy.
+
+All of Steps 3–5 write into this clone, not into the main repo.
 
 ## Step 1 — Resolve the anchor, confirm closed
 
@@ -22,7 +34,7 @@ number `N`, GitHub URL, and phase (derived from `<ID>`'s prefix `P<phase>-<n>`; 
 
 Confirm the issue's GitHub state is `closed`. If it's still open, **stop and say so** — this is a
 retirement step, not a drafting one; open-issue artifacts stay in `specs/` where the active pipeline
-expects them. Make no changes to `specs/` or `docs/`.
+expects them. Make no changes to `specs/` or `.wiki/`.
 
 If the issue's title notes it absorbed another plan-task (e.g. "#13 absorbs #P0-5"), the absorbed ID
 is noted in the hub overview later — it does not change which phase this issue is grouped under (the
@@ -57,7 +69,7 @@ genuinely can't be matched, leave it out and flag it to the user rather than gue
 
 ## Step 3 — Write the hub page
 
-`docs/issue-NNN.md` (zero-padded to 3 digits). The metadata line is **mandatory** and must preserve
+`.wiki/issue-NNN.md` (zero-padded to 3 digits). The metadata line is **mandatory** and must preserve
 every correlation key, since `specs/` is about to be emptied of them:
 
 ```
@@ -73,21 +85,22 @@ every correlation key, since `specs/` is about to be emptied of them:
 
 Below the metadata line: a paragraph of what shipped (pull from the issue body's Summary — don't
 re-derive it), a bullet list linking each sub-page that exists, and a one-line Outcome pulled from the
-acceptance criteria / review verdict. Follow the shape of `docs/issue-013.md` (the worked example
-referenced in `specs/wiki-structure.md`) for the overview/Outcome prose style.
+acceptance criteria / review verdict. Follow the shape of the wiki's existing `issue-013.md` (the
+worked example referenced in `specs/wiki-structure.md`) for the overview/Outcome prose style.
 
 ## Step 4 — Write the sub-pages
 
 Carry the REQ/ARCH/review content over largely as-is — these are already well-formed docs; don't
-rewrite them, just relocate them and drop anything that's now stale (e.g. a REQ doc's "next step:
-run /plan-architecture" footer no longer applies once archived). Use the open vocabulary from
-`wiki-structure.md`'s Rules — `requirements`, `architecture`, `review`/`review-pr-<PR>`, and (when a
-source exists) `findings`, `decisions`, `assets/` — never a placeholder for a document that doesn't
-exist.
+rewrite them, just relocate them into `.wiki/issue-NNN/` and drop anything that's now stale (e.g. a
+REQ doc's "next step: run /plan-architecture" footer no longer applies once archived). Use the open
+vocabulary from `wiki-structure.md`'s Rules — `requirements`, `architecture`, `review`/`review-pr-<PR>`,
+and (when a source exists) `findings`, `decisions`, `assets/` — never a placeholder for a document
+that doesn't exist.
 
 ## Step 5 — Update the index
 
-Both files use the same phase-grouped structure (`specs/wiki-structure.md`'s "The model" section):
+Both `.wiki/Home.md` and `.wiki/_Sidebar.md` use the same phase-grouped structure
+(`specs/wiki-structure.md`'s "The model" section):
 
 - **Determine the group:** the phase from Step 1 (`## Phase <X> — <name>`), or `## Unphased` if the
   issue has no plan-task ID.
@@ -99,20 +112,23 @@ Both files use the same phase-grouped structure (`specs/wiki-structure.md`'s "Th
 - **Insert in issue-number order** within the group — find the correct ascending position among that
   group's existing entries, not just appended at the end.
 - **Refresh the phase's ✓/◐ marker** on `Home.md` if `plan.md`'s exit criteria for that phase have
-  changed since the marker was last set.
-- Create `docs/Home.md` / `docs/_Sidebar.md` (with a one-line header, phase-grouped) if this is the
+  changed since the marker was last set — this can catch drift beyond just the issue being archived
+  right now (e.g. stale checkboxes elsewhere in `plan.md`); fix `plan.md` too if you find it.
+- Create `.wiki/Home.md` / `.wiki/_Sidebar.md` (with a one-line header, phase-grouped) if this is the
   first archived issue overall.
 
-## Step 6 — Retire the sources
+## Step 6 — Retire the sources from the main repo
 
-Remove the archived files from `specs/` (`git rm`) — `specs/issues/<ID>-<slug>.md`,
-`specs/context/<N>.md`, and whichever of `requirements/`/`architecture/`/the CODE-REVIEW file(s) were
-mirrored. This is the "empty the specs directory" half of the convention: once an issue is archived,
-nothing about it should remain in `specs/`.
+Remove the archived files from `specs/` (`git rm`, in the **main repo**, not `.wiki/`) —
+`specs/issues/<ID>-<slug>.md`, `specs/context/<N>.md`, and whichever of `requirements/`/`architecture/`/
+the CODE-REVIEW file(s) were mirrored. This is the "empty the specs directory" half of the convention:
+once an issue is archived, nothing about it should remain in `specs/`. Commit this to the main repo
+separately from the wiki push in Step 7 — they're two different repos with two different histories.
 
-## Step 7 — Report
+## Step 7 — Commit and push the wiki, with confirmation
 
-Summarize what moved where (source path → destination) so the user can review the diff before it's
-pushed. Pushing `docs/` to the actual GitHub wiki repo (a separate git remote,
-`<repo>.wiki.git`) is **not** part of this skill — that's a manual step outside the main repo's
-history.
+Inside `.wiki/`: `git add`, commit (batch multiple issues archived in one pass into one commit if
+convenient), then push to `origin`. Pushing to the wiki repo is a push to shared external state —
+**confirm with the user before pushing**, same as any other push, even though the commit itself is
+harmless to make locally. Report what moved where (source path → wiki page) so the user can review
+before/after the push.
