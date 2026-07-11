@@ -292,7 +292,7 @@ commit for cross-doc consistency (ARCH cross-cutting ripple)._
 
 ## Task T1: Expand the layout spec — correlation model + phase grouping
 
-> **Status:** not started
+> **Status:** done — `specs/wiki-structure.md` expanded with Correlation model, phase grouping/Unphased/primary-task, multi-review naming, open vocabulary, mandatory branch-mode-aware hub key line, sort/status rules, updated ASCII example, and the `create-issue` dependency note. All checklist items verified (`grep -in "flat"` shows no contradicting flat-list language).
 > **Verification:** checklist
 > **Effort:** m
 > **Priority:** critical
@@ -354,7 +354,7 @@ skill) and T3 (the indexes) both reference — it lands first and nothing else m
 
 ## Task T2: Rewrite the archive-issue skill as an anchor-first executor
 
-> **Status:** not started
+> **Status:** done — `.claude/skills/archive-issue/SKILL.md` Steps 1–5 rewritten anchor-first with branch-matched multi-review, mandatory `PR(s):` hub line, open-vocabulary sub-pages, and phase-grouped index insert. Dry-run against #13's real (already-archived) inputs confirmed the naming rules match its actual `docs/issue-013/{architecture,requirements,review}.md` output (single branch-mode review → `review.md`, no PR suffix — consistent).
 > **Verification:** checklist
 > **Effort:** m
 > **Priority:** high
@@ -413,7 +413,7 @@ not re-define layout.
 
 ## Task T3: Reshape indexes to phase-grouped + align the convention docs
 
-> **Status:** not started
+> **Status:** done — `docs/Home.md`/`_Sidebar.md` reshaped to phase-grouped (lazy-created headings, per T2's own rule — only `## Phase 1` exists since #13 is the only archived issue), #13 re-slotted with `git diff --stat docs/issue-013.md docs/issue-013/` confirming zero content change. `CLAUDE.md` L48/L55 and `plan.md` decisions log updated; cross-doc `grep -rin "flat"` swept all four docs + indexes — no surviving flat-list description.
 > **Verification:** checklist
 > **Effort:** s
 > **Priority:** high
