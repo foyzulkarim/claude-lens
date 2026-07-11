@@ -2,7 +2,7 @@
 
 > **Date:** 2026-07-10
 > **Phase:** 2 of 5 (System Architecture)
-> **Requirements source:** `specs/requirements/REQ-scaffold-three-root-ts-package.md`
+> **Requirements source:** [Requirements](requirements)
 > **Type:** infrastructure
 
 ## Architecture Summary
