@@ -1,0 +1,5 @@
+@import "tailwindcss";
+
+/* Manual dark/light toggling (Storybook's addon-themes, and later the app's
+   own toggle) via a `.dark` class instead of `prefers-color-scheme`. */
+@custom-variant dark (&:where(.dark, .dark *));
