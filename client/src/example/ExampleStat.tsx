@@ -1,3 +1,5 @@
+import clsx from "clsx";
+
 // Storybook workbench smoke-test component — proves Tailwind + the dark/light
 // toggle are wired correctly. Replaced by the real stat-card primitive (#P4-1).
 export interface ExampleStatProps {
@@ -6,9 +8,11 @@ export interface ExampleStatProps {
   accent?: "money" | "cache";
 }
 
+// Matches --money/--cache from specs/pages/_chrome.css — same hex in both
+// themes, since accent colors are brand colors, not neutral text.
 const ACCENT_CLASS: Record<NonNullable<ExampleStatProps["accent"]>, string> = {
-  money: "text-amber-500 dark:text-amber-400",
-  cache: "text-cyan-600 dark:text-cyan-400",
+  money: "text-[#E8A33D]",
+  cache: "text-[#4FC3D9]",
 };
 
 export function ExampleStat({ label, value, accent }: ExampleStatProps) {
@@ -18,7 +22,10 @@ export function ExampleStat({ label, value, accent }: ExampleStatProps) {
         {label}
       </span>
       <span
-        className={`font-mono text-2xl font-medium text-slate-900 dark:text-[#E8EDF2] ${accent ? ACCENT_CLASS[accent] : ""}`}
+        className={clsx(
+          "font-mono text-2xl font-medium",
+          accent ? ACCENT_CLASS[accent] : "text-slate-900 dark:text-[#E8EDF2]",
+        )}
       >
         {value}
       </span>
