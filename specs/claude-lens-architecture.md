@@ -64,7 +64,15 @@ Deliberately excluded: **chokidar** (§5.2), **any database driver** (§6), **zo
 | `echarts` | All charts. Canvas rendering (SVG chokes on per-call granularity). Per-module imports for treeshaking. Thin hand-rolled wrapper (~50 lines: mount, setOption, ResizeObserver, dispose) — **do not** use `echarts-for-react` |
 | `minisearch` | Client-side prompt full-text search over an index served by the API |
 | `date-fns` | Range-preset math, calendar grid helpers (client only) |
-| `tailwindcss`, `clsx` | Styling. No component library — build the six dashboard primitives by hand (§11) |
+| `tailwindcss`, `@tailwindcss/vite`, `clsx` | Styling. No component library — build the six dashboard primitives by hand (§11) |
+| `@types/react`, `@types/react-dom` | Type declarations for React (React itself ships no types) |
+
+### Component workbench (devDependencies — never enters the published `dist/`)
+
+| Library | Role |
+|---|---|
+| `storybook`, `@storybook/react-vite` | Storybook (Vite builder) — the component workbench (§11, plan #P1-4). Dev workbench only; no test-runner/play functions |
+| `@storybook/addon-themes` | Dark/light theme toggle matching the dashboard aesthetic |
 
 ### Toolchain
 

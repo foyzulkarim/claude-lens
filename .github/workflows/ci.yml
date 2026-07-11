@@ -22,3 +22,7 @@ jobs:
       - run: npm run typecheck
 
       - run: npm test
+
+      # Non-blocking smoke check — does not gate merges (see plan #P1-3/#P1-4).
+      - run: npm run build-storybook
+        continue-on-error: true
