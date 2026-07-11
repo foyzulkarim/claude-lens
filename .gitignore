@@ -21,6 +21,9 @@ Thumbs.db
 # Serena (local agent config)
 .serena/
 
+# Local working clone of the GitHub wiki repo (specs/wiki-structure.md)
+.wiki/
+
 # Build artifacts
 dist/
 *.tsbuildinfo

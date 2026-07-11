@@ -6,6 +6,11 @@ scoped to the four authoritative V2 docs, `gates.md`, the page mockups, and what
 requirements/architecture docs are still open. It does not change anything about how issues are
 drafted or filed — see `.claude/skills/create-issue/` for that.
 
+**The archive lives only in the GitHub wiki, never in this repo.** Retired artifacts move straight
+from `specs/` into the `<repo>.wiki.git` repo; nothing under `docs/` (or any other path) is committed
+to `main`. This keeps the main repo's working tree lean — archiving isn't worth anything if it just
+relocates the bulk from `specs/` to another directory in the same clone.
+
 ## Why
 
 Each issue accumulates working documents as it moves through the pipeline: an issue record
@@ -15,8 +20,8 @@ and one or more code reviews (`specs/CODE-REVIEW-*.md`). Once the issue closes, 
 source of truth for its scope and acceptance criteria — but the requirements/architecture/review
 documents contain design reasoning (rejected alternatives, edge-case decisions, task breakdowns)
 that's worth keeping findable without leaving it cluttering `specs/` indefinitely. The GitHub wiki is
-the destination; this doc defines the file layout so the local mirror and the wiki repo are the same
-tree.
+the sole destination; this doc defines the file layout that the wiki repo holds directly — there is no
+second copy anywhere in the main repo.
 
 At volume (dozens of plan-task issues plus ad-hoc bugs/chores/spikes across phases 0–4), two more
 problems show up beyond simple retirement: the files belonging to one issue are scattered across
@@ -89,10 +94,13 @@ issue-0NN/...
 issue-0MM.md                 ← bug/chore/spike/enhancement with no plan-task ID
 ```
 
-Locally this is mirrored 1:1 under `docs/` (`docs/issue-013.md`, `docs/issue-013/requirements.md`,
-…) — that tree is what gets pushed as the wiki repo's content. This doc does not prescribe how the
-push happens (clone the `.wiki.git` remote, sync, commit, push); treat that as a manual step done by
-whoever runs the archive, not something automated blindly.
+The archive step works directly in a **local working clone of the wiki repo**, conventionally checked
+out at `.wiki/` in the main repo root (`git clone <repo>.wiki.git .wiki`) and gitignored — it is
+scratch state for running the archive, not part of this repo's history. Pages are written, committed,
+and pushed from inside `.wiki/`; nothing under that path is ever added to the main repo's git index.
+Pushing the commit to the live wiki remote is a deliberate, confirmed step (not something to run
+blindly at the end of every small edit) — batch several issues into one wiki commit when archiving
+a group, same as any other push to shared state.
 
 ## Rules that matter
 
@@ -145,9 +153,9 @@ whoever runs the archive, not something automated blindly.
 - **Archive only after the issue closes.** This is a retirement step, not a drafting one — an issue
   still open keeps its artifacts in `specs/` where the active pipeline expects to find them.
 - **Archiving is a snapshot, not a lock.** If a closed-and-archived issue reopens, the active pipeline
-  recreates its working docs fresh in `specs/`; don't round-trip files back out of `docs/`. The
-  `docs/issue-NNN/` archive is overwritten (not merged) the next time that issue closes and is
-  re-archived.
+  recreates its working docs fresh in `specs/`; don't round-trip files back out of the wiki. The
+  `issue-NNN` wiki page (and its sub-pages) is overwritten (not merged) the next time that issue
+  closes and is re-archived.
 
 ## What stays in `specs/`
 
@@ -157,19 +165,22 @@ The four authoritative V2 docs (`claude-lens-architecture.md`, `claude-lens-page
 issues that are still open or in flight. Once an issue closes and gets archived, its entries in
 those four subdirectories are removed — that's the "empty the specs directory" half of this
 convention; `specs/` should only ever hold what the *current* pipeline needs, not project history.
-None of these living documents are ever mirrored into `docs/` — the wiki holds retired issue
-artifacts and a thin navigation layer over them, never a copy of the current specs.
+None of these living documents are ever mirrored into the wiki — it holds retired issue artifacts and
+a thin navigation layer over them, never a copy of the current specs.
 
 ## Worked example
 
-Issue #13 (`#P1-1 — Scaffold three-root TS package`, closed 2026-07-10) is archived under
-`docs/issue-013.md` / `docs/issue-013/{requirements,architecture,review}.md` as the reference
-instance of this structure — see those files for the concrete shape. Its source files
+Issue #13 (`#P1-1 — Scaffold three-root TS package`, closed 2026-07-10) is archived as
+`issue-013.md` / `issue-013/{requirements,architecture,review}.md` on the wiki — see those pages for
+the concrete shape (view them via the live wiki, or in a local `.wiki/` clone). Its source files
 (`specs/context/13.md`, `specs/requirements/REQ-scaffold-three-root-ts-package.md`,
 `specs/architecture/ARCH-scaffold-three-root-ts-package.md`,
 `specs/CODE-REVIEW-BRANCH-feat-13-scaffold-three-root-ts-package.md`, and
 `specs/issues/P1-1-scaffold-three-root-ts-package.md`) were retired in the same pass. Its review was
-**branch-mode** (no PR), predating the mandatory `PR(s):` key line introduced above — its hub content
-is left as-is; only its index entry is re-slotted under the `## Phase 1` heading (see #P0-8's
-Change Footprint — backfilling its hub to the new format is a separate follow-up, not part of this
-convention's introduction).
+**branch-mode** (no PR), predating the mandatory `PR(s):` key line introduced later — its hub content
+is left as-is; only its index entry was re-slotted under the `## Phase 1` heading when #P0-8 hardened
+the convention (backfilling its hub to the new format is a separate follow-up, tracked as issue #66).
+
+Nine further issues (#7, #9, #11, #12, #14–17, #65) were archived the same way in the 2026-07-11
+batch that also moved the archive off `docs/` and onto the wiki-only convention this doc now
+describes — see the wiki's `Home.md` for the full current index.
