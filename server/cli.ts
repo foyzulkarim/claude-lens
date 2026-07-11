@@ -73,7 +73,11 @@ async function findAvailablePort(startPort: number): Promise<number> {
 // findAvailablePort only checks-then-reports free; another process can still
 // grab the port before app.listen() binds it. Retry with the next candidate
 // on EADDRINUSE instead of crashing on that race.
-async function listenWithRetry(app: FastifyInstance, startPort: number, maxAttempts = 5): Promise<number> {
+async function listenWithRetry(
+  app: FastifyInstance,
+  startPort: number,
+  maxAttempts = 5,
+): Promise<number> {
   let port = startPort;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
