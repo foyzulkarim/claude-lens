@@ -6,7 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["client/**", "server/**", "shared/**"],
+    "includes": ["client/**", "server/**", "shared/**", "scripts/**", "*.ts"],
     "ignoreUnknown": true
   },
   "formatter": {
@@ -18,33 +18,12 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true
-    }
-  },
-  "javascript": {
-    "formatter": {
-      "semicolons": "always",
-      "trailingCommas": "all",
-      "arrowParentheses": "always",
-      "quoteStyle": "double"
-    },
-    "parser": {
-      "jsxEverywhere": true,
-      "unsafeParameterDecoratorsEnabled": false
+      "preset": "recommended"
     }
   },
   "css": {
     "parser": {
-      "allowWrongLineComments": false,
-      "cssModules": false,
       "tailwindDirectives": true
-    }
-  },
-  "json": {
-    "formatter": {
-      "enabled": true,
-      "indentWidth": 2,
-      "trailingCommas": "none"
     }
   }
 }
