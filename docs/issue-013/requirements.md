@@ -2,7 +2,7 @@
 
 > **Date:** 2026-07-10
 > **Type:** infrastructure
-> **Source:** GitHub issue #13 (`specs/context/13.md`) · architecture `specs/claude-lens-architecture.md` §1–§3, §12 · plan `specs/claude-lens-plan.md` Phase 1 + decisions log (2026-07-10). Mode B gap-fill — §2/§3 are the source-of-truth for dependency lists and layout; this REQ captures only the decisions those docs leave open.
+> **Source:** GitHub issue [#13](https://github.com/foyzulkarim/claude-lens/issues/13) · architecture `specs/claude-lens-architecture.md` §1–§3, §12 · plan `specs/claude-lens-plan.md` Phase 1 + decisions log (2026-07-10). Mode B gap-fill — §2/§3 are the source-of-truth for dependency lists and layout; this REQ captures only the decisions those docs leave open.
 > **Phase:** 1 of 5 (Requirement Engineering)
 
 ## Summary
@@ -121,7 +121,3 @@ nowhere for that work to land. It also absorbs the LICENSE and `engines`/`packag
 - **Which two fields the eventual rename touches** ("two-field rename" per the issue).
   - **Impact if unresolved:** minor; cosmetic at #P5-2.
   - **Suggested default:** treat as the `name` field plus one reference (bin/README); confirm at #P5-2.
-
----
-_This requirements document is the input for the **plan-architecture** skill._
-_Next step: `/plan-architecture from: specs/requirements/REQ-scaffold-three-root-ts-package.md`_

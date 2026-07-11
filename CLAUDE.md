@@ -45,8 +45,11 @@ new ideas:     /plan-requirements ─► specs/requirements/REQ-<slug>.md ─►
 ## Skill locations
 
 - `/create-issue` — project-local, `.claude/skills/create-issue/`.
+- `/archive-issue` — project-local, `.claude/skills/archive-issue/`. Retires a closed issue's `specs/` artifacts into the `docs/issue-NNN/` wiki-mirror structure, resolving every source file from the issue record anchor — see `specs/wiki-structure.md`.
 - `/start-task`, `/plan-requirements`, `/plan-architecture`, `/generate-tasks`, `/implement`, `/review`, `/commit` — user-level (`~/.claude/skills/`), all `disable-model-invocation: true`: only the user can invoke them; suggest them by name, never attempt to trigger them.
 
 ## Specs layout
 
-`specs/claude-lens-plan.md` (phases/tasks) · `claude-lens-architecture.md` (how) · `claude-lens-pages.md` (page section tables — binding over mockups) · `gates.md` (Report Card gates) · `pages/*.html` (visual mockups) · `issues/` (local issue drafts + filed records from `/create-issue`) · `context/` (per-task context written by `/start-task`) · `requirements/` (REQ docs from `/plan-requirements`).
+`specs/claude-lens-plan.md` (phases/tasks) · `claude-lens-architecture.md` (how) · `claude-lens-pages.md` (page section tables — binding over mockups) · `gates.md` (Report Card gates) · `pages/*.html` (visual mockups) · `issues/` (local issue drafts + filed records from `/create-issue`, open issues only) · `context/` (per-task context written by `/start-task`, open issues only) · `requirements/` (REQ docs from `/plan-requirements`, open issues only) · `architecture/` (ARCH docs from `/plan-architecture`, open issues only) · `wiki-structure.md` (archive layout + correlation model for closed issues).
+
+**Archiving finished issues:** once an issue closes, its `issues/`/`context/`/`requirements/`/`architecture/`/`CODE-REVIEW-*.md` entries move out of `specs/` into `docs/issue-NNN/` — one hub page per issue, wiki-flat sub-pages for whichever of requirements/architecture/review/findings/decisions/assets actually exist. Navigation (`docs/Home.md`, `docs/_Sidebar.md`) groups archived issues by phase (derived from the primary plan-task ID, with an Unphased bucket for issues without one), sorted by issue number, each phase marked ✓/◐ from `plan.md`. `specs/wiki-structure.md` has the layout rules and the correlation model (how every source file resolves from the issue record anchor); `.claude/skills/archive-issue/` does the retirement. `docs/` mirrors the GitHub wiki 1:1; pushing it to the wiki repo is a manual step, not part of this repo's history.
