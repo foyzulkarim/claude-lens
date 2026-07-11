@@ -4,6 +4,8 @@
 
 ### Phase 0 — Spec closure & repo prep
 - [issue-007](issue-007)
+- [issue-009](issue-009)
+- [issue-011](issue-011)
 - [issue-012](issue-012)
 - [issue-065](issue-065)
 

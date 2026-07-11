@@ -10,6 +10,8 @@ land under Unphased.
 ## Phase 0 — Spec closure & repo prep ✓ done
 
 - [issue-007 — Move V1 app into legacy/ (#7)](issue-007)
+- [issue-009 — npm name check (#9)](issue-009)
+- [issue-011 — GitHub project scaffolding (#11)](issue-011)
 - [issue-012 — Data inventory (observed-field evidence) (#12)](issue-012)
 - [issue-065 — Harden closed-issue wiki archive convention (#65)](issue-065)
 
