@@ -195,7 +195,3 @@ no `<ID>` is Unphased.
   - **Impact if unresolved:** none immediately; the grouped `Home.md` already answers "what's in
     Phase N."
   - **Suggested default:** skip; add only if a reader need emerges.
-
----
-_This requirements document is the input for the **plan-architecture** skill._
-_Next step: `/plan-architecture from: specs/requirements/REQ-wiki-archive-structure.md`_
