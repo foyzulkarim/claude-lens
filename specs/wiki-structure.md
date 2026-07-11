@@ -21,7 +21,8 @@ tree.
 At volume (dozens of plan-task issues plus ad-hoc bugs/chores/spikes across phases 0–4), two more
 problems show up beyond simple retirement: the files belonging to one issue are scattered across
 `specs/` under three incompatible naming keys, and a flat chronological index stops being navigable.
-The **Correlation model** and **Phase grouping** sections below address those.
+The **Correlation model** section below addresses the first; the phase-grouping rules under **The
+model** and **Rules that matter** address the second.
 
 ## Correlation model
 
@@ -106,8 +107,9 @@ whoever runs the archive, not something automated blindly.
   plan-task and PR(s). Every hub carries: `**Plan task:** #P<X>-<Y> · **Phase:** <X> · **PR(s):** #NN
   [, #MM…] · **Closed:** YYYY-MM-DD · [GitHub issue #N](url)`. If the issue had a **branch-mode**
   review (no PR — e.g. a direct-branch review rather than a PR review), write `**PR(s):** —
-  (branch review)` rather than omitting the field. If the issue has no plan-task ID, write
-  `**Plan task:** — (unphased)`.
+  (branch review)` rather than omitting the field. If the issue had no review at all, write
+  `**PR(s):** —` (no parenthetical — that's reserved for the branch-mode case). If the issue has no
+  plan-task ID, write `**Plan task:** — (unphased)`.
 - **A page is "published" only when linked from its issue hub.** A file that exists in the wiki repo
   but isn't linked from anywhere is invisible except via exact-title search — don't leave orphans.
 - **The issue body itself is not mirrored as a sub-page.** Once an issue is filed, GitHub is the
