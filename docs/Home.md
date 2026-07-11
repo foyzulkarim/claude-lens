@@ -7,13 +7,13 @@ off the hub, not off this index. Issues are grouped by phase (mirrored from `spe
 — ✓ done / ◐ in progress) and sorted by issue number within each group; issues with no plan-task ID
 land under Unphased.
 
-## Phase 0 — Spec closure & repo prep ◐ in progress
+## Phase 0 — Spec closure & repo prep ✓ done
 
 - [issue-007 — Move V1 app into legacy/ (#7)](issue-007)
 - [issue-012 — Data inventory (observed-field evidence) (#12)](issue-012)
 - [issue-065 — Harden closed-issue wiki archive convention (#65)](issue-065)
 
-## Phase 1 — Bootstrapping ◐ in progress
+## Phase 1 — Bootstrapping ✓ done
 
 - [issue-013 — Scaffold three-root TS package (#13)](issue-013)
 - [issue-014 — Dev & build toolchain (#14)](issue-014)
