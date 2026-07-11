@@ -49,18 +49,25 @@ this is the point of the anchor):
 |---|---|---|
 | `specs/issues/<ID>-<slug>.md` | *is the anchor* | No — fold its Summary into the hub; link the GitHub issue instead of duplicating the body |
 | `specs/context/<N>.md` | direct path | No — overlaps the issue body; delete, don't mirror |
-| `specs/requirements/REQ-<slug>.md` | direct path, if it exists | Yes → `issue-NNN/requirements.md` |
-| `specs/architecture/ARCH-<slug>.md` | direct path, if it exists | Yes → `issue-NNN/architecture.md` |
-| `specs/CODE-REVIEW-*.md` | **every** file whose `Target` metadata row's branch is `feat/<N>/…` — matched by branch, **never** by assuming the PR number equals the issue number | Yes, one per matching file — see naming rule below |
+| `specs/requirements/REQ-<slug>.md` | direct path, if it exists | Yes → `issue-NNN/REQ-<slug>.md` — **same filename**, only the directory changes |
+| `specs/architecture/ARCH-<slug>.md` | direct path, if it exists | Yes → `issue-NNN/ARCH-<slug>.md` — same filename |
+| `specs/CODE-REVIEW-*.md` | **every** file whose `Target` metadata row's branch is `feat/<N>/…` — matched by branch, **never** by assuming the PR number equals the issue number | Yes, one per matching file, each keeping its original filename (`CODE-REVIEW-PR-60.md` stays `CODE-REVIEW-PR-60.md`) |
 
 Most issues (bugs, chores, small enhancements) never had a REQ/ARCH/review doc — only add the
 sub-pages that actually exist. Don't invent placeholder pages for missing docs.
 
+**Never rename a file on archive.** Only its directory changes (`specs/requirements/` →
+`issue-NNN/`, etc.) — the filename itself is untouched. This is deliberate (see
+`wiki-structure.md`'s Rules): generic names like `requirements.md`/`review.md` were tried once and
+reverted the same day because they break recognition against the `specs/` names these documents are
+already known by.
+
 **Multiple reviews:** if more than one `CODE-REVIEW-*.md` file's `Target` branch matches `feat/<N>/…`
-(multiple PRs against the same issue), every one gets its own sub-page: `issue-NNN/review-pr-<PR>.md`.
-If exactly one matches, name it `issue-NNN/review.md`. If a review is **branch-mode** (no PR — its
-`Target` names a branch/commit rather than a PR URL), it still resolves to `review.md`/
-`review-pr-<...>.md` as appropriate; note the branch-mode nature doesn't block sub-page creation, only
+(multiple PRs against the same issue), every one gets its own sub-page under its own original name —
+`CODE-REVIEW-PR-60.md` and `CODE-REVIEW-PR-72.md` both land in `issue-NNN/` unchanged, no renaming
+needed since their own filenames already disambiguate them. A **branch-mode** review (no PR — its
+`Target` names a branch/commit rather than a PR URL) archives the same way under its own name (e.g.
+`CODE-REVIEW-BRANCH-feat-13-…md`); the branch-mode nature doesn't block sub-page creation, only
 affects the hub's `PR(s):` line (Step 3).
 
 If a `CODE-REVIEW-*.md` file's branch doesn't obviously match the issue slug, check its `Target`
@@ -91,11 +98,12 @@ worked example referenced in `specs/wiki-structure.md`) for the overview/Outcome
 ## Step 4 — Write the sub-pages
 
 Carry the REQ/ARCH/review content over largely as-is — these are already well-formed docs; don't
-rewrite them, just relocate them into `.wiki/issue-NNN/` and drop anything that's now stale (e.g. a
-REQ doc's "next step: run /plan-architecture" footer no longer applies once archived). Use the open
-vocabulary from `wiki-structure.md`'s Rules — `requirements`, `architecture`, `review`/`review-pr-<PR>`,
-and (when a source exists) `findings`, `decisions`, `assets/` — never a placeholder for a document
-that doesn't exist.
+rewrite them, just relocate them into `.wiki/issue-NNN/` **under their original filenames** and drop
+anything that's now stale (e.g. a REQ doc's "next step: run /plan-architecture" footer no longer
+applies once archived). The sub-page vocabulary is open — REQ/ARCH/CODE-REVIEW cover the common case,
+spike findings and ADR/decisions docs (whatever they're actually named) cover the rest — but every
+one keeps its `specs/` filename verbatim. Never invent a placeholder for a document that doesn't
+exist, and never rename one that does.
 
 ## Step 5 — Update the index
 
