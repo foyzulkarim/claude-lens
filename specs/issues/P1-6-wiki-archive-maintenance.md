@@ -15,21 +15,21 @@ Backfill the wiki's `issue-013.md` hub with the mandatory `PR(s):` metadata fiel
 `specs/` — out into the wiki per `specs/wiki-structure.md`.
 
 ## Scope
-- `docs/issue-013.md`'s hub predates #P0-8's hardening, which made `PR(s):` mandatory on every hub's
+- `issue-013.md`'s hub predates #P0-8's hardening, which made `PR(s):` mandatory on every hub's
   metadata line; #13's review was branch-mode (no PR) so the field was left out entirely (deliberately
   deferred as a named follow-up by #65's own ARCH decision A11 / REQ Out-of-Scope section).
   Backfill it to `**PR(s):** — (branch review)`.
 - Archive #8 (closed `NOT_PLANNED`, no fixtures shipped — hub reflects that outcome, not a shipped
   deliverable) and #18 (closed via PR #67 — `shared/types.ts`/`metrics-contract.ts`/`ws-protocol.ts`,
-  plus its `ARCH-shared-contracts.md` and `CODE-REVIEW-PR-67.md`) into `docs/issue-008.md` /
-  `docs/issue-018.md`.
+  plus its `ARCH-shared-contracts.md` and `CODE-REVIEW-PR-67.md`) into `issue-008.md` /
+  `issue-018.md`.
 - Sweep any stray `CODE-REVIEW-*.md` files found sitting outside `specs/` during the pass (matched
   to their owning issue by `Target` branch, never by assuming PR# = issue#).
 
 ## Acceptance criteria
 - The wiki's `issue-013.md` metadata line includes `**PR(s):** — (branch review)`; no other content
   in `issue-013.md` or its sub-pages changes.
-- `docs/issue-008.md` and `docs/issue-018.md` hub pages exist in the wiki, linked from
+- `issue-008.md` and `issue-018.md` hub pages exist in the wiki, linked from
   `Home.md`/`_Sidebar.md` under their respective phases.
 - `specs/issues/P0-3-*.md`, `specs/issues/P2-1-*.md`, `specs/context/18.md`, and
   `specs/architecture/ARCH-shared-contracts.md` removed from the main repo; no stray
@@ -41,6 +41,4 @@ Backfill the wiki's `issue-013.md` hub with the mandatory `PR(s):` metadata fiel
 
 ## References
 - `specs/wiki-structure.md` — mandatory hub key line + branch-mode fallback rule + correlation model
-- `specs/architecture/ARCH-wiki-archive-structure.md` — decision A11 (re-slot #13 index only; hub
-  content backfill is a named follow-up)
 - Found via code review of PR #64 (`CODE-REVIEW-PR-64.md`, finding T1)

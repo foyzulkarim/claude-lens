@@ -76,7 +76,7 @@ Target layout is architecture §3 exactly. No feature code — just a booting sk
   *Acceptance:* `npm run lint` and `npm run format:check` pass on the skeleton; a deliberately misformatted file fails CI.
 - [ ] **#P1-6 — Wiki-archive maintenance: backfill issue-013's PR(s) field; archive #8/#18** *(chore, added 2026-07-13, tracked as #66; grouped under Phase 1 since it originates from #P1-1's issue-013 hub)*
   The wiki's `issue-013.md` hub predates #P0-8's hardening, which made the hub metadata line's `PR(s):` field mandatory — #13's review was branch-mode (no PR) so the field was left out entirely (deliberately deferred as a follow-up by #65). Backfill it to `**PR(s):** — (branch review)`. Bundled with retiring #8 (#P0-3, closed `NOT_PLANNED`) and #18 (#P2-1, closed via PR #67) out of `specs/` into the wiki per `specs/wiki-structure.md`, found still sitting there during this same pass.
-  *Acceptance:* the wiki's `issue-013.md` metadata line includes `**PR(s):** — (branch review)`; `docs/issue-008.md`/`docs/issue-018.md` hub pages exist in the wiki; `specs/issues/P0-3-*.md`, `specs/issues/P2-1-*.md`, and `specs/context/18.md` removed from the main repo.
+  *Acceptance:* the wiki's `issue-013.md` metadata line includes `**PR(s):** — (branch review)`; `issue-008.md`/`issue-018.md` hub pages exist in the wiki; `specs/issues/P0-3-*.md`, `specs/issues/P2-1-*.md`, and `specs/context/18.md` removed from the main repo.
 
 **Exit criteria:** `npx .` from a fresh clone boots the skeleton on one port; Storybook runs; lint enforced; CI green. (#P1-6 doesn't gate this — same per-consumer-gate precedent as #P0-3/#P0-4 in Phase 0.)
 
