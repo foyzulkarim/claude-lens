@@ -43,12 +43,20 @@ For issue `N`, primary plan-task `<ID>`, slug `<slug>`:
 |-------------|-----------|----------|-------------------------------------|-----------------------|
 | **Issue record** (the anchor) | `specs/issues/` | plan-task ID + slug (filename); issue number + URL (frontmatter `issue:`/`url:`) | Found by scanning frontmatter for `issue: N`, or by filename prefix `<ID>-` | None — folded into the hub overview |
 | Context | `specs/context/` | issue number | `specs/context/<N>.md` directly | None — deleted, not mirrored |
-| Requirements | `specs/requirements/` | slug | `specs/requirements/REQ-<slug>.md` | `issue-NNN/requirements.md` |
-| Architecture | `specs/architecture/` | slug | `specs/architecture/ARCH-<slug>.md` | `issue-NNN/architecture.md` |
-| Code review(s) | `specs/` | PR number | `specs/CODE-REVIEW-*.md` whose `Target` row branch is `feat/<N>/…` — **matched by branch, never by PR number** | `issue-NNN/review.md` (one) or `issue-NNN/review-pr-<PR>.md` (each, if more than one) |
-| Spike findings | `specs/` (as authored) | slug/issue, author-supplied | Located alongside the issue's other working docs | `issue-NNN/findings.md`, if it exists |
-| ADR / decisions | `specs/` (as authored) | slug/issue, author-supplied | Located alongside the issue's other working docs | `issue-NNN/decisions.md`, if it exists |
-| Images / captures | — | referenced by other docs | Found via links in the docs above | `issue-NNN/assets/`, if any exist |
+| Requirements | `specs/requirements/` | slug | `specs/requirements/REQ-<slug>.md` | `issue-NNN/REQ-<slug>.md` — **original filename kept, only the directory changes** |
+| Architecture | `specs/architecture/` | slug | `specs/architecture/ARCH-<slug>.md` | `issue-NNN/ARCH-<slug>.md` — original filename kept |
+| Code review(s) | `specs/` | PR number | `specs/CODE-REVIEW-*.md` whose `Target` row branch is `feat/<N>/…` — **matched by branch, never by PR number** | `issue-NNN/CODE-REVIEW-*.md` — original filename kept (its own name already disambiguates multiple reviews: `CODE-REVIEW-PR-60.md`, `CODE-REVIEW-PR-72.md`, `CODE-REVIEW-BRANCH-feat-13-…md`) |
+| Spike findings | `specs/` (as authored) | slug/issue, author-supplied | Located alongside the issue's other working docs | `issue-NNN/<original filename>`, if it exists |
+| ADR / decisions | `specs/` (as authored) | slug/issue, author-supplied | Located alongside the issue's other working docs | `issue-NNN/<original filename>`, if it exists |
+| Images / captures | — | referenced by other docs | Found via links in the docs above | `issue-NNN/assets/<original filename>`, if any exist |
+
+**Filenames are never renamed on archive** — only relocated (from a `specs/` subdirectory into
+`issue-NNN/`). `REQ-<slug>.md` stays `REQ-<slug>.md`, `CODE-REVIEW-PR-60.md` stays
+`CODE-REVIEW-PR-60.md`. This was tried the other way first (normalizing to generic
+`requirements.md`/`architecture.md`/`review.md` names) and reverted (2026-07-11, fixing #65's own
+archive) — the original filenames are how the author already recognizes these documents; renaming
+them on archive breaks that recognition for no real navigational gain (the `issue-NNN/` directory
+already scopes them to the issue; the filename doesn't need to repeat that).
 
 Phase for grouping is derived from `<ID>`'s prefix (`P<phase>-<n>` → Phase `<phase>`); an issue with
 no plan-task ID has no phase (see **Unphased**, below).
@@ -79,9 +87,9 @@ _Sidebar.md                 ← persistent nav, same phase grouping
 
 ## Phase 1 — Bootstrapping ✓ done
 issue-013.md                 ← the 1:1 issue hub: short overview + links to its own docs
-issue-013/requirements.md
-issue-013/architecture.md
-issue-013/review.md
+issue-013/REQ-scaffold-three-root-ts-package.md
+issue-013/ARCH-scaffold-three-root-ts-package.md
+issue-013/CODE-REVIEW-BRANCH-feat-13-scaffold-three-root-ts-package.md
 
 issue-060.md
 issue-060/...
@@ -127,15 +135,17 @@ a group, same as any other push to shared state.
 - **The context capture is not mirrored either.** `specs/context/<N>.md` (written by `/start-task`)
   overlaps almost entirely with the issue body and the hub's overview — it's scratch input to the
   pipeline, not a document worth publishing. Delete it on archive rather than giving it a sub-page.
-- **The sub-page vocabulary is open, not fixed to three.** `requirements`, `architecture`, `review`
-  (or `review-pr-<PR>` when there's more than one) cover the common plan-task case; `findings`
-  (spikes), `decisions` (ADRs), and `assets/` (images) cover the rest. Only add a sub-page for a
-  document that actually exists for that issue — most issues (bugs, chores, small enhancements) never
-  get a REQ/ARCH doc and so only ever have a hub page, no sub-pages. A genuinely novel artifact type
-  not in this list is the archiver's call — add it to this vocabulary when it recurs.
-- **Multiple reviews get multiple sub-pages.** One `CODE-REVIEW-*.md` for the issue → `review.md`.
-  Two or more (multiple PRs against the same issue) → `review-pr-<PR>.md` per PR, each resolved by its
-  own `Target` branch and all linked from the hub. Never concatenate multiple reviews into one page.
+- **The sub-page vocabulary is open, not fixed to three.** REQ/ARCH/CODE-REVIEW docs cover the common
+  plan-task case; spike findings and ADR/decisions docs (whatever their original filename is) cover
+  the rest. Only add a sub-page for a document that actually exists for that issue — most issues
+  (bugs, chores, small enhancements) never get a REQ/ARCH doc and so only ever have a hub page, no
+  sub-pages. A genuinely novel artifact type is the archiver's call — carry its original filename over
+  unchanged, same as everything else.
+- **Multiple reviews get multiple sub-pages, one per file, under their own original names.** Each
+  `CODE-REVIEW-*.md` whose `Target` branch matches the issue moves to `issue-NNN/` unchanged
+  (`CODE-REVIEW-PR-60.md`, `CODE-REVIEW-PR-72.md`, …), all linked from the hub. Never concatenate
+  multiple reviews into one page — their original filenames already keep them distinct, so there's no
+  separate one-vs-many naming rule to apply.
 - **Every issue lands in exactly one phase group, or Unphased.** Phase is derived from the issue's
   **primary** plan-task ID prefix (the one in its title) — never from the filename, which stays
   stable if the issue's phase assignment is later revisited. An issue with no plan-task ID (bug,
@@ -170,17 +180,21 @@ a thin navigation layer over them, never a copy of the current specs.
 
 ## Worked example
 
-Issue #13 (`#P1-1 — Scaffold three-root TS package`, closed 2026-07-10) is archived as
-`issue-013.md` / `issue-013/{requirements,architecture,review}.md` on the wiki — see those pages for
-the concrete shape (view them via the live wiki, or in a local `.wiki/` clone). Its source files
-(`specs/context/13.md`, `specs/requirements/REQ-scaffold-three-root-ts-package.md`,
-`specs/architecture/ARCH-scaffold-three-root-ts-package.md`,
-`specs/CODE-REVIEW-BRANCH-feat-13-scaffold-three-root-ts-package.md`, and
-`specs/issues/P1-1-scaffold-three-root-ts-package.md`) were retired in the same pass. Its review was
+Issue #13 (`#P1-1 — Scaffold three-root TS package`, closed 2026-07-10) is archived as `issue-013.md`
+plus `issue-013/REQ-scaffold-three-root-ts-package.md`,
+`issue-013/ARCH-scaffold-three-root-ts-package.md`, and
+`issue-013/CODE-REVIEW-BRANCH-feat-13-scaffold-three-root-ts-package.md` on the wiki — see those
+pages for the concrete shape (view them via the live wiki, or in a local `.wiki/` clone). Its source
+files (`specs/context/13.md` plus the three above, from `specs/requirements/`, `specs/architecture/`,
+and `specs/` respectively, and `specs/issues/P1-1-scaffold-three-root-ts-package.md`) were retired in
+the same pass — filenames unchanged end to end, only their directory moved. Its review was
 **branch-mode** (no PR), predating the mandatory `PR(s):` key line introduced later — its hub content
 is left as-is; only its index entry was re-slotted under the `## Phase 1` heading when #P0-8 hardened
 the convention (backfilling its hub to the new format is a separate follow-up, tracked as issue #66).
 
 Nine further issues (#7, #9, #11, #12, #14–17, #65) were archived the same way in the 2026-07-11
 batch that also moved the archive off `docs/` and onto the wiki-only convention this doc now
-describes — see the wiki's `Home.md` for the full current index.
+describes — see the wiki's `Home.md` for the full current index. That same batch briefly generalized
+sub-page filenames to `requirements.md`/`architecture.md`/`review.md`; this was reverted the same day
+(see the Rules above) once it was clear that broke recognizability against the `specs/` filenames
+these documents are known by throughout their working life.
