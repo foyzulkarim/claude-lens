@@ -19,7 +19,7 @@ The root currently holds two generations at once: the **V1 dashboard** (runnable
 **V2** (specs only — the four docs under `specs/` are authoritative; this is just the map):
 
 - **One npm package, one port**: Fastify serves the built SPA, `/api/*`, and a `/ws` upgrade. Three strict-TS roots: `shared/` (contracts), `server/`, `client/` (architecture §3; deps are pinned by §2 — deviating requires editing the doc first).
-- **Ingest pipeline** (§5): discovery (fast-glob over roots) → poller (fast stat loop + slow re-glob) → tailer (byte-offset incremental reads, partial-line safe) → parser (JSONL line → `CompactCall`, `message.id` dedupe, malformed lines counted never thrown) → in-memory columnar store → derived turns/sessions → debounced per-session invalidation.
+- **Ingest pipeline** (§5): discovery (fast-glob over roots) → poller (fast stat loop + slow re-glob) → tailer (byte-offset incremental reads, partial-line safe) → parser (JSONL line → `ApiCall`, `message.id` dedupe, malformed lines counted never thrown) → in-memory columnar store → derived turns/sessions → debounced per-session invalidation.
 - **WS is an invalidation bus only** (§7): three message types, never data; the client refetches mounted queries by key prefix.
 - **Metrics engine** (§8): a single `metrics(query) → Series[]` function (measure × dimension × grain, distributions, compare, smoothing). Every page is preset queries + layout over this engine — pages are deliberately cheap.
 - **Tier system** (§4): transcript files alone give computed/estimated values (🟢 exact, 🟡 estimated); optional premium capture files (`<uuid>.cost.jsonl`, `<uuid>.turn-boundaries.jsonl`, `~/.claude/cost-log.jsonl`) upgrade to observed values per session; 🔴 = unavailable without them.

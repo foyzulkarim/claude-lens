@@ -1,5 +1,5 @@
 /**
- * Store vocabulary — CompactCall is the deduped assistant API-response atom;
+ * Store vocabulary — ApiCall is the deduped assistant API-response atom;
  * Turn and Session are derived aggregates. See specs/architecture/ARCH-shared-contracts.md.
  */
 
@@ -19,7 +19,7 @@ export interface ToolUseRef {
   inputBytes: number;
 }
 
-export interface CompactCall {
+export interface ApiCall {
   uuid: string;
   sessionId: string;
   messageId: string;
@@ -48,7 +48,7 @@ export interface Turn {
   promptSource?: string;
   startedAt: string;
   endedAt: string;
-  calls: CompactCall[];
+  calls: ApiCall[];
   usage: TokenUsage;
   toolResultBytes: number;
   wallMs?: number;
