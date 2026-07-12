@@ -51,7 +51,7 @@ this is the point of the anchor):
 | `specs/context/<N>.md` | direct path | No — overlaps the issue body; delete, don't mirror |
 | `specs/requirements/REQ-<slug>.md` | direct path, if it exists | Yes → `issue-NNN/REQ-<slug>.md` — **same filename**, only the directory changes |
 | `specs/architecture/ARCH-<slug>.md` | direct path, if it exists | Yes → `issue-NNN/ARCH-<slug>.md` — same filename |
-| `specs/CODE-REVIEW-*.md` | **every** file whose `Target` metadata row's branch is `feat/<N>/…` — matched by branch, **never** by assuming the PR number equals the issue number | Yes, one per matching file, each keeping its original filename (`CODE-REVIEW-PR-60.md` stays `CODE-REVIEW-PR-60.md`) |
+| `CODE-REVIEW-*.md` (repo root — `/review`'s output location, not `specs/`) | **every** file whose `Target` metadata row's branch is `feat/<N>/…` — matched by branch, **never** by assuming the PR number equals the issue number | Yes, one per matching file, each keeping its original filename (`CODE-REVIEW-PR-60.md` stays `CODE-REVIEW-PR-60.md`) |
 
 Most issues (bugs, chores, small enhancements) never had a REQ/ARCH/review doc — only add the
 sub-pages that actually exist. Don't invent placeholder pages for missing docs.
@@ -127,11 +127,12 @@ Both `.wiki/Home.md` and `.wiki/_Sidebar.md` use the same phase-grouped structur
 
 ## Step 6 — Retire the sources from the main repo
 
-Remove the archived files from `specs/` (`git rm`, in the **main repo**, not `.wiki/`) —
-`specs/issues/<ID>-<slug>.md`, `specs/context/<N>.md`, and whichever of `requirements/`/`architecture/`/
-the CODE-REVIEW file(s) were mirrored. This is the "empty the specs directory" half of the convention:
-once an issue is archived, nothing about it should remain in `specs/`. Commit this to the main repo
-separately from the wiki push in Step 7 — they're two different repos with two different histories.
+Remove the archived files from the main repo (`git rm`, in the **main repo**, not `.wiki/`) —
+`specs/issues/<ID>-<slug>.md`, `specs/context/<N>.md`, whichever of `specs/requirements/`/
+`specs/architecture/` were mirrored, and any matching `CODE-REVIEW-*.md` at the **repo root**. This is
+the "leave nothing behind" half of the convention: once an issue is archived, nothing about it should
+remain anywhere in the main repo — not just `specs/`. Commit this to the main repo separately from the
+wiki push in Step 7 — they're two different repos with two different histories.
 
 ## Step 7 — Commit and push the wiki, with confirmation
 

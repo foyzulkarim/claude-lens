@@ -16,10 +16,11 @@ relocates the bulk from `specs/` to another directory in the same clone.
 Each issue accumulates working documents as it moves through the pipeline: an issue record
 (`specs/issues/<ID>-<slug>.md`), a context capture (`specs/context/<N>.md`), sometimes a requirements
 doc (`specs/requirements/REQ-<slug>.md`) and an architecture doc (`specs/architecture/ARCH-<slug>.md`),
-and one or more code reviews (`specs/CODE-REVIEW-*.md`). Once the issue closes, GitHub is already the
-source of truth for its scope and acceptance criteria — but the requirements/architecture/review
-documents contain design reasoning (rejected alternatives, edge-case decisions, task breakdowns)
-that's worth keeping findable without leaving it cluttering `specs/` indefinitely. The GitHub wiki is
+and one or more code reviews (`CODE-REVIEW-*.md`, written by `/review` at the **repo root**, not
+under `specs/`). Once the issue closes, GitHub is already the source of truth for its scope and
+acceptance criteria — but the requirements/architecture/review documents contain design reasoning
+(rejected alternatives, edge-case decisions, task breakdowns) that's worth keeping findable without
+leaving it cluttering the repo indefinitely. The GitHub wiki is
 the sole destination; this doc defines the file layout that the wiki repo holds directly — there is no
 second copy anywhere in the main repo.
 
@@ -45,7 +46,7 @@ For issue `N`, primary plan-task `<ID>`, slug `<slug>`:
 | Context | `specs/context/` | issue number | `specs/context/<N>.md` directly | None — deleted, not mirrored |
 | Requirements | `specs/requirements/` | slug | `specs/requirements/REQ-<slug>.md` | `issue-NNN/REQ-<slug>.md` — **original filename kept, only the directory changes** |
 | Architecture | `specs/architecture/` | slug | `specs/architecture/ARCH-<slug>.md` | `issue-NNN/ARCH-<slug>.md` — original filename kept |
-| Code review(s) | `specs/` | PR number | `specs/CODE-REVIEW-*.md` whose `Target` row branch is `feat/<N>/…` — **matched by branch, never by PR number** | `issue-NNN/CODE-REVIEW-*.md` — original filename kept (its own name already disambiguates multiple reviews: `CODE-REVIEW-PR-60.md`, `CODE-REVIEW-PR-72.md`, `CODE-REVIEW-BRANCH-feat-13-…md`) |
+| Code review(s) | repo root (`/review`'s output location, not `specs/`) | PR number | `CODE-REVIEW-*.md` whose `Target` row branch is `feat/<N>/…` — **matched by branch, never by PR number** | `issue-NNN/CODE-REVIEW-*.md` — original filename kept (its own name already disambiguates multiple reviews: `CODE-REVIEW-PR-60.md`, `CODE-REVIEW-PR-72.md`, `CODE-REVIEW-BRANCH-feat-13-…md`) |
 | Spike findings | `specs/` (as authored) | slug/issue, author-supplied | Located alongside the issue's other working docs | `issue-NNN/<original filename>`, if it exists |
 | ADR / decisions | `specs/` (as authored) | slug/issue, author-supplied | Located alongside the issue's other working docs | `issue-NNN/<original filename>`, if it exists |
 | Images / captures | — | referenced by other docs | Found via links in the docs above | `issue-NNN/assets/<original filename>`, if any exist |
@@ -112,6 +113,7 @@ a group, same as any other push to shared state.
 
 ## Rules that matter
 
+- **Run `/archive-issue` promptly once an issue closes — treat PR-merge as the trigger, not a periodic sweep.** `CODE-REVIEW-*.md` lands at the repo root (see Correlation model above), so a closed issue's review report sits there, untouched, until someone archives it. This has already caused drift twice in this repo: #8/#18's `specs/` files and a stray `CODE-REVIEW-PR-63.md` for #17 all sat past their issue's closure until an unrelated cleanup pass caught them. Don't wait for `specs/` to "look cluttered" — archive as each issue closes.
 - **Zero-pad issue numbers to three digits** (`issue-013`, not `issue-13`) so they sort correctly —
   the wiki won't sort for you, and GitHub issue numbers will pass 999 long before this project is
   done.
