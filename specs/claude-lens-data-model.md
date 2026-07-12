@@ -1,7 +1,7 @@
 # Claude Lens — Data Inventory (observed-field evidence)
 
 > Evidence-only — every observed field across T/C/B/L, with name / type / presence / inline
-> anonymized example. **No** CompactCall contract, no Turn/Session derivation rules, no
+> anonymized example. **No** ApiCall contract, no Turn/Session derivation rules, no
 > TierFlags design, no measure formulas, no API envelopes, no behavior contracts, no sign-off
 > gates. Downstream `#P2-1` cites this as the field source-of-truth; the derived contract layer
 > is a separate future task.
@@ -899,9 +899,9 @@ _No interpretation, no remediation — just observed differences. The downstream
 - Per-tool `tool_use.input` schemas beyond the top-10 (only the union of input keys is tabulated)
 - `attachment.*` per-type discriminator breakdown (only the key union is tabulated, not a per-`type` breakdown)
 - Any future JSONL fields not observed in the actual corpus surveyed
-- Retain/drop decisions for `CompactCall` (that's `#P2-1`'s scope)
+- Retain/drop decisions for `ApiCall` (that's `#P2-1`'s scope)
 - Tier assignment (`🟢`/`🟡`/`🔴` classification is a derived concept — not in this doc)
-- `CompactCall`, `Turn`, `Session`, `TierFlags` field-for-field contract design
+- `ApiCall`, `Turn`, `Session`, `TierFlags` field-for-field contract design
 - Measure formulas (cache hit %, wall minutes, etc.)
 - API envelopes (`Series`, sessions list/detail, health)
 - Behavior contracts (dedupe semantics, malformed-line handling, time bucketing, query-key serialization, rounding)

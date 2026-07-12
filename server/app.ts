@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import fastifyStatic from "@fastify/static";
 import fastifyWebsocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance } from "fastify";
+import type { WsServerMessage } from "../shared/ws-protocol.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const publicDir = join(__dirname, "public");
@@ -23,6 +24,17 @@ function isAllowedOrigin(origin: string): boolean {
   } catch {
     return false;
   }
+}
+
+interface OutboundSocket {
+  send(data: string): void;
+}
+
+// The typed outbound path for the invalidation bus (architecture §7). Not yet
+// called anywhere — the ingest pipeline that triggers these sends lands in
+// #P2-2/#P2-3; this pins the wire shape ahead of that work.
+export function sendInvalidation(socket: OutboundSocket, message: WsServerMessage): void {
+  socket.send(JSON.stringify(message));
 }
 
 export function buildApp(): FastifyInstance {

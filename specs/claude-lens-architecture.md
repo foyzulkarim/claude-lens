@@ -100,7 +100,7 @@ Single npm package, three TS roots sharing one types module.
 claude-lens/
 ├── package.json              # "bin": {"claude-lens": "dist/cli.js"}
 ├── shared/
-│   ├── types.ts              # CompactCall, Turn, Session, TierFlags
+│   ├── types.ts              # ApiCall, Turn, Session, TierFlags
 │   ├── metrics-contract.ts   # MetricsQuery + Series (§8)
 │   └── ws-protocol.ts        # invalidation message shapes (§7)
 ├── server/
@@ -110,7 +110,7 @@ claude-lens/
 │   │   ├── discovery.ts      # glob roots; classify T / C / B / L by filename
 │   │   ├── poller.ts         # fast stat loop + slow re-glob loop
 │   │   ├── tailer.ts         # offset map; read-from-offset; last-newline rule
-│   │   ├── parse-transcript.ts  # line → CompactCall; message.id dedupe
+│   │   ├── parse-transcript.ts  # line → ApiCall; message.id dedupe
 │   │   ├── parse-premium.ts  # cost / turn-boundaries / cost-log parsers
 │   │   └── warm-cache.ts     # (path,size,mtime)-keyed compact-record cache
 │   ├── store/
@@ -217,7 +217,7 @@ Per-file state: `Map<path, {size, mtime, offset}>`.
 
 ### 5.4 Parse + dedupe
 
-Line → JSON → `CompactCall`. Rules:
+Line → JSON → `ApiCall`. Rules:
 
 - Dedupe by `message.id` with a per-session seen-set, in-stream.
 - Retain **user prompt text** (needed for search; small) but **not tool_result content — only byte sizes** (needed for context-composition panels). Session Detail's transcript peek reads the raw file lazily on request.
@@ -241,7 +241,7 @@ Single-threaded until proven otherwise. Only cold-boot backfill of a large histo
 
 ## 6. In-memory store
 
-- Columnar arrays of `CompactCall` plus derived `Turn` and `Session` structures, per §5.5.
+- Columnar arrays of `ApiCall` plus derived `Turn` and `Session` structures, per §5.5.
 - Memory discipline comes from what's *excluded* at parse time (no tool_result bodies), not from paging. Expected footprint: low hundreds of MB for months of heavy usage. **Validate against real data early**; a paging strategy is the contingency, not the plan.
 - No persistence beyond the warm cache. Restart = reload cache + tail deltas.
 
