@@ -10,10 +10,10 @@ url: https://github.com/foyzulkarim/claude-lens/issues/19
 Task **#P2-2** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 2.
 
 ## Summary
-The line-level transcript parser: JSONL line → `CompactCall`, with `message.id` dedupe and malformed-line counting that never throws.
+The line-level transcript parser: JSONL line → `ApiCall`, with `message.id` dedupe and malformed-line counting that never throws.
 
 ## Scope
-- `parse-transcript.ts`: line → `CompactCall`; in-stream `message.id` dedupe with per-session seen-set; retain prompt text, drop tool_result bodies keeping byte sizes; malformed lines increment a per-file counter, never throw.
+- `parse-transcript.ts`: line → `ApiCall`; in-stream `message.id` dedupe with per-session seen-set; retain prompt text, drop tool_result bodies keeping byte sizes; malformed lines increment a per-file counter, never throw.
 
 ## Acceptance criteria
 - fixture tests pin the compact-record contract (call counts, dedupe counts, token fields incl. `ephemeral_5m/1h`, error counters).

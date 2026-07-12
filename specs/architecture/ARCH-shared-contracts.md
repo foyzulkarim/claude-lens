@@ -7,14 +7,14 @@
 
 ## Architecture Summary
 
-#P2-1 **designs** the three shared TypeScript contracts that every downstream module speaks — it derives them from the observed-field evidence, it does not transcribe. `shared/types.ts` defines the store vocabulary: `CompactCall` (the deduped assistant API-response atom), the derived `Turn` and `Session` aggregates, and `TierFlags` (per-session premium-capture presence). `shared/metrics-contract.ts` defines the single query language — `MetricsQuery` (measure × dimension × grain) and the rich `Series` return type per architecture §8. `shared/ws-protocol.ts` defines the three invalidation-bus message shapes per §7. The contracts are the memory-discipline lever (§6): they retain user prompt text and tool-result *byte sizes* but structurally exclude tool-result bodies. This task ships types plus the minimal server/client stub imports that prove the acceptance criterion; the parser (#P2-2), store (#P2-3), and metrics engine (#P2-4) consume these types unchanged.
+#P2-1 **designs** the three shared TypeScript contracts that every downstream module speaks — it derives them from the observed-field evidence, it does not transcribe. `shared/types.ts` defines the store vocabulary: `ApiCall` (the deduped assistant API-response atom), the derived `Turn` and `Session` aggregates, and `TierFlags` (per-session premium-capture presence). `shared/metrics-contract.ts` defines the single query language — `MetricsQuery` (measure × dimension × grain) and the rich `Series` return type per architecture §8. `shared/ws-protocol.ts` defines the three invalidation-bus message shapes per §7. The contracts are the memory-discipline lever (§6): they retain user prompt text and tool-result *byte sizes* but structurally exclude tool-result bodies. This task ships types plus the minimal server/client stub imports that prove the acceptance criterion; the parser (#P2-2), store (#P2-3), and metrics engine (#P2-4) consume these types unchanged.
 
 ## Inferred Requirements (Mode B — no REQ)
 
 | ID | Inferred Requirement | Source |
 |----|----------------------|--------|
 | R1 | The three contracts compile under `strict` and are imported by both a server stub and a client stub; `npm run typecheck` (all three tsconfig projects) passes. | `plan.md:88` acceptance |
-| R2 | `CompactCall`/`Turn`/`Session`/`TierFlags` field sets are consistent with the observed fields catalogued in `claude-lens-data-model.md` / `-field-definitions.md`. | `plan.md:87-88` |
+| R2 | `ApiCall`/`Turn`/`Session`/`TierFlags` field sets are consistent with the observed fields catalogued in `claude-lens-data-model.md` / `-field-definitions.md`. | `plan.md:87-88` |
 | R3 | `MetricsQuery`/`Series` conform to architecture §8; `ws-protocol` conforms to §7 (three types, invalidation only, never data). | `plan.md:88`, arch §7/§8 |
 | R4 | The contracts enforce memory discipline: no tool-result bodies anywhere — only byte sizes and retained typed-prompt text. | arch §5.4 / §6 |
 | R5 | Cost is tier-aware: computed (tokens × pricing) and observed (C/L) are distinguishable at the contract level. | arch §4 |
@@ -25,7 +25,7 @@ Three sibling files in the existing `shared/` root. No runtime — pure `type`/`
 
 ```
 shared/
-├── types.ts            # TokenUsage, ToolUseRef, CompactCall, Turn, Session, TierFlags
+├── types.ts            # TokenUsage, ToolUseRef, ApiCall, Turn, Session, TierFlags
 ├── metrics-contract.ts # Measure, Dimension, Grain, MetricsQuery, SeriesPoint, Distribution, Series
 └── ws-protocol.ts      # SessionUpdated | SessionAdded | ScanUpdated → WsServerMessage
         ▲                         ▲
@@ -33,7 +33,7 @@ shared/
    server/app.ts               client/ stub
 ```
 
-Data-flow role (design intent, populated by later tasks): parser emits `CompactCall[]` → columnar store derives `Turn[]`/`Session[]` → `metrics(MetricsQuery)` returns `Series[]` → HTTP → client; ingest debounce emits a `WsServerMessage` → client invalidates by query-key prefix.
+Data-flow role (design intent, populated by later tasks): parser emits `ApiCall[]` → columnar store derives `Turn[]`/`Session[]` → `metrics(MetricsQuery)` returns `Series[]` → HTTP → client; ingest debounce emits a `WsServerMessage` → client invalidates by query-key prefix.
 
 ## Tech Choices
 
@@ -41,7 +41,7 @@ Data-flow role (design intent, populated by later tasks): parser emits `CompactC
 |------|----------|-------------------------|-----------|
 | Vocabulary form | String-literal unions (`Measure`, `Dimension`, `Grain`) | TS `enum`s | Idiomatic under `strict`; serialize cleanly into TanStack Query keys (§11 requires the key factory to serialize the full query); no runtime object emitted. |
 | Cross-root import | Relative path with `.js` extension, `import type` | Path aliases; npm workspace package | Repo has neither aliases nor workspaces; NodeNext requires explicit extensions. `type`-only imports erase at emit — zero runtime coupling. |
-| CompactCall scope | Assistant-only API-call atom | Discriminated union across line types | Matches §6 ("columnar arrays of `CompactCall` plus *derived* `Turn`/`Session`") and the `parseSession → {calls[], turns[], session, tier}` contract; gives the metrics engine a homogeneous array to scan. |
+| ApiCall scope | Assistant-only API-call atom | Discriminated union across line types | Matches §6 ("columnar arrays of `ApiCall` plus *derived* `Turn`/`Session`") and the `parseSession → {calls[], turns[], session, tier}` contract; gives the metrics engine a homogeneous array to scan. |
 | Cost in vocabulary | Separate `costComputed` / `costObserved` measures | One `cost` measure + basis label | Explicit in the measure list; a page/preset names exactly the basis it wants. (`TierFlags.costBasis` still carries the label for badging.) |
 | Series richness | Rich `Series` (compare ghost + distribution inline) | Minimal `{key, points}` | §8 makes compare, smoothing, and distribution mode first-class; modeling them in the return type keeps the client assembly-free. |
 
@@ -67,7 +67,7 @@ Data-flow role (design intent, populated by later tasks): parser emits `CompactC
 | `webSearchRequests` | `number?` | `server_tool_use.web_search_requests`. |
 | `webFetchRequests` | `number?` | `server_tool_use.web_fetch_requests`. |
 
-### `CompactCall`
+### `ApiCall`
 
 **Purpose:** one deduped assistant API response — the money/token atom of the columnar store.
 
@@ -97,7 +97,7 @@ Data-flow role (design intent, populated by later tasks): parser emits `CompactC
 
 ### `Turn`
 
-**Purpose:** derived `promptId` group — a user prompt and the assistant calls answering it. Carrier for user-line data (prompt text, tool-result sizes) so `CompactCall` stays a pure call.
+**Purpose:** derived `promptId` group — a user prompt and the assistant calls answering it. Carrier for user-line data (prompt text, tool-result sizes) so `ApiCall` stays a pure call.
 
 | Field | Type / Constraint | Notes |
 |-------|-------------------|-------|
@@ -107,7 +107,7 @@ Data-flow role (design intent, populated by later tasks): parser emits `CompactC
 | `promptText` | `string?` | Retained typed prompt (`message.content` string, `promptSource: typed`) — search index source (§5.4). Absent for tool-only turns. |
 | `promptSource` | `string?` | `promptSource` (`typed`/`queued`/…). |
 | `startedAt` / `endedAt` | `string` ISO | Bounds from member calls / boundary. |
-| `calls` | `CompactCall[]` (required) | Member calls (store may hold indices; contract expresses them logically). |
+| `calls` | `ApiCall[]` (required) | Member calls (store may hold indices; contract expresses them logically). |
 | `usage` | `TokenUsage` (required) | Rollup over `calls`. |
 | `toolResultBytes` | `number` (required) | Aggregated `tool_result` payload **sizes** — context-composition panels. Bodies dropped. |
 | `wallMs` | `number?` | *Optional signal* — `system/turn_duration` or B boundary delta (#P2-2+). |
@@ -193,7 +193,7 @@ Literal unions (canonical members from `pages.md:19-20`):
 
 | Path | Purpose | Pattern reference |
 |------|---------|-------------------|
-| `shared/types.ts` | `TokenUsage`, `ToolUseRef`, `CompactCall`, `Turn`, `Session`, `TierFlags`. | New; field tables above. |
+| `shared/types.ts` | `TokenUsage`, `ToolUseRef`, `ApiCall`, `Turn`, `Session`, `TierFlags`. | New; field tables above. |
 | `shared/metrics-contract.ts` | `Measure`, `Dimension`, `Grain`, `MetricsQuery`, `SeriesPoint`, `Distribution`, `Series`. | arch §8. |
 | `shared/ws-protocol.ts` | `WsServerMessage` union + members. | arch §7 (verbatim shapes). |
 
@@ -222,8 +222,8 @@ Literal unions (canonical members from `pages.md:19-20`):
 
 | Area | Impact | Risk | Why |
 |------|--------|------|-----|
-| Parser #P2-2 | Populates `CompactCall`; routes prompt text / tool-result sizes / system signals into `Turn`. | M | Field-set errors here surface as parser rework, but the evidence is the guardrail. |
-| Store #P2-3 | Columnar arrays of `CompactCall`; derives `Turn`/`Session`. | M | `calls: CompactCall[]` on `Turn` is logical; store may use indices — a representation choice, not a contract break. |
+| Parser #P2-2 | Populates `ApiCall`; routes prompt text / tool-result sizes / system signals into `Turn`. | M | Field-set errors here surface as parser rework, but the evidence is the guardrail. |
+| Store #P2-3 | Columnar arrays of `ApiCall`; derives `Turn`/`Session`. | M | `calls: ApiCall[]` on `Turn` is logical; store may use indices — a representation choice, not a contract break. |
 | Metrics engine #P2-4 | Implements `metrics(MetricsQuery): Series[]` against these exact unions. | M | Every measure/dimension member must map to a store field; a missing member forces a contract edit + re-typecheck of consumers. |
 | Client #P3 | Query-key factory serializes `MetricsQuery`; charts render `Series`. | L | Rich `Series` was chosen precisely to minimize client assembly. |
 
@@ -244,8 +244,8 @@ Literal unions (canonical members from `pages.md:19-20`):
 
 | # | Decision | Alternatives | Chosen Because | Satisfies |
 |---|----------|--------------|----------------|-----------|
-| A1 | `CompactCall` = assistant-only API-call atom | Discriminated union across line types | §6 + `parseSession → {calls[]}` alignment; homogeneous columnar store for the engine. | R2 |
-| A2 | Prompt text + tool-result byte sizes live on `Turn` | Carry them in-band on `CompactCall` | Keeps a "call" = an API call; per-turn concerns stay per-turn. | R2, R4 |
+| A1 | `ApiCall` = assistant-only API-call atom | Discriminated union across line types | §6 + `parseSession → {calls[]}` alignment; homogeneous columnar store for the engine. | R2 |
+| A2 | Prompt text + tool-result byte sizes live on `Turn` | Carry them in-band on `ApiCall` | Keeps a "call" = an API call; per-turn concerns stay per-turn. | R2, R4 |
 | A3 | Separate `costComputed` / `costObserved` measures | One `cost` measure + basis label | Developer decision — explicit vocabulary; presets name the basis directly. | R3, R5 |
 | A4 | System signals (`wallMs`/`gateStatus`/`gateScore`) as optional slots now | Defer to a later contract revision | Measures are canonical; optional = no false promise; avoids a revision rippling into stubs. | R2, R3 |
 | A5 | Rich `Series` (compare/distribution inline) | Minimal `{key, points}` | Developer decision — §8 makes compare/smoothing/distribution first-class. | R3 |
@@ -281,9 +281,9 @@ Literal unions (canonical members from `pages.md:19-20`):
 - **`gateStatus` / `gateScore` value domain** — string outcome vs structured object depends on `gates.md` / #P2-8.
   - **Impact if unresolved:** a later widening of the type touches `Turn`/`Session` consumers.
   - **Suggested default:** `string` / `number` placeholders now; refine when the gate engine is designed.
-- **`Turn.calls` representation** — full `CompactCall[]` vs indices into the columnar store.
+- **`Turn.calls` representation** — full `ApiCall[]` vs indices into the columnar store.
   - **Impact if unresolved:** none at the contract level; it's a #P2-3 store-impl choice.
-  - **Suggested default:** express `CompactCall[]` logically; let the store decide physical layout.
+  - **Suggested default:** express `ApiCall[]` logically; let the store decide physical layout.
 
 ## Out of Scope
 
@@ -328,14 +328,14 @@ Design and author the three shared TypeScript contracts that every downstream mo
 - **V6 — placeholder gone** — expected: `shared/placeholder.ts` no longer exists and `grep -rn SHARED_ROOT .` (excluding node_modules) returns nothing. _(guards backward-regression for the deleted placeholder)_
 
 **Contract-vs-evidence review (design consistency)**
-- **V7 — field traceability** — expected: every `Measure`/`Dimension` union member maps to a `pages.md:19-20` catalog entry, and every `CompactCall`/`Turn`/`Session`/`TierFlags`/`TokenUsage` field traces to a `claude-lens-field-definitions.md`/`-data-model.md` row — or is a declared optional/derived signal (`wallMs`, `gateStatus`, `gateScore`) or config-supplied dimension (`host`). _(verifies R2, R5)_
+- **V7 — field traceability** — expected: every `Measure`/`Dimension` union member maps to a `pages.md:19-20` catalog entry, and every `ApiCall`/`Turn`/`Session`/`TierFlags`/`TokenUsage` field traces to a `claude-lens-field-definitions.md`/`-data-model.md` row — or is a declared optional/derived signal (`wallMs`, `gateStatus`, `gateScore`) or config-supplied dimension (`host`). _(verifies R2, R5)_
 - **V8 — §7/§8 conformance** — expected: `MetricsQuery` carries exactly `measures/dimensions/grain/range/filters/compare?/smoothing?/mode?` per §8; `Series` is the rich shape (basis/compareGhost/distribution); `WsServerMessage` is exactly the three §7 types with no data payload beyond `sessionId`. _(verifies R3, R4)_
 
 ### Implementation Notes
 
 - **Module(s):** `shared/*` (pure types, no runtime, imports no sibling root) per ARCH Module Boundaries.
 - **Pattern reference:** no prior contract file to mirror; field tables in this ARCH's Data Models + API Contracts sections are the spec. Follow the existing `strict`/NodeNext setup in `tsconfig.base.json`.
-- **Key decisions (constrain this task):** A1 (CompactCall = assistant-only atom), A2 (separate `costComputed`/`costObserved`), A3 (prompt text + tool-result byte sizes on `Turn`), A4 (system signals as optional slots now), A5 (rich `Series`), A6 (string-literal unions, no enums), A7 (cross-root imports relative `.js`, `type`-only).
+- **Key decisions (constrain this task):** A1 (ApiCall = assistant-only atom), A2 (separate `costComputed`/`costObserved`), A3 (prompt text + tool-result byte sizes on `Turn`), A4 (system signals as optional slots now), A5 (rich `Series`), A6 (string-literal unions, no enums), A7 (cross-root imports relative `.js`, `type`-only).
 - **Libraries:** none — TypeScript language only. Imports use explicit `.js` extensions (NodeNext); prefer `import type`.
 - **High-risk callouts:** these types are the contract for #P2-2/#P2-3/#P2-4. A wrong/missing field forces a contract edit + re-typecheck across all three roots later — V7/V8 are the guard. Additions after this task should be optional-first to avoid breaking consumers. Watch the API-error case (§stress): `usage` present-but-zeroed with `isApiError: true`, not omitted.
 
@@ -350,7 +350,7 @@ Design and author the three shared TypeScript contracts that every downstream mo
 ### Files Expected
 
 **New files:** _(from ARCH "New files / modules")_
-- `shared/types.ts` — `TokenUsage`, `ToolUseRef`, `CompactCall`, `Turn`, `Session`, `TierFlags`.
+- `shared/types.ts` — `TokenUsage`, `ToolUseRef`, `ApiCall`, `Turn`, `Session`, `TierFlags`.
 - `shared/metrics-contract.ts` — `Measure`, `Dimension`, `Grain`, `MetricsQuery`, `SeriesPoint`, `Distribution`, `Series`.
 - `shared/ws-protocol.ts` — `SessionUpdated`, `SessionAdded`, `ScanUpdated`, `WsServerMessage`.
 
