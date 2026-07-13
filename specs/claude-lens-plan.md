@@ -89,16 +89,16 @@ Everything downstream assumes the parser, store, and metrics engine are correct.
 - [x] **#P2-1 — Shared contracts**
   `shared/types.ts` (`ApiCall`, `Turn`, `Session`, `TierFlags`), `shared/metrics-contract.ts` (`MetricsQuery`, `Series` per §8), `shared/ws-protocol.ts` (three message shapes per §7). Field evidence comes from `specs/claude-lens-data-model.md` + `specs/claude-lens-field-definitions.md` (#P0-7, evidence-only) — this task **designs** the derived contracts (which fields to retain / drop / expose) from that evidence; it does not survey raw data.
   *Acceptance:* types compile and are imported by both server and client stubs; the derived `ApiCall`/`Turn`/`Session`/`TierFlags` shapes are consistent with the observed fields in `claude-lens-data-model.md`; `MetricsQuery`/`Series` conform to §8 and ws-protocol to §7.
-- [ ] **#P2-2 — Transcript parser + dedupe** *(absorbs `#P0-3`'s fixture-authoring scope, 2026-07-13 — see decisions log)*
+- [x] **#P2-2 — Transcript parser + dedupe** *(absorbs `#P0-3`'s fixture-authoring scope, 2026-07-13 — see decisions log)*
   `parse-transcript.ts`: line → `ApiCall`; in-stream `message.id` dedupe with per-session seen-set; retain prompt text, drop tool_result bodies keeping byte sizes; malformed lines increment a per-file counter, never throw. Also authors the synthetic fixture tree it's tested against — hand-authored under `test/fixtures/`, no real `~/.claude` data copied in, covering a multi-turn transcript with sidechains, model switches, cache TTL fields (`cache_creation.ephemeral_5m_input_tokens` / `ephemeral_1h_input_tokens`), malformed lines, and a partial trailing line, with a README describing what each fixture exercises. Premium C/B/L fixtures and gate-scenario fixtures stay out of scope, added later by `#P4-13`/`#P4-11`/`#P4-2` under the same README convention.
   *Acceptance:* fixture tests pin the compact-record contract (call counts, dedupe counts, token fields incl. `ephemeral_5m/1h`, error counters); fixtures are hand-authored (nothing copied from real transcripts — no real prompt text, paths, or identifiers); each edge case above is represented and documented; fixture filenames match real capture output exactly.
-- [ ] **#P2-3 — Discovery + polling**
+- [x] **#P2-3 — Discovery + polling**
   `discovery.ts` (fast-glob over roots, filename classification T/C/B/L) and `poller.ts` (fast stat loop 2–5s, slow re-glob ~30s). Mid-run discovery registers brand-new session files; deleted files are pruned and overlapping roots are deduped by absolute path.
   *Acceptance:* unit tests for classification; a file created after boot is picked up within one slow-loop interval; deleted sessions are pruned on the next discovery pass; overlapping scan roots do not duplicate sessions; app boots cleanly when a root is missing or empty.
-- [ ] **#P2-4 — Tailer**
+- [x] **#P2-4 — Tailer**
   `tailer.ts`: byte-offset map; read-from-offset on growth; truncation fallback (drop + full reparse); advance offset only to last newline (partial-line rule).
   *Acceptance:* tests cover partial trailing line, mid-write reads, truncation/rewrite, offset advancement — the §13 priority list.
-- [ ] **#P2-5 — Warm-start cache**
+- [x] **#P2-5 — Warm-start cache**
   `warm-cache.ts`: `(path,size,mtime)`-keyed NDJSON compact-record cache under `~/.claude-lens/cache/`; best-effort writes; deleting the dir is always safe.
   *Acceptance:* second boot on unchanged files skips parsing (observable via log/health counters); corrupted cache entries fall back to parse.
 - [ ] **#P2-6 — Store + derivations**
