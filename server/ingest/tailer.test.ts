@@ -526,3 +526,37 @@ describe("Tailer — warm-cache resilience", () => {
     expect(records[0].result.calls.map((c) => c.messageId)).toEqual(["msg_1"]);
   });
 });
+
+describe("Tailer — warm-cache only applies to onFileAdded", () => {
+  it("onFileChanged never consults the cache when it is the first event seen for a path", async () => {
+    const root = await makeTmpDir();
+    const filePath = join(root, "a.jsonl");
+    const line1 = `${assistantLine("msg_1")}\n`;
+    await writeFile(filePath, line1);
+    const file = registeredFile(filePath, Buffer.byteLength(line1), { mtime: 42 });
+
+    let loadCalls = 0;
+    let saveCalls = 0;
+    const cache = stubCache({
+      load: async () => {
+        loadCalls++;
+        return cachedEntry(["msg_cached"]);
+      },
+      save: async () => {
+        saveCalls++;
+      },
+    });
+
+    const { records, events } = collectEvents();
+    const tailer = new Tailer(events, cache);
+
+    // No onFileAdded call precedes this — pins down today's behavior: only
+    // onFileAdded's initialRead consults the cache; onFileChanged never does.
+    await tailer.onFileChanged(file);
+
+    expect(loadCalls).toBe(0);
+    expect(saveCalls).toBe(0);
+    expect(records).toHaveLength(1);
+    expect(records[0].result.calls.map((c) => c.messageId)).toEqual(["msg_1"]);
+  });
+});

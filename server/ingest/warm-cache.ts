@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -38,6 +38,33 @@ function isWarmCacheKey(value: unknown): value is WarmCacheKey {
     typeof value.path === "string" &&
     typeof value.size === "number" &&
     typeof value.mtime === "number"
+  );
+}
+
+function isApiCallShape(value: Record<string, unknown>): boolean {
+  return (
+    typeof value.uuid === "string" &&
+    typeof value.sessionId === "string" &&
+    typeof value.messageId === "string" &&
+    typeof value.timestamp === "string" &&
+    typeof value.model === "string"
+  );
+}
+
+function isPromptTextRecordShape(value: Record<string, unknown>): boolean {
+  return (
+    typeof value.sessionId === "string" &&
+    typeof value.promptId === "string" &&
+    typeof value.text === "string"
+  );
+}
+
+function isToolResultBytesRecordShape(value: Record<string, unknown>): boolean {
+  return (
+    typeof value.sessionId === "string" &&
+    typeof value.promptId === "string" &&
+    typeof value.toolUseId === "string" &&
+    typeof value.bytes === "number"
   );
 }
 
@@ -105,15 +132,15 @@ function deserializeEntry(raw: string, expectedKey: WarmCacheKey): WarmCacheEntr
 
     switch (parsed.kind) {
       case "call":
-        if (!isRecord(parsed.call)) return null;
+        if (!isRecord(parsed.call) || !isApiCallShape(parsed.call)) return null;
         entry.calls.push(parsed.call as unknown as ApiCall);
         break;
       case "prompt":
-        if (!isRecord(parsed.prompt)) return null;
+        if (!isRecord(parsed.prompt) || !isPromptTextRecordShape(parsed.prompt)) return null;
         entry.prompts.push(parsed.prompt as unknown as PromptTextRecord);
         break;
       case "tool-result-bytes":
-        if (!isRecord(parsed.record)) return null;
+        if (!isRecord(parsed.record) || !isToolResultBytesRecordShape(parsed.record)) return null;
         entry.toolResultBytes.push(parsed.record as unknown as ToolResultBytesRecord);
         break;
       case "meta":
@@ -136,6 +163,10 @@ function deserializeEntry(raw: string, expectedKey: WarmCacheKey): WarmCacheEntr
 
 export function createWarmCache(cacheDir?: string): WarmCache {
   const dir = cacheDir ?? join(homedir(), ".claude-lens", "cache");
+  // Logged at most once per cache instance — a persistently failing warm
+  // cache degrades to "every boot re-parses from scratch," which is
+  // otherwise invisible to an operator.
+  let warnedOnSaveFailure = false;
 
   return {
     async load(key: WarmCacheKey): Promise<WarmCacheEntry | null> {
@@ -151,12 +182,18 @@ export function createWarmCache(cacheDir?: string): WarmCache {
 
     async save(key: WarmCacheKey, entry: WarmCacheEntry): Promise<void> {
       const filePath = keyFilePath(dir, key.path);
-      const tmpPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+      const tmpPath = `${filePath}.${process.pid}.${randomUUID()}.tmp`;
       try {
         await mkdir(dir, { recursive: true });
         await writeFile(tmpPath, serializeEntry(key, entry), "utf8");
         await rename(tmpPath, filePath);
       } catch {
+        if (!warnedOnSaveFailure) {
+          warnedOnSaveFailure = true;
+          console.warn(
+            `[warm-cache] failed to write a cache entry under ${dir}; warm-start is unavailable this run`,
+          );
+        }
         try {
           await unlink(tmpPath);
         } catch {

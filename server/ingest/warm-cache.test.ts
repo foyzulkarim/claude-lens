@@ -142,6 +142,41 @@ describe("createWarmCache — cache miss conditions", () => {
 
     expect(loaded).toBeNull();
   });
+
+  it("returns null when the cache file is empty", async () => {
+    const dir = await makeTmpDir();
+    const cache = createWarmCache(dir);
+    const key: WarmCacheKey = { path: "/fake/h.jsonl", size: 100, mtime: 1 };
+
+    // Round-trip through save() first so the cache filename derivation matches,
+    // then truncate the file to simulate a write interrupted before any bytes landed.
+    await cache.save(key, sampleEntry());
+    const files = await readdir(dir);
+    const cacheFile = join(dir, files[0] ?? "");
+    await writeFile(cacheFile, "", "utf8");
+
+    const loaded = await cache.load(key);
+
+    expect(loaded).toBeNull();
+  });
+
+  it("returns null when a call record is missing required fields", async () => {
+    const dir = await makeTmpDir();
+    const cache = createWarmCache(dir);
+    const key: WarmCacheKey = { path: "/fake/i.jsonl", size: 100, mtime: 1 };
+
+    // Round-trip through save() first so the cache filename derivation matches,
+    // then overwrite with a "call" record shape missing messageId.
+    await cache.save(key, sampleEntry());
+    const files = await readdir(dir);
+    const cacheFile = join(dir, files[0] ?? "");
+    const raw = `${JSON.stringify(key)}\n${JSON.stringify({ kind: "call", call: { uuid: "u1" } })}\n`;
+    await writeFile(cacheFile, raw, "utf8");
+
+    const loaded = await cache.load(key);
+
+    expect(loaded).toBeNull();
+  });
 });
 
 describe("createWarmCache — write resilience", () => {
