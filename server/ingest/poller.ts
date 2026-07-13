@@ -1,5 +1,5 @@
 import { stat } from "node:fs/promises";
-import type { ScanConfig } from "./discovery.js";
+import type { DiscoveredFile, ScanConfig } from "./discovery.js";
 import { discover } from "./discovery.js";
 
 const DEFAULT_FAST_INTERVAL_MS = 3000;
@@ -7,7 +7,7 @@ const DEFAULT_SLOW_INTERVAL_MS = 30000;
 
 export interface RegisteredFile {
   path: string;
-  class: "transcript" | "cost" | "turn-boundaries" | "cost-log";
+  class: DiscoveredFile["class"];
   sessionId?: string;
   root: string;
   label?: string;
@@ -53,7 +53,11 @@ export class Poller {
     for (const [path, file] of this.registry) {
       if (!seenPaths.has(path)) {
         this.registry.delete(path);
-        this.events.onFileRemoved?.(file);
+        try {
+          this.events.onFileRemoved?.(file);
+        } catch {
+          // consumer callback error — not our concern, must not escape the loop
+        }
       }
     }
 
@@ -67,6 +71,8 @@ export class Poller {
         size = st.size;
         mtime = st.mtimeMs;
       } catch {
+        // ENOENT (file gone before we could stat it) is expected and silent;
+        // an unexpected fs error also just skips this file — next slow pass retries
         continue;
       }
 
@@ -80,7 +86,11 @@ export class Poller {
         mtime,
       };
       this.registry.set(found.path, registered);
-      this.events.onFileAdded?.(registered);
+      try {
+        this.events.onFileAdded?.(registered);
+      } catch {
+        // consumer callback error — not our concern, must not escape the loop
+      }
     }
   }
 
@@ -90,13 +100,19 @@ export class Poller {
       try {
         st = await stat(file.path);
       } catch {
+        // ENOENT (deleted between registration and stat) is expected; removal
+        // is deferred to the next slow pass regardless of the error's cause
         continue;
       }
 
       if (st.size !== file.size || st.mtimeMs !== file.mtime) {
         file.size = st.size;
         file.mtime = st.mtimeMs;
-        this.events.onFileChanged?.(file);
+        try {
+          this.events.onFileChanged?.(file);
+        } catch {
+          // consumer callback error — not our concern, must not escape the loop
+        }
       }
     }
   }

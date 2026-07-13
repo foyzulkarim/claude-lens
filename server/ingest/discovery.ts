@@ -57,6 +57,22 @@ export function classifyFilename(name: string): FileClass {
   return { kind: "unknown" };
 }
 
+function toDiscoveredClass(
+  classification: Exclude<FileClass, { kind: "unknown" }>,
+): DiscoveredFile["class"] {
+  switch (classification.kind) {
+    case "transcript":
+    case "cost":
+    case "turn-boundaries":
+    case "cost-log":
+      return classification.kind;
+    default: {
+      const exhaustive: never = classification;
+      throw new Error(`unhandled FileClass kind: ${JSON.stringify(exhaustive)}`);
+    }
+  }
+}
+
 export async function discover(config: ScanConfig): Promise<DiscoveredFile[]> {
   const seen = new Set<string>();
   const files: DiscoveredFile[] = [];
@@ -79,7 +95,7 @@ export async function discover(config: ScanConfig): Promise<DiscoveredFile[]> {
       seen.add(absPath);
       files.push({
         path: absPath,
-        class: classification.kind,
+        class: toDiscoveredClass(classification),
         sessionId: "sessionId" in classification ? classification.sessionId : undefined,
         root: root.path,
         label: root.label,
