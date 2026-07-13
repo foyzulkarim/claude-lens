@@ -3,6 +3,7 @@ import { open } from "node:fs/promises";
 import type { ParseTranscriptResult } from "./parse-transcript.js";
 import { parseTranscriptLines } from "./parse-transcript.js";
 import type { RegisteredFile } from "./poller.js";
+import type { WarmCache, WarmCacheEntry } from "./warm-cache.js";
 
 export interface TailerEvents {
   onRecords?(file: RegisteredFile, result: ParseTranscriptResult): void;
@@ -27,13 +28,48 @@ function freshState(): TailFileState {
 export class Tailer {
   private readonly files = new Map<string, TailFileState>();
 
-  constructor(private readonly events: TailerEvents) {}
+  constructor(
+    private readonly events: TailerEvents,
+    private readonly cache?: WarmCache,
+  ) {}
 
   onFileAdded(file: RegisteredFile): Promise<void> {
     if (file.class !== "transcript") return Promise.resolve();
     const state = freshState();
     this.files.set(file.path, state);
-    return this.enqueue(state, () => this.readGrowth(file, state, file.size));
+    return this.enqueue(state, () => this.initialRead(file, state));
+  }
+
+  private async initialRead(file: RegisteredFile, state: TailFileState): Promise<void> {
+    if (this.cache) {
+      const cached = await this.loadFromCache(file);
+      if (cached) {
+        for (const call of cached.calls) state.seen.add(call.messageId);
+        state.offset = file.size;
+        this.emitRecords(file, cached);
+        return;
+      }
+    }
+
+    await this.readGrowth(file, state, file.size, (result) => {
+      if (this.cache) {
+        void this.cache
+          .save({ path: file.path, size: file.size, mtime: file.mtime }, result)
+          .catch(() => {
+            // best-effort — a failed cache write only means a slower next boot
+          });
+      }
+    });
+  }
+
+  private async loadFromCache(file: RegisteredFile): Promise<WarmCacheEntry | null> {
+    try {
+      return (
+        (await this.cache?.load({ path: file.path, size: file.size, mtime: file.mtime })) ?? null
+      );
+    } catch {
+      return null;
+    }
   }
 
   onFileChanged(file: RegisteredFile): Promise<void> {
@@ -80,6 +116,7 @@ export class Tailer {
     file: RegisteredFile,
     state: TailFileState,
     targetSize: number,
+    onParsed?: (result: ParseTranscriptResult) => void,
   ): Promise<void> {
     const length = targetSize - state.offset;
     if (length <= 0) return;
@@ -105,6 +142,7 @@ export class Tailer {
 
       const result = parseTranscriptLines(lines, state.seen);
       this.emitRecords(file, result);
+      onParsed?.(result);
     } catch {
       state.readErrorCount++;
     } finally {

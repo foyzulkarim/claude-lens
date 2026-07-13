@@ -8,6 +8,7 @@ import type { ParseTranscriptResult } from "./parse-transcript.js";
 import type { RegisteredFile } from "./poller.js";
 import type { TailerEvents } from "./tailer.js";
 import { Tailer } from "./tailer.js";
+import type { WarmCache, WarmCacheEntry, WarmCacheKey } from "./warm-cache.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fixturesDir = join(
@@ -89,6 +90,43 @@ function assistantLine(messageId: string): string {
       },
     },
   });
+}
+
+function stubCache(overrides: Partial<WarmCache> = {}): WarmCache & {
+  saved: Array<{ key: WarmCacheKey; entry: WarmCacheEntry }>;
+} {
+  const saved: Array<{ key: WarmCacheKey; entry: WarmCacheEntry }> = [];
+  return {
+    saved,
+    load: async () => null,
+    save: async (key, entry) => {
+      saved.push({ key, entry });
+    },
+    ...overrides,
+  };
+}
+
+function cachedEntry(messageIds: string[]): WarmCacheEntry {
+  return {
+    calls: messageIds.map((messageId) => ({
+      uuid: `uuid-${messageId}`,
+      sessionId: "session-1",
+      messageId,
+      timestamp: "2026-07-03T04:46:51.065Z",
+      model: "claude-sonnet-5",
+      usage: { inputTokens: 100, outputTokens: 20, cacheReadTokens: 0, cacheCreateTokens: 0 },
+      isSidechain: false,
+      tools: [],
+      cwd: "/Users/demo/.claude",
+      gitBranch: "main",
+      version: "2.1.199",
+      entrypoint: "cli",
+    })),
+    prompts: [],
+    toolResultBytes: [],
+    duplicateCount: 0,
+    malformedCount: 0,
+  };
 }
 
 describe("Tailer — growth reads", () => {
@@ -336,5 +374,155 @@ describe("Tailer — concurrency & errors", () => {
 
     expect(records).toHaveLength(0);
     expect(resets).toHaveLength(0);
+  });
+});
+
+describe("Tailer — warm-cache hit", () => {
+  it("skips the transcript read and replays cached records", async () => {
+    const root = await makeTmpDir();
+    const filePath = join(root, "a.jsonl");
+    const line1 = `${assistantLine("msg_1")}\n`;
+    await writeFile(filePath, line1);
+    const file = registeredFile(filePath, Buffer.byteLength(line1), { mtime: 42 });
+
+    const entry = cachedEntry(["msg_cached"]);
+    const cache = stubCache({
+      load: async (key) =>
+        key.path === filePath && key.size === file.size && key.mtime === file.mtime ? entry : null,
+    });
+
+    const { records, events } = collectEvents();
+    const tailer = new Tailer(events, cache);
+
+    // Delete the actual transcript file to prove onFileAdded never reads it on a cache hit.
+    await unlink(filePath);
+    await tailer.onFileAdded(file);
+
+    expect(records).toHaveLength(1);
+    expect(records[0].result).toEqual(entry);
+    expect(records[0].result.calls.map((c) => c.messageId)).toEqual(["msg_cached"]);
+  });
+
+  it("seeds the dedupe seen-set from cached messageIds", async () => {
+    const root = await makeTmpDir();
+    const filePath = join(root, "a.jsonl");
+    const line1 = `${assistantLine("msg_1")}\n`;
+    await writeFile(filePath, line1);
+    const file = registeredFile(filePath, Buffer.byteLength(line1), { mtime: 42 });
+
+    const entry = cachedEntry(["msg_1"]);
+    const cache = stubCache({ load: async () => entry });
+
+    const { records, events } = collectEvents();
+    const tailer = new Tailer(events, cache);
+    await tailer.onFileAdded(file);
+    expect(records).toHaveLength(1);
+
+    // Live growth re-sends msg_1 (already in the cached entry, so it's a
+    // duplicate the tailer must recognize via the seeded seen-set) then adds msg_2.
+    const duplicateOfCached = `${assistantLine("msg_1")}\n`;
+    const newLine = `${assistantLine("msg_2")}\n`;
+    await writeFile(filePath, line1 + duplicateOfCached + newLine);
+    file.size = Buffer.byteLength(line1 + duplicateOfCached + newLine);
+    await tailer.onFileChanged(file);
+
+    expect(records).toHaveLength(2);
+    expect(records[1].result.calls.map((c) => c.messageId)).toEqual(["msg_2"]);
+    expect(records[1].result.duplicateCount).toBe(1);
+  });
+});
+
+describe("Tailer — warm-cache miss", () => {
+  it("parses normally and writes the result to the cache", async () => {
+    const root = await makeTmpDir();
+    const filePath = join(root, "a.jsonl");
+    const line1 = `${assistantLine("msg_1")}\n`;
+    await writeFile(filePath, line1);
+    const file = registeredFile(filePath, Buffer.byteLength(line1), { mtime: 42 });
+
+    const cache = stubCache();
+    const { records, events } = collectEvents();
+    const tailer = new Tailer(events, cache);
+    await tailer.onFileAdded(file);
+
+    expect(records).toHaveLength(1);
+    expect(records[0].result.calls.map((c) => c.messageId)).toEqual(["msg_1"]);
+
+    expect(cache.saved).toHaveLength(1);
+    expect(cache.saved[0].key).toEqual({ path: filePath, size: file.size, mtime: file.mtime });
+    expect(cache.saved[0].entry.calls.map((c) => c.messageId)).toEqual(["msg_1"]);
+  });
+});
+
+describe("Tailer — warm-cache regression guard", () => {
+  it("a Tailer built without a cache behaves exactly as before", async () => {
+    const root = await makeTmpDir();
+    const filePath = join(root, "a.jsonl");
+    const line1 = `${assistantLine("msg_1")}\n`;
+    const line2 = `${assistantLine("msg_2")}\n`;
+    await writeFile(filePath, line1);
+
+    const { records, events } = collectEvents();
+    const tailer = new Tailer(events);
+    const file = registeredFile(filePath, Buffer.byteLength(line1));
+    await tailer.onFileAdded(file);
+    expect(records).toHaveLength(1);
+    expect(records[0].result.calls.map((c) => c.messageId)).toEqual(["msg_1"]);
+
+    await writeFile(filePath, line1 + line2);
+    file.size = Buffer.byteLength(line1 + line2);
+    await tailer.onFileChanged(file);
+
+    expect(records).toHaveLength(2);
+    expect(records[1].result.calls.map((c) => c.messageId)).toEqual(["msg_2"]);
+  });
+
+  it("preserves per-file serialization: a cache-hit onFileAdded and a concurrent onFileChanged don't interleave", async () => {
+    const root = await makeTmpDir();
+    const filePath = join(root, "a.jsonl");
+    const line1 = `${assistantLine("msg_1")}\n`;
+    const line2 = `${assistantLine("msg_2")}\n`;
+    await writeFile(filePath, line1 + line2);
+    const file = registeredFile(filePath, Buffer.byteLength(line1 + line2), { mtime: 42 });
+
+    const entry = cachedEntry(["msg_1", "msg_2"]);
+    const cache = stubCache({ load: async () => entry });
+
+    const { records, events } = collectEvents();
+    const tailer = new Tailer(events, cache);
+
+    const added = tailer.onFileAdded(file);
+    const line3 = `${assistantLine("msg_3")}\n`;
+    await writeFile(filePath, line1 + line2 + line3);
+    const grownFile = registeredFile(filePath, Buffer.byteLength(line1 + line2 + line3), {
+      mtime: 42,
+    });
+    const changed = tailer.onFileChanged(grownFile);
+
+    await Promise.all([added, changed]);
+
+    // Cache-hit result must be emitted before the live-growth result, in order.
+    expect(records).toHaveLength(2);
+    expect(records[0].result).toEqual(entry);
+    expect(records[1].result.calls.map((c) => c.messageId)).toEqual(["msg_3"]);
+  });
+});
+
+describe("Tailer — warm-cache resilience", () => {
+  it("a rejecting cache.load falls through to a normal parse without rejecting onFileAdded", async () => {
+    const root = await makeTmpDir();
+    const filePath = join(root, "a.jsonl");
+    const line1 = `${assistantLine("msg_1")}\n`;
+    await writeFile(filePath, line1);
+    const file = registeredFile(filePath, Buffer.byteLength(line1));
+
+    const cache = stubCache({ load: async () => Promise.reject(new Error("cache broke")) });
+    const { records, events } = collectEvents();
+    const tailer = new Tailer(events, cache);
+
+    await expect(tailer.onFileAdded(file)).resolves.toBeUndefined();
+
+    expect(records).toHaveLength(1);
+    expect(records[0].result.calls.map((c) => c.messageId)).toEqual(["msg_1"]);
   });
 });
