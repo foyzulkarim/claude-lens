@@ -1,4 +1,5 @@
-import type { ApiCall, Session, TierFlags, Turn, TokenUsage } from "../../shared/types.js";
+import type { ApiCall, Session, TierFlags, TokenUsage, Turn } from "../../shared/types.js";
+import { addUsage, emptyUsage } from "./token-usage.js";
 
 // Per-session tier detection (architecture §4): which sidecar files exist for
 // this session. Full C/B/L *parsing* (turning those files into observed
@@ -14,30 +15,6 @@ export interface SessionSidecarFlags {
 // costComputed is 0 rather than fabricated — a session with real usage and
 // $0 cost is a visible, honest "not priced yet" state, not silently wrong.
 export type Pricer = (usage: TokenUsage, model: string) => number;
-
-function emptyUsage(): TokenUsage {
-  return {
-    inputTokens: 0,
-    outputTokens: 0,
-    cacheReadTokens: 0,
-    cacheCreateTokens: 0,
-    cacheCreate5m: 0,
-    cacheCreate1h: 0,
-    webSearchRequests: 0,
-    webFetchRequests: 0,
-  };
-}
-
-function addUsage(target: TokenUsage, usage: TokenUsage): void {
-  target.inputTokens += usage.inputTokens;
-  target.outputTokens += usage.outputTokens;
-  target.cacheReadTokens += usage.cacheReadTokens;
-  target.cacheCreateTokens += usage.cacheCreateTokens;
-  target.cacheCreate5m = (target.cacheCreate5m ?? 0) + (usage.cacheCreate5m ?? 0);
-  target.cacheCreate1h = (target.cacheCreate1h ?? 0) + (usage.cacheCreate1h ?? 0);
-  target.webSearchRequests = (target.webSearchRequests ?? 0) + (usage.webSearchRequests ?? 0);
-  target.webFetchRequests = (target.webFetchRequests ?? 0) + (usage.webFetchRequests ?? 0);
-}
 
 export function deriveSession(
   sessionId: string,

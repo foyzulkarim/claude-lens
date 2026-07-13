@@ -5,9 +5,9 @@ import type {
   PromptTextRecord,
   ToolResultBytesRecord,
 } from "../ingest/parse-transcript.js";
-import { type Pricer, type SessionSidecarFlags, deriveSession } from "./derive-session.js";
+import { deriveSession, type Pricer, type SessionSidecarFlags } from "./derive-session.js";
 import { deriveTurns } from "./derive-turns.js";
-import { type Invalidator, createInvalidator } from "./invalidation.js";
+import { createInvalidator, type Invalidator } from "./invalidation.js";
 
 // The in-memory columnar store (architecture §5.5, §6). Per-session raw
 // arrays plus cached derived Turn[]/Session. `ingest/` is the only writer
@@ -107,7 +107,17 @@ export class Store {
     this.invalidator.markDirty(sessionId);
   }
 
-  /** Re-derive turns + session rollup for exactly one session. Never reads or writes any other session's state. */
+  /**
+   * Re-derive turns + session rollup for exactly one session. Never reads or
+   * writes any other session's state.
+   *
+   * Re-derives from that session's *full* accumulated calls/prompts every
+   * time (not incrementally) — cheap at today's scale (~26 calls/session
+   * avg on real data), but a marathon session's recompute cost grows with
+   * its whole history, not just the delta since the last flush. Accepted
+   * per architecture §5.5 (only cross-session isolation is required); worth
+   * revisiting once real long-session data exists.
+   */
   recompute(sessionId: string): void {
     const state = this.sessions.get(sessionId);
     if (!state) return;
@@ -127,7 +137,26 @@ export class Store {
     return this.sessions.get(sessionId)?.calls ?? [];
   }
 
-  /** Cross-session aggregate — recomputes any session whose derived state is stale, but only on read (architecture §5.5). */
+  /**
+   * Cross-session aggregate, recomputed lazily on read rather than eagerly
+   * per append (architecture §5.5).
+   *
+   * The staleness check (`!state.session`) only catches "never yet
+   * computed" — once a session has been recomputed once, a later
+   * `applyRecords`/`markSidecarPresent` marks it dirty but doesn't null
+   * `state.session`, so a read here inside the pending debounce window
+   * (200-500ms) can return the pre-append snapshot. That's consistent with
+   * the WS-driven eventual-consistency model (the client refetches on
+   * `session-updated`), not a bug — but callers should treat this as
+   * "fresh within ~debounceMs," not "always current."
+   *
+   * Also loops every stale session synchronously with no yield between
+   * them — fine at today's scale, but once a route calls this per-request
+   * (#P3-1), a burst of simultaneously-stale sessions (e.g. right after
+   * cold boot) would block the single-threaded event loop for the sum of
+   * their recompute costs in one call. Worth a cap/paginate or a yield
+   * between recomputes if profiling shows this matters at real volumes.
+   */
   listSessions(): Session[] {
     const result: Session[] = [];
     for (const [sessionId, state] of this.sessions) {

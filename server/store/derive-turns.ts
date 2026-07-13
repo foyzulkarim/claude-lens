@@ -1,5 +1,6 @@
 import type { ApiCall, Turn } from "../../shared/types.js";
 import type { PromptTextRecord, ToolResultBytesRecord } from "../ingest/parse-transcript.js";
+import { addUsage, emptyUsage } from "./token-usage.js";
 
 // Turn grouping key per architecture §4/§5.5. `ApiCall` never carries a
 // `promptId` itself (confirmed against real capture data — the field only
@@ -28,30 +29,6 @@ interface TurnAccumulator {
   calls: ApiCall[];
 }
 
-function emptyUsage() {
-  return {
-    inputTokens: 0,
-    outputTokens: 0,
-    cacheReadTokens: 0,
-    cacheCreateTokens: 0,
-    cacheCreate5m: 0,
-    cacheCreate1h: 0,
-    webSearchRequests: 0,
-    webFetchRequests: 0,
-  };
-}
-
-function addUsage(target: ReturnType<typeof emptyUsage>, call: ApiCall): void {
-  target.inputTokens += call.usage.inputTokens;
-  target.outputTokens += call.usage.outputTokens;
-  target.cacheReadTokens += call.usage.cacheReadTokens;
-  target.cacheCreateTokens += call.usage.cacheCreateTokens;
-  target.cacheCreate5m = (target.cacheCreate5m ?? 0) + (call.usage.cacheCreate5m ?? 0);
-  target.cacheCreate1h = (target.cacheCreate1h ?? 0) + (call.usage.cacheCreate1h ?? 0);
-  target.webSearchRequests = (target.webSearchRequests ?? 0) + (call.usage.webSearchRequests ?? 0);
-  target.webFetchRequests = (target.webFetchRequests ?? 0) + (call.usage.webFetchRequests ?? 0);
-}
-
 /**
  * Finds, for each call, the latest prompt (by timestamp) in the same session
  * that started at or before the call. Both inputs are expected to already be
@@ -77,6 +54,38 @@ function assignPromptIds(calls: ApiCall[], prompts: PromptTextRecord[]): Map<Api
     }
   }
   return assignment;
+}
+
+function buildTurn(acc: TurnAccumulator, toolResultBytesByPromptId: Map<string, number>): Turn {
+  // acc.calls is never empty: an accumulator is only created in the same
+  // iteration as its first `calls.push(call)` (see the loop in deriveTurns),
+  // and nothing ever removes from it afterward. Indexing directly here (not
+  // `?.` + `?? ""`) means a future refactor that broke that invariant would
+  // throw immediately instead of silently writing an empty sessionId.
+  const firstCall = acc.calls[0];
+  if (!firstCall) throw new Error(`unreachable: turn accumulator for ${acc.promptId} has no calls`);
+
+  const usage = emptyUsage();
+  let startedAt = "";
+  let endedAt = "";
+  for (const call of acc.calls) {
+    addUsage(usage, call.usage);
+    if (startedAt === "" || call.timestamp < startedAt) startedAt = call.timestamp;
+    if (endedAt === "" || call.timestamp > endedAt) endedAt = call.timestamp;
+  }
+
+  return {
+    promptId: acc.promptId,
+    sessionId: firstCall.sessionId,
+    isSidechain: acc.isSidechain,
+    promptText: acc.promptText,
+    promptSource: acc.promptSource,
+    startedAt,
+    endedAt,
+    calls: acc.calls,
+    usage,
+    toolResultBytes: acc.isSidechain ? 0 : (toolResultBytesByPromptId.get(acc.promptId) ?? 0),
+  };
 }
 
 export function deriveTurns(
@@ -121,28 +130,6 @@ export function deriveTurns(
   return order.map((key) => {
     const acc = accumulators.get(key);
     if (!acc) throw new Error(`unreachable: missing turn accumulator for key ${key}`);
-
-    const usage = emptyUsage();
-    let startedAt = "";
-    let endedAt = "";
-    for (const call of acc.calls) {
-      addUsage(usage, call);
-      if (startedAt === "" || call.timestamp < startedAt) startedAt = call.timestamp;
-      if (endedAt === "" || call.timestamp > endedAt) endedAt = call.timestamp;
-    }
-
-    const turn: Turn = {
-      promptId: acc.promptId,
-      sessionId: acc.calls[0]?.sessionId ?? "",
-      isSidechain: acc.isSidechain,
-      promptText: acc.promptText,
-      promptSource: acc.promptSource,
-      startedAt,
-      endedAt,
-      calls: acc.calls,
-      usage,
-      toolResultBytes: acc.isSidechain ? 0 : (toolResultBytesByPromptId.get(acc.promptId) ?? 0),
-    };
-    return turn;
+    return buildTurn(acc, toolResultBytesByPromptId);
   });
 }

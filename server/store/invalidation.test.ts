@@ -84,4 +84,54 @@ describe("createInvalidator — per-session debounce", () => {
 
     expect(flushed).toHaveLength(0);
   });
+
+  it("markDirty/markAdded/markScanDirty are no-ops after stop — stop is a hard boundary, not just a timer sweep", () => {
+    const flushed: WsServerMessage[] = [];
+    const invalidator = createInvalidator({ debounceMs: 300, onFlush: (m) => flushed.push(m) });
+
+    invalidator.stop();
+    invalidator.markDirty("s1");
+    invalidator.markAdded("s1");
+    invalidator.markScanDirty();
+    vi.advanceTimersByTime(1000);
+
+    expect(flushed).toHaveLength(0);
+  });
+});
+
+describe("createInvalidator — onFlush error containment", () => {
+  it("a throwing onFlush during a debounced flush does not propagate out of the timer callback", () => {
+    const invalidator = createInvalidator({
+      debounceMs: 300,
+      onFlush: () => {
+        throw new Error("boom");
+      },
+    });
+
+    invalidator.markDirty("s1");
+    expect(() => vi.advanceTimersByTime(300)).not.toThrow();
+  });
+
+  it("a throwing onFlush during flushAll does not abort remaining sessions in the same call", () => {
+    const flushedOk: string[] = [];
+    let calls = 0;
+    const invalidator = createInvalidator({
+      debounceMs: 300,
+      onFlush: (message) => {
+        calls++;
+        if (message.type === "session-updated" && message.sessionId === "bad") {
+          throw new Error("boom");
+        }
+        if (message.type === "session-updated") flushedOk.push(message.sessionId);
+      },
+    });
+
+    invalidator.markDirty("bad");
+    invalidator.markDirty("s1");
+    invalidator.markDirty("s2");
+
+    expect(() => invalidator.flushAll()).not.toThrow();
+    expect(calls).toBe(3);
+    expect(flushedOk.sort()).toEqual(["s1", "s2"]);
+  });
 });

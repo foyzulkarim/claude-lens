@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { WsServerMessage } from "../../shared/ws-protocol.js";
 import type { ApiCall } from "../../shared/types.js";
+import type { WsServerMessage } from "../../shared/ws-protocol.js";
 import type { ParseTranscriptResult } from "../ingest/parse-transcript.js";
 import { Store } from "./store.js";
 

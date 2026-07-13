@@ -1,13 +1,12 @@
 #!/usr/bin/env node
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 // #P2-7 checkpoint: cold boot, warm boot, and RSS against the real
 // ~/.claude/projects, using the same startIngest() assembly #P3-1 reuses.
 // Run with `npm run bench:ingest`. Prints a markdown table row ready to paste
 // into specs/claude-lens-plan.md's benchmark log.
 import { performance } from "node:perf_hooks";
-import { rm } from "node:fs/promises";
-import { mkdtemp } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { resolveScanConfig } from "./discovery.js";
 import { startIngest } from "./pipeline.js";
 import { createWarmCache } from "./warm-cache.js";

@@ -40,9 +40,18 @@ describe("deriveSession — fixture-driven rollups", () => {
     expect(session.callCount).toBe(parsed.calls.length);
     expect(session.turnCount).toBe(turns.length);
     expect(session.models.sort()).toEqual(["claude-fable-5", "claude-sonnet-5"]);
-    expect(session.usage.inputTokens).toBeGreaterThan(0);
-    expect(session.cacheHitPct).toBeGreaterThan(0);
-    expect(session.cacheHitPct).toBeLessThanOrEqual(1);
+    // Exact totals across all 5 deduped calls in the fixture (computed independently
+    // from the raw fixture JSON, not derived from this code) — a stronger check than
+    // loose bounds, and consistent with the exact per-turn sums in derive-turns.test.ts.
+    expect(session.usage).toMatchObject({
+      inputTokens: 4000,
+      outputTokens: 200,
+      cacheReadTokens: 1200,
+      cacheCreateTokens: 5300,
+      cacheCreate5m: 300,
+      cacheCreate1h: 5000,
+    });
+    expect(session.cacheHitPct).toBeCloseTo(1200 / (4000 + 1200 + 5300));
   });
 
   it("defaults costComputed to 0 without a pricer, and applies an injected pricer", () => {

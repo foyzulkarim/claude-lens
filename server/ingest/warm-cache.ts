@@ -51,6 +51,14 @@ function isApiCallShape(value: Record<string, unknown>): boolean {
   );
 }
 
+// `timestamp` was added to PromptTextRecord after this cache format shipped
+// (#P2-6) — tightening this check means any pre-existing on-disk cache entry
+// written before that change (missing the field) now fails validation.
+// That's intentional and safe: deserializeEntry returns null on any failed
+// record (see below), which is a clean cache miss, not a throw — the tailer
+// falls back to a full re-parse and re-saves a schema-correct entry. No data
+// loss (this cache is a rebuildable derived artifact; the source-of-truth
+// transcripts are never touched), just one slower boot per affected file.
 function isPromptTextRecordShape(value: Record<string, unknown>): boolean {
   return (
     typeof value.sessionId === "string" &&

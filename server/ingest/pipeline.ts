@@ -1,10 +1,10 @@
+import type { WsServerMessage } from "../../shared/ws-protocol.js";
 import type { Pricer } from "../store/derive-session.js";
 import { Store } from "../store/store.js";
 import type { ScanConfig } from "./discovery.js";
 import { Poller } from "./poller.js";
 import { Tailer } from "./tailer.js";
 import type { WarmCache } from "./warm-cache.js";
-import type { WsServerMessage } from "../../shared/ws-protocol.js";
 
 // The runnable assembly: discovery -> poller -> tailer -> parser -> store
 // (architecture §5, plan #P2-7). Wiring is explicit here rather than
@@ -34,6 +34,10 @@ export function startIngest(config: ScanConfig, options: IngestPipelineOptions):
   });
 
   const inFlight = new Set<Promise<unknown>>();
+  // track() assumes `promise` never rejects — true today because every
+  // promise passed in comes from Tailer.onFileAdded/onFileChanged, whose
+  // enqueue() swallows task rejections internally (tailer.ts). If track() is
+  // ever reused for a promise without that guarantee, attach a .catch first.
   function track(promise: Promise<unknown>): void {
     inFlight.add(promise);
     promise.finally(() => inFlight.delete(promise));
@@ -84,12 +88,17 @@ export function startIngest(config: ScanConfig, options: IngestPipelineOptions):
   });
 
   async function drainInFlight(): Promise<void> {
-    let previousSize = -1;
-    while (inFlight.size > 0 && inFlight.size !== previousSize) {
-      previousSize = inFlight.size;
+    // Loops until the set is empty, not until its size merely stabilizes —
+    // a size-equality check can't distinguish "nothing changed" from "one
+    // resolved while a different one was added," which would exit early
+    // with promises still pending. Safe to call repeatedly: Promise.all
+    // re-snapshots inFlight fresh each pass.
+    while (inFlight.size > 0) {
       await Promise.all([...inFlight]);
     }
   }
+
+  let stopped = false;
 
   // poller.start() kicks off its own fire-and-forget initial runDiscovery()
   // plus the fast/slow timers. We can't await that internal call, and
@@ -100,9 +109,16 @@ export function startIngest(config: ScanConfig, options: IngestPipelineOptions):
   // pass ourselves, fully await it, and only then start the poller's timers
   // — its internal repeat finds every path already registered and no-ops.
   // This also gives whenSettled() a deterministic cold-boot barrier.
+  //
+  // The `stopped` check right before poller.start() closes the other half
+  // of that gap: if stop() is called while this IIFE is still awaiting
+  // discovery/drain, we must not resurrect the poller's timers afterward —
+  // stop() has to be a real boundary, not just a timer sweep that a
+  // still-in-flight boot sequence undoes a moment later.
   const settled = (async () => {
     await poller.runDiscovery();
     await drainInFlight();
+    if (stopped) return;
     poller.start();
   })();
 
@@ -110,6 +126,7 @@ export function startIngest(config: ScanConfig, options: IngestPipelineOptions):
     store,
     whenSettled: () => settled,
     stop() {
+      stopped = true;
       poller.stop();
       store.stop();
     },
