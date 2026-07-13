@@ -12,6 +12,10 @@ The root currently holds two generations at once: the **V1 dashboard** (runnable
 - Config via `.env` (`cp .env.example .env`): `CLAUDE_DIR` (defaults to `~/.claude`), `RATE_INPUT`/`RATE_OUTPUT`/`RATE_CACHE_READ`/`RATE_CACHE_CREATE` pricing per 1M tokens
 - There are **no tests, lint, or build** yet. V2 tooling lands in Phase 1: vitest + CI (#P1-3), Storybook (#P1-4), Biome (#P1-5), Cypress (#P3-5)
 
+## Before pushing (V2)
+
+`npm run verify` runs the exact CI gate from `.github/workflows/ci.yml` — `typecheck` → `lint` → `format:check` → `test`, in that order. A Husky `pre-push` hook (`.husky/pre-push`, wired via the `prepare` script) runs it automatically on every `git push`, so this is enforced mechanically rather than by remembering — don't bypass it with `--no-verify` without a specific reason. `lint` and `format:check` are separate Biome checks (one is code-quality rules, the other is whitespace/wrapping); passing one says nothing about the other.
+
 ## Architecture
 
 **V1** (root, destined for `legacy/`): one ~640-line `server.js` — Express serving the static single-file `index.html`, with `/api/*` endpoints that re-scan and parse `~/.claude/projects/**/*.jsonl` transcripts on each request. No build step, no framework, pricing from env.

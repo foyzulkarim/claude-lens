@@ -26,11 +26,23 @@ All of Steps 3–5 write into this clone, not into the main repo.
 
 ## Step 1 — Resolve the anchor, confirm closed
 
-Take the issue number (or plan-task ID, e.g. `#P1-1`) from the user. The **issue record**
-(`specs/issues/<ID>-<slug>.md`) is the anchor for everything that follows — find it by scanning
-`specs/issues/*.md` frontmatter for `issue: N` (if given a number) or by its filename prefix (if
-given a plan-task ID). From that one file, read off: primary plan-task `<ID>`, slug `<slug>`, issue
-number `N`, GitHub URL, and phase (derived from `<ID>`'s prefix `P<phase>-<n>`; no ID → Unphased).
+Take the issue number (or plan-task ID, e.g. `#P1-1`) from the user — pass it explicitly
+(`/archive-issue 70`, or "archive issue 70") whenever you know it; this pins Step 2's resolution to
+that one issue's artifacts instead of leaving them to be found by scanning, which is where
+cross-issue mix-ups come from. The **issue record** (`specs/issues/<ID>-<slug>.md`) is the normal
+anchor for everything that follows — find it by scanning `specs/issues/*.md` frontmatter for
+`issue: N` (if given a number) or by its filename prefix (if given a plan-task ID). From that one
+file, read off: primary plan-task `<ID>`, slug `<slug>`, issue number `N`, GitHub URL, and phase
+(derived from `<ID>`'s prefix `P<phase>-<n>`; no ID → Unphased).
+
+**If the issue record is already gone but other artifacts for that `N` still linger** (a partial or
+interrupted prior archive can leave `specs/context/<N>.md`, a `specs/requirements/`/
+`specs/architecture/` file, or a `CODE-REVIEW-*.md` behind without the issue record) — don't treat
+the missing record as "nothing to archive." Derive `<ID>`/`<slug>` from whatever's left instead:
+`specs/context/<N>.md`'s frontmatter `description:` carries `#P<phase>-<n> — <title>`; a surviving
+`REQ-<slug>.md`/`ARCH-<slug>.md` filename carries `<slug>` directly; `gh issue view N` gives the
+title, URL, and closed state regardless. Confirm closed via `gh issue view N` in this case since
+there's no issue record to have already recorded it.
 
 Confirm the issue's GitHub state is `closed`. If it's still open, **stop and say so** — this is a
 retirement step, not a drafting one; open-issue artifacts stay in `specs/` where the active pipeline
@@ -51,7 +63,7 @@ this is the point of the anchor):
 | `specs/context/<N>.md` | direct path | No — overlaps the issue body; delete, don't mirror |
 | `specs/requirements/REQ-<slug>.md` | direct path, if it exists | Yes → `issue-NNN/REQ-<slug>.md` — **same filename**, only the directory changes |
 | `specs/architecture/ARCH-<slug>.md` | direct path, if it exists | Yes → `issue-NNN/ARCH-<slug>.md` — same filename |
-| `CODE-REVIEW-*.md` (repo root — `/review`'s output location, not `specs/`) | **every** file whose `Target` metadata row's branch is `feat/<N>/…` — matched by branch, **never** by assuming the PR number equals the issue number | Yes, one per matching file, each keeping its original filename (`CODE-REVIEW-PR-60.md` stays `CODE-REVIEW-PR-60.md`) |
+| `CODE-REVIEW-*.md` (location varies — `/review` has landed these at both the repo root and `specs/review/`; search both, e.g. `find . -maxdepth 2 -iname 'CODE-REVIEW-*.md'`, don't assume one fixed spot) | **every** file whose `Target` metadata row's branch is `feat/<N>/…` — matched by branch, **never** by assuming the PR number equals the issue number, and never by directory | Yes, one per matching file, each keeping its original filename (`CODE-REVIEW-PR-60.md` stays `CODE-REVIEW-PR-60.md`) |
 
 Most issues (bugs, chores, small enhancements) never had a REQ/ARCH/review doc — only add the
 sub-pages that actually exist. Don't invent placeholder pages for missing docs.
@@ -129,10 +141,11 @@ Both `.wiki/Home.md` and `.wiki/_Sidebar.md` use the same phase-grouped structur
 
 Remove the archived files from the main repo (`git rm`, in the **main repo**, not `.wiki/`) —
 `specs/issues/<ID>-<slug>.md`, `specs/context/<N>.md`, whichever of `specs/requirements/`/
-`specs/architecture/` were mirrored, and any matching `CODE-REVIEW-*.md` at the **repo root**. This is
-the "leave nothing behind" half of the convention: once an issue is archived, nothing about it should
-remain anywhere in the main repo — not just `specs/`. Commit this to the main repo separately from the
-wiki push in Step 7 — they're two different repos with two different histories.
+`specs/architecture/` were mirrored, and every matching `CODE-REVIEW-*.md` **wherever Step 2 found
+it** (repo root, `specs/review/`, or elsewhere) — remove from its actual location, not an assumed one.
+This is the "leave nothing behind" half of the convention: once an issue is archived, nothing about it
+should remain anywhere in the main repo — not just `specs/`. Commit this to the main repo separately
+from the wiki push in Step 7 — they're two different repos with two different histories.
 
 ## Step 7 — Commit and push the wiki, with confirmation
 

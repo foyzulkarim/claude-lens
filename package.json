@@ -17,13 +17,15 @@
     "format": "biome format --write .",
     "format:check": "biome format .",
     "test": "vitest run",
+    "verify": "npm run typecheck && npm run lint && npm run format:check && npm test",
     "dev": "tsx watch server/cli.ts --port 4128 --no-open & vite --config client/vite.config.ts",
     "dev:server": "tsx watch server/cli.ts --port 4128 --no-open",
     "dev:client": "vite --config client/vite.config.ts",
     "build": "tsx scripts/build.ts",
     "start": "node dist/cli.js",
     "storybook": "storybook dev -p 6006 -c client/.storybook",
-    "build-storybook": "storybook build -c client/.storybook -o client/storybook-static"
+    "build-storybook": "storybook build -c client/.storybook -o client/storybook-static",
+    "prepare": "husky"
   },
   "dependencies": {
     "@fastify/static": "^9.3.0",
@@ -49,6 +51,7 @@
     "date-fns": "^4.4.0",
     "echarts": "^6.1.0",
     "esbuild": "^0.28.1",
+    "husky": "^9.1.7",
     "minisearch": "^7.2.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
