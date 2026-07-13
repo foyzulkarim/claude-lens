@@ -55,7 +55,8 @@ function isPromptTextRecordShape(value: Record<string, unknown>): boolean {
   return (
     typeof value.sessionId === "string" &&
     typeof value.promptId === "string" &&
-    typeof value.text === "string"
+    typeof value.text === "string" &&
+    typeof value.timestamp === "string"
   );
 }
 

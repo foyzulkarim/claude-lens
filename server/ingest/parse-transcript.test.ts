@@ -212,6 +212,7 @@ describe("parseTranscriptLine — user line handling", () => {
       sessionId: "session-1",
       promptId: "prompt-1",
       text: "hello world",
+      timestamp: "2026-07-03T04:46:46.767Z",
     });
   });
 
