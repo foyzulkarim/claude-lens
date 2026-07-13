@@ -101,10 +101,10 @@ Everything downstream assumes the parser, store, and metrics engine are correct.
 - [x] **#P2-5 — Warm-start cache**
   `warm-cache.ts`: `(path,size,mtime)`-keyed NDJSON compact-record cache under `~/.claude-lens/cache/`; best-effort writes; deleting the dir is always safe.
   *Acceptance:* second boot on unchanged files skips parsing (observable via log/health counters); corrupted cache entries fall back to parse.
-- [ ] **#P2-6 — Store + derivations**
+- [x] **#P2-6 — Store + derivations**
   `store.ts` columnar arrays; `derive-turns.ts` (promptId grouping, sidechain attribution); `derive-session.ts` (rollups, per-session tier detection); `invalidation.ts` (dirty-set, 200–500ms per-session debounce, emit hook). Incremental updates touch only the affected session; cross-session aggregates invalidate lazily.
   *Acceptance:* fixture tests for turn grouping and rollups; appending calls to one session leaves other sessions' derived state untouched.
-- [ ] **#P2-7 — Boot & memory validation on real data** *(checkpoint task)*
+- [x] **#P2-7 — Boot & memory validation on real data** *(checkpoint task)*
   Assemble the Phase 2 modules (discovery → poller → tailer → parser → store) into a runnable ingest entry point — that wiring is in scope here, not implicit; #P3-1's `app.ts` reuses it. Run ingest against the real `~/.claude/projects`. Measure cold boot, warm boot, RSS.
   *Acceptance:* results recorded in this doc (below); memory in the expected "low hundreds of MB" band or a paging decision is escalated **before** Phase 3. This is the only assumption in the architecture that can force a redesign — fail fast here.
 - [ ] **#P2-8 — Metrics engine: measures, dimensions, grain**
