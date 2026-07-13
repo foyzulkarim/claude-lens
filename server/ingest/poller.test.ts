@@ -235,3 +235,26 @@ describe("Poller — timer lifecycle", () => {
     expect(runDiscoverySpy).toHaveBeenCalledTimes(discoveryCallsBeforeStop);
   });
 });
+
+describe("Poller — concurrent runDiscovery calls", () => {
+  // Regression test for a real double-registration bug found while wiring
+  // pipeline.ts (#P2-7): two overlapping runDiscovery() calls can each pass
+  // the "already registered" check on the same file before either finishes
+  // calling registry.set(), registering it twice and double-processing it
+  // downstream. pipeline.ts now serializes its calls to avoid triggering
+  // this, but runDiscovery() itself is still non-atomic — this pins the bug
+  // at its actual source so a future caller can't silently reopen it.
+  it("registers a file only once even when two runDiscovery() calls overlap", async () => {
+    const root = await makeTmpDir();
+    const claudeDir = await makeTmpDir();
+    const sessionId = "22222222-2222-4222-8222-222222222222";
+    await writeFile(join(root, `${sessionId}.jsonl`), "hello");
+
+    const { added, events } = collectEvents();
+    const poller = new Poller({ roots: [{ path: root }], claudeDir }, events);
+
+    await Promise.all([poller.runDiscovery(), poller.runDiscovery()]);
+
+    expect(added).toHaveLength(1);
+  });
+});

@@ -44,7 +44,9 @@ function sampleCall(overrides: Partial<ApiCall> = {}): ApiCall {
 function sampleEntry(overrides: Partial<WarmCacheEntry> = {}): WarmCacheEntry {
   return {
     calls: [sampleCall()],
-    prompts: [{ sessionId: "s1", promptId: "p1", text: "hello" }],
+    prompts: [
+      { sessionId: "s1", promptId: "p1", text: "hello", timestamp: "2026-07-13T00:00:00.000Z" },
+    ],
     toolResultBytes: [{ sessionId: "s1", promptId: "p1", toolUseId: "t1", bytes: 42 }],
     duplicateCount: 0,
     malformedCount: 0,
@@ -171,6 +173,28 @@ describe("createWarmCache — cache miss conditions", () => {
     const files = await readdir(dir);
     const cacheFile = join(dir, files[0] ?? "");
     const raw = `${JSON.stringify(key)}\n${JSON.stringify({ kind: "call", call: { uuid: "u1" } })}\n`;
+    await writeFile(cacheFile, raw, "utf8");
+
+    const loaded = await cache.load(key);
+
+    expect(loaded).toBeNull();
+  });
+
+  it("returns null for a prompt record written before `timestamp` was required (pre-upgrade cache entry)", async () => {
+    const dir = await makeTmpDir();
+    const cache = createWarmCache(dir);
+    const key: WarmCacheKey = { path: "/fake/j.jsonl", size: 100, mtime: 1 };
+
+    // Simulates an on-disk cache file from before PromptTextRecord gained a
+    // required `timestamp` field — the prompt record here has everything
+    // the old shape had, and nothing more.
+    await cache.save(key, sampleEntry());
+    const files = await readdir(dir);
+    const cacheFile = join(dir, files[0] ?? "");
+    const raw = `${JSON.stringify(key)}\n${JSON.stringify({
+      kind: "prompt",
+      prompt: { sessionId: "s1", promptId: "p1", text: "hello" },
+    })}\n`;
     await writeFile(cacheFile, raw, "utf8");
 
     const loaded = await cache.load(key);

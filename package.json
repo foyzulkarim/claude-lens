@@ -25,6 +25,7 @@
     "start": "node dist/cli.js",
     "storybook": "storybook dev -p 6006 -c client/.storybook",
     "build-storybook": "storybook build -c client/.storybook -o client/storybook-static",
+    "bench:ingest": "tsx server/ingest/benchmark.ts",
     "prepare": "husky"
   },
   "dependencies": {

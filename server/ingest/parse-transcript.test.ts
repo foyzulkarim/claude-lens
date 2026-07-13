@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { parseTranscriptLine, parseTranscriptLines, type ParsedLine } from "./parse-transcript.js";
+import { type ParsedLine, parseTranscriptLine, parseTranscriptLines } from "./parse-transcript.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fixturesDir = join(
@@ -212,6 +212,7 @@ describe("parseTranscriptLine — user line handling", () => {
       sessionId: "session-1",
       promptId: "prompt-1",
       text: "hello world",
+      timestamp: "2026-07-03T04:46:46.767Z",
     });
   });
 

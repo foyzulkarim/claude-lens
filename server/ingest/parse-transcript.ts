@@ -4,6 +4,11 @@ export interface PromptTextRecord {
   sessionId: string;
   promptId: string;
   text: string;
+  // The user line's own timestamp. Assistant lines never carry a promptId
+  // (confirmed against real capture data — only ~4324/4327 `user` lines do),
+  // so derive-turns.ts (#P2-6) has no direct call→promptId link. This lets it
+  // assign each call to the latest preceding prompt in the same session.
+  timestamp: string;
 }
 
 export interface ToolResultBytesRecord {
@@ -71,6 +76,7 @@ interface RawUserLine {
   type: "user";
   sessionId?: unknown;
   promptId?: unknown;
+  timestamp?: unknown;
   message?: { content?: unknown };
 }
 
@@ -153,11 +159,12 @@ function parseAssistantLine(line: RawAssistantLine): ParsedLine {
 function parseUserLine(line: RawUserLine): ParsedLine {
   const sessionId = toStr(line.sessionId);
   const promptId = toOptionalStr(line.promptId);
+  const timestamp = toStr(line.timestamp);
   const content = line.message?.content;
 
   if (typeof content === "string") {
     if (!promptId) return { kind: "skipped" };
-    return { kind: "prompt", prompt: { sessionId, promptId, text: content } };
+    return { kind: "prompt", prompt: { sessionId, promptId, text: content, timestamp } };
   }
 
   if (Array.isArray(content) && promptId) {

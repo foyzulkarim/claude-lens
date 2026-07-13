@@ -235,7 +235,7 @@ Pages are cheap by design: filter state + preset `MetricsQuery`s + layout. The H
 
 | Date | Task | Cold boot | Warm boot | RSS | Data size | Notes |
 |---|---|---|---|---|---|---|
-| — | #P2-7 | | | | | baseline |
+| 2026-07-14 | #P2-7 | 0.21s | 0.03s | 179.2MB | 160 sessions / 4136 calls | baseline; single-threaded, no paging needed — well within "low hundreds of MB" band |
 | — | #P5-1 | | | | | compare against #P2-7 baseline row above |
 
 ## Decisions log
