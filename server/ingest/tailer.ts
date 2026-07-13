@@ -14,6 +14,7 @@ interface TailFileState {
   offset: number;
   seen: Set<string>;
   chain: Promise<void>;
+  // Tracked for future Data Health surfacing (#P2-13); intentionally not read here.
   readErrorCount: number;
 }
 
@@ -42,7 +43,7 @@ export class Tailer {
       state = freshState();
       this.files.set(file.path, state);
     }
-    return this.enqueue(state, () => this.handleChange(file, state as TailFileState));
+    return this.enqueue(state, () => this.handleChange(file, state));
   }
 
   onFileRemoved(file: RegisteredFile): void {
@@ -55,7 +56,14 @@ export class Tailer {
   }
 
   private enqueue(state: TailFileState, task: () => Promise<void>): Promise<void> {
-    state.chain = state.chain.then(task);
+    // A task rejection must never poison state.chain — a rejected chain would
+    // make every future enqueue() for this file a no-op (.then(task) on a
+    // rejected promise skips task and stays rejected forever).
+    state.chain = state.chain.then(() =>
+      task().catch(() => {
+        state.readErrorCount++;
+      }),
+    );
     return state.chain;
   }
 
@@ -100,7 +108,11 @@ export class Tailer {
     } catch {
       state.readErrorCount++;
     } finally {
-      await handle.close();
+      try {
+        await handle.close();
+      } catch {
+        state.readErrorCount++;
+      }
     }
   }
 

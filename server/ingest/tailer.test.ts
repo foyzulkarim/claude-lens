@@ -47,7 +47,11 @@ function collectEvents() {
   return { records, resets, removed, events };
 }
 
-function registeredFile(path: string, size: number, overrides: Partial<RegisteredFile> = {}) {
+function registeredFile(
+  path: string,
+  size: number,
+  overrides: Partial<RegisteredFile> = {},
+): RegisteredFile {
   return {
     path,
     class: "transcript",
@@ -56,7 +60,7 @@ function registeredFile(path: string, size: number, overrides: Partial<Registere
     size,
     mtime: 0,
     ...overrides,
-  } as RegisteredFile;
+  };
 }
 
 function assistantLine(messageId: string): string {

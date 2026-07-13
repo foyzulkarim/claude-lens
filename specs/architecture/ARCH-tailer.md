@@ -51,11 +51,12 @@ The tailer is a poller-agnostic `Tailer` class in `server/ingest/tailer.ts` that
 **Key fields:**
 | Field | Type / Constraint | Notes |
 |-------|-------------------|-------|
-| `offset` | `number` (bytes, ≥0) | Byte position of the last consumed newline+1. Positioned-read start. |
-| `size` | `number` | Last size the tailer acted on; truncation = incoming `size < offset`. |
-| `mtime` | `number` | Carried for the warm-cache handoff (#P2-5); not a truncation trigger. |
+| `offset` | `number` (bytes, ≥0) | Byte position of the last consumed newline+1. Positioned-read start. Truncation is detected against the incoming `RegisteredFile.size`, not a stored copy. |
 | `seen` | `Set<string>` | Per-file `message.id` dedupe set passed to `parseTranscriptLines`; cleared on truncation. |
-| `chain` | `Promise<void>` | Tail of the per-file serialization chain. |
+| `chain` | `Promise<void>` | Tail of the per-file serialization chain; a rejected `task()` is caught before joining the chain so it can never poison future enqueues. |
+| `readErrorCount` | `number` | Per-file fs open/read/close failure count; retained for later Data Health surfacing (#P2-13), not yet read anywhere. |
+
+`size`/`mtime` are not stored on `TailFileState` today — this task only initializes the map internally (per Scope Boundaries); a future warm-start cache (#P2-5) may add them when it needs to seed offsets across restarts.
 
 **Lifecycle:** created on `onFileAdded` (offset 0, empty seen) or lazily on first `onFileChanged` → mutated on each read → `offset`/`seen` reset to 0/empty on truncation → deleted on `onFileRemoved`.
 
@@ -74,8 +75,8 @@ Emitted unchanged: `{ calls, prompts, toolResultBytes, duplicateCount, malformed
 | Method/Op | Signature | Purpose | Returns / Errors |
 |-----------|-----------|---------|------------------|
 | constructor | `new Tailer(events: TailerEvents)` | Wire downstream sink | — |
-| `onFileAdded` | `(file: RegisteredFile) => void` | Register offset state (0) for a transcript; enqueue initial read from 0 | non-transcript classes ignored |
-| `onFileChanged` | `(file: RegisteredFile) => void` | Enqueue incremental read (grew) or truncation reparse (`size < offset`) | fs errors caught, counted, never thrown |
+| `onFileAdded` | `(file: RegisteredFile) => Promise<void>` | Register offset state (0) for a transcript; enqueue initial read from 0 | non-transcript classes ignored; returned promise never rejects (all internal errors caught before joining the chain) |
+| `onFileChanged` | `(file: RegisteredFile) => Promise<void>` | Enqueue incremental read (grew) or truncation reparse (`size < offset`) | fs errors caught, counted, never thrown; returned promise never rejects |
 | `onFileRemoved` | `(file: RegisteredFile) => void` | Drop offset state; emit `onFileRemoved` downstream | — |
 
 **TailerEvents (new, exported from `tailer.ts`):**
