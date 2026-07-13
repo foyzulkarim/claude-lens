@@ -92,10 +92,7 @@ describe("Poller — discovery reconciliation", () => {
     await writeFile(join(root, "11111111-1111-4111-8111-111111111111.jsonl"), "a");
 
     const { added, events } = collectEvents();
-    const poller = new Poller(
-      { roots: [{ path: root }, { path: root }], claudeDir },
-      events,
-    );
+    const poller = new Poller({ roots: [{ path: root }, { path: root }], claudeDir }, events);
     await poller.runDiscovery();
 
     expect(added).toHaveLength(1);

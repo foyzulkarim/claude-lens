@@ -26,9 +26,7 @@ describe("classifyFilename — tier classification", () => {
   });
 
   it("classifies a turn-boundaries file", () => {
-    expect(
-      classifyFilename("11111111-1111-4111-8111-111111111111.turn-boundaries.jsonl"),
-    ).toEqual({
+    expect(classifyFilename("11111111-1111-4111-8111-111111111111.turn-boundaries.jsonl")).toEqual({
       kind: "turn-boundaries",
       sessionId: "11111111-1111-4111-8111-111111111111",
     });
