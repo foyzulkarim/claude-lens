@@ -2,8 +2,8 @@ import type { WsServerMessage } from "../../shared/ws-protocol.js";
 
 // Dirty-set + per-session debounce + emit hook (architecture §5.5, §7). This
 // module never touches a socket — it only produces `WsServerMessage`-shaped
-// values via `onFlush`; the actual `socket.send` wiring is #P3-1
-// (`server/app.ts:sendInvalidation` already pins the wire shape it expects).
+// values via `onFlush`; the actual `socket.send` fan-out lives in
+// `server/ws/broadcaster.ts`, wired to `onFlush` by cli.ts (#P3-1).
 
 const DEFAULT_DEBOUNCE_MS = 300; // within the 200-500ms band CC's burst writes call for
 

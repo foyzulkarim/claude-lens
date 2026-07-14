@@ -8,9 +8,9 @@ import type { WarmCache } from "./warm-cache.js";
 
 // The runnable assembly: discovery -> poller -> tailer -> parser -> store
 // (architecture §5, plan #P2-7). Wiring is explicit here rather than
-// implicit — #P3-1's `app.ts` reuses this same function; it does not add any
-// WS/socket code itself (that boundary is #P3-1's, per `sendInvalidation` in
-// server/app.ts).
+// implicit — cli.ts reuses this same function and connects `onInvalidate` to
+// the WS fan-out (`server/ws/broadcaster.ts`); this module adds no WS/socket
+// code itself (#P3-1).
 
 export interface IngestPipelineOptions {
   onInvalidate(message: WsServerMessage): void;

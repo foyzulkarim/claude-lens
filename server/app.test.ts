@@ -5,9 +5,10 @@ import { join } from "node:path";
 import type { FastifyInstance } from "fastify";
 import { afterEach, describe, expect, it } from "vitest";
 import type { WsServerMessage } from "../shared/ws-protocol.js";
-import { buildApp } from "./app.js";
+import { buildApp, isAllowedOrigin } from "./app.js";
 import type { IngestPipeline } from "./ingest/pipeline.js";
 import { startIngest } from "./ingest/pipeline.js";
+import { Store } from "./store/store.js";
 import { createBroadcaster } from "./ws/broadcaster.js";
 
 // End-to-end acceptance for #P3-1: an append to a watched transcript file must
@@ -17,12 +18,14 @@ import { createBroadcaster } from "./ws/broadcaster.js";
 
 const tmpDirs: string[] = [];
 const pipelines: IngestPipeline[] = [];
+const stores: Store[] = [];
 const apps: FastifyInstance[] = [];
 const clients: WebSocket[] = [];
 
 afterEach(async () => {
   for (const client of clients.splice(0)) client.close();
   for (const pipeline of pipelines.splice(0)) pipeline.stop();
+  for (const store of stores.splice(0)) store.stop();
   await Promise.all(apps.splice(0).map((app) => app.close()));
   await Promise.all(tmpDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
@@ -111,7 +114,7 @@ describe("buildApp — ingest → WS invalidation bus (#P3-1)", () => {
     );
     pipelines.push(ingest);
 
-    const app = buildApp({ store: ingest.store, broadcaster });
+    const app = buildApp({ store: ingest.store, broadcaster, logger: false });
     apps.push(app);
     await app.listen({ port: 0, host: "127.0.0.1" });
     const { port } = app.server.address() as AddressInfo;
@@ -141,5 +144,39 @@ describe("buildApp — ingest → WS invalidation bus (#P3-1)", () => {
     await new Promise((resolve) => setTimeout(resolve, 150));
 
     expect(received).toEqual([{ type: "session-updated", sessionId }]);
+  });
+
+  it("registers a connected socket and removes it when the client disconnects", async () => {
+    // No ingest needed — this exercises only the /ws connect/close wiring in
+    // app.ts against the broadcaster's live socket set.
+    const broadcaster = createBroadcaster();
+    const store = new Store({ onInvalidate: () => {} });
+    stores.push(store);
+    const app = buildApp({ store, broadcaster, logger: false });
+    apps.push(app);
+    await app.listen({ port: 0, host: "127.0.0.1" });
+    const { port } = app.server.address() as AddressInfo;
+
+    const client = await openClient(`ws://127.0.0.1:${port}/ws`, () => {});
+    await waitFor(() => broadcaster.size() === 1, 1000);
+    expect(broadcaster.size()).toBe(1);
+
+    client.close();
+    await waitFor(() => broadcaster.size() === 0, 1000);
+    expect(broadcaster.size()).toBe(0);
+  });
+});
+
+describe("isAllowedOrigin — /ws origin allowlist", () => {
+  it("allows loopback origins and rejects everything else", () => {
+    expect(isAllowedOrigin("http://localhost:4128")).toBe(true);
+    expect(isAllowedOrigin("http://127.0.0.1:4128")).toBe(true);
+    expect(isAllowedOrigin("http://[::1]:4128")).toBe(true);
+    // A non-loopback host, a rebind-style hostname that merely contains a
+    // loopback IP, and unparseable input all reject.
+    expect(isAllowedOrigin("http://evil.com")).toBe(false);
+    expect(isAllowedOrigin("http://127.0.0.1.evil.com")).toBe(false);
+    expect(isAllowedOrigin("not a url")).toBe(false);
+    expect(isAllowedOrigin("")).toBe(false);
   });
 });

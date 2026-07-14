@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createServer } from "node:net";
-import open from "open";
 import type { FastifyInstance } from "fastify";
+import open from "open";
 import { buildApp } from "./app.js";
 import { resolveScanConfig } from "./ingest/discovery.js";
 import { startIngest } from "./ingest/pipeline.js";
@@ -118,9 +118,18 @@ async function main() {
   async function shutdown(): Promise<void> {
     if (shuttingDown) return;
     shuttingDown = true;
-    ingest.stop();
-    await app.close();
-    process.exit(0);
+    // This runs as a process.once signal handler, off main()'s promise chain,
+    // so main().catch can't see a rejection here. Guard app.close() so a
+    // failing close still exits deterministically instead of surfacing as an
+    // unhandled rejection that skips process.exit.
+    try {
+      ingest.stop();
+      await app.close();
+    } catch (err) {
+      app.log.error({ err }, "shutdown failed");
+    } finally {
+      process.exit(0);
+    }
   }
   process.once("SIGINT", shutdown);
   process.once("SIGTERM", shutdown);
