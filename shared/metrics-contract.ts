@@ -52,10 +52,14 @@ export interface SeriesPoint {
 }
 
 export interface Distribution {
-  p50: number;
-  p90: number;
-  p99: number;
-  histogram: { bucket: string; count: number }[];
+  p50: number | null;
+  p90: number | null;
+  p99: number | null;
+  histogram: { rangeStart: number; rangeEnd: number; count: number }[];
+  pareto?: {
+    curve: { entityPct: number; cumulativeValuePct: number }[];
+    topDecileValuePct: number;
+  };
 }
 
 export interface Series {
