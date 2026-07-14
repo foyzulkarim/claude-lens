@@ -3,6 +3,7 @@ import { createServer } from "node:net";
 import open from "open";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "./app.js";
+import { Store } from "./store/store.js";
 
 const DEFAULT_PORT = 4128;
 const MAX_PORT = 65535;
@@ -98,7 +99,12 @@ async function main() {
   const options = parseArgs(process.argv.slice(2));
   const candidatePort = await findAvailablePort(options.port ?? DEFAULT_PORT);
 
-  const app = buildApp();
+  // Bare, unwired store — live ingest -> Store -> WS broadcast wiring is
+  // #P3-1's job (see server/routes/metrics.ts). This lets the route serve
+  // real queries (against whatever data a future caller populates the store
+  // with) without depending on that not-yet-built seam.
+  const store = new Store({ onInvalidate: () => {} });
+  const app = buildApp({ store });
   const port = await listenWithRetry(app, candidatePort);
 
   const url = `http://127.0.0.1:${port}`;
