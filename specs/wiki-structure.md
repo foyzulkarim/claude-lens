@@ -122,6 +122,17 @@ a group, same as any other push to shared state.
 - **The `issue-NNN` page is the hub.** Short overview (what shipped, plan-task ID, phase, closed date,
   link to the GitHub issue itself) plus links to its own sub-docs. It is the *only* page linked from
   `Home.md`/`_Sidebar.md` — sub-docs hang off the hub, not off the sidebar or the index.
+- **Sub-page links use bare basename — no `issue-NNN/` prefix, no `.md` extension.** Even though the
+  file is physically nested at `issue-NNN/<file>.md`, link to it from the hub as `[Label](<file>)`
+  (e.g. `[Review](CODE-REVIEW-PR-63)`), never `[Label](issue-NNN/<file>.md)`. GitHub's wiki (Gollum)
+  renders a link written with the `.md` extension as a raw-file link
+  (`raw.githubusercontent.com/wiki/...`) instead of resolving it to the wiki page — confirmed working
+  vs. broken by direct comparison: bare-basename links (piloted on #17 in `.wiki` commit `0518efd`,
+  rolled out to #13–#19 in `e95f981`, both 2026-07-13) resolve correctly, while the full-path
+  `.md`-suffixed form used for #20–#26 (archived 2026-07-13 through 2026-07-14) does not. The fix was
+  only ever applied by hand in the wiki repo and never written down here, which is why later archive
+  passes regressed to the broken form — this bullet is that write-down. The directory nesting stays,
+  for organizing the wiki's git tree; only the link text drops it.
 - **The hub's metadata line is mandatory and preserves the correlation keys.** Once `specs/` is
   emptied on archive, the hub is the only remaining record of how the issue ties back to its
   plan-task and PR(s). Every hub carries: `**Plan task:** #P<X>-<Y> · **Phase:** <X> · **PR(s):** #NN

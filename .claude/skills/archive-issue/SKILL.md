@@ -108,6 +108,14 @@ re-derive it), a bullet list linking each sub-page that exists, and a one-line O
 acceptance criteria / review verdict. Follow the shape of the wiki's existing `issue-013.md` (the
 worked example referenced in `specs/wiki-structure.md`) for the overview/Outcome prose style.
 
+**Link sub-pages by bare basename, never full path.** Write `[Label](CODE-REVIEW-PR-63)`, not
+`[Label](issue-NNN/CODE-REVIEW-PR-63.md)` — even though the file lives at
+`issue-NNN/CODE-REVIEW-PR-63.md`. GitHub's wiki renders a `.md`-suffixed link as a raw-file link
+instead of a wiki-page link, which silently breaks navigation (this regressed for issues #20–#26
+before being caught and fixed — see the Rules in `specs/wiki-structure.md`). Drop both the
+`issue-NNN/` directory prefix and the `.md` extension in the link text; the directory nesting is only
+for organizing the wiki's git tree.
+
 ## Step 4 — Write the sub-pages
 
 Carry the REQ/ARCH/review content over largely as-is — these are already well-formed docs; don't
