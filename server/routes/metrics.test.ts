@@ -37,7 +37,9 @@ describe("POST /api/metrics", () => {
 
   beforeEach(() => {
     store = new Store({ onInvalidate: () => {} });
-    app = buildApp({ store });
+    // logger: false — avoid a pino-pretty worker + its process exit listener
+    // per test (this beforeEach builds a fresh app for every case).
+    app = buildApp({ store, logger: false });
   });
 
   afterEach(async () => {

@@ -3,10 +3,10 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import fastifyStatic from "@fastify/static";
 import fastifyWebsocket from "@fastify/websocket";
-import Fastify, { type FastifyInstance } from "fastify";
-import type { WsServerMessage } from "../shared/ws-protocol.js";
+import Fastify, { type FastifyInstance, type FastifyServerOptions } from "fastify";
 import { registerMetricsRoute } from "./routes/metrics.js";
 import type { Store } from "./store/store.js";
+import { type Broadcaster, createBroadcaster } from "./ws/broadcaster.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const publicDir = join(__dirname, "public");
@@ -20,7 +20,9 @@ const hasStaticAssets = existsSync(publicDir);
 // missing Origin (non-browser clients, e.g. tooling) is allowed through.
 const ALLOWED_ORIGIN_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
 
-function isAllowedOrigin(origin: string): boolean {
+// Exported for direct unit testing of the allowlist (the /ws origin guard is
+// security-relevant and easy to regress silently otherwise).
+export function isAllowedOrigin(origin: string): boolean {
   try {
     return ALLOWED_ORIGIN_HOSTS.has(new URL(origin).hostname);
   } catch {
@@ -28,24 +30,33 @@ function isAllowedOrigin(origin: string): boolean {
   }
 }
 
-interface OutboundSocket {
-  send(data: string): void;
-}
-
-// The typed outbound path for the invalidation bus (architecture §7). Not yet
-// called anywhere — the ingest pipeline that triggers these sends lands in
-// #P2-2/#P2-3; this pins the wire shape ahead of that work.
-export function sendInvalidation(socket: OutboundSocket, message: WsServerMessage): void {
-  socket.send(JSON.stringify(message));
-}
-
 export interface BuildAppOptions {
   store: Store;
+  /**
+   * The invalidation-bus fan-out (architecture §7). `cli.ts` passes the same
+   * instance it wired into `startIngest`'s `onInvalidate`, so ingest events
+   * reach every connected `/ws` socket. Optional so `buildApp({ store })`
+   * callers (e.g. route tests that never exercise the socket) stay valid; when
+   * omitted, `/ws` still works against a self-contained broadcaster that simply
+   * has no producer feeding it.
+   */
+  broadcaster?: Broadcaster;
+  /**
+   * Override the server logger. Defaults to a pino-pretty transport for the
+   * CLI; pass `false` in tests to skip it — each pretty transport spawns a
+   * worker thread and registers a persistent `process` exit listener, which
+   * accumulate across a suite that builds many apps (MaxListeners warning).
+   */
+  logger?: FastifyServerOptions["logger"];
 }
 
-export function buildApp({ store }: BuildAppOptions): FastifyInstance {
+export function buildApp({
+  store,
+  broadcaster = createBroadcaster(),
+  logger,
+}: BuildAppOptions): FastifyInstance {
   const app = Fastify({
-    logger: {
+    logger: logger ?? {
       transport: {
         target: "pino-pretty",
         options: { colorize: true, translateTime: "HH:MM:ss", ignore: "pid,hostname" },
@@ -71,11 +82,18 @@ export function buildApp({ store }: BuildAppOptions): FastifyInstance {
         preValidation: async (request, reply) => {
           const origin = request.headers.origin;
           if (origin !== undefined && !isAllowedOrigin(origin)) {
-            reply.code(403).send({ error: "forbidden origin" });
+            // Explicit return: replying in a preValidation hook already
+            // short-circuits the route handler, but returning makes that
+            // intent local rather than relying on a later reader not adding
+            // code below this guard.
+            return reply.code(403).send({ error: "forbidden origin" });
           }
         },
       },
       (socket) => {
+        broadcaster.add(socket);
+        socket.on("close", () => broadcaster.remove(socket));
+        socket.on("error", () => broadcaster.remove(socket));
         socket.on("message", () => {
           // invalidation bus only (architecture §7) — no inbound protocol yet
         });
