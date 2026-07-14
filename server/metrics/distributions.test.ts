@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { computeDistribution } from "./distributions.js";
+import type { SeriesPoint } from "../../shared/metrics-contract.js";
+import { alignPreviousPeriod, computeDistribution, movingAverage7 } from "./distributions.js";
+
+function points(values: (number | null)[]): SeriesPoint[] {
+  return values.map((value, i) => ({ t: `t${i}`, value }));
+}
 
 describe("computeDistribution", () => {
   describe("percentiles (nearest-rank)", () => {
@@ -90,5 +95,65 @@ describe("computeDistribution", () => {
       expect(result.histogram).toEqual([]);
       expect(result.pareto).toBeUndefined();
     });
+  });
+});
+
+describe("movingAverage7", () => {
+  it("expands the window for early points", () => {
+    const input = points([10, 20, 30, 40, 50, 60, 70, 80, 90, 100]);
+    const result = movingAverage7(input);
+    expect(result[0]?.value).toBe(10);
+    expect(result[1]?.value).toBe(15);
+    expect(result[2]?.value).toBe(20);
+    expect(result[3]?.value).toBe(25);
+    expect(result[4]?.value).toBe(30);
+    expect(result[5]?.value).toBe(35);
+  });
+
+  it("uses a full 7-point trailing window from index 6 onward", () => {
+    const input = points([10, 20, 30, 40, 50, 60, 70, 80, 90, 100]);
+    const result = movingAverage7(input);
+    expect(result[6]?.value).toBe(40); // avg(10..70)
+    expect(result[7]?.value).toBe(50); // avg(20..80)
+    expect(result[8]?.value).toBe(60); // avg(30..90)
+    expect(result[9]?.value).toBe(70); // avg(40..100)
+  });
+
+  it("skips null values within a partial-null window", () => {
+    const input = points([10, null, 30]);
+    const result = movingAverage7(input);
+    expect(result[2]?.value).toBe(20); // avg(10, 30), null excluded
+  });
+
+  it("keeps an all-null series entirely null", () => {
+    const input = points([null, null, null]);
+    const result = movingAverage7(input);
+    expect(result.every((p) => p.value === null)).toBe(true);
+  });
+});
+
+describe("alignPreviousPeriod", () => {
+  it("aligns equal-length arrays 1:1 by index", () => {
+    const current = points([1, 2, 3]);
+    const previous = points([10, 20, 30]);
+    const result = alignPreviousPeriod(current, previous);
+    expect(result.map((p) => p.value)).toEqual([10, 20, 30]);
+    expect(result.map((p) => p.t)).toEqual(["t0", "t1", "t2"]);
+  });
+
+  it("truncates when previous is longer than current", () => {
+    const current = points([1, 2]);
+    const previous = points([10, 20, 30, 40]);
+    const result = alignPreviousPeriod(current, previous);
+    expect(result).toHaveLength(2);
+    expect(result.map((p) => p.value)).toEqual([10, 20]);
+  });
+
+  it("pads with null when previous is shorter than current", () => {
+    const current = points([1, 2, 3, 4]);
+    const previous = points([10, 20]);
+    const result = alignPreviousPeriod(current, previous);
+    expect(result).toHaveLength(4);
+    expect(result.map((p) => p.value)).toEqual([10, 20, null, null]);
   });
 });

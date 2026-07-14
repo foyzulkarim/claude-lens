@@ -313,7 +313,7 @@ Percentiles first (simplest, no bucketing math), then histogram, then pareto, th
 
 ## Task T2: Series post-processing — `ma7` smoothing + previous-period alignment
 
-> **Status:** not started
+> **Status:** done
 > **Verification:** tdd
 > **Effort:** s
 > **Priority:** high

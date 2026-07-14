@@ -1,4 +1,4 @@
-import type { Distribution } from "../../shared/metrics-contract.js";
+import type { Distribution, SeriesPoint } from "../../shared/metrics-contract.js";
 
 function percentile(sorted: number[], p: number): number | null {
   if (sorted.length === 0) return null;
@@ -55,6 +55,29 @@ function buildPareto(values: number[]): Distribution["pareto"] {
   const topDecileValuePct = total === 0 ? 0 : (topDecileValue / total) * 100;
 
   return { curve, topDecileValuePct };
+}
+
+const MA7_WINDOW = 7;
+
+export function movingAverage7(points: SeriesPoint[]): SeriesPoint[] {
+  return points.map((point, i) => {
+    const windowStart = Math.max(0, i - (MA7_WINDOW - 1));
+    const window = points.slice(windowStart, i + 1);
+    const nonNull = window.map((p) => p.value).filter((v): v is number => v !== null);
+    const value =
+      nonNull.length === 0 ? null : nonNull.reduce((sum, v) => sum + v, 0) / nonNull.length;
+    return { t: point.t, value };
+  });
+}
+
+// Ghost points render at the current period's x-position (same bucket slot),
+// carrying the previous period's value — not the previous point's own `t`,
+// which belongs to a different instant entirely.
+export function alignPreviousPeriod(
+  current: SeriesPoint[],
+  previous: SeriesPoint[],
+): SeriesPoint[] {
+  return current.map((point, i) => ({ t: point.t, value: previous[i]?.value ?? null }));
 }
 
 export function computeDistribution(values: number[]): Distribution {
