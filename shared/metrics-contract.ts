@@ -35,7 +35,9 @@ export type Dimension =
 
 export type Grain = "hour" | "day" | "week" | "month";
 
-export interface MetricsQuery {
+export type DistributionEntity = "session" | "turn" | "call";
+
+interface BaseMetricsQuery {
   measures: Measure[];
   dimensions: Dimension[];
   grain: Grain;
@@ -43,8 +45,11 @@ export interface MetricsQuery {
   filters?: Partial<Record<Dimension, (string | number)[]>>;
   compare?: "previous-period";
   smoothing?: "none" | "ma7";
-  mode?: "series" | "distribution";
 }
+
+export type MetricsQuery =
+  | (BaseMetricsQuery & { mode?: "series" })
+  | (BaseMetricsQuery & { mode: "distribution"; distributionEntity: DistributionEntity });
 
 export interface SeriesPoint {
   t: string;

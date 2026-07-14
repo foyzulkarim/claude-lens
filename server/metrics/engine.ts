@@ -1,5 +1,6 @@
 import type {
   Dimension,
+  DistributionEntity,
   Grain,
   MetricsQuery,
   Series,
@@ -8,11 +9,12 @@ import type {
 import type { ApiCall, Session, Turn } from "../../shared/types.js";
 import {
   type CallDimension,
-  UNKNOWN,
   callDimensionValue,
   matchesFilter,
   turnDimensionValue,
+  UNKNOWN,
 } from "./dimensions.js";
+import { alignPreviousPeriod, computeDistribution, movingAverage7 } from "./distributions.js";
 import { bucketLabel, bucketStart, enumerateBuckets } from "./grain.js";
 import { computeMeasure, type MeasureScope, type PricingTable } from "./measures.js";
 
@@ -219,19 +221,17 @@ function scopeFor(
   return { calls, turns, sessions };
 }
 
-/**
- * THE query function (architecture §8). mode/compare/smoothing are accepted
- * in the type but not implemented here — #P2-9 owns distributions.ts,
- * ma7 smoothing, and previous-period alignment (decision A6); this function
- * simply never reads those three fields, so they no-op rather than throw.
- */
-export function metrics(input: MetricsInput, query: MetricsQuery): Series[] {
+/** Filters calls to the range/filters and groups them by breakdown dims — shared by both the series and distribution pipelines below. */
+function filterAndGroup(
+  input: MetricsInput,
+  query: MetricsQuery,
+  range: { from: string; to: string },
+): { groups: Group[]; rangeFromMs: number; rangeToMs: number } {
   const breakdownDims = query.dimensions.filter((d) => d !== "time");
-  const bucketByTime = query.dimensions.includes("time");
   const callToTurn = buildCallToTurn(input.turns);
 
-  const rangeFromMs = Date.parse(query.range.from);
-  const rangeToMs = Date.parse(query.range.to);
+  const rangeFromMs = Date.parse(range.from);
+  const rangeToMs = Date.parse(range.to);
 
   const filteredCalls = input.calls.filter((call) => {
     const ts = Date.parse(call.timestamp);
@@ -244,9 +244,18 @@ export function metrics(input: MetricsInput, query: MetricsQuery): Series[] {
   });
 
   const groups = buildGroups(filteredCalls, breakdownDims, callToTurn);
-  const buckets: (number | null)[] = bucketByTime
-    ? enumerateBuckets(query.range, query.grain)
-    : [null];
+  return { groups, rangeFromMs, rangeToMs };
+}
+
+/** The `mode: "series"` pipeline, parameterized on `range` so it can also serve compare's shifted previous-period run (decision A7) — everything else (measures/dimensions/grain/filters) comes from `query`. */
+function computeSeriesForRange(
+  input: MetricsInput,
+  query: MetricsQuery,
+  range: { from: string; to: string },
+): Series[] {
+  const { groups, rangeFromMs, rangeToMs } = filterAndGroup(input, query, range);
+  const bucketByTime = query.dimensions.includes("time");
+  const buckets: (number | null)[] = bucketByTime ? enumerateBuckets(range, query.grain) : [null];
 
   const series: Series[] = [];
   for (const measure of query.measures) {
@@ -254,8 +263,7 @@ export function metrics(input: MetricsInput, query: MetricsQuery): Series[] {
       const points: SeriesPoint[] = buckets.map((bucketStartMs) => {
         const scope = scopeFor(group, bucketStartMs, query.grain, input, rangeFromMs, rangeToMs);
         const value = computeMeasure(measure, scope, input.pricing);
-        const t =
-          bucketStartMs === null ? query.range.from : bucketLabel(bucketStartMs, query.grain);
+        const t = bucketStartMs === null ? range.from : bucketLabel(bucketStartMs, query.grain);
         return { t, value };
       });
       series.push({
@@ -267,5 +275,87 @@ export function metrics(input: MetricsInput, query: MetricsQuery): Series[] {
       });
     }
   }
+  return series;
+}
+
+/** One MeasureScope per distribution-mode entity, reusing an already range/group-scoped MeasureScope as the source population (decision A8). A `"turn"` entity uses the Turn's own `.calls` directly, matching how `measures.ts` already treats turn-grain aggregation; a `"session"` entity narrows the group's calls/turns down to that session's own. */
+function entityScopesFor(entity: DistributionEntity, scope: MeasureScope): MeasureScope[] {
+  switch (entity) {
+    case "call":
+      return scope.calls.map((call) => ({ calls: [call], turns: [], sessions: [] }));
+    case "turn":
+      return scope.turns.map((turn) => ({ calls: turn.calls, turns: [turn], sessions: [] }));
+    case "session":
+      return scope.sessions.map((session) => ({
+        calls: scope.calls.filter((call) => call.sessionId === session.sessionId),
+        turns: scope.turns.filter((turn) => turn.sessionId === session.sessionId),
+        sessions: [session],
+      }));
+  }
+}
+
+/** The `mode: "distribution"` pipeline (decision A9: `"time"` in `dimensions` is ignored — always one population per breakdown-dim group across the whole range). Entities where `computeMeasure` returns null are excluded from the population, which is what lets an all-premium-gated measure cascade to `computeDistribution([])`'s honest-null result with no special-casing here. */
+function computeDistributionSeries(
+  input: MetricsInput,
+  query: Extract<MetricsQuery, { mode: "distribution" }>,
+): Series[] {
+  const { groups, rangeFromMs, rangeToMs } = filterAndGroup(input, query, query.range);
+
+  const series: Series[] = [];
+  for (const measure of query.measures) {
+    for (const group of groups) {
+      const scope = scopeFor(group, null, query.grain, input, rangeFromMs, rangeToMs);
+      const values = entityScopesFor(query.distributionEntity, scope)
+        .map((entityScope) => computeMeasure(measure, entityScope, input.pricing))
+        .filter((value): value is number => value !== null);
+      series.push({
+        measure,
+        dimensionKey: group.dimensionKey,
+        label: group.label,
+        points: [],
+        distribution: computeDistribution(values),
+        basis: measure === "costComputed" ? "computed" : undefined,
+      });
+    }
+  }
+  return series;
+}
+
+/** Previous range = [from-duration, from), computed independently via the same range-filtering/bucketing machinery as the current range so DST/month-length correctness is inherited, not reimplemented (decision A7). */
+function previousPeriodRange(range: { from: string; to: string }): { from: string; to: string } {
+  const rangeFromMs = Date.parse(range.from);
+  const rangeToMs = Date.parse(range.to);
+  const duration = rangeToMs - rangeFromMs;
+  return {
+    from: new Date(rangeFromMs - duration).toISOString(),
+    to: new Date(rangeFromMs - 1).toISOString(),
+  };
+}
+
+/** THE query function (architecture §8): dispatches on `query.mode`, then applies `compare`/`smoothing` post-processing to `mode: "series"` output (decisions A6, A7, A9). */
+export function metrics(input: MetricsInput, query: MetricsQuery): Series[] {
+  if (query.mode === "distribution") {
+    return computeDistributionSeries(input, query);
+  }
+
+  let series = computeSeriesForRange(input, query, query.range);
+
+  if (query.compare === "previous-period") {
+    const previousSeries = computeSeriesForRange(input, query, previousPeriodRange(query.range));
+    const previousByKey = new Map(
+      previousSeries.map((s) => [`${s.measure}|${s.dimensionKey}`, s.points]),
+    );
+    series = series.map((s) => {
+      const previousPoints = previousByKey.get(`${s.measure}|${s.dimensionKey}`);
+      return previousPoints === undefined
+        ? s
+        : { ...s, compareGhost: alignPreviousPeriod(s.points, previousPoints) };
+    });
+  }
+
+  if (query.smoothing === "ma7") {
+    series = series.map((s) => ({ ...s, points: movingAverage7(s.points) }));
+  }
+
   return series;
 }

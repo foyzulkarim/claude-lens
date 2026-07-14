@@ -376,7 +376,7 @@ Implements the two pure `SeriesPoint[]` transforms `mode: "series"` output needs
 
 ## Task T3: Engine wiring — mode dispatch, entity scoping, compare, smoothing
 
-> **Status:** not started
+> **Status:** done
 > **Verification:** test-after
 > **Effort:** l
 > **Priority:** high
