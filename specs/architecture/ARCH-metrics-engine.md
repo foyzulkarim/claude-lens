@@ -132,7 +132,7 @@ Nothing in the existing system is modified — this is new, unwired code. `route
 | Module / Package | Responsibility | Allowed Dependencies |
 |---|---|---|
 | `server/metrics/engine.ts` | Orchestrates filter → group → bucket → aggregate; the only exported entry point | `shared/types.ts`, `shared/metrics-contract.ts`, sibling `metrics/` files |
-| `server/metrics/measures.ts` | Per-measure aggregation + pricing table + default constant | `shared/types.ts` |
+| `server/metrics/measures.ts` | Per-measure aggregation + pricing table + default constant | `shared/types.ts`, `shared/metrics-contract.ts` (for the `Measure` type) |
 | `server/metrics/dimensions.ts` | Per-dimension value extraction (call/turn/session-level) + filter matching | `shared/types.ts`, `shared/metrics-contract.ts` |
 | `server/metrics/grain.ts` | Epoch-ms bucketing, dense bucket enumeration, `Intl` labels | none (pure, stdlib only) |
 

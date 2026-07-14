@@ -96,6 +96,10 @@ describe("turnDimensionValue — gateStatus", () => {
   it("returns unknown when gateStatus is absent (today's reality)", () => {
     expect(turnDimensionValue(turn({ gateStatus: undefined }), "gateStatus")).toBe("unknown");
   });
+
+  it("returns unknown for an empty-string gateStatus too, not just a missing one", () => {
+    expect(turnDimensionValue(turn({ gateStatus: "" }), "gateStatus")).toBe("unknown");
+  });
 });
 
 describe("callDimensionValue — missing/malformed scalar values", () => {
@@ -118,5 +122,15 @@ describe("matchesFilter", () => {
   it("passes through when no filter is configured for a dimension", () => {
     expect(matchesFilter("anything", undefined)).toBe(true);
     expect(matchesFilter(["a", "b"], undefined)).toBe(true);
+  });
+
+  it("coerces numeric allowed-list entries to strings before comparing", () => {
+    expect(matchesFilter("5", [5, 6])).toBe(true);
+    expect(matchesFilter("7", [5, 6])).toBe(false);
+  });
+
+  it("an explicit empty allowed list matches nothing, unlike undefined", () => {
+    expect(matchesFilter("anything", [])).toBe(false);
+    expect(matchesFilter(["a", "b"], [])).toBe(false);
   });
 });

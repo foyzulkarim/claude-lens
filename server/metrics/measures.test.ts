@@ -201,6 +201,20 @@ describe("computeMeasure — wallMinutes (real today, not premium-gated)", () =>
     };
     expect(computeMeasure("wallMinutes", scope, DEFAULT_PRICING_TABLE)).toBeCloseTo(2.5, 10);
   });
+
+  it("skips a turn with an unparseable startedAt/endedAt instead of poisoning the sum with NaN (review finding H1)", () => {
+    const scope: MeasureScope = {
+      calls: [],
+      turns: [
+        turn({ startedAt: "2026-07-14T10:00:00.000Z", endedAt: "2026-07-14T10:02:00.000Z" }),
+        turn({ startedAt: "", endedAt: "2026-07-14T11:00:30.000Z" }),
+      ],
+      sessions: [],
+    };
+    const value = computeMeasure("wallMinutes", scope, DEFAULT_PRICING_TABLE);
+    expect(value).toBe(2);
+    expect(Number.isNaN(value)).toBe(false);
+  });
 });
 
 describe("computeMeasure — premium-gated measures return null today", () => {

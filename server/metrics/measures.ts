@@ -94,10 +94,13 @@ export function computeMeasure(
       return eligible > 0 ? cacheRead / eligible : 0;
     }
     case "wallMinutes":
-      return scope.turns.reduce(
-        (sum, turn) => sum + (Date.parse(turn.endedAt) - Date.parse(turn.startedAt)) / 60_000,
-        0,
-      );
+      // A malformed/empty startedAt or endedAt (toStr()-coerced by the parser
+      // on a bad line) makes Date.parse -> NaN; skip that turn's contribution
+      // rather than let it poison the whole bucket's sum (review finding H1).
+      return scope.turns.reduce((sum, turn) => {
+        const ms = Date.parse(turn.endedAt) - Date.parse(turn.startedAt);
+        return sum + (Number.isFinite(ms) ? ms / 60_000 : 0);
+      }, 0);
     case "costObserved":
     case "apiMs":
     case "linesAdded":

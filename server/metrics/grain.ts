@@ -30,23 +30,25 @@ export function bucketStart(epochMs: number, grain: Grain): number {
   }
 }
 
+// Per-case return (not break + a shared trailing return) so a future Grain
+// addition fails to compile here instead of silently no-op'ing and hanging
+// enumerateBuckets's while loop at runtime (review finding M5).
 function nextBucket(bucketStartMs: number, grain: Grain): number {
   const d = new Date(bucketStartMs);
   switch (grain) {
     case "hour":
       d.setHours(d.getHours() + 1);
-      break;
+      return d.getTime();
     case "day":
       d.setDate(d.getDate() + 1);
-      break;
+      return d.getTime();
     case "week":
       d.setDate(d.getDate() + 7);
-      break;
+      return d.getTime();
     case "month":
       d.setMonth(d.getMonth() + 1);
-      break;
+      return d.getTime();
   }
-  return d.getTime();
 }
 
 const HOUR_LABEL_FORMAT = new Intl.DateTimeFormat(undefined, {

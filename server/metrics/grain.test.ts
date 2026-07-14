@@ -105,6 +105,20 @@ describe("enumerateBuckets — dense, gap-free", () => {
       new Date(2026, 2, 1, 0, 0, 0).getTime(),
     ]);
   });
+
+  it("enumerates week buckets, each starting on the local Monday", () => {
+    // 2026-07-14 (Tue) to 2026-07-22 (Wed) spans the weeks starting
+    // 2026-07-13 and 2026-07-20.
+    const range = {
+      from: new Date(2026, 6, 14, 9, 0, 0).toISOString(),
+      to: new Date(2026, 6, 22, 9, 0, 0).toISOString(),
+    };
+    const buckets = enumerateBuckets(range, "week");
+    expect(buckets).toEqual([
+      new Date(2026, 6, 13, 0, 0, 0).getTime(),
+      new Date(2026, 6, 20, 0, 0, 0).getTime(),
+    ]);
+  });
 });
 
 describe("resilience — DST transition", () => {

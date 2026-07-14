@@ -8,6 +8,7 @@ import type {
 import type { ApiCall, Session, Turn } from "../../shared/types.js";
 import {
   type CallDimension,
+  UNKNOWN,
   callDimensionValue,
   matchesFilter,
   turnDimensionValue,
@@ -50,7 +51,7 @@ function buildCallToTurn(turns: Turn[]): Map<ApiCall, Turn> {
 function valuesForCallDim(call: ApiCall, dim: Dimension, callToTurn: Map<ApiCall, Turn>): string[] {
   if (dim === "gateStatus") {
     const turn = callToTurn.get(call);
-    return [turn ? turnDimensionValue(turn, "gateStatus") : "unknown"];
+    return [turn ? turnDimensionValue(turn, "gateStatus") : UNKNOWN];
   }
   const value = callDimensionValue(call, dim as CallDimension);
   return Array.isArray(value) ? value : [value];
@@ -62,6 +63,11 @@ function callMatchesFilters(
   callToTurn: Map<ApiCall, Turn>,
 ): boolean {
   if (!filters) return true;
+  // Object.keys widens to string[]; this cast trusts every key is a real
+  // Dimension. Safe today since only type-checked MetricsQuery literals ever
+  // reach this function (nothing wires filters up to an HTTP route yet) —
+  // #P2-10 should validate/narrow filter keys before they reach here once it
+  // does (review finding L6).
   for (const dim of Object.keys(filters) as Dimension[]) {
     if (dim === "time") continue;
     const values = valuesForCallDim(call, dim, callToTurn);
@@ -153,20 +159,25 @@ function turnMatchesGroup(turn: Turn, group: Group): boolean {
 function sessionValueForDim(session: Session, dim: Dimension): string[] {
   switch (dim) {
     case "project":
-      return [session.project || "unknown"];
+      return [session.project || UNKNOWN];
     case "gitBranch":
-      return [session.gitBranch || "unknown"];
+      return [session.gitBranch || UNKNOWN];
     case "version":
-      return [session.version || "unknown"];
+      return [session.version || UNKNOWN];
     case "entrypoint":
-      return [session.entrypoint || "unknown"];
+      return [session.entrypoint || UNKNOWN];
     case "model":
-      return session.models.length > 0 ? session.models : ["unknown"];
+      return session.models.length > 0 ? session.models : [UNKNOWN];
     case "host":
       return ["default"];
-    default:
-      // sidechain / tool / gateStatus / time have no session-level meaning.
-      return ["unknown"];
+    case "sidechain":
+    case "tool":
+    case "gateStatus":
+    case "time":
+      // No session-level meaning for any of these. Explicit cases (not a
+      // default) so a future Dimension addition fails to compile here
+      // instead of silently falling into "unknown" (review finding L5).
+      return [UNKNOWN];
   }
 }
 
@@ -193,14 +204,14 @@ function scopeFor(
 
   const turns = input.turns.filter((turn) => {
     const ts = Date.parse(turn.startedAt);
-    if (ts < rangeFromMs || ts > rangeToMs) return false;
+    if (!Number.isFinite(ts) || ts < rangeFromMs || ts > rangeToMs) return false;
     if (bucketStartMs !== null && bucketStart(ts, grain) !== bucketStartMs) return false;
     return turnMatchesGroup(turn, group);
   });
 
   const sessions = input.sessions.filter((session) => {
     const ts = Date.parse(session.firstAt);
-    if (ts < rangeFromMs || ts > rangeToMs) return false;
+    if (!Number.isFinite(ts) || ts < rangeFromMs || ts > rangeToMs) return false;
     if (bucketStartMs !== null && bucketStart(ts, grain) !== bucketStartMs) return false;
     return sessionMatchesGroup(session, group);
   });
@@ -224,7 +235,11 @@ export function metrics(input: MetricsInput, query: MetricsQuery): Series[] {
 
   const filteredCalls = input.calls.filter((call) => {
     const ts = Date.parse(call.timestamp);
-    if (ts < rangeFromMs || ts > rangeToMs) return false;
+    // NaN < x and NaN > x are both false in JS, so an unparseable timestamp
+    // (a real shape — parse-transcript.ts's toStr() coerces a missing/bad
+    // field to "") would otherwise silently bypass the range filter instead
+    // of being excluded by it (review finding H2). Exclude explicitly.
+    if (!Number.isFinite(ts) || ts < rangeFromMs || ts > rangeToMs) return false;
     return callMatchesFilters(call, query.filters, callToTurn);
   });
 

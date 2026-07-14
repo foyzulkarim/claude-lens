@@ -7,7 +7,7 @@ import type { ApiCall, Turn } from "../../shared/types.js";
 // ApiCall, hence the split into two functions below.
 export type CallDimension = Exclude<Dimension, "time" | "gateStatus">;
 
-const UNKNOWN = "unknown";
+export const UNKNOWN = "unknown";
 
 // A missing/empty scalar field buckets as "unknown" rather than being
 // dropped, so per-bucket totals still reconcile against the unfiltered
@@ -44,7 +44,10 @@ export function callDimensionValue(call: ApiCall, dim: CallDimension): string | 
 }
 
 export function turnDimensionValue(turn: Turn, dim: "gateStatus"): string {
-  return turn[dim] ?? UNKNOWN;
+  // orUnknown (not `?? UNKNOWN`) so a future empty-string gateStatus is
+  // caught the same way every scalar call dimension already is, not just a
+  // missing/undefined one (review finding O4).
+  return orUnknown(turn[dim] ?? "");
 }
 
 export function matchesFilter(
