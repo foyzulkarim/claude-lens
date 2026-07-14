@@ -125,7 +125,7 @@ Everything downstream assumes the parser, store, and metrics engine are correct.
 
 One vertical slice proving every layer. Nothing page-specific begins until this works. Reference: architecture §7, §11.
 
-- [ ] **#P3-1 — Fastify assembly + WS invalidation bus**
+- [x] **#P3-1 — Fastify assembly + WS invalidation bus**
   `app.ts`: static assets + SPA fallback, `/ws` upgrade, ingest→invalidation→WS wiring (three message types, never data).
   *Acceptance:* appending to a watched fixture file emits one debounced `session-updated` over WS.
 - [ ] **#P3-2 — React shell**
