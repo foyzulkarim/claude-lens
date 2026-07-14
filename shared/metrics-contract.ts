@@ -35,16 +35,32 @@ export type Dimension =
 
 export type Grain = "hour" | "day" | "week" | "month";
 
-export interface MetricsQuery {
+export type DistributionEntity = "session" | "turn" | "call";
+
+interface BaseMetricsQuery {
   measures: Measure[];
   dimensions: Dimension[];
   grain: Grain;
   range: { from: string; to: string };
   filters?: Partial<Record<Dimension, (string | number)[]>>;
+}
+
+// compare/smoothing only apply to mode: "series" — a distribution-mode query
+// never reaches the post-processing steps that read them (engine.ts's
+// `metrics()` returns from the distribution branch first), so they're kept
+// off that variant's type rather than accepted-but-silently-ignored.
+export type SeriesMetricsQuery = BaseMetricsQuery & {
+  mode?: "series";
   compare?: "previous-period";
   smoothing?: "none" | "ma7";
-  mode?: "series" | "distribution";
-}
+};
+
+export type DistributionMetricsQuery = BaseMetricsQuery & {
+  mode: "distribution";
+  distributionEntity: DistributionEntity;
+};
+
+export type MetricsQuery = SeriesMetricsQuery | DistributionMetricsQuery;
 
 export interface SeriesPoint {
   t: string;
@@ -52,10 +68,14 @@ export interface SeriesPoint {
 }
 
 export interface Distribution {
-  p50: number;
-  p90: number;
-  p99: number;
-  histogram: { bucket: string; count: number }[];
+  p50: number | null;
+  p90: number | null;
+  p99: number | null;
+  histogram: { rangeStart: number; rangeEnd: number; count: number }[];
+  pareto?: {
+    curve: { entityPct: number; cumulativeValuePct: number }[];
+    topDecileValuePct: number;
+  };
 }
 
 export interface Series {

@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
-import type { MetricsQuery } from "../../shared/metrics-contract.js";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { MetricsQuery, SeriesMetricsQuery } from "../../shared/metrics-contract.js";
 import type { ApiCall, Session, Turn } from "../../shared/types.js";
-import { DEFAULT_PRICING_TABLE } from "./measures.js";
 import { type MetricsInput, metrics } from "./engine.js";
+import { DEFAULT_PRICING_TABLE } from "./measures.js";
 
 // All timestamps are built from local Date constructors (never hardcoded
 // "...Z" UTC strings) so bucket-day assignment — which truncates by *local*
@@ -10,6 +10,10 @@ import { type MetricsInput, metrics } from "./engine.js";
 // running the tests.
 function iso(y: number, mo: number, d: number, h = 0, mi = 0): string {
   return new Date(y, mo, d, h, mi).toISOString();
+}
+
+function usage(inputTokens: number) {
+  return { inputTokens, outputTokens: 0, cacheReadTokens: 0, cacheCreateTokens: 0 };
 }
 
 function call(overrides: Partial<ApiCall> = {}): ApiCall {
@@ -70,7 +74,11 @@ function session(overrides: Partial<Session> = {}): Session {
   };
 }
 
-function baseQuery(overrides: Partial<MetricsQuery> = {}): MetricsQuery {
+// Always returns a mode: "series" query (mode omitted) — never override `mode`
+// here, since "distribution" requires `distributionEntity` too; build those
+// queries as full MetricsQuery literals instead (see the mode/compare/
+// smoothing wiring test below).
+function baseQuery(overrides: Partial<Omit<SeriesMetricsQuery, "mode">> = {}): MetricsQuery {
   return {
     measures: ["costComputed"],
     dimensions: ["time"],
@@ -296,19 +304,25 @@ describe("metrics — resilience", () => {
     expect(wall?.points[0]?.value).toBe(5);
   });
 
-  it("mode/compare/smoothing are silently no-op'd, never throw", () => {
+  it("mode: distribution and compare/smoothing on mode: series produce real output, never throw (supersedes the #P2-8-era no-op test)", () => {
     const input: MetricsInput = { calls: [call()], turns: [], sessions: [], pricing: PRICING };
-    const query = baseQuery({
+
+    const distributionQuery: MetricsQuery = {
       measures: ["costComputed"],
-      dimensions: ["time"],
+      dimensions: [],
       grain: "day",
-      compare: "previous-period",
-      smoothing: "ma7",
+      range: { from: iso(2026, 6, 13, 0, 0), to: iso(2026, 6, 15, 23, 59) },
       mode: "distribution",
-    });
-    expect(() => metrics(input, query)).not.toThrow();
-    const result = metrics(input, query);
-    expect(result[0]?.compareGhost).toBeUndefined();
+      distributionEntity: "call",
+    };
+    expect(() => metrics(input, distributionQuery)).not.toThrow();
+    const distResult = metrics(input, distributionQuery);
+    expect(distResult[0]?.distribution).toBeDefined();
+
+    const seriesQuery = baseQuery({ compare: "previous-period", smoothing: "ma7" });
+    expect(() => metrics(input, seriesQuery)).not.toThrow();
+    const seriesResult = metrics(input, seriesQuery);
+    expect(seriesResult[0]?.compareGhost).toBeDefined();
   });
 
   it("excludes a call with an unparseable timestamp from range filtering instead of silently including it (review finding H2)", () => {
@@ -449,5 +463,413 @@ describe("metrics — breakdown dimensions with zero matching calls", () => {
     const query = baseQuery({ measures: ["apiCalls"], dimensions: ["project"], grain: "day" });
     const result = metrics(input, query);
     expect(result).toEqual([]);
+  });
+});
+
+describe("metrics — mode: distribution dispatch", () => {
+  it('ignores "time", grouping by breakdown dims only across the whole range', () => {
+    const calls = [
+      call({
+        uuid: "c1",
+        sessionId: "s1",
+        cwd: "/repo/alpha",
+        timestamp: iso(2026, 6, 13, 10, 0),
+        model: "claude-sonnet-5",
+        usage: { inputTokens: 1000, outputTokens: 0, cacheReadTokens: 0, cacheCreateTokens: 0 },
+      }),
+      call({
+        uuid: "c2",
+        sessionId: "s2",
+        cwd: "/repo/alpha",
+        timestamp: iso(2026, 6, 14, 10, 0),
+        model: "claude-sonnet-5",
+        usage: { inputTokens: 2000, outputTokens: 0, cacheReadTokens: 0, cacheCreateTokens: 0 },
+      }),
+      call({
+        uuid: "c3",
+        sessionId: "s3",
+        cwd: "/repo/beta",
+        timestamp: iso(2026, 6, 13, 10, 0),
+        model: "claude-sonnet-5",
+        usage: { inputTokens: 500, outputTokens: 0, cacheReadTokens: 0, cacheCreateTokens: 0 },
+      }),
+    ];
+    const sessions = [
+      session({ sessionId: "s1", project: "/repo/alpha", firstAt: iso(2026, 6, 13, 10, 0) }),
+      session({ sessionId: "s2", project: "/repo/alpha", firstAt: iso(2026, 6, 14, 10, 0) }),
+      session({ sessionId: "s3", project: "/repo/beta", firstAt: iso(2026, 6, 13, 10, 0) }),
+    ];
+    const input: MetricsInput = { calls, turns: [], sessions, pricing: PRICING };
+    const query: MetricsQuery = {
+      measures: ["costComputed"],
+      dimensions: ["time", "project"],
+      grain: "day",
+      range: { from: iso(2026, 6, 13, 0, 0), to: iso(2026, 6, 14, 23, 59) },
+      mode: "distribution",
+      distributionEntity: "session",
+    };
+    const result = metrics(input, query);
+    // One series per project (not per project x day bucket).
+    expect(result.map((s) => s.dimensionKey).sort()).toEqual([
+      "project:/repo/alpha",
+      "project:/repo/beta",
+    ]);
+    for (const s of result) expect(s.points).toEqual([]);
+    const alpha = result.find((s) => s.dimensionKey === "project:/repo/alpha");
+    // alpha has 2 sessions (s1 cost=0.005, s2 cost=0.01) -> nearest-rank p50 = sorted[0] = 0.005
+    expect(alpha?.distribution?.p50).toBeCloseTo(0.005, 10);
+  });
+
+  describe("distribution entity population selection", () => {
+    it('distributionEntity: "call" builds the population from individual calls', () => {
+      const calls = [
+        call({ uuid: "c1", timestamp: iso(2026, 6, 13, 10, 0), usage: usage(100) }),
+        call({ uuid: "c2", timestamp: iso(2026, 6, 13, 10, 1), usage: usage(50) }),
+        call({ uuid: "c3", timestamp: iso(2026, 6, 13, 11, 0), usage: usage(300) }),
+      ];
+      const input: MetricsInput = { calls, turns: [], sessions: [], pricing: PRICING };
+      const query: MetricsQuery = {
+        measures: ["inputTokens"],
+        dimensions: [],
+        grain: "day",
+        range: { from: iso(2026, 6, 13, 0, 0), to: iso(2026, 6, 13, 23, 59) },
+        mode: "distribution",
+        distributionEntity: "call",
+      };
+      const result = metrics(input, query);
+      // N=3, sorted [50,100,300]: p50 index=ceil(1.5)=2 -> 100; p99 index=ceil(2.97)=3 -> 300
+      expect(result[0]?.distribution?.p50).toBe(100);
+      expect(result[0]?.distribution?.p99).toBe(300);
+    });
+
+    it('distributionEntity: "turn" builds the population from per-turn call totals', () => {
+      const t1Calls = [
+        call({
+          uuid: "c1a",
+          sessionId: "s1",
+          timestamp: iso(2026, 6, 13, 10, 0),
+          usage: usage(100),
+        }),
+        call({
+          uuid: "c1b",
+          sessionId: "s1",
+          timestamp: iso(2026, 6, 13, 10, 1),
+          usage: usage(50),
+        }),
+      ];
+      const t2Calls = [
+        call({
+          uuid: "c2",
+          sessionId: "s2",
+          timestamp: iso(2026, 6, 13, 11, 0),
+          usage: usage(300),
+        }),
+      ];
+      const turns = [
+        turn({
+          promptId: "p1",
+          sessionId: "s1",
+          startedAt: iso(2026, 6, 13, 10, 0),
+          endedAt: iso(2026, 6, 13, 10, 2),
+          calls: t1Calls,
+        }),
+        turn({
+          promptId: "p2",
+          sessionId: "s2",
+          startedAt: iso(2026, 6, 13, 11, 0),
+          endedAt: iso(2026, 6, 13, 11, 1),
+          calls: t2Calls,
+        }),
+      ];
+      const input: MetricsInput = {
+        calls: [...t1Calls, ...t2Calls],
+        turns,
+        sessions: [],
+        pricing: PRICING,
+      };
+      const query: MetricsQuery = {
+        measures: ["inputTokens"],
+        dimensions: [],
+        grain: "day",
+        range: { from: iso(2026, 6, 13, 0, 0), to: iso(2026, 6, 13, 23, 59) },
+        mode: "distribution",
+        distributionEntity: "turn",
+      };
+      const result = metrics(input, query);
+      // Per-turn totals: t1=150, t2=300. N=2: p50 index=1 -> 150; p99 index=2 -> 300
+      expect(result[0]?.distribution?.p50).toBe(150);
+      expect(result[0]?.distribution?.p99).toBe(300);
+    });
+
+    it('distributionEntity: "session" builds the population from per-session call totals', () => {
+      const calls = [
+        call({
+          uuid: "c1a",
+          sessionId: "s1",
+          timestamp: iso(2026, 6, 13, 10, 0),
+          usage: usage(100),
+        }),
+        call({
+          uuid: "c1b",
+          sessionId: "s1",
+          timestamp: iso(2026, 6, 13, 10, 1),
+          usage: usage(50),
+        }),
+        call({
+          uuid: "c2",
+          sessionId: "s2",
+          timestamp: iso(2026, 6, 13, 11, 0),
+          usage: usage(300),
+        }),
+      ];
+      const sessions = [
+        session({ sessionId: "s1", firstAt: iso(2026, 6, 13, 10, 0) }),
+        session({ sessionId: "s2", firstAt: iso(2026, 6, 13, 11, 0) }),
+      ];
+      const input: MetricsInput = { calls, turns: [], sessions, pricing: PRICING };
+      const query: MetricsQuery = {
+        measures: ["inputTokens"],
+        dimensions: [],
+        grain: "day",
+        range: { from: iso(2026, 6, 13, 0, 0), to: iso(2026, 6, 13, 23, 59) },
+        mode: "distribution",
+        distributionEntity: "session",
+      };
+      const result = metrics(input, query);
+      // Per-session totals: s1=150, s2=300. N=2: p50 index=1 -> 150; p99 index=2 -> 300
+      expect(result[0]?.distribution?.p50).toBe(150);
+      expect(result[0]?.distribution?.p99).toBe(300);
+    });
+  });
+
+  it("excludes entities where the measure is null from the population (honest-null cascade)", () => {
+    const calls = [call({ uuid: "c1", sessionId: "s1", timestamp: iso(2026, 6, 13, 10, 0) })];
+    const sessions = [session({ sessionId: "s1", firstAt: iso(2026, 6, 13, 10, 0) })];
+    const input: MetricsInput = { calls, turns: [], sessions, pricing: PRICING };
+    const query: MetricsQuery = {
+      measures: ["costObserved"], // always null today — no shipped parser populates it yet
+      dimensions: [],
+      grain: "day",
+      range: { from: iso(2026, 6, 13, 0, 0), to: iso(2026, 6, 13, 23, 59) },
+      mode: "distribution",
+      distributionEntity: "session",
+    };
+    const result = metrics(input, query);
+    expect(result[0]?.distribution).toEqual({
+      p50: null,
+      p90: null,
+      p99: null,
+      histogram: [],
+      pareto: undefined,
+    });
+  });
+});
+
+describe("metrics — compare: previous-period wiring", () => {
+  it("produces a ghost aligned to a time-bucketed series, bucket-for-bucket", () => {
+    const calls = [
+      call({ uuid: "jul13", timestamp: iso(2026, 6, 13, 10, 0), usage: usage(100) }), // previous
+      call({ uuid: "jul14", timestamp: iso(2026, 6, 14, 10, 0), usage: usage(200) }), // previous
+      call({ uuid: "jul15", timestamp: iso(2026, 6, 15, 10, 0), usage: usage(300) }), // current
+      call({ uuid: "jul16", timestamp: iso(2026, 6, 16, 10, 0), usage: usage(400) }), // current
+    ];
+    const input: MetricsInput = { calls, turns: [], sessions: [], pricing: PRICING };
+    const query: MetricsQuery = {
+      measures: ["inputTokens"],
+      dimensions: ["time"],
+      grain: "day",
+      range: { from: iso(2026, 6, 15, 0, 0), to: iso(2026, 6, 16, 23, 59) },
+      compare: "previous-period",
+    };
+    const result = metrics(input, query);
+    const series = result[0];
+    expect(series?.points.map((p) => p.value)).toEqual([300, 400]);
+    expect(series?.compareGhost).toHaveLength(2);
+    expect(series?.compareGhost?.map((p) => p.value)).toEqual([100, 200]);
+    // Ghost points sit at the current period's x-position, not the previous instant's.
+    expect(series?.compareGhost?.map((p) => p.t)).toEqual(series?.points.map((p) => p.t));
+  });
+
+  it("produces one ghost point for a non-time-bucketed (stat-card delta) query", () => {
+    const calls = [
+      call({ uuid: "jul14", timestamp: iso(2026, 6, 14, 10, 0), usage: usage(200) }), // previous
+      call({ uuid: "jul15", timestamp: iso(2026, 6, 15, 10, 0), usage: usage(300) }), // current
+    ];
+    const input: MetricsInput = { calls, turns: [], sessions: [], pricing: PRICING };
+    const query: MetricsQuery = {
+      measures: ["inputTokens"],
+      dimensions: [],
+      grain: "day",
+      range: { from: iso(2026, 6, 15, 0, 0), to: iso(2026, 6, 15, 23, 59) },
+      compare: "previous-period",
+    };
+    const result = metrics(input, query);
+    const series = result[0];
+    expect(series?.points).toHaveLength(1);
+    expect(series?.points[0]?.value).toBe(300);
+    expect(series?.compareGhost).toHaveLength(1);
+    expect(series?.compareGhost?.[0]?.value).toBe(200);
+  });
+
+  it("truncates/pads with null when current and previous month-grain windows touch a different number of buckets", () => {
+    const calls = [
+      call({ uuid: "jan27", timestamp: iso(2027, 0, 27, 10, 0), usage: usage(100) }), // previous (Jan)
+      call({ uuid: "jan30", timestamp: iso(2027, 0, 30, 10, 0), usage: usage(200) }), // current (Jan)
+      call({ uuid: "feb1", timestamp: iso(2027, 1, 1, 10, 0), usage: usage(300) }), // current (Feb)
+    ];
+    const input: MetricsInput = { calls, turns: [], sessions: [], pricing: PRICING };
+    const query: MetricsQuery = {
+      measures: ["inputTokens"],
+      dimensions: ["time"],
+      grain: "month",
+      range: { from: iso(2027, 0, 30, 0, 0), to: iso(2027, 1, 2, 23, 59) },
+      compare: "previous-period",
+    };
+    const result = metrics(input, query);
+    const series = result[0];
+    // Current spans Jan+Feb (2 month buckets); previous falls entirely within
+    // January (1 bucket) — ghost is padded to match current's length.
+    expect(series?.points).toHaveLength(2);
+    expect(series?.compareGhost).toHaveLength(2);
+    expect(series?.compareGhost?.[1]?.value).toBeNull();
+  });
+
+  it("aligns a ghost at hour grain", () => {
+    const calls = [
+      call({ uuid: "h8", timestamp: iso(2026, 6, 15, 8, 10), usage: usage(100) }), // previous
+      call({ uuid: "h9", timestamp: iso(2026, 6, 15, 9, 10), usage: usage(200) }), // previous
+      call({ uuid: "h10", timestamp: iso(2026, 6, 15, 10, 10), usage: usage(300) }), // current
+      call({ uuid: "h11", timestamp: iso(2026, 6, 15, 11, 10), usage: usage(400) }), // current
+    ];
+    const input: MetricsInput = { calls, turns: [], sessions: [], pricing: PRICING };
+    const query: MetricsQuery = {
+      measures: ["inputTokens"],
+      dimensions: ["time"],
+      grain: "hour",
+      range: { from: iso(2026, 6, 15, 10, 0), to: iso(2026, 6, 15, 11, 59) },
+      compare: "previous-period",
+    };
+    const result = metrics(input, query);
+    const series = result[0];
+    expect(series?.points.map((p) => p.value)).toEqual([300, 400]);
+    expect(series?.compareGhost?.map((p) => p.value)).toEqual([100, 200]);
+  });
+
+  it("aligns a ghost at week grain (Monday-start weeks)", () => {
+    const calls = [
+      call({ uuid: "w-2wk-ago", timestamp: iso(2026, 5, 30, 10, 0), usage: usage(100) }), // previous, week of Jun 29
+      call({ uuid: "w-1wk-ago", timestamp: iso(2026, 6, 8, 10, 0), usage: usage(200) }), // previous, week of Jul 6
+      call({ uuid: "w-cur1", timestamp: iso(2026, 6, 14, 10, 0), usage: usage(300) }), // current, week of Jul 13
+      call({ uuid: "w-cur2", timestamp: iso(2026, 6, 22, 10, 0), usage: usage(400) }), // current, week of Jul 20
+    ];
+    const input: MetricsInput = { calls, turns: [], sessions: [], pricing: PRICING };
+    const query: MetricsQuery = {
+      measures: ["inputTokens"],
+      dimensions: ["time"],
+      grain: "week",
+      range: { from: iso(2026, 6, 13, 0, 0), to: iso(2026, 6, 26, 23, 59) },
+      compare: "previous-period",
+    };
+    const result = metrics(input, query);
+    const series = result[0];
+    expect(series?.points.map((p) => p.value)).toEqual([300, 400]);
+    expect(series?.compareGhost?.map((p) => p.value)).toEqual([100, 200]);
+  });
+
+  it("leaves compareGhost unset when a current-period group has no counterpart in the previous period", () => {
+    // Only "newproj" exists anywhere in the input, and only in the current
+    // range — the previous-period run produces zero groups for it, so the
+    // merge's `previousPoints === undefined` branch returns the series as-is.
+    const calls = [
+      call({
+        uuid: "only-current",
+        cwd: "/repo/newproj",
+        timestamp: iso(2026, 6, 15, 10, 0),
+        usage: usage(300),
+      }),
+    ];
+    const input: MetricsInput = { calls, turns: [], sessions: [], pricing: PRICING };
+    const query: MetricsQuery = {
+      measures: ["inputTokens"],
+      dimensions: ["project"],
+      grain: "day",
+      range: { from: iso(2026, 6, 15, 0, 0), to: iso(2026, 6, 15, 23, 59) },
+      compare: "previous-period",
+    };
+    const result = metrics(input, query);
+    const series = result[0];
+    expect(series?.points[0]?.value).toBe(300);
+    expect(series?.compareGhost).toBeUndefined();
+  });
+
+  describe("DST transition (America/New_York)", () => {
+    const originalTz = process.env.TZ;
+
+    beforeEach(() => {
+      process.env.TZ = "America/New_York";
+    });
+
+    afterEach(() => {
+      process.env.TZ = originalTz;
+    });
+
+    it("truncates a previous period that spans an extra bucket because it crosses the spring-forward day", () => {
+      // Current = Mar 9-10 (2 day buckets, no transition). Its duration,
+      // subtracted from Mar 9 00:00, lands on Mar 6 23:01 rather than Mar 7
+      // 00:00 — Mar 8's missing hour (2am->3am) means the previous range
+      // actually spans 3 day buckets (Mar 6, 7, 8), one more than current's 2.
+      // alignPreviousPeriod truncates by ordinal index, so Mar 8's data (the
+      // DST day itself) is silently dropped from the ghost rather than
+      // misaligning Mar 9 with Mar 8 or padding an extra null.
+      const calls = [
+        // The previous range's actual lower bound is Mar 6 23:01 (not Mar 6
+        // 00:00) — Mar 8's missing hour shifts it forward within the day —
+        // so this call must land after that instant to be included at all.
+        call({ uuid: "mar6", timestamp: iso(2026, 2, 6, 23, 30), usage: usage(100) }), // previous
+        call({ uuid: "mar7", timestamp: iso(2026, 2, 7, 10, 0), usage: usage(200) }), // previous
+        call({ uuid: "mar8", timestamp: iso(2026, 2, 8, 10, 0), usage: usage(999) }), // previous, dropped
+        call({ uuid: "mar9", timestamp: iso(2026, 2, 9, 10, 0), usage: usage(300) }), // current
+        call({ uuid: "mar10", timestamp: iso(2026, 2, 10, 10, 0), usage: usage(400) }), // current
+      ];
+      const input: MetricsInput = { calls, turns: [], sessions: [], pricing: PRICING };
+      const query: MetricsQuery = {
+        measures: ["inputTokens"],
+        dimensions: ["time"],
+        grain: "day",
+        range: { from: iso(2026, 2, 9, 0, 0), to: iso(2026, 2, 10, 23, 59) },
+        compare: "previous-period",
+      };
+      const result = metrics(input, query);
+      const series = result[0];
+      expect(series?.points.map((p) => p.value)).toEqual([300, 400]);
+      expect(series?.compareGhost).toHaveLength(2);
+      expect(series?.compareGhost?.map((p) => p.value)).toEqual([100, 200]);
+    });
+  });
+});
+
+describe("metrics — smoothing: ma7 wiring", () => {
+  it("applies the moving average to the raw aggregated series points", () => {
+    const calls = Array.from({ length: 10 }, (_, i) =>
+      call({
+        uuid: `c${i}`,
+        timestamp: iso(2026, 6, 13 + i, 10, 0),
+        usage: usage((i + 1) * 10),
+      }),
+    );
+    const input: MetricsInput = { calls, turns: [], sessions: [], pricing: PRICING };
+    const query: MetricsQuery = {
+      measures: ["inputTokens"],
+      dimensions: ["time"],
+      grain: "day",
+      range: { from: iso(2026, 6, 13, 0, 0), to: iso(2026, 6, 22, 23, 59) },
+      smoothing: "ma7",
+    };
+    const result = metrics(input, query);
+    const values = result[0]?.points.map((p) => p.value);
+    // Raw daily values: [10,20,...,100]. Expanding window for i<6, full
+    // 7-point trailing window from i=6 onward (matches distributions.test.ts's
+    // movingAverage7 fixture).
+    expect(values).toEqual([10, 15, 20, 25, 30, 35, 40, 50, 60, 70]);
   });
 });
