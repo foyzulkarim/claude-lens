@@ -4,9 +4,9 @@ import { fileURLToPath } from "node:url";
 import fastifyStatic from "@fastify/static";
 import fastifyWebsocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance } from "fastify";
-import type { WsServerMessage } from "../shared/ws-protocol.js";
 import { registerMetricsRoute } from "./routes/metrics.js";
 import type { Store } from "./store/store.js";
+import { type Broadcaster, createBroadcaster } from "./ws/broadcaster.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const publicDir = join(__dirname, "public");
@@ -28,22 +28,23 @@ function isAllowedOrigin(origin: string): boolean {
   }
 }
 
-interface OutboundSocket {
-  send(data: string): void;
-}
-
-// The typed outbound path for the invalidation bus (architecture §7). Not yet
-// called anywhere — the ingest pipeline that triggers these sends lands in
-// #P2-2/#P2-3; this pins the wire shape ahead of that work.
-export function sendInvalidation(socket: OutboundSocket, message: WsServerMessage): void {
-  socket.send(JSON.stringify(message));
-}
-
 export interface BuildAppOptions {
   store: Store;
+  /**
+   * The invalidation-bus fan-out (architecture §7). `cli.ts` passes the same
+   * instance it wired into `startIngest`'s `onInvalidate`, so ingest events
+   * reach every connected `/ws` socket. Optional so `buildApp({ store })`
+   * callers (e.g. route tests that never exercise the socket) stay valid; when
+   * omitted, `/ws` still works against a self-contained broadcaster that simply
+   * has no producer feeding it.
+   */
+  broadcaster?: Broadcaster;
 }
 
-export function buildApp({ store }: BuildAppOptions): FastifyInstance {
+export function buildApp({
+  store,
+  broadcaster = createBroadcaster(),
+}: BuildAppOptions): FastifyInstance {
   const app = Fastify({
     logger: {
       transport: {
@@ -76,6 +77,9 @@ export function buildApp({ store }: BuildAppOptions): FastifyInstance {
         },
       },
       (socket) => {
+        broadcaster.add(socket);
+        socket.on("close", () => broadcaster.remove(socket));
+        socket.on("error", () => broadcaster.remove(socket));
         socket.on("message", () => {
           // invalidation bus only (architecture §7) — no inbound protocol yet
         });

@@ -1,0 +1,145 @@
+import { appendFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { FastifyInstance } from "fastify";
+import { afterEach, describe, expect, it } from "vitest";
+import type { WsServerMessage } from "../shared/ws-protocol.js";
+import { buildApp } from "./app.js";
+import type { IngestPipeline } from "./ingest/pipeline.js";
+import { startIngest } from "./ingest/pipeline.js";
+import { createBroadcaster } from "./ws/broadcaster.js";
+
+// End-to-end acceptance for #P3-1: an append to a watched transcript file must
+// surface as exactly one debounced `session-updated` on a connected WS client.
+// Real fs I/O + real timers + a real socket — mirrors ingest/pipeline.test.ts's
+// harness (short poll/debounce intervals, whenSettled(), polling waitFor).
+
+const tmpDirs: string[] = [];
+const pipelines: IngestPipeline[] = [];
+const apps: FastifyInstance[] = [];
+const clients: WebSocket[] = [];
+
+afterEach(async () => {
+  for (const client of clients.splice(0)) client.close();
+  for (const pipeline of pipelines.splice(0)) pipeline.stop();
+  await Promise.all(apps.splice(0).map((app) => app.close()));
+  await Promise.all(tmpDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+});
+
+async function makeTmpDir(): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), "claude-lens-app-"));
+  tmpDirs.push(dir);
+  return dir;
+}
+
+function assistantLine(sessionId: string, messageId: string, timestamp: string): string {
+  return JSON.stringify({
+    type: "assistant",
+    uuid: `u-${messageId}`,
+    sessionId,
+    timestamp,
+    cwd: "/repo",
+    gitBranch: "main",
+    version: "1.0.0",
+    entrypoint: "cli",
+    isSidechain: false,
+    message: {
+      id: messageId,
+      model: "claude-sonnet-5",
+      content: [],
+      usage: { input_tokens: 10, output_tokens: 5 },
+    },
+  });
+}
+
+function userLine(sessionId: string, promptId: string, timestamp: string, text: string): string {
+  return JSON.stringify({
+    type: "user",
+    sessionId,
+    promptId,
+    timestamp,
+    message: { role: "user", content: text },
+  });
+}
+
+async function waitFor(check: () => boolean, timeoutMs: number): Promise<void> {
+  const start = Date.now();
+  while (!check()) {
+    if (Date.now() - start > timeoutMs) throw new Error("waitFor timed out");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
+
+// Node's global WebSocket client (browser-style API) — avoids a dev dependency
+// on `ws`'s types just for the test.
+function openClient(url: string, onMessage: (m: WsServerMessage) => void): Promise<WebSocket> {
+  const client = new WebSocket(url);
+  clients.push(client);
+  client.addEventListener("message", (event) => {
+    onMessage(JSON.parse(String(event.data)) as WsServerMessage);
+  });
+  return new Promise((resolve, reject) => {
+    client.addEventListener("open", () => resolve(client));
+    client.addEventListener("error", () => reject(new Error("WS client connection error")));
+  });
+}
+
+describe("buildApp — ingest → WS invalidation bus (#P3-1)", () => {
+  it("emits one debounced session-updated over WS when a watched file is appended to", async () => {
+    const claudeDir = await makeTmpDir();
+    const projectDir = join(claudeDir, "projects", "alpha");
+    await mkdir(projectDir, { recursive: true });
+
+    const sessionId = "11111111-1111-4111-8111-111111111111";
+    const filePath = join(projectDir, `${sessionId}.jsonl`);
+    const baseLines = [
+      userLine(sessionId, "p1", "2026-07-14T00:00:00.000Z", "hi"),
+      assistantLine(sessionId, "m1", "2026-07-14T00:00:01.000Z"),
+    ];
+    await writeFile(filePath, `${baseLines.join("\n")}\n`, "utf8");
+
+    const broadcaster = createBroadcaster();
+    const ingest = startIngest(
+      {
+        roots: [{ path: join(claudeDir, "projects") }],
+        claudeDir,
+        fastIntervalMs: 30,
+        slowIntervalMs: 5000,
+      },
+      { onInvalidate: broadcaster.broadcast, debounceMs: 30 },
+    );
+    pipelines.push(ingest);
+
+    const app = buildApp({ store: ingest.store, broadcaster });
+    apps.push(app);
+    await app.listen({ port: 0, host: "127.0.0.1" });
+    const { port } = app.server.address() as AddressInfo;
+
+    // Drain the boot session-added/session-updated for the pre-existing file
+    // *before* any client connects, so they aren't counted.
+    await ingest.whenSettled();
+    ingest.store.flushAll();
+
+    const received: WsServerMessage[] = [];
+    await openClient(`ws://127.0.0.1:${port}/ws`, (m) => received.push(m));
+
+    // Append a second assistant call — a true append (not a truncate+rewrite),
+    // matching how Claude Code grows a transcript. The session is already known,
+    // so this produces a single debounced session-updated and no session-added.
+    // (A full-file writeFile here would open with O_TRUNC; under load the fast
+    // poll can catch the transient size-0 state and read it as a reset+refill,
+    // yielding two flushes — see the tailer's file-reset path.)
+    await appendFile(
+      filePath,
+      `${assistantLine(sessionId, "m2", "2026-07-14T00:00:02.000Z")}\n`,
+      "utf8",
+    );
+
+    await waitFor(() => received.length >= 1, 3000);
+    // Give any erroneous duplicate a chance to arrive before asserting exactly one.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    expect(received).toEqual([{ type: "session-updated", sessionId }]);
+  });
+});

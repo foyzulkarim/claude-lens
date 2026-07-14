@@ -3,7 +3,9 @@ import { createServer } from "node:net";
 import open from "open";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "./app.js";
-import { Store } from "./store/store.js";
+import { resolveScanConfig } from "./ingest/discovery.js";
+import { startIngest } from "./ingest/pipeline.js";
+import { createBroadcaster } from "./ws/broadcaster.js";
 
 const DEFAULT_PORT = 4128;
 const MAX_PORT = 65535;
@@ -99,12 +101,30 @@ async function main() {
   const options = parseArgs(process.argv.slice(2));
   const candidatePort = await findAvailablePort(options.port ?? DEFAULT_PORT);
 
-  // Bare, unwired store — live ingest -> Store -> WS broadcast wiring is
-  // #P3-1's job (see server/routes/metrics.ts). This lets the route serve
-  // real queries (against whatever data a future caller populates the store
-  // with) without depending on that not-yet-built seam.
-  const store = new Store({ onInvalidate: () => {} });
-  const app = buildApp({ store });
+  // The live wiring (#P3-1): the broadcaster is the fan-out seam shared by both
+  // sides — ingest sends invalidations into it via `onInvalidate`, and the
+  // `/ws` route (inside buildApp) registers connected sockets into it. It must
+  // be created before startIngest, since startIngest binds `onInvalidate` at
+  // Store-construction time, before buildApp and any socket exists.
+  const config = resolveScanConfig({ roots: options.roots });
+  const broadcaster = createBroadcaster();
+  const ingest = startIngest(config, { onInvalidate: broadcaster.broadcast });
+  const app = buildApp({ store: ingest.store, broadcaster });
+
+  // Ingest now holds real poller/tailer timers and open file handles; tear it
+  // down on signals so Ctrl-C doesn't leak them. stop() is a hard boundary
+  // (see pipeline.ts) — safe to call while cold-boot is still in flight.
+  let shuttingDown = false;
+  async function shutdown(): Promise<void> {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    ingest.stop();
+    await app.close();
+    process.exit(0);
+  }
+  process.once("SIGINT", shutdown);
+  process.once("SIGTERM", shutdown);
+
   const port = await listenWithRetry(app, candidatePort);
 
   const url = `http://127.0.0.1:${port}`;
