@@ -113,7 +113,7 @@ Everything downstream assumes the parser, store, and metrics engine are correct.
 - [x] **#P2-9 — Distributions + smoothing + compare**
   `distributions.ts`: percentiles, histograms, pareto (`mode: "distribution"`); `ma7` smoothing; `compare: "previous-period"` alignment.
   *Acceptance:* percentile/histogram tests against known inputs; previous-period alignment correct across DST/month boundaries at each grain.
-- [ ] **#P2-10 — `POST /api/metrics` route**
+- [x] **#P2-10 — `POST /api/metrics` route**
   Wire the engine to Fastify. Route handlers import only `store/` per the §3 module boundary.
   *Acceptance:* end-to-end test: fixture data in store → HTTP query → expected `Series[]`.
 
