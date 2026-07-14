@@ -37,8 +37,9 @@ file, read off: primary plan-task `<ID>`, slug `<slug>`, issue number `N`, GitHu
 
 **If the issue record is already gone but other artifacts for that `N` still linger** (a partial or
 interrupted prior archive can leave `specs/context/<N>.md`, a `specs/requirements/`/
-`specs/architecture/` file, or a `CODE-REVIEW-*.md` behind without the issue record) — don't treat
-the missing record as "nothing to archive." Derive `<ID>`/`<slug>` from whatever's left instead:
+`specs/architecture/` file, or a `specs/reviews/REV-*.md` / `CODE-REVIEW-*.md` behind without the
+issue record) — don't treat the missing record as "nothing to archive." Derive `<ID>`/`<slug>` from
+whatever's left instead:
 `specs/context/<N>.md`'s frontmatter `description:` carries `#P<phase>-<n> — <title>`; a surviving
 `REQ-<slug>.md`/`ARCH-<slug>.md` filename carries `<slug>` directly; `gh issue view N` gives the
 title, URL, and closed state regardless. Confirm closed via `gh issue view N` in this case since
@@ -63,7 +64,7 @@ this is the point of the anchor):
 | `specs/context/<N>.md` | direct path | No — overlaps the issue body; delete, don't mirror |
 | `specs/requirements/REQ-<slug>.md` | direct path, if it exists | Yes → `issue-NNN/REQ-<slug>.md` — **same filename**, only the directory changes |
 | `specs/architecture/ARCH-<slug>.md` | direct path, if it exists | Yes → `issue-NNN/ARCH-<slug>.md` — same filename |
-| `CODE-REVIEW-*.md` (location varies — `/review` has landed these at both the repo root and `specs/review/`; search both, e.g. `find . -maxdepth 2 -iname 'CODE-REVIEW-*.md'`, don't assume one fixed spot) | **every** file whose `Target` metadata row's branch is `feat/<N>/…` — matched by branch, **never** by assuming the PR number equals the issue number, and never by directory | Yes, one per matching file, each keeping its original filename (`CODE-REVIEW-PR-60.md` stays `CODE-REVIEW-PR-60.md`) |
+| Review report — current convention: `specs/reviews/REV-PR-<N>.md` / `REV-BRANCH-<safe-name>.md` / `REV-STAGED-*.md` / `REV-DIFF-*.md` (per `~/.claude/skills/review/SKILL.md`'s "General mode" save location); older `/review` output may still linger as `CODE-REVIEW-*.md` at the repo root or `specs/review/` — search all of them, e.g. `find . -maxdepth 2 -iname 'CODE-REVIEW-*.md'; find specs/reviews -iname 'REV-*.md'`, don't assume one fixed spot | **every** file whose `Target` metadata row's branch is `feat/<N>/…` — matched by branch, **never** by assuming the PR number equals the issue number, and never by directory | Yes, one per matching file, each keeping its original filename (`REV-PR-76.md` stays `REV-PR-76.md`, `CODE-REVIEW-PR-60.md` stays `CODE-REVIEW-PR-60.md`) |
 
 Most issues (bugs, chores, small enhancements) never had a REQ/ARCH/review doc — only add the
 sub-pages that actually exist. Don't invent placeholder pages for missing docs.
@@ -74,17 +75,17 @@ sub-pages that actually exist. Don't invent placeholder pages for missing docs.
 reverted the same day because they break recognition against the `specs/` names these documents are
 already known by.
 
-**Multiple reviews:** if more than one `CODE-REVIEW-*.md` file's `Target` branch matches `feat/<N>/…`
+**Multiple reviews:** if more than one review report's `Target` branch matches `feat/<N>/…`
 (multiple PRs against the same issue), every one gets its own sub-page under its own original name —
-`CODE-REVIEW-PR-60.md` and `CODE-REVIEW-PR-72.md` both land in `issue-NNN/` unchanged, no renaming
-needed since their own filenames already disambiguate them. A **branch-mode** review (no PR — its
-`Target` names a branch/commit rather than a PR URL) archives the same way under its own name (e.g.
-`CODE-REVIEW-BRANCH-feat-13-…md`); the branch-mode nature doesn't block sub-page creation, only
-affects the hub's `PR(s):` line (Step 3).
+`REV-PR-60.md` and `REV-PR-72.md` (or their `CODE-REVIEW-*.md` equivalents) both land in `issue-NNN/`
+unchanged, no renaming needed since their own filenames already disambiguate them. A **branch-mode**
+review (no PR — its `Target` names a branch/commit rather than a PR URL) archives the same way under
+its own name (e.g. `REV-BRANCH-feat-13-…md`, or the legacy `CODE-REVIEW-BRANCH-feat-13-…md`); the
+branch-mode nature doesn't block sub-page creation, only affects the hub's `PR(s):` line (Step 3).
 
-If a `CODE-REVIEW-*.md` file's branch doesn't obviously match the issue slug, check its `Target`
-metadata row before attributing it — don't archive a review that belongs to a different issue. If it
-genuinely can't be matched, leave it out and flag it to the user rather than guessing.
+If a review report's branch doesn't obviously match the issue slug, check its `Target` metadata row
+before attributing it — don't archive a review that belongs to a different issue. If it genuinely
+can't be matched, leave it out and flag it to the user rather than guessing.
 
 ## Step 3 — Write the hub page
 
@@ -141,8 +142,9 @@ Both `.wiki/Home.md` and `.wiki/_Sidebar.md` use the same phase-grouped structur
 
 Remove the archived files from the main repo (`git rm`, in the **main repo**, not `.wiki/`) —
 `specs/issues/<ID>-<slug>.md`, `specs/context/<N>.md`, whichever of `specs/requirements/`/
-`specs/architecture/` were mirrored, and every matching `CODE-REVIEW-*.md` **wherever Step 2 found
-it** (repo root, `specs/review/`, or elsewhere) — remove from its actual location, not an assumed one.
+`specs/architecture/` were mirrored, and every matching review report **wherever Step 2 found it**
+(`specs/reviews/`, repo root, `specs/review/`, or elsewhere) — remove from its actual location, not
+an assumed one.
 This is the "leave nothing behind" half of the convention: once an issue is archived, nothing about it
 should remain anywhere in the main repo — not just `specs/`. Commit this to the main repo separately
 from the wiki push in Step 7 — they're two different repos with two different histories.
