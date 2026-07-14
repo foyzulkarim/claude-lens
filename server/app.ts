@@ -5,6 +5,8 @@ import fastifyStatic from "@fastify/static";
 import fastifyWebsocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance } from "fastify";
 import type { WsServerMessage } from "../shared/ws-protocol.js";
+import { registerMetricsRoute } from "./routes/metrics.js";
+import type { Store } from "./store/store.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const publicDir = join(__dirname, "public");
@@ -37,7 +39,11 @@ export function sendInvalidation(socket: OutboundSocket, message: WsServerMessag
   socket.send(JSON.stringify(message));
 }
 
-export function buildApp(): FastifyInstance {
+export interface BuildAppOptions {
+  store: Store;
+}
+
+export function buildApp({ store }: BuildAppOptions): FastifyInstance {
   const app = Fastify({
     logger: {
       transport: {
@@ -54,6 +60,8 @@ export function buildApp(): FastifyInstance {
   }
 
   app.get("/api/ping", async () => ({ ok: true }));
+
+  registerMetricsRoute(app, store);
 
   app.register(async (instance) => {
     instance.get(

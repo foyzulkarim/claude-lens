@@ -3,6 +3,16 @@
  * specs/architecture/ARCH-shared-contracts.md.
  */
 
+// Forces every literal of T into the returned array — the `[T] extends
+// [U[number]] ? unknown : never` trick (wrapped in tuples to block union
+// distribution) fails to compile if `array` omits a union member, so
+// MEASURES/DIMENSIONS/GRAINS below can't silently drift out of sync with
+// their union types the way a hand-copied Set literal could.
+function exhaustiveArray<T extends string>() {
+  return <U extends readonly T[]>(array: U & ([T] extends [U[number]] ? unknown : never)): U =>
+    array;
+}
+
 export type Measure =
   | "costComputed"
   | "costObserved"
@@ -21,6 +31,25 @@ export type Measure =
   | "linesRemoved"
   | "gatePassRate";
 
+export const MEASURES = exhaustiveArray<Measure>()([
+  "costComputed",
+  "costObserved",
+  "inputTokens",
+  "outputTokens",
+  "cacheReadTokens",
+  "cacheCreateTokens",
+  "apiCalls",
+  "turns",
+  "sessions",
+  "toolCalls",
+  "cacheHitPct",
+  "wallMinutes",
+  "apiMs",
+  "linesAdded",
+  "linesRemoved",
+  "gatePassRate",
+]);
+
 export type Dimension =
   | "time"
   | "project"
@@ -33,7 +62,22 @@ export type Dimension =
   | "gateStatus"
   | "host";
 
+export const DIMENSIONS = exhaustiveArray<Dimension>()([
+  "time",
+  "project",
+  "model",
+  "gitBranch",
+  "version",
+  "entrypoint",
+  "sidechain",
+  "tool",
+  "gateStatus",
+  "host",
+]);
+
 export type Grain = "hour" | "day" | "week" | "month";
+
+export const GRAINS = exhaustiveArray<Grain>()(["hour", "day", "week", "month"]);
 
 export type DistributionEntity = "session" | "turn" | "call";
 
