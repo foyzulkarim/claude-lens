@@ -43,13 +43,24 @@ interface BaseMetricsQuery {
   grain: Grain;
   range: { from: string; to: string };
   filters?: Partial<Record<Dimension, (string | number)[]>>;
-  compare?: "previous-period";
-  smoothing?: "none" | "ma7";
 }
 
-export type MetricsQuery =
-  | (BaseMetricsQuery & { mode?: "series" })
-  | (BaseMetricsQuery & { mode: "distribution"; distributionEntity: DistributionEntity });
+// compare/smoothing only apply to mode: "series" — a distribution-mode query
+// never reaches the post-processing steps that read them (engine.ts's
+// `metrics()` returns from the distribution branch first), so they're kept
+// off that variant's type rather than accepted-but-silently-ignored.
+export type SeriesMetricsQuery = BaseMetricsQuery & {
+  mode?: "series";
+  compare?: "previous-period";
+  smoothing?: "none" | "ma7";
+};
+
+export type DistributionMetricsQuery = BaseMetricsQuery & {
+  mode: "distribution";
+  distributionEntity: DistributionEntity;
+};
+
+export type MetricsQuery = SeriesMetricsQuery | DistributionMetricsQuery;
 
 export interface SeriesPoint {
   t: string;

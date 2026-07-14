@@ -11,8 +11,8 @@ const HISTOGRAM_BUCKET_COUNT = 10;
 
 function buildHistogram(sorted: number[]): Distribution["histogram"] {
   if (sorted.length === 0) return [];
-  const min = sorted[0] as number;
-  const max = sorted[sorted.length - 1] as number;
+  const min = sorted[0];
+  const max = sorted[sorted.length - 1];
   if (sorted.length === 1 || min === max) {
     return [{ rangeStart: min, rangeEnd: max, count: sorted.length }];
   }

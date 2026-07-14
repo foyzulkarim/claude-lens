@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import type { MetricsQuery } from "../../shared/metrics-contract.js";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { MetricsQuery, SeriesMetricsQuery } from "../../shared/metrics-contract.js";
 import type { ApiCall, Session, Turn } from "../../shared/types.js";
 import { type MetricsInput, metrics } from "./engine.js";
 import { DEFAULT_PRICING_TABLE } from "./measures.js";
@@ -78,9 +78,7 @@ function session(overrides: Partial<Session> = {}): Session {
 // here, since "distribution" requires `distributionEntity` too; build those
 // queries as full MetricsQuery literals instead (see the mode/compare/
 // smoothing wiring test below).
-function baseQuery(
-  overrides: Partial<Omit<MetricsQuery, "mode" | "distributionEntity">> = {},
-): MetricsQuery {
+function baseQuery(overrides: Partial<Omit<SeriesMetricsQuery, "mode">> = {}): MetricsQuery {
   return {
     measures: ["costComputed"],
     dimensions: ["time"],
@@ -734,6 +732,119 @@ describe("metrics — compare: previous-period wiring", () => {
     expect(series?.points).toHaveLength(2);
     expect(series?.compareGhost).toHaveLength(2);
     expect(series?.compareGhost?.[1]?.value).toBeNull();
+  });
+
+  it("aligns a ghost at hour grain", () => {
+    const calls = [
+      call({ uuid: "h8", timestamp: iso(2026, 6, 15, 8, 10), usage: usage(100) }), // previous
+      call({ uuid: "h9", timestamp: iso(2026, 6, 15, 9, 10), usage: usage(200) }), // previous
+      call({ uuid: "h10", timestamp: iso(2026, 6, 15, 10, 10), usage: usage(300) }), // current
+      call({ uuid: "h11", timestamp: iso(2026, 6, 15, 11, 10), usage: usage(400) }), // current
+    ];
+    const input: MetricsInput = { calls, turns: [], sessions: [], pricing: PRICING };
+    const query: MetricsQuery = {
+      measures: ["inputTokens"],
+      dimensions: ["time"],
+      grain: "hour",
+      range: { from: iso(2026, 6, 15, 10, 0), to: iso(2026, 6, 15, 11, 59) },
+      compare: "previous-period",
+    };
+    const result = metrics(input, query);
+    const series = result[0];
+    expect(series?.points.map((p) => p.value)).toEqual([300, 400]);
+    expect(series?.compareGhost?.map((p) => p.value)).toEqual([100, 200]);
+  });
+
+  it("aligns a ghost at week grain (Monday-start weeks)", () => {
+    const calls = [
+      call({ uuid: "w-2wk-ago", timestamp: iso(2026, 5, 30, 10, 0), usage: usage(100) }), // previous, week of Jun 29
+      call({ uuid: "w-1wk-ago", timestamp: iso(2026, 6, 8, 10, 0), usage: usage(200) }), // previous, week of Jul 6
+      call({ uuid: "w-cur1", timestamp: iso(2026, 6, 14, 10, 0), usage: usage(300) }), // current, week of Jul 13
+      call({ uuid: "w-cur2", timestamp: iso(2026, 6, 22, 10, 0), usage: usage(400) }), // current, week of Jul 20
+    ];
+    const input: MetricsInput = { calls, turns: [], sessions: [], pricing: PRICING };
+    const query: MetricsQuery = {
+      measures: ["inputTokens"],
+      dimensions: ["time"],
+      grain: "week",
+      range: { from: iso(2026, 6, 13, 0, 0), to: iso(2026, 6, 26, 23, 59) },
+      compare: "previous-period",
+    };
+    const result = metrics(input, query);
+    const series = result[0];
+    expect(series?.points.map((p) => p.value)).toEqual([300, 400]);
+    expect(series?.compareGhost?.map((p) => p.value)).toEqual([100, 200]);
+  });
+
+  it("leaves compareGhost unset when a current-period group has no counterpart in the previous period", () => {
+    // Only "newproj" exists anywhere in the input, and only in the current
+    // range — the previous-period run produces zero groups for it, so the
+    // merge's `previousPoints === undefined` branch returns the series as-is.
+    const calls = [
+      call({
+        uuid: "only-current",
+        cwd: "/repo/newproj",
+        timestamp: iso(2026, 6, 15, 10, 0),
+        usage: usage(300),
+      }),
+    ];
+    const input: MetricsInput = { calls, turns: [], sessions: [], pricing: PRICING };
+    const query: MetricsQuery = {
+      measures: ["inputTokens"],
+      dimensions: ["project"],
+      grain: "day",
+      range: { from: iso(2026, 6, 15, 0, 0), to: iso(2026, 6, 15, 23, 59) },
+      compare: "previous-period",
+    };
+    const result = metrics(input, query);
+    const series = result[0];
+    expect(series?.points[0]?.value).toBe(300);
+    expect(series?.compareGhost).toBeUndefined();
+  });
+
+  describe("DST transition (America/New_York)", () => {
+    const originalTz = process.env.TZ;
+
+    beforeEach(() => {
+      process.env.TZ = "America/New_York";
+    });
+
+    afterEach(() => {
+      process.env.TZ = originalTz;
+    });
+
+    it("truncates a previous period that spans an extra bucket because it crosses the spring-forward day", () => {
+      // Current = Mar 9-10 (2 day buckets, no transition). Its duration,
+      // subtracted from Mar 9 00:00, lands on Mar 6 23:01 rather than Mar 7
+      // 00:00 — Mar 8's missing hour (2am->3am) means the previous range
+      // actually spans 3 day buckets (Mar 6, 7, 8), one more than current's 2.
+      // alignPreviousPeriod truncates by ordinal index, so Mar 8's data (the
+      // DST day itself) is silently dropped from the ghost rather than
+      // misaligning Mar 9 with Mar 8 or padding an extra null.
+      const calls = [
+        // The previous range's actual lower bound is Mar 6 23:01 (not Mar 6
+        // 00:00) — Mar 8's missing hour shifts it forward within the day —
+        // so this call must land after that instant to be included at all.
+        call({ uuid: "mar6", timestamp: iso(2026, 2, 6, 23, 30), usage: usage(100) }), // previous
+        call({ uuid: "mar7", timestamp: iso(2026, 2, 7, 10, 0), usage: usage(200) }), // previous
+        call({ uuid: "mar8", timestamp: iso(2026, 2, 8, 10, 0), usage: usage(999) }), // previous, dropped
+        call({ uuid: "mar9", timestamp: iso(2026, 2, 9, 10, 0), usage: usage(300) }), // current
+        call({ uuid: "mar10", timestamp: iso(2026, 2, 10, 10, 0), usage: usage(400) }), // current
+      ];
+      const input: MetricsInput = { calls, turns: [], sessions: [], pricing: PRICING };
+      const query: MetricsQuery = {
+        measures: ["inputTokens"],
+        dimensions: ["time"],
+        grain: "day",
+        range: { from: iso(2026, 2, 9, 0, 0), to: iso(2026, 2, 10, 23, 59) },
+        compare: "previous-period",
+      };
+      const result = metrics(input, query);
+      const series = result[0];
+      expect(series?.points.map((p) => p.value)).toEqual([300, 400]);
+      expect(series?.compareGhost).toHaveLength(2);
+      expect(series?.compareGhost?.map((p) => p.value)).toEqual([100, 200]);
+    });
   });
 });
 

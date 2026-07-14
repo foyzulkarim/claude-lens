@@ -1,6 +1,7 @@
 import type {
   Dimension,
   DistributionEntity,
+  DistributionMetricsQuery,
   Grain,
   MetricsQuery,
   Series,
@@ -19,9 +20,9 @@ import { bucketLabel, bucketStart, enumerateBuckets } from "./grain.js";
 import { computeMeasure, type MeasureScope, type PricingTable } from "./measures.js";
 
 // engine.ts is the only file in metrics/ that composes grain.ts/dimensions.ts/
-// measures.ts. It takes plain arrays, never a live Store (architecture
-// decision A1, plan.md decisions log 2026-07-14) — testable against fixtures
-// with no debounce/WS machinery involved.
+// measures.ts/distributions.ts. It takes plain arrays, never a live Store
+// (architecture decision A1, plan.md decisions log 2026-07-14) — testable
+// against fixtures with no debounce/WS machinery involved.
 export interface MetricsInput {
   calls: ApiCall[];
   turns: Turn[];
@@ -295,10 +296,7 @@ function entityScopesFor(entity: DistributionEntity, scope: MeasureScope): Measu
 }
 
 /** The `mode: "distribution"` pipeline (decision A9: `"time"` in `dimensions` is ignored — always one population per breakdown-dim group across the whole range). Entities where `computeMeasure` returns null are excluded from the population, which is what lets an all-premium-gated measure cascade to `computeDistribution([])`'s honest-null result with no special-casing here. */
-function computeDistributionSeries(
-  input: MetricsInput,
-  query: Extract<MetricsQuery, { mode: "distribution" }>,
-): Series[] {
+function computeDistributionSeries(input: MetricsInput, query: DistributionMetricsQuery): Series[] {
   const { groups, rangeFromMs, rangeToMs } = filterAndGroup(input, query, query.range);
 
   const series: Series[] = [];
@@ -332,6 +330,19 @@ function previousPeriodRange(range: { from: string; to: string }): { from: strin
   };
 }
 
+/** Attaches `compareGhost` to each series by aligning it against the previous-period series sharing its `measure|dimensionKey`. A current-period series with no previous-period counterpart (e.g. a dimension value that's new this period) is returned unchanged — no ghost, not a null-padded one. */
+function mergeCompareGhost(series: Series[], previousSeries: Series[]): Series[] {
+  const previousByKey = new Map(
+    previousSeries.map((s) => [`${s.measure}|${s.dimensionKey}`, s.points]),
+  );
+  return series.map((s) => {
+    const previousPoints = previousByKey.get(`${s.measure}|${s.dimensionKey}`);
+    return previousPoints === undefined
+      ? s
+      : { ...s, compareGhost: alignPreviousPeriod(s.points, previousPoints) };
+  });
+}
+
 /** THE query function (architecture §8): dispatches on `query.mode`, then applies `compare`/`smoothing` post-processing to `mode: "series"` output (decisions A6, A7, A9). */
 export function metrics(input: MetricsInput, query: MetricsQuery): Series[] {
   if (query.mode === "distribution") {
@@ -342,15 +353,7 @@ export function metrics(input: MetricsInput, query: MetricsQuery): Series[] {
 
   if (query.compare === "previous-period") {
     const previousSeries = computeSeriesForRange(input, query, previousPeriodRange(query.range));
-    const previousByKey = new Map(
-      previousSeries.map((s) => [`${s.measure}|${s.dimensionKey}`, s.points]),
-    );
-    series = series.map((s) => {
-      const previousPoints = previousByKey.get(`${s.measure}|${s.dimensionKey}`);
-      return previousPoints === undefined
-        ? s
-        : { ...s, compareGhost: alignPreviousPeriod(s.points, previousPoints) };
-    });
+    series = mergeCompareGhost(series, previousSeries);
   }
 
   if (query.smoothing === "ma7") {
