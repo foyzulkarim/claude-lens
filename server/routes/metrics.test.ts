@@ -40,8 +40,9 @@ describe("POST /api/metrics", () => {
     app = buildApp({ store });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     store.stop();
+    await app.close();
   });
 
   it("returns Series[] computed from fixture data in the store", async () => {
@@ -90,9 +91,21 @@ describe("POST /api/metrics", () => {
 
     expect(response.statusCode).toBe(200);
     const series = response.json();
+    // dimensions: [] has no "time" breakdown, so this is a single un-bucketed
+    // point (buckets = [null]) — not the 3 day-buckets of the happy-path test.
     expect(series).toHaveLength(1);
+    expect(series[0].points).toHaveLength(1);
     expect(series[0].points[0].value).toBe(0);
   });
+
+  function baseQuery(): MetricsQuery {
+    return {
+      measures: ["apiCalls"],
+      dimensions: [],
+      grain: "day",
+      range: { from: iso(2026, 6, 13, 0, 0), to: iso(2026, 6, 15, 23, 59) },
+    };
+  }
 
   it("400s on a malformed body", async () => {
     const response = await app.inject({
@@ -103,5 +116,94 @@ describe("POST /api/metrics", () => {
 
     expect(response.statusCode).toBe(400);
     expect(response.json()).toHaveProperty("error");
+  });
+
+  it("400s on a non-object body", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/metrics",
+      headers: { "content-type": "application/json" },
+      payload: JSON.stringify("nope"),
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it("400s on an unknown dimension", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/metrics",
+      payload: { ...baseQuery(), dimensions: ["not-a-real-dim"] },
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it("400s on an invalid grain", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/metrics",
+      payload: { ...baseQuery(), grain: "century" },
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it("400s on a missing range", async () => {
+    const query = baseQuery() as unknown as Record<string, unknown>;
+    delete query.range;
+    const response = await app.inject({ method: "POST", url: "/api/metrics", payload: query });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it("400s on an unparseable range date instead of silently admitting all data", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/metrics",
+      payload: { ...baseQuery(), range: { from: "not-a-date", to: iso(2026, 6, 15) } },
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it("400s on distribution mode with a bad distributionEntity", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/metrics",
+      payload: { ...baseQuery(), mode: "distribution", distributionEntity: "bogus" },
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it("400s on distribution mode with distributionEntity omitted", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/metrics",
+      payload: { ...baseQuery(), mode: "distribution" },
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it("400s on a filters value that isn't an array", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/metrics",
+      payload: { ...baseQuery(), filters: { model: "opus" } },
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it("400s on an unknown filters key", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/metrics",
+      payload: { ...baseQuery(), filters: { "not-a-real-dim": ["x"] } },
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it("accepts a valid filters object and returns 200", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/metrics",
+      payload: { ...baseQuery(), filters: { model: ["claude-sonnet-5"] } },
+    });
+    expect(response.statusCode).toBe(200);
   });
 });

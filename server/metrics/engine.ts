@@ -67,10 +67,8 @@ function callMatchesFilters(
 ): boolean {
   if (!filters) return true;
   // Object.keys widens to string[]; this cast trusts every key is a real
-  // Dimension. Safe today since only type-checked MetricsQuery literals ever
-  // reach this function (nothing wires filters up to an HTTP route yet) —
-  // #P2-10 should validate/narrow filter keys before they reach here once it
-  // does (review finding L6).
+  // Dimension. Safe because routes/metrics.ts's parseMetricsQuery validates
+  // every filter key/value shape before a query reaches here (#P2-10).
   for (const dim of Object.keys(filters) as Dimension[]) {
     if (dim === "time") continue;
     const values = valuesForCallDim(call, dim, callToTurn);

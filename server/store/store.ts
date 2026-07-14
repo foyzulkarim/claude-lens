@@ -169,10 +169,10 @@ export class Store {
 
   /**
    * Cross-session raw calls, concatenated in insertion order. Calls are raw
-   * (never derived), so unlike `listAllTurns`/`listSessions` this needs no
+   * (never derived), so unlike `listTurns`/`listSessions` this needs no
    * recompute — always current.
    */
-  listAllCalls(): ApiCall[] {
+  listCalls(): ApiCall[] {
     const result: ApiCall[] = [];
     for (const state of this.sessions.values()) {
       result.push(...state.calls);
@@ -185,7 +185,7 @@ export class Store {
    * recompute + "fresh within ~debounceMs" caveat as `listSessions` above —
    * a stale session is recomputed on read here too.
    */
-  listAllTurns(): Turn[] {
+  listTurns(): Turn[] {
     const result: Turn[] = [];
     for (const [sessionId, state] of this.sessions) {
       if (!state.session) this.recompute(sessionId);

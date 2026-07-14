@@ -173,3 +173,55 @@ describe("Store — listSessions", () => {
     expect(sessions.every((s) => s.callCount === 1)).toBe(true);
   });
 });
+
+describe("Store — listCalls", () => {
+  it("concatenates raw calls across sessions in insertion order, with no recompute needed", () => {
+    const { store } = makeStore();
+    store.applyRecords("s1", batch([call({ sessionId: "s1", messageId: "m1" })]));
+    store.applyRecords("s2", batch([call({ sessionId: "s2", messageId: "m2" })]));
+    store.applyRecords("s1", batch([call({ sessionId: "s1", messageId: "m3" })]));
+
+    // No debounce advance — calls are raw, listCalls() must be current regardless.
+    const calls = store.listCalls();
+    expect(calls.map((c) => c.messageId)).toEqual(["m1", "m3", "m2"]);
+  });
+});
+
+describe("Store — listTurns", () => {
+  it("lazily recomputes stale sessions and concatenates derived turns across sessions", () => {
+    const { store } = makeStore();
+    // A turn only derives when a call has a matching prompt (derive-turns.ts
+    // assigns each call to the latest preceding prompt in its session) — a
+    // bare call() with no prompt yields zero turns, so each batch here needs one.
+    const prompt1 = {
+      sessionId: "s1",
+      promptId: "p1",
+      text: "hi",
+      timestamp: "2026-07-13T00:00:00.000Z",
+    };
+    const prompt2 = {
+      sessionId: "s2",
+      promptId: "p2",
+      text: "hi",
+      timestamp: "2026-07-13T00:00:00.000Z",
+    };
+    store.applyRecords("s1", {
+      calls: [call({ sessionId: "s1", messageId: "m1" })],
+      prompts: [prompt1],
+      toolResultBytes: [],
+      duplicateCount: 0,
+      malformedCount: 0,
+    });
+    store.applyRecords("s2", {
+      calls: [call({ sessionId: "s2", messageId: "m2" })],
+      prompts: [prompt2],
+      toolResultBytes: [],
+      duplicateCount: 0,
+      malformedCount: 0,
+    });
+
+    // No debounce advance yet — nothing recomputed via the invalidator path.
+    const turns = store.listTurns();
+    expect(turns.map((t) => t.sessionId).sort()).toEqual(["s1", "s2"]);
+  });
+});
