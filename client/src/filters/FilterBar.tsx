@@ -1,5 +1,6 @@
 import { useState } from "react";
 import clsx from "clsx";
+import { TOGGLE_ACTIVE_CLASS, TOGGLE_CLASS } from "../ui/toggleStyles.js";
 import { useFacets } from "./useFacets.js";
 import { type ChipDimension, type FilterRange, type RangePreset, resolveRange } from "./state.js";
 import { useFilters } from "./useFilters.js";
@@ -18,9 +19,6 @@ const CHIPS: { dim: ChipDimension; label: string }[] = [
   { dim: "host", label: "Host" },
 ];
 
-const TOGGLE_CLASS =
-  "rounded px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 dark:text-[#8A96A5] dark:hover:bg-[#151A21]";
-const TOGGLE_ACTIVE_CLASS = "bg-slate-900 text-white dark:bg-[#E8EDF2] dark:text-[#0B0F14]";
 const DATE_INPUT_CLASS =
   "rounded border border-slate-200 px-1 py-0.5 text-xs dark:border-[#232B36] dark:bg-[#0B0F14]";
 
