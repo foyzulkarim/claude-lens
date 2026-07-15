@@ -5,5 +5,6 @@ export default defineConfig({
     include: ["{shared,server,client}/**/*.test.{ts,tsx}"],
     exclude: ["**/node_modules/**", "legacy/**", "dist/**"],
     passWithNoTests: true,
+    setupFiles: ["./client/vitest.setup.ts"],
   },
 });
