@@ -131,7 +131,7 @@ One vertical slice proving every layer. Nothing page-specific begins until this 
 - [x] **#P3-2 — React shell**
   `main.tsx`/`App.tsx`: wouter routes (all 11 page stubs), `QueryClientProvider`, query-key factory in `api/`, `ws.ts` with hand-rolled reconnect/backoff invalidating by key prefix, layout chrome.
   *Acceptance:* navigation works; WS reconnects after server restart; only mounted queries refetch on invalidation.
-- [ ] **#P3-3 — Global filter bar + URL sync**
+- [x] **#P3-3 — Global filter bar + URL sync**
   `filters/`: range presets (1D/7D/30D/90D/custom), project/model/branch/host chips; filter state lives in the query string and survives navigation (spec §0 permalink requirement).
   *Acceptance:* copy-pasting a URL reproduces the filtered view; filters persist across page changes.
 - [ ] **#P3-4 — Chart layer + one live chart** *(the demo milestone)*
