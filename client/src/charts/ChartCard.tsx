@@ -1,14 +1,15 @@
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import clsx from "clsx";
 import { addDays, addHours, addMonths, addWeeks } from "date-fns";
 import type { ECElementEvent } from "echarts/core";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import type { Grain, SeriesMetricsQuery } from "../../../shared/metrics-contract.js";
 import { postMetrics } from "../api/metrics.js";
 import { qk } from "../api/queryKeys.js";
 import { filtersToQuery, serializeFilters } from "../filters/state.js";
 import { useFilters } from "../filters/useFilters.js";
+import { TOGGLE_ACTIVE_CLASS, TOGGLE_CLASS } from "../ui/toggleStyles.js";
 import { Chart } from "./Chart.js";
 import { buildTimeseriesOption } from "./timeseries.js";
 import { UNIT_MEASURES, type Unit } from "./units.js";
@@ -22,11 +23,39 @@ const GRAINS: { value: Grain; label: string }[] = [
   { value: "month", label: "Month" },
 ];
 
+const FAMILIES: Family[] = ["area", "bars"];
 const UNITS: Unit[] = ["$", "tokens", "calls"];
 
-const TOGGLE_CLASS =
-  "rounded px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 dark:text-[#8A96A5] dark:hover:bg-[#151A21]";
-const TOGGLE_ACTIVE_CLASS = "bg-slate-900 text-white dark:bg-[#E8EDF2] dark:text-[#0B0F14]";
+function isGrain(value: string): value is Grain {
+  return GRAINS.some((g) => g.value === value);
+}
+
+interface ToggleGroupProps<T extends string> {
+  options: readonly T[];
+  value: T;
+  onChange: (value: T) => void;
+}
+
+/** Shared button-group rendering for the unit/family controls — same toggle
+ * look as `FilterBar.tsx`'s preset buttons, collapsed into one reusable piece
+ * here since `ChartCard` is the foundation later chart cards copy from. */
+function ToggleGroup<T extends string>({ options, value, onChange }: ToggleGroupProps<T>) {
+  return (
+    <div className="flex items-center gap-1">
+      {options.map((option) => (
+        <button
+          key={option}
+          type="button"
+          onClick={() => onChange(option)}
+          aria-pressed={value === option}
+          className={clsx(TOGGLE_CLASS, value === option && TOGGLE_ACTIVE_CLASS)}
+        >
+          {option}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 function bucketEnd(t: string, grain: Grain): string {
   const start = new Date(t);
@@ -91,7 +120,8 @@ export function ChartCard({ title, defaultUnit }: ChartCardProps) {
 
   const { data, isPending, isError, error } = useQuery({
     queryKey: qk.metrics(query),
-    queryFn: () => postMetrics(query),
+    queryFn: ({ signal }) => postMetrics(query, signal),
+    placeholderData: keepPreviousData,
   });
 
   const option = useMemo(
@@ -99,48 +129,35 @@ export function ChartCard({ title, defaultUnit }: ChartCardProps) {
     [data, family, unit],
   );
 
-  function handlePointClick(params: ECElementEvent): void {
-    const value = params.value;
-    const t = Array.isArray(value) ? value[0] : undefined;
-    if (typeof t !== "string") return;
-    const from = t;
-    const to = bucketEnd(t, grain);
-    navigate(`/sessions?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
-  }
+  // Stable identity so Chart's click-listener effect (keyed on this prop)
+  // only re-subscribes when the drill-down target actually changes, not on
+  // every render (e.g. the render-only `family` toggle).
+  const handlePointClick = useCallback(
+    (params: ECElementEvent): void => {
+      const value = params.value;
+      const t = Array.isArray(value) ? value[0] : undefined;
+      if (typeof t !== "string") return;
+      const from = t;
+      const to = bucketEnd(t, grain);
+      navigate(`/sessions?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+    },
+    [grain, navigate],
+  );
 
   return (
     <div className="rounded-md border border-slate-200 bg-white p-4 dark:border-[#232B36] dark:bg-[#151A21]">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-sm font-semibold text-slate-900 dark:text-[#E8EDF2]">{title}</h2>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1">
-            {UNITS.map((u) => (
-              <button
-                key={u}
-                type="button"
-                onClick={() => setUnit(u)}
-                className={clsx(TOGGLE_CLASS, unit === u && TOGGLE_ACTIVE_CLASS)}
-              >
-                {u === "$" ? "$" : u}
-              </button>
-            ))}
-          </div>
-          <div className="flex items-center gap-1">
-            {(["area", "bars"] as const).map((f) => (
-              <button
-                key={f}
-                type="button"
-                onClick={() => setFamily(f)}
-                className={clsx(TOGGLE_CLASS, family === f && TOGGLE_ACTIVE_CLASS)}
-              >
-                {f}
-              </button>
-            ))}
-          </div>
+          <ToggleGroup options={UNITS} value={unit} onChange={setUnit} />
+          <ToggleGroup options={FAMILIES} value={family} onChange={setFamily} />
           <select
             aria-label="Grain"
             value={grain}
-            onChange={(e) => setGrain(e.target.value as Grain)}
+            onChange={(e) => {
+              const value = e.target.value;
+              if (isGrain(value)) setGrain(value);
+            }}
             className={clsx(TOGGLE_CLASS, "border border-slate-200 dark:border-[#232B36]")}
           >
             {GRAINS.map((g) => (
@@ -152,6 +169,7 @@ export function ChartCard({ title, defaultUnit }: ChartCardProps) {
           <button
             type="button"
             onClick={() => setCompare((v) => !v)}
+            aria-pressed={compare}
             className={clsx(TOGGLE_CLASS, compare && TOGGLE_ACTIVE_CLASS)}
           >
             Compare
@@ -159,6 +177,7 @@ export function ChartCard({ title, defaultUnit }: ChartCardProps) {
           <button
             type="button"
             onClick={() => setSmoothing((v) => !v)}
+            aria-pressed={smoothing}
             className={clsx(TOGGLE_CLASS, smoothing && TOGGLE_ACTIVE_CLASS)}
           >
             MA7
@@ -166,11 +185,13 @@ export function ChartCard({ title, defaultUnit }: ChartCardProps) {
         </div>
       </div>
 
-      {isPending && <p className="mt-4 text-sm text-slate-400">Loading…</p>}
-      {isError && <p className="mt-4 text-sm text-red-500">{error.message}</p>}
-      {data && (
-        <Chart option={option} onPointClick={handlePointClick} className="mt-4 h-80 w-full" />
-      )}
+      <div className="relative mt-4">
+        {isPending && <p className="text-sm text-slate-400">Loading…</p>}
+        {isError && <p className="text-sm text-red-500">{error.message}</p>}
+        {!isPending && (
+          <Chart option={option} onPointClick={handlePointClick} className="h-80 w-full" />
+        )}
+      </div>
     </div>
   );
 }

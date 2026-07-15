@@ -64,16 +64,19 @@ function renderCard(search = "") {
     searchPath: search,
     record: true,
   });
-  render(
-    (
-      <QueryClientProvider client={queryClient}>
-        <Router hook={hook} searchHook={searchHook}>
-          <ChartCard title="Cost over time" defaultUnit="$" />
-        </Router>
-      </QueryClientProvider>
-    ) as ReactElement,
-  );
-  return { history: history as string[] };
+  const tree = (
+    <QueryClientProvider client={queryClient}>
+      <Router hook={hook} searchHook={searchHook}>
+        <ChartCard title="Cost over time" defaultUnit="$" />
+      </Router>
+    </QueryClientProvider>
+  ) as ReactElement;
+  const view = render(tree);
+  // Re-renders with the exact same element tree (same queryClient/hook
+  // instances, same props) — a genuine "nothing changed" re-render, as
+  // opposed to a fresh mount.
+  const rerenderUnchanged = () => view.rerender(tree);
+  return { history: history as string[], queryClient, rerenderUnchanged };
 }
 
 beforeEach(() => {
@@ -183,21 +186,49 @@ describe("ChartCard — controls", () => {
       "/sessions?from=2026-07-10T00%3A00%3A00.000Z&to=2026-07-11T00%3A00%3A00.000Z",
     );
   });
+
+  it("settles on the last selection when unit and grain are toggled in quick succession", async () => {
+    const user = userEvent.setup();
+    renderCard();
+    await waitFor(() => expect(postMetricsMock).toHaveBeenCalledTimes(1));
+
+    // Fire both toggles without awaiting the fetches in between.
+    await Promise.all([
+      user.click(screen.getByRole("button", { name: "tokens" })),
+      user.selectOptions(screen.getByLabelText("Grain"), "week"),
+    ]);
+
+    await waitFor(() => {
+      const last = latestQuery<{ measures: string[]; grain: string }>();
+      expect(last.measures).toEqual(["inputTokens", "outputTokens"]);
+      expect(last.grain).toBe("week");
+    });
+  });
 });
 
 describe("ChartCard — regression guards", () => {
   it("stable filters+controls do not requery on unrelated re-render", async () => {
-    renderCard();
+    const { rerenderUnchanged } = renderCard();
     await waitFor(() => expect(postMetricsMock).toHaveBeenCalledTimes(1));
-    // A second render pass with nothing changed shouldn't add a call.
-    await waitFor(() => expect(postMetricsMock).toHaveBeenCalledTimes(1));
+
+    // Force an actual second render pass with nothing changed — if the
+    // query's useMemo guard (ChartCard.tsx) regressed to a fresh-object
+    // identity per render, this would trigger a second fetch.
+    rerenderUnchanged();
+    await waitFor(() => expect(chartSpy).toHaveBeenCalled());
+    expect(postMetricsMock).toHaveBeenCalledTimes(1);
   });
 
   it("query key matches the shared factory exactly", async () => {
-    renderCard();
+    const { queryClient } = renderCard();
     await waitFor(() => expect(postMetricsMock).toHaveBeenCalledTimes(1));
     const sentQuery = postMetricsMock.mock.calls[0]?.[0];
-    expect(qk.metrics(sentQuery as never)).toEqual(["metrics", sentQuery]);
+
+    // Inspect the key TanStack Query actually registered in its cache —
+    // not a self-reference — so a hand-rolled key (e.g. dropping qk.metrics)
+    // would fail this assertion.
+    const [entry] = queryClient.getQueryCache().getAll();
+    expect(entry?.queryKey).toEqual(qk.metrics(sentQuery as never));
   });
 
   it("range/filters fragment matches the shared resolver", async () => {

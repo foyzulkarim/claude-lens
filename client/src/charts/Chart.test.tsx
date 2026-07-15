@@ -94,7 +94,9 @@ describe("Chart", () => {
     expect(FakeResizeObserver.instances).toHaveLength(1);
     FakeResizeObserver.instances[0]?.trigger();
     expect(chartInstance.resize).toHaveBeenCalledTimes(1);
-    expect(chartInstance.setOption).not.toHaveBeenCalledTimes(2);
+    // Pin the exact count: setOption is applied once at mount and never
+    // again on resize (resize must call chart.resize() only).
+    expect(chartInstance.setOption).toHaveBeenCalledTimes(1);
   });
 
   it("disposes on unmount and disconnects the resize observer", () => {

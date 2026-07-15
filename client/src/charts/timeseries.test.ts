@@ -64,7 +64,17 @@ describe("buildTimeseriesOption — compare ghost", () => {
     expect(entries).toHaveLength(2);
     const ghost = entries[1];
     expect(ghost.lineStyle?.type).toBe("dashed");
-    expect(ghost.name).not.toBe(input.label);
+    expect(ghost.name).toBe(`${input.label} (previous period)`);
+  });
+});
+
+describe("buildTimeseriesOption — malformed input", () => {
+  it("does not throw when a series has an empty points array", () => {
+    const input = series({ points: [] });
+    expect(() => buildTimeseriesOption([input], { family: "area", unit: "$" })).not.toThrow();
+    const option = buildTimeseriesOption([input], { family: "area", unit: "$" });
+    const [entry] = option.series as { data: unknown[] }[];
+    expect(entry.data).toEqual([]);
   });
 });
 
