@@ -1,7 +1,7 @@
 import { useState } from "react";
 import clsx from "clsx";
-import { type FacetDimension, useFacets } from "./useFacets.js";
-import { type FilterRange, type RangePreset, resolveRange } from "./state.js";
+import { useFacets } from "./useFacets.js";
+import { type ChipDimension, type FilterRange, type RangePreset, resolveRange } from "./state.js";
 import { useFilters } from "./useFilters.js";
 
 const PRESETS: { preset: RangePreset; label: string }[] = [
@@ -11,7 +11,7 @@ const PRESETS: { preset: RangePreset; label: string }[] = [
   { preset: "90d", label: "90D" },
 ];
 
-const CHIPS: { dim: FacetDimension; label: string }[] = [
+const CHIPS: { dim: ChipDimension; label: string }[] = [
   { dim: "project", label: "Project" },
   { dim: "model", label: "Model" },
   { dim: "branch", label: "Branch" },
@@ -31,7 +31,7 @@ function ChipDropdown({
   range,
   onChange,
 }: {
-  dim: FacetDimension;
+  dim: ChipDimension;
   label: string;
   selected: string[];
   range: FilterRange;
@@ -45,7 +45,7 @@ function ChipDropdown({
   }
 
   return (
-    <details className="relative" onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
+    <details className="relative" onToggle={(e) => setOpen(e.currentTarget.open)}>
       <summary
         className={clsx(
           "cursor-pointer select-none rounded border px-2 py-1 text-xs",
@@ -86,8 +86,9 @@ export function FilterBar() {
   const range = filters.range;
   const activePreset = "preset" in range ? range.preset : null;
   const isCustom = activePreset === null;
-  const customFrom = "from" in range ? range.from : "";
-  const customTo = "from" in range ? range.to : "";
+  const customRange = "from" in range ? range : { from: "", to: "" };
+  const customFrom = customRange.from;
+  const customTo = customRange.to;
 
   function activateCustom(): void {
     if (isCustom) return;

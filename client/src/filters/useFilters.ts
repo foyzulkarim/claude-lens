@@ -1,11 +1,15 @@
 import { useLocation, useSearch } from "wouter";
-import { type FilterRange, type FilterState, parseFilters, serializeFilters } from "./state.js";
-
-export type Chip = "project" | "model" | "branch" | "host";
+import {
+  type ChipDimension,
+  type FilterRange,
+  type FilterState,
+  parseFilters,
+  serializeFilters,
+} from "./state.js";
 
 export interface UseFiltersResult {
   filters: FilterState;
-  setChip(chip: Chip, values: string[]): void;
+  setChip(chip: ChipDimension, values: string[]): void;
   setRange(range: FilterRange): void;
   reset(): void;
 }

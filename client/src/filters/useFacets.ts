@@ -1,18 +1,9 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { Dimension, SeriesMetricsQuery } from "../../../shared/metrics-contract.js";
+import type { SeriesMetricsQuery } from "../../../shared/metrics-contract.js";
 import { postMetrics } from "../api/metrics.js";
 import { qk } from "../api/queryKeys.js";
-import { type FilterRange, resolveRange } from "./state.js";
-
-export type FacetDimension = "project" | "model" | "branch" | "host";
-
-const FACET_DIMENSION: Record<FacetDimension, Dimension> = {
-  project: "project",
-  model: "model",
-  branch: "gitBranch",
-  host: "host",
-};
+import { CHIP_DIMENSION, type ChipDimension, type FilterRange, resolveRange } from "./state.js";
 
 export interface UseFacetsResult {
   options: string[];
@@ -39,7 +30,7 @@ function rangeCacheKey(range: FilterRange): string {
  * milliseconds on every render and refetch continuously.
  */
 export function useFacets(
-  dim: FacetDimension,
+  dim: ChipDimension,
   range: FilterRange,
   enabled: boolean,
 ): UseFacetsResult {
@@ -48,7 +39,7 @@ export function useFacets(
   const query = useMemo<SeriesMetricsQuery>(
     () => ({
       measures: ["sessions"],
-      dimensions: [FACET_DIMENSION[dim]],
+      dimensions: [CHIP_DIMENSION[dim]],
       grain: "day",
       range: resolveRange(range, new Date()),
     }),

@@ -9,8 +9,25 @@ import type { Dimension, MetricsQuery } from "../../../shared/metrics-contract.j
  */
 
 export type RangePreset = "1d" | "7d" | "30d" | "90d";
-const RANGE_PRESETS: ReadonlySet<string> = new Set(["1d", "7d", "30d", "90d"]);
+const RANGE_PRESETS: ReadonlySet<RangePreset> = new Set(["1d", "7d", "30d", "90d"]);
 const DEFAULT_RANGE: { preset: RangePreset } = { preset: "7d" };
+
+function isRangePreset(value: string): value is RangePreset {
+  return RANGE_PRESETS.has(value as RangePreset);
+}
+
+/** The four chip dimensions exposed by the URL (decision A4: `branch` is the
+ * URL's clean name for the contract's `gitBranch` dimension). Single source
+ * of truth for both `useFilters` (URL keys) and `useFacets` (breakdown
+ * queries) so the two never drift out of sync. */
+export type ChipDimension = "project" | "model" | "branch" | "host";
+
+export const CHIP_DIMENSION: Record<ChipDimension, Dimension> = {
+  project: "project",
+  model: "model",
+  branch: "gitBranch",
+  host: "host",
+};
 
 export type FilterRange = { preset: RangePreset } | { from: string; to: string };
 
@@ -32,7 +49,8 @@ function parseChip(params: URLSearchParams, key: string): string[] {
   return raw
     .split(",")
     .map((v) => v.trim())
-    .filter((v) => v.length > 0);
+    .filter((v) => v.length > 0)
+    .sort();
 }
 
 function parseRange(params: URLSearchParams): FilterRange {
@@ -46,8 +64,8 @@ function parseRange(params: URLSearchParams): FilterRange {
   }
 
   const preset = params.get("range");
-  if (preset !== null && RANGE_PRESETS.has(preset)) {
-    return { preset: preset as RangePreset };
+  if (preset !== null && isRangePreset(preset)) {
+    return { preset };
   }
 
   return DEFAULT_RANGE;
@@ -80,7 +98,7 @@ export function serializeFilters(state: FilterState): string {
 
   for (const key of ["project", "model", "branch", "host"] as const) {
     const values = state[key];
-    if (values.length > 0) params.set(key, values.join(","));
+    if (values.length > 0) params.set(key, [...values].sort().join(","));
   }
 
   return params.toString();
@@ -97,13 +115,6 @@ export function resolveRange(range: FilterRange, now: Date): { from: string; to:
   const from = new Date(to.getTime() - days * 24 * 60 * 60 * 1000);
   return { from: from.toISOString(), to: to.toISOString() };
 }
-
-const CHIP_DIMENSION: Record<"project" | "model" | "branch" | "host", Dimension> = {
-  project: "project",
-  model: "model",
-  branch: "gitBranch",
-  host: "host",
-};
 
 /** Shapes a `FilterState` into the `{range, filters}` fragment a `MetricsQuery` needs — resolves the range, remaps the URL's `branch` name to the contract's `gitBranch` dimension (decision A4), and drops empty-array chips (the server rejects empty-array filter values). */
 export function filtersToQuery(

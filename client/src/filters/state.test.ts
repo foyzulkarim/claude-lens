@@ -32,6 +32,14 @@ describe("parseFilters — defaults & decoding", () => {
   it("decodes CSV chip values", () => {
     expect(parseFilters("?project=a,b").project).toEqual(["a", "b"]);
   });
+
+  it("sorts chip values into canonical order regardless of URL order", () => {
+    expect(parseFilters("?project=b,a").project).toEqual(["a", "b"]);
+  });
+
+  it("trims whitespace and drops empty segments in CSV chips", () => {
+    expect(parseFilters("?project=a, ,b").project).toEqual(["a", "b"]);
+  });
 });
 
 describe("parseFilters — malformed input falls back to defaults", () => {
@@ -47,6 +55,21 @@ describe("parseFilters — malformed input falls back to defaults", () => {
   it("falls back on unparseable custom range dates", () => {
     expect(parseFilters("?from=not-a-date&to=2026-07-10").range).toEqual({ preset: "7d" });
   });
+
+  it("falls back to default when only 'from' is present", () => {
+    expect(parseFilters("?from=2026-07-01").range).toEqual({ preset: "7d" });
+  });
+
+  it("falls back to default when only 'to' is present", () => {
+    expect(parseFilters("?to=2026-07-10").range).toEqual({ preset: "7d" });
+  });
+
+  it("accepts a custom range where from equals to", () => {
+    expect(parseFilters("?from=2026-07-10&to=2026-07-10").range).toEqual({
+      from: "2026-07-10",
+      to: "2026-07-10",
+    });
+  });
 });
 
 describe("serializeFilters — round-trip and clean URLs", () => {
@@ -59,6 +82,17 @@ describe("serializeFilters — round-trip and clean URLs", () => {
       host: ["default"],
     };
     expect(parseFilters(serializeFilters(state))).toEqual(state);
+  });
+
+  it("serializes chip values in canonical (sorted) order regardless of insertion order", () => {
+    const state: FilterState = {
+      range: { preset: "7d" },
+      project: ["b", "a"],
+      model: [],
+      branch: [],
+      host: [],
+    };
+    expect(serializeFilters(state)).toBe("project=a%2Cb");
   });
 
   it("omits empty chips and the default range", () => {
