@@ -3,29 +3,29 @@ import { useMemo } from "react";
 import type { SeriesMetricsQuery } from "../../../shared/metrics-contract.js";
 import { postMetrics } from "../api/metrics.js";
 import { qk } from "../api/queryKeys.js";
+import { filtersToQuery, serializeFilters } from "../filters/state.js";
+import { useFilters } from "../filters/useFilters.js";
 import { PageStub } from "./PageStub.js";
 
-// Provisional 7-day window — the real range comes from the global filter bar
-// (#P3-3). This exists to make the WS invalidation path demonstrable
-// end-to-end (ARCH-react-shell.md Open Question) until #P3-4 lands charts.
-const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
-
-function smokeQuery(): SeriesMetricsQuery {
-  const to = new Date();
-  const from = new Date(to.getTime() - SEVEN_DAYS_MS);
-  return {
-    measures: ["sessions"],
-    dimensions: [],
-    grain: "day",
-    range: { from: from.toISOString(), to: to.toISOString() },
-  };
-}
-
 export function Dashboard() {
-  // Computed once per mount, not per render — smokeQuery() reads the current
-  // time, so recomputing it on every render would change qk.metrics(query)'s
-  // hash every render and cause a continuous refetch loop.
-  const query = useMemo(() => smokeQuery(), []);
+  const { filters } = useFilters();
+  const filtersKey = serializeFilters(filters);
+  // Memoized on filters' serialized shape (its stable primitive identity),
+  // not a fresh `new Date()` every render — filtersToQuery resolves presets
+  // relative to "now", so recomputing it on every render would change
+  // qk.metrics(query)'s hash continuously and refetch in a loop
+  // (ARCH-react-shell.md Open Question, same pitfall the old smokeQuery()
+  // placeholder called out).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: deps are [filtersKey] — filtersKey is filters' stable serialized identity, so filters itself is intentionally omitted
+  const query = useMemo<SeriesMetricsQuery>(
+    () => ({
+      measures: ["sessions"],
+      dimensions: [],
+      grain: "day",
+      ...filtersToQuery(filters, new Date()),
+    }),
+    [filtersKey],
+  );
   const { data, isPending, isError, error } = useQuery({
     queryKey: qk.metrics(query),
     queryFn: () => postMetrics(query),

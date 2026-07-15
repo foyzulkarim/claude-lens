@@ -316,7 +316,7 @@ exact same view (R4) and survive navigation (R5, exercised in T2).
 
 ## Task T2: FilterBar UI, hooks, and page wiring
 
-> **Status:** not started
+> **Status:** done
 > **Verification:** ui
 > **Effort:** m
 > **Priority:** high
