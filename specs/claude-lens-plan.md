@@ -128,7 +128,7 @@ One vertical slice proving every layer. Nothing page-specific begins until this 
 - [x] **#P3-1 — Fastify assembly + WS invalidation bus**
   `app.ts`: static assets + SPA fallback, `/ws` upgrade, ingest→invalidation→WS wiring (three message types, never data).
   *Acceptance:* appending to a watched fixture file emits one debounced `session-updated` over WS.
-- [ ] **#P3-2 — React shell**
+- [x] **#P3-2 — React shell**
   `main.tsx`/`App.tsx`: wouter routes (all 11 page stubs), `QueryClientProvider`, query-key factory in `api/`, `ws.ts` with hand-rolled reconnect/backoff invalidating by key prefix, layout chrome.
   *Acceptance:* navigation works; WS reconnects after server restart; only mounted queries refetch on invalidation.
 - [ ] **#P3-3 — Global filter bar + URL sync**
