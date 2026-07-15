@@ -15,5 +15,9 @@ export async function postMetrics(query: MetricsQuery): Promise<Series[]> {
     throw new Error(`POST /api/metrics failed (${response.status}): ${message}`);
   }
 
-  return response.json() as Promise<Series[]>;
+  const body: unknown = await response.json();
+  if (!Array.isArray(body)) {
+    throw new Error("POST /api/metrics returned a non-array response");
+  }
+  return body as Series[];
 }

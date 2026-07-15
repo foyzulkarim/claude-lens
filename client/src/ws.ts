@@ -129,6 +129,8 @@ export function connectWs(queryClient: QueryClient, options: ConnectWsOptions = 
     disposed = true;
     if (reconnectTimer !== null) clearTimeout(reconnectTimer);
     if (socket) {
+      socket.onopen = null;
+      socket.onmessage = null;
       socket.onclose = null;
       socket.onerror = null;
       socket.close();

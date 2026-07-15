@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
 import type { SeriesMetricsQuery } from "../../../shared/metrics-contract.js";
 import { postMetrics } from "../api/metrics.js";
 import { qk } from "../api/queryKeys.js";
@@ -21,7 +22,10 @@ function smokeQuery(): SeriesMetricsQuery {
 }
 
 export function Dashboard() {
-  const query = smokeQuery();
+  // Computed once per mount, not per render — smokeQuery() reads the current
+  // time, so recomputing it on every render would change qk.metrics(query)'s
+  // hash every render and cause a continuous refetch loop.
+  const query = useMemo(() => smokeQuery(), []);
   const { data, isPending, isError, error } = useQuery({
     queryKey: qk.metrics(query),
     queryFn: () => postMetrics(query),
