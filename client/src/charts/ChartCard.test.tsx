@@ -36,7 +36,7 @@ vi.mock("../api/metrics.js", () => ({
   postMetrics: (query: unknown) => postMetricsMock(query),
 }));
 
-const { ChartCard } = await import("./ChartCard.js");
+const { ChartCard, chartAriaLabel } = await import("./ChartCard.js");
 
 function latestQuery<T>(): T {
   const calls = postMetricsMock.mock.calls;
@@ -54,6 +54,28 @@ const sampleSeries: Series[] = [
       { t: "2026-07-08T00:00:00.000Z", value: 1 },
       { t: "2026-07-09T00:00:00.000Z", value: 2 },
     ],
+  },
+];
+
+const summarySeries: Series[] = [
+  {
+    measure: "costComputed",
+    dimensionKey: "time",
+    label: "Cost",
+    points: [
+      { t: "2026-07-08T00:00:00.000Z", value: 1 },
+      { t: "2026-07-09T00:00:00.000Z", value: null },
+      { t: "2026-07-10T00:00:00.000Z", value: Number.POSITIVE_INFINITY },
+      { t: "2026-07-11T00:00:00.000Z", value: Number.NEGATIVE_INFINITY },
+      { t: "2026-07-12T00:00:00.000Z", value: Number.NaN },
+    ],
+    compareGhost: [{ t: "2026-07-08T00:00:00.000Z", value: 100 }],
+  },
+  {
+    measure: "costComputed",
+    dimensionKey: "time",
+    label: "Secondary cost series",
+    points: [{ t: "2026-07-08T00:00:00.000Z", value: 2 }],
   },
 ];
 
@@ -93,13 +115,14 @@ describe("ChartCard — render states", () => {
   it("renders a loading state before postMetrics resolves", () => {
     postMetricsMock.mockImplementation(() => new Promise(() => {}));
     renderCard();
-    expect(screen.getByText(/loading/i)).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Loading…");
+    expect(chartSpy).not.toHaveBeenCalled();
   });
 
   it("renders an error state when postMetrics rejects", async () => {
     postMetricsMock.mockRejectedValue(new Error("boom"));
     renderCard();
-    await waitFor(() => expect(screen.getByText("boom")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("boom"));
   });
 
   it("renders the chart once data resolves, built from the resolved Series[]", async () => {
@@ -107,6 +130,80 @@ describe("ChartCard — render states", () => {
     await waitFor(() => expect(chartSpy).toHaveBeenCalled());
     const lastCall = chartSpy.mock.calls.at(-1)?.[0] as ChartProps;
     expect(lastCall.option.series).toHaveLength(1);
+  });
+});
+
+describe("ChartCard — semantic summary", () => {
+  it("leaves the summary undefined until query data exists", () => {
+    expect(chartAriaLabel(undefined, "Cost over time", "$")).toBeUndefined();
+  });
+
+  it("describes an empty loaded result as zero series and zero total", async () => {
+    postMetricsMock.mockResolvedValue([]);
+    renderCard();
+    await waitFor(() => {
+      const lastCall = chartSpy.mock.calls.at(-1)?.[0] as ChartProps;
+      expect(lastCall.ariaLabel).toBe("Cost over time chart; 0 series; total $0.00");
+    });
+  });
+
+  it("treats all-null and non-finite points as a zero total", () => {
+    const values: Series[] = [
+      {
+        measure: "costComputed",
+        dimensionKey: "time",
+        label: "No finite values",
+        points: [
+          { t: "2026-07-08T00:00:00.000Z", value: null },
+          { t: "2026-07-09T00:00:00.000Z", value: Number.NaN },
+          { t: "2026-07-10T00:00:00.000Z", value: Number.POSITIVE_INFINITY },
+          { t: "2026-07-11T00:00:00.000Z", value: Number.NEGATIVE_INFINITY },
+        ],
+      },
+    ];
+    expect(chartAriaLabel(values, "Cost over time", "$")).toBe(
+      "Cost over time chart; 1 series; total $0.00",
+    );
+  });
+
+  it("derives the loaded chart summary from finite points using the active unit formatter", async () => {
+    postMetricsMock.mockResolvedValue(summarySeries);
+    renderCard();
+    await waitFor(() => {
+      const lastCall = chartSpy.mock.calls.at(-1)?.[0] as ChartProps;
+      expect(lastCall.ariaLabel).toBe("Cost over time chart; 2 series; total $3.00");
+    });
+  });
+
+  it("updates the semantic summary when query data changes", async () => {
+    const { queryClient } = renderCard();
+    await waitFor(() => expect(chartSpy).toHaveBeenCalled());
+    const initial = chartSpy.mock.calls.at(-1)?.[0] as ChartProps;
+    expect(initial.ariaLabel).toBe("Cost over time chart; 1 series; total $3.00");
+
+    queryClient.setQueryData(qk.metrics(latestQuery()), [
+      {
+        ...sampleSeries[0],
+        points: [...sampleSeries[0].points, { t: "2026-07-10T00:00:00.000Z", value: 4 }],
+      },
+    ]);
+
+    await waitFor(() => {
+      const updated = chartSpy.mock.calls.at(-1)?.[0] as ChartProps;
+      expect(updated.ariaLabel).toBe("Cost over time chart; 1 series; total $7.00");
+    });
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Chart updated: Cost over time chart; 1 series; total $7.00",
+    );
+  });
+
+  it("does not announce the initial summary or an unchanged rerender", async () => {
+    const { rerenderUnchanged } = renderCard();
+    await waitFor(() => expect(chartSpy).toHaveBeenCalled());
+    expect(screen.queryByText(/^Chart updated:/)).not.toBeInTheDocument();
+
+    rerenderUnchanged();
+    expect(screen.queryByText(/^Chart updated:/)).not.toBeInTheDocument();
   });
 });
 
