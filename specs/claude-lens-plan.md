@@ -137,7 +137,7 @@ One vertical slice proving every layer. Nothing page-specific begins until this 
 - [x] **#P3-4 — Chart layer + one live chart** *(the demo milestone)*
   ECharts wrapper (~50-line mount/setOption/ResizeObserver/dispose — no `echarts-for-react`); timeseries option builder; unit switcher, compare ghost, smoothing, granularity, click-to-drill implemented **in this layer** per §11. Mount one cost-over-time chart on the Dashboard stub.
   *Acceptance:* with Claude Code running a real session, the chart updates within a few seconds without reload. **Go/no-go checkpoint for Phase 4.**
-- [ ] **#P3-5 — Cypress setup + steel-thread smoke spec**
+- [x] **#P3-5 — Cypress setup + steel-thread smoke spec**
   Cypress (devDependency) with a boot harness that launches the built app deterministically: `node dist/cli.js --roots test/fixtures --no-open --port <test-port>`. Smoke spec asserts: Dashboard renders the chart from fixture data; filter changes sync to the URL and survive navigation; appending a line to a fixture JSONL mid-test live-updates the chart (regression guard on the full ingest → store → WS → refetch loop). Add the E2E job to CI.
   *Acceptance:* smoke spec green locally and in CI against the built `dist/`; the live-update assertion passes without reload or polling hacks.
 
