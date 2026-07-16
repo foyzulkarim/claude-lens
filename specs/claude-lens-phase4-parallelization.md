@@ -194,10 +194,93 @@ And #P5-1 depends on #P4-18, so Phase 5 can't begin until Phase 4 (including the
 
 ---
 
-## Suggested execution mechanics (optional)
+## Execution playbook (worktrees + per-issue pipeline)
 
-One git worktree/branch per track, each stacked on a merged `#P4-1`+`#P4-2` base:
+**Tracks are scheduling lanes, not branches.** This repo's delivery pipeline is strictly
+per-issue (`/start-task <issue#>` → `/plan-architecture`/`/generate-tasks` as needed →
+`/implement` → `/review` → `/commit` → PR with `Closes #N` → merge → `/archive-issue`), so
+parallelism is achieved by running **several instances of that pipeline at once** — one git
+worktree + one branch per in-flight issue, each cut from latest `main` and merged back
+promptly. Long-lived stacked "track branches" would break the one-issue-one-PR flow; don't
+use them. Short-lived branches are also what keep the parallel merges cheap.
 
-- `track-a-sessions`, `track-b-analytics`, `track-c-gates`, `track-d-config`
-- Merge order at integration: Track B's #P4-9 before Track C starts; #P4-10 before #P4-15; the
-  Dashboard-touching tasks (#P4-2 → #P4-10 → #P4-16) linearized; #P4-18 last.
+### Task → GitHub issue mapping
+
+All issues below are already filed (verified against `specs/issues/*.md` frontmatter).
+
+| Plan task | Issue | | Plan task | Issue | | Plan task | Issue |
+|---|---|---|---|---|---|---|---|
+| #P3-5 (gates #P4-1) | #32 | | #P4-7 | #39 | | #P4-13 | #45 |
+| #P4-1 | #33 | | #P4-8 | #40 | | #P4-14 | #46 |
+| #P4-2 | #34 | | #P4-9 | #41 | | #P4-15 | #47 |
+| #P4-3 | #35 | | #P4-10 | #42 | | #P4-16 | #48 |
+| #P4-4 | #36 | | #P4-11 | #43 | | #P4-17 | #49 |
+| #P4-5 | #37 | | #P4-12 | #44 | | #P4-18 | #50 |
+| #P4-6 | #38 | | | | | #P5-1 … #P5-4 | #51 … #54 |
+
+### Preconditions before opening parallel worktrees
+
+1. **#32 (#P3-5 Cypress harness) closed** — every page task's definition of done includes a
+   Cypress smoke spec, so the harness must exist first.
+2. **#33 (#P4-1 primitives) merged to `main`** — serial, blocks all pages.
+3. **#34 (#P4-2 Dashboard) merged** — pattern-setter; the parallel fan-out starts only after this.
+
+### Worktree mechanics (per in-flight issue)
+
+```bash
+git fetch origin main
+git worktree add ../claude-lens-p4-<n> -b feat/<issue#>/<slug> origin/main
+# … work, PR, merge …
+git worktree remove ../claude-lens-p4-<n>
+```
+
+- **One Claude session per worktree.** The start-time skills are user-invoked only
+  (`disable-model-invocation: true`), so the user opens each session and runs
+  `/start-task <issue#>` there; the session then follows the normal pipeline.
+- Husky's pre-push (`npm run verify`) runs independently in each worktree — no extra setup.
+- Per-issue artifacts are naturally conflict-free across worktrees: `specs/context/<N>.md`,
+  `specs/issues/` records, and root `CODE-REVIEW-PR-<N>.md` are all keyed by issue/PR number.
+
+### Concurrency rules (distilled from the dependency table)
+
+- Never two of **{#P4-2, #P4-10, #P4-16}** in flight at once — all three write the Dashboard
+  page file.
+- **#P4-15 never in flight while #P4-10 is** — it extends #P4-10's config store.
+- Hard start-gates: #P4-11 only after #P4-9 merges · #P4-12 after #P4-11 · #P4-13 after
+  #P4-5 + #P4-8 + #P4-9 · #P4-14 after #P4-13 · #P4-16 after #P4-15 · #P4-6 after #P4-5 ·
+  **#P4-18 last, alone** (no other Phase 4 work in flight).
+- After any dependency merges to `main`, in-flight branches **rebase on `main`** before
+  continuing.
+- A page discovering it needs a **new shared primitive** lands it as a tiny separate PR to
+  `client/components/` first, rather than inside the page branch — keeps cross-track edits
+  out of page PRs.
+
+### Launch sequence at 3 parallel slots (recommended width)
+
+"Start X when Y merges." Slots fill greedily; Track C's chain is the tail to protect.
+
+| Step | Start | When |
+|---|---|---|
+| 0 | #33 (#P4-1) | now — solo |
+| 1 | #34 (#P4-2) | #33 merges — solo |
+| 2 | #36 (Sessions) · #41 (Cache Lab) · #40 (Models) | #34 merges — fan-out begins |
+| 3 | #43 (Gates) | #41 merges (frees a slot; classifier ready) |
+| 4 | #37 (Session Detail) | #36 merges |
+| 5 | #39 (Projects) | next free slot |
+| 6 | #42 (Trends/Budget) | #34 already merged + free slot (Dashboard write — not with #48) |
+| 7 | #44 (Report Card) | #43 merges |
+| 8 | #38 (Turn Inspector) · #35 (Search) | #37 merges |
+| 9 | #45 (Premium) | #37 + #40 + #41 all merged |
+| 10 | #49 (Export) | #36 merged + free slot |
+| 11 | #47 (Settings) | #42 merges |
+| 12 | #46 (Data Health) | #45 merges |
+| 13 | #48 (Explore) | #47 merges (Dashboard write — nothing else touching Dashboard in flight) |
+| 14 | #50 (Cross-page E2E) | everything above merged — solo, closes the phase |
+
+### Post-merge hygiene (every issue, every time)
+
+1. Flip the task's checkbox in `specs/claude-lens-plan.md` (checkboxes flip when issues
+   **close**, per the plan's own rule).
+2. Run `/archive-issue` promptly — "PR merged, issue closed" is the trigger (CLAUDE.md
+   standing rule; stale `specs/` files have already bitten twice).
+3. `git worktree remove` the finished worktree; rebase the remaining in-flight branches.
