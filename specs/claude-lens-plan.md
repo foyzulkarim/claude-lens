@@ -134,7 +134,7 @@ One vertical slice proving every layer. Nothing page-specific begins until this 
 - [x] **#P3-3 — Global filter bar + URL sync**
   `filters/`: range presets (1D/7D/30D/90D/custom), project/model/branch/host chips; filter state lives in the query string and survives navigation (spec §0 permalink requirement).
   *Acceptance:* copy-pasting a URL reproduces the filtered view; filters persist across page changes.
-- [ ] **#P3-4 — Chart layer + one live chart** *(the demo milestone)*
+- [x] **#P3-4 — Chart layer + one live chart** *(the demo milestone)*
   ECharts wrapper (~50-line mount/setOption/ResizeObserver/dispose — no `echarts-for-react`); timeseries option builder; unit switcher, compare ghost, smoothing, granularity, click-to-drill implemented **in this layer** per §11. Mount one cost-over-time chart on the Dashboard stub.
   *Acceptance:* with Claude Code running a real session, the chart updates within a few seconds without reload. **Go/no-go checkpoint for Phase 4.**
 - [ ] **#P3-5 — Cypress setup + steel-thread smoke spec**
