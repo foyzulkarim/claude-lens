@@ -18,6 +18,9 @@ jobs:
           cache: npm
 
       - run: npm ci
+        env:
+          # This job typechecks Cypress source but never launches a browser.
+          CYPRESS_INSTALL_BINARY: "0"
 
       - run: npm run typecheck
 

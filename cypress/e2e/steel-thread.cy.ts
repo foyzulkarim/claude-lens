@@ -2,8 +2,11 @@ const FIXTURE_RANGE = "?from=2026-07-01T00%3A00%3A00.000Z&to=2026-08-01T00%3A00%
 const RESTORED_FIXTURE_RANGE = "?from=2026-07-01&to=2026-08-01";
 const TRANSCRIPT_PATH =
   "projects/-Users-demo-project-alpha/11111111-1111-4111-8111-111111111111.jsonl";
+const EXPECTED_APPEND_COST = 5;
+const DISPLAY_ROUNDING_TOLERANCE = 0.005;
 
-function totalFromLabel(label: string): number {
+function totalFromLabel(label: string | undefined): number {
+  if (typeof label !== "string") throw new Error("Cost chart lost its accessible label");
   const match = /total \$([\d,.]+)/.exec(label);
   if (!match) throw new Error(`Unable to read chart total from label: ${label}`);
   return Number(match[1].replaceAll(",", ""));
@@ -35,8 +38,7 @@ describe("steel-thread smoke", () => {
       .should("be.visible")
       .invoke("attr", "aria-label")
       .then((label) => {
-        expect(label, "chart label").to.be.a("string");
-        initialTotal = totalFromLabel(label as string);
+        initialTotal = totalFromLabel(label);
       });
 
     cy.contains("button", "30D").click();
@@ -54,10 +56,12 @@ describe("steel-thread smoke", () => {
     setDateInput(0, "2026-07-01");
     setDateInput(1, "2026-08-01");
     cy.location("search").should("eq", RESTORED_FIXTURE_RANGE);
+    // These date-only inputs resolve to the same UTC bucket boundaries as
+    // FIXTURE_RANGE for the interior July 3 fixture data used by this test.
     cy.get('[role="img"][aria-label^="Cost over time chart;"]')
       .invoke("attr", "aria-label")
       .then((label) => {
-        expect(totalFromLabel(label as string)).to.equal(initialTotal);
+        expect(totalFromLabel(label)).to.equal(initialTotal);
       });
 
     cy.task("appendJsonl", {
@@ -89,11 +93,15 @@ describe("steel-thread smoke", () => {
       }),
     });
 
+    // 15s leaves ample headroom over the production 3s file poll + 300ms
+    // invalidation debounce, including WS/query/render convergence on CI.
     cy.get('[role="img"][aria-label^="Cost over time chart;"]', { timeout: 15000 })
       .invoke("attr", "aria-label")
       .should((label) => {
-        if (!label) throw new Error("Cost chart lost its accessible label");
-        expect(totalFromLabel(label)).to.be.greaterThan(initialTotal);
+        expect(totalFromLabel(label)).to.be.closeTo(
+          initialTotal + EXPECTED_APPEND_COST,
+          DISPLAY_ROUNDING_TOLERANCE,
+        );
       });
   });
 });
