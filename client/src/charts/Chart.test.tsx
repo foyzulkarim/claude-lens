@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { cleanup, render } from "@testing-library/react";
+import "@testing-library/jest-dom/vitest";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TimeseriesOption } from "./timeseries.js";
 
@@ -61,6 +62,19 @@ afterEach(() => {
 });
 
 describe("Chart", () => {
+  it("applies semantic image metadata when labeled", () => {
+    render(<Chart option={option} ariaLabel="Cost over time chart; 1 series; total $3.00" />);
+    expect(
+      screen.getByRole("img", { name: "Cost over time chart; 1 series; total $3.00" }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps unlabeled callers free of invented image metadata", () => {
+    const { container } = render(<Chart option={option} />);
+    expect(container.querySelector("[role='img']")).toBeNull();
+    expect(container.querySelector("[aria-label]")).toBeNull();
+  });
+
   it("calls echarts.init once on mount, not again on re-render", () => {
     const { rerender } = render(<Chart option={option} />);
     expect(echarts.init).toHaveBeenCalledTimes(1);

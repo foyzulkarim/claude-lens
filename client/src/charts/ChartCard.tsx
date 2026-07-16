@@ -12,7 +12,7 @@ import { useFilters } from "../filters/useFilters.js";
 import { TOGGLE_ACTIVE_CLASS, TOGGLE_CLASS } from "../ui/toggleStyles.js";
 import { Chart } from "./Chart.js";
 import { buildTimeseriesOption } from "./timeseries.js";
-import { UNIT_MEASURES, type Unit } from "./units.js";
+import { formatUnitValue, UNIT_MEASURES, type Unit } from "./units.js";
 
 type Family = "area" | "bars";
 
@@ -129,6 +129,23 @@ export function ChartCard({ title, defaultUnit }: ChartCardProps) {
     [data, family, unit],
   );
 
+  const ariaLabel = useMemo(() => {
+    if (!data) return undefined;
+    const total = data.reduce(
+      (sum, series) =>
+        sum +
+        series.points.reduce(
+          (seriesTotal, point) =>
+            typeof point.value === "number" && Number.isFinite(point.value)
+              ? seriesTotal + point.value
+              : seriesTotal,
+          0,
+        ),
+      0,
+    );
+    return `${title} chart; ${data.length} series; total ${formatUnitValue(total, unit)}`;
+  }, [data, title, unit]);
+
   // Stable identity so Chart's click-listener effect (keyed on this prop)
   // only re-subscribes when the drill-down target actually changes, not on
   // every render (e.g. the render-only `family` toggle).
@@ -189,7 +206,12 @@ export function ChartCard({ title, defaultUnit }: ChartCardProps) {
         {isPending && <p className="text-sm text-slate-400">Loading…</p>}
         {isError && <p className="text-sm text-red-500">{error.message}</p>}
         {!isPending && (
-          <Chart option={option} onPointClick={handlePointClick} className="h-80 w-full" />
+          <Chart
+            option={option}
+            onPointClick={handlePointClick}
+            className="h-80 w-full"
+            ariaLabel={ariaLabel}
+          />
         )}
       </div>
     </div>

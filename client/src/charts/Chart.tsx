@@ -12,6 +12,8 @@ export interface ChartProps {
   option: TimeseriesOption;
   onPointClick?: (params: ECElementEvent) => void;
   className?: string;
+  /** Optional semantic summary for assistive technology and black-box UI checks. */
+  ariaLabel?: string;
 }
 
 /**
@@ -21,7 +23,7 @@ export interface ChartProps {
  * by future non-timeseries chart families (heatmap, scatter, …). Never
  * imports from `api/` or `filters/` (Module Boundaries rule).
  */
-export function Chart({ option, onPointClick, className }: ChartProps) {
+export function Chart({ option, onPointClick, className, ariaLabel }: ChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
 
@@ -57,5 +59,11 @@ export function Chart({ option, onPointClick, className }: ChartProps) {
     };
   }, [onPointClick]);
 
-  return <div ref={containerRef} className={className} />;
+  return (
+    <div
+      ref={containerRef}
+      className={className}
+      {...(ariaLabel ? { role: "img", "aria-label": ariaLabel } : {})}
+    />
+  );
 }

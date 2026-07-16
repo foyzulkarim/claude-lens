@@ -30,3 +30,6 @@ dist/
 
 # Storybook
 client/storybook-static/
+
+# Cypress failure artifacts
+cypress/screenshots/

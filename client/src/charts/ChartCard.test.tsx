@@ -57,6 +57,25 @@ const sampleSeries: Series[] = [
   },
 ];
 
+const summarySeries: Series[] = [
+  {
+    measure: "costComputed",
+    dimensionKey: "time",
+    label: "Cost",
+    points: [
+      { t: "2026-07-08T00:00:00.000Z", value: 1 },
+      { t: "2026-07-09T00:00:00.000Z", value: null },
+      { t: "2026-07-10T00:00:00.000Z", value: Number.POSITIVE_INFINITY },
+    ],
+  },
+  {
+    measure: "costComputed",
+    dimensionKey: "time",
+    label: "Cost comparison",
+    points: [{ t: "2026-07-08T00:00:00.000Z", value: 2 }],
+  },
+];
+
 function renderCard(search = "") {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const { hook, searchHook, history } = memoryLocation({
@@ -107,6 +126,36 @@ describe("ChartCard — render states", () => {
     await waitFor(() => expect(chartSpy).toHaveBeenCalled());
     const lastCall = chartSpy.mock.calls.at(-1)?.[0] as ChartProps;
     expect(lastCall.option.series).toHaveLength(1);
+  });
+});
+
+describe("ChartCard — semantic summary", () => {
+  it("derives the loaded chart summary from finite points using the active unit formatter", async () => {
+    postMetricsMock.mockResolvedValue(summarySeries);
+    renderCard();
+    await waitFor(() => {
+      const lastCall = chartSpy.mock.calls.at(-1)?.[0] as ChartProps;
+      expect(lastCall.ariaLabel).toBe("Cost over time chart; 2 series; total $3.00");
+    });
+  });
+
+  it("updates the semantic summary when query data changes", async () => {
+    const { queryClient } = renderCard();
+    await waitFor(() => expect(chartSpy).toHaveBeenCalled());
+    const initial = chartSpy.mock.calls.at(-1)?.[0] as ChartProps;
+    expect(initial.ariaLabel).toBe("Cost over time chart; 1 series; total $3.00");
+
+    queryClient.setQueryData(qk.metrics(latestQuery()), [
+      {
+        ...sampleSeries[0],
+        points: [...sampleSeries[0].points, { t: "2026-07-10T00:00:00.000Z", value: 4 }],
+      },
+    ]);
+
+    await waitFor(() => {
+      const updated = chartSpy.mock.calls.at(-1)?.[0] as ChartProps;
+      expect(updated.ariaLabel).toBe("Cost over time chart; 1 series; total $7.00");
+    });
   });
 });
 
