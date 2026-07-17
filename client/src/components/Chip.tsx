@@ -29,7 +29,7 @@ export function Chip({ label, active, onClick, onRemove }: ChipProps) {
           type="button"
           onClick={onRemove}
           aria-label={`Remove ${label}`}
-          className="rounded px-1 text-[10px] text-slate-400 hover:text-slate-600 dark:text-[#5A6675] dark:hover:text-[#8A96A5]"
+          className="rounded px-1 text-[10px] text-slate-600 hover:text-slate-800 dark:text-[#5A6675] dark:hover:text-[#8A96A5]"
         >
           ×
         </button>

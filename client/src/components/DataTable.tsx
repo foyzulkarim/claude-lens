@@ -23,7 +23,11 @@ declare module "@tanstack/react-table" {
 
 interface DataTableBaseProps<T> {
   data: T[];
-  columns: ColumnDef<T, unknown>[];
+  // Mirrors TanStack's own `TableOptions.columns: ColumnDef<TData, any>[]` —
+  // `ColumnDef` is invariant in `TValue`, so a heterogeneous column array
+  // (string/number accessors) can only be typed with `any` here, not `unknown`.
+  // biome-ignore lint/suspicious/noExplicitAny: intentional, matches upstream TanStack contract
+  columns: ColumnDef<T, any>[];
   isLoading?: boolean;
   empty?: ReactNode;
   onRowClick?: (row: T) => void;
@@ -41,29 +45,28 @@ export type DataTableProps<T> = DataTableBaseProps<T> &
 const ESTIMATED_ROW_HEIGHT = 36;
 const SKELETON_ROW_COUNT = 5;
 
-function DataTableRow<T>({ row, onRowClick }: { row: Row<T>; onRowClick?: (row: T) => void }) {
+function DataTableRow<T>({
+  row,
+  onRowClick,
+  rowIndex,
+}: {
+  row: Row<T>;
+  onRowClick?: (row: T) => void;
+  /** 1-based logical row position (header row is 1) — lets AT announce true position under virtualization (A2). */
+  rowIndex?: number;
+}) {
   return (
     <tr
+      // Mouse convenience only — the canonical, keyboard-operable action lives
+      // in a real <button> in the first cell (A1) so <tr>/<td> keep native
+      // table row/cell semantics instead of being flattened by role="button".
       onClick={onRowClick ? () => onRowClick(row.original) : undefined}
-      onKeyDown={
-        onRowClick
-          ? (e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                onRowClick(row.original);
-              }
-            }
-          : undefined
-      }
-      tabIndex={onRowClick ? 0 : undefined}
-      role={onRowClick ? "button" : undefined}
-      className={clsx(
-        onRowClick &&
-          "cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-slate-400 dark:focus-visible:outline-[#4FC3D9]",
-      )}
+      aria-rowindex={rowIndex}
+      className={clsx(onRowClick && "cursor-pointer")}
     >
-      {row.getVisibleCells().map((cell) => {
+      {row.getVisibleCells().map((cell, index) => {
         const meta = cell.column.columnDef.meta;
+        const content = flexRender(cell.column.columnDef.cell, cell.getContext());
         return (
           <td
             key={cell.id}
@@ -73,7 +76,20 @@ function DataTableRow<T>({ row, onRowClick }: { row: Row<T>; onRowClick?: (row: 
               meta?.mono && "font-mono tabular-nums",
             )}
           >
-            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+            {onRowClick && index === 0 ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRowClick(row.original);
+                }}
+                className="block w-full appearance-none bg-transparent p-0 text-left focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-slate-600 dark:focus-visible:outline-[#4FC3D9]"
+              >
+                {content}
+              </button>
+            ) : (
+              content
+            )}
           </td>
         );
       })}
@@ -123,13 +139,20 @@ export function DataTable<T>({
       : 0;
 
   const colCount = table.getFlatHeaders().length;
+  // Logical row count for AT under virtualization (A2) — header row + every
+  // data row, independent of how many are actually mounted in the DOM.
+  const ariaRowCount = rows.length + 1;
 
   return (
     <div ref={scrollRef} style={virtualized ? { height, overflow: "auto" } : undefined}>
-      <table aria-label={label} className="w-full border-collapse text-sm">
+      <table
+        aria-label={label}
+        aria-rowcount={virtualized ? ariaRowCount : undefined}
+        className="w-full border-collapse text-sm"
+      >
         <thead>
           {table.getHeaderGroups().map((headerGroup) => (
-            <tr key={headerGroup.id}>
+            <tr key={headerGroup.id} aria-rowindex={virtualized ? 1 : undefined}>
               {headerGroup.headers.map((header) => {
                 const align = header.column.columnDef.meta?.align;
                 const sortable = header.column.getCanSort();
@@ -151,7 +174,7 @@ export function DataTable<T>({
                         : undefined
                     }
                     className={clsx(
-                      "border-b border-slate-200 p-2 text-left text-[10px] uppercase tracking-wider text-slate-400 dark:border-[#232B36] dark:text-[#5A6675]",
+                      "border-b border-slate-200 p-2 text-left text-[10px] uppercase tracking-wider text-slate-600 dark:border-[#232B36] dark:text-[#5A6675]",
                       align === "right" && "text-right",
                     )}
                   >
@@ -203,7 +226,7 @@ export function DataTable<T>({
             <>
               {paddingTop > 0 && (
                 <tr>
-                  <td colSpan={colCount} style={{ height: paddingTop }} />
+                  <td colSpan={colCount} style={{ height: paddingTop }} aria-hidden="true" />
                 </tr>
               )}
               {virtualItems.map((virtualRow) => (
@@ -211,11 +234,12 @@ export function DataTable<T>({
                   key={rows[virtualRow.index].id}
                   row={rows[virtualRow.index]}
                   onRowClick={onRowClick}
+                  rowIndex={virtualRow.index + 2}
                 />
               ))}
               {paddingBottom > 0 && (
                 <tr>
-                  <td colSpan={colCount} style={{ height: paddingBottom }} />
+                  <td colSpan={colCount} style={{ height: paddingBottom }} aria-hidden="true" />
                 </tr>
               )}
             </>

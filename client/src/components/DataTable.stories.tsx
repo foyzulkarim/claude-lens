@@ -1,4 +1,4 @@
-import type { ColumnDef } from "@tanstack/react-table";
+import { createColumnHelper } from "@tanstack/react-table";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { DataTable } from "./DataTable.js";
 
@@ -10,19 +10,21 @@ interface SessionRow {
   calls: number;
 }
 
-const columns: ColumnDef<SessionRow, unknown>[] = [
-  { accessorKey: "project", header: "Project" },
-  { accessorKey: "model", header: "Model" },
-  { accessorKey: "calls", header: "Calls", meta: { align: "right", mono: true } },
-  {
-    accessorKey: "cost",
+// Real-world TanStack usage: `createColumnHelper` infers each accessor's own
+// value type (string columns, number columns), which only type-checks against
+// `DataTable`'s `columns` prop because it's `ColumnDef<T, any>[]` (T1) —
+// `ColumnDef<T, unknown>[]` would reject this heterogeneous array.
+const columnHelper = createColumnHelper<SessionRow>();
+
+const columns = [
+  columnHelper.accessor("project", { header: "Project" }),
+  columnHelper.accessor("model", { header: "Model" }),
+  columnHelper.accessor("calls", { header: "Calls", meta: { align: "right", mono: true } }),
+  columnHelper.accessor("cost", {
     header: "Cost",
     meta: { align: "right", mono: true },
-    cell: (info) => {
-      const value = info.getValue();
-      return typeof value === "number" ? `$${value.toFixed(2)}` : "";
-    },
-  },
+    cell: (info) => `$${info.getValue().toFixed(2)}`,
+  }),
 ];
 
 function makeRows(count: number): SessionRow[] {
@@ -44,7 +46,7 @@ export default meta;
 type Story = StoryObj<typeof DataTable<SessionRow>>;
 
 export const Plain: Story = {
-  args: { data: makeRows(6), columns },
+  args: { data: makeRows(6), columns, label: "Recent sessions" },
 };
 
 export const Sorted: Story = {

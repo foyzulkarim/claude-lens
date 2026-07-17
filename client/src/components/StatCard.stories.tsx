@@ -60,7 +60,18 @@ export const WithSparkline: Story = {
     label: "Total Cost",
     value: "$128.40",
     accent: "money",
+    delta: { text: "189%", direction: "up", sentiment: "bad" },
     sparkline: [10, 14, 9, 22, 18, 30, 24],
+  },
+};
+
+export const SparklineWithoutDelta: Story = {
+  args: {
+    label: "Total Cost",
+    value: "$128.40",
+    accent: "money",
+    sparkline: [10, 14, 9, 22, 18, 30, 24],
+    sparklineLabel: "trending up over the last 7 days",
   },
 };
 

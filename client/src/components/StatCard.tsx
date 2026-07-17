@@ -15,14 +15,17 @@ export interface StatCardProps {
   accent?: "money" | "cache";
   delta?: StatDelta;
   sparkline?: number[];
+  /** Accessible trend description for `sparkline` when no `delta` states the trend in text (A4). */
+  sparklineLabel?: string;
   sub?: string;
 }
 
-// Matches --money/--cache from specs/pages/_chrome.css — same hex in both
-// themes, since accent colors are brand colors, not neutral text.
+// Matches --money/--cache from specs/pages/_chrome.css. Light theme uses a
+// darker same-hue shade to clear WCAG AA 4.5:1 on white (the mockup's hex is
+// dark-theme-only contrast); dark theme keeps the mockup value verbatim.
 const ACCENT_CLASS: Record<NonNullable<StatCardProps["accent"]>, string> = {
-  money: "text-[#E8A33D]",
-  cache: "text-[#4FC3D9]",
+  money: "text-[#96631E] dark:text-[#E8A33D]",
+  cache: "text-[#0E7A8C] dark:text-[#4FC3D9]",
 };
 
 const GLYPH: Record<StatDelta["direction"], string> = { up: "▲", down: "▼", flat: "—" };
@@ -33,10 +36,11 @@ const DIRECTION_LABEL: Record<StatDelta["direction"], string> = {
 };
 
 // .delta.up is red, .delta.upgood is green — sentiment, not direction, picks
-// the color (mockup evidence: spend-up is bad, cache-hit-up is good).
+// the color (mockup evidence: spend-up is bad, cache-hit-up is good). Light
+// shades are darkened from the mockup hex to clear WCAG AA 4.5:1 on white.
 const SENTIMENT_CLASS: Record<StatDelta["sentiment"], string> = {
-  good: "text-[#55B87A]",
-  bad: "text-[#E05252]",
+  good: "text-[#1E7F49] dark:text-[#55B87A]",
+  bad: "text-[#B23A3A] dark:text-[#E05252]",
   neutral: "text-slate-500 dark:text-[#8B98A9]",
 };
 
@@ -50,7 +54,7 @@ function DeltaLabel({ delta }: { delta: StatDelta }) {
   );
 }
 
-function Sparkline({ points }: { points: number[] }) {
+function Sparkline({ points, trendLabel }: { points: number[]; trendLabel?: string }) {
   const finite = points.filter((p) => Number.isFinite(p));
   if (finite.length < 2) return null;
 
@@ -70,24 +74,35 @@ function Sparkline({ points }: { points: number[] }) {
     .join(" ");
 
   return (
-    <svg
-      aria-hidden="true"
-      viewBox={`0 0 ${width} ${height}`}
-      preserveAspectRatio="none"
-      className="mt-1 h-[22px] w-full"
-    >
-      <polyline
-        points={coords}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={1.5}
-        className="text-slate-400 dark:text-[#5A6675]"
-      />
-    </svg>
+    <>
+      {trendLabel ? <span className="sr-only">{trendLabel}</span> : null}
+      <svg
+        aria-hidden="true"
+        viewBox={`0 0 ${width} ${height}`}
+        preserveAspectRatio="none"
+        className="mt-1 h-[22px] w-full"
+      >
+        <polyline
+          points={coords}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={1.5}
+          className="text-slate-400 dark:text-[#5A6675]"
+        />
+      </svg>
+    </>
   );
 }
 
-export function StatCard({ label, value, accent, delta, sparkline, sub }: StatCardProps) {
+export function StatCard({
+  label,
+  value,
+  accent,
+  delta,
+  sparkline,
+  sparklineLabel,
+  sub,
+}: StatCardProps) {
   return (
     <div className="bg-white p-3.5 dark:bg-[#151A21]">
       <span
@@ -109,11 +124,13 @@ export function StatCard({ label, value, accent, delta, sparkline, sub }: StatCa
         {delta ? <DeltaLabel delta={delta} /> : null}
       </div>
       {sub ? (
-        <span className="mt-0.5 block font-mono text-[11px] text-slate-400 dark:text-[#5A6675]">
+        <span className="mt-0.5 block font-mono text-[11px] text-slate-600 dark:text-[#5A6675]">
           {sub}
         </span>
       ) : null}
-      {sparkline ? <Sparkline points={sparkline} /> : null}
+      {sparkline ? (
+        <Sparkline points={sparkline} trendLabel={delta ? undefined : sparklineLabel} />
+      ) : null}
     </div>
   );
 }
@@ -123,15 +140,17 @@ export interface StatRowProps {
   columns?: number;
 }
 
-// Mockup breakpoint (specs/pages/_chrome.css:73) collapses .statrow to a
-// single column below 980px — Tailwind's stock `md` (768px) is too narrow.
+// Mockup breakpoint (specs/pages/_chrome.css:73) is `@media (max-width:980px)`
+// single-column — inclusive of exactly 980px. Tailwind's stock `md` (768px)
+// is too narrow, so the multi-column rule starts one pixel past the mockup's
+// boundary at 981px, keeping 980px itself single-column.
 const COLUMN_CLASS: Record<number, string> = {
-  1: "min-[980px]:grid-cols-1",
-  2: "min-[980px]:grid-cols-2",
-  3: "min-[980px]:grid-cols-3",
-  4: "min-[980px]:grid-cols-4",
-  5: "min-[980px]:grid-cols-5",
-  6: "min-[980px]:grid-cols-6",
+  1: "min-[981px]:grid-cols-1",
+  2: "min-[981px]:grid-cols-2",
+  3: "min-[981px]:grid-cols-3",
+  4: "min-[981px]:grid-cols-4",
+  5: "min-[981px]:grid-cols-5",
+  6: "min-[981px]:grid-cols-6",
 };
 
 export function StatRow({ children, columns = 4 }: StatRowProps) {
