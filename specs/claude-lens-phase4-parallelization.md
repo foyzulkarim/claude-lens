@@ -1,353 +1,403 @@
-# Claude Lens — Phase 4 / 5 Parallelization Plan
+# Claude Lens — Phase 4 Execution & Orchestration Plan
 
-Companion to `specs/claude-lens-plan.md` (the orchestrator). That doc lists every task in a single
-sequential order "unless the dependency notes say otherwise." **This doc cashes in that clause:** it
-separates the *real* dependencies from the *artificial* ordering ones and shows how to run Phase 4
-as concurrent lanes to compress wall-clock time.
+Single scheduling and execution companion to `specs/claude-lens-plan.md`. The plan owns product
+scope, task definitions, and phase exit criteria; this document owns Phase 4 start gates, lane
+selection, worktree execution, resume behavior, conflict control, and the optional
+maximum-throughput mode.
 
-> Nothing here changes scope, acceptance criteria, or the plan's task list. It is a scheduling view
-> only. The plan doc remains authoritative on *what* each task delivers.
-
----
-
-## Why this doc exists
-
-The plan lists Phase 4 in one reference order, but the plan itself flags the opportunity:
-*"after #P4-2, remaining pages could parallelize, but sequential is fine."* Pages in this app are
-cheap by design (filter state + preset `MetricsQuery`s + layout over a shared engine), and the shared
-data plumbing is already built — so most of the chain is ordering-for-convenience, not a real gate.
-Running the independent work concurrently is the single biggest lever on delivery time for Phase 4.
+> Nothing here changes product scope or acceptance criteria. Requirements still come from the
+> plan, architecture, pages, and gates specs. The **default scheduler is conservative**: an issue
+> waits for every page or service surface it must integrate with. Maximum-throughput relaxations
+> are opt-in and never become the default merely because a lane is idle.
 
 ---
 
-## The core distinction: two kinds of dependency
+## Quick resume prompt
 
-Every issue's `Depends on:` field mixes two very different things. Telling them apart is the whole game.
+The user should be able to resume the phase with one sentence:
 
-| | **Functional dep (hard)** | **Phase-ordering dep (soft)** |
+> Resume Phase 4 from `specs/claude-lens-phase4-parallelization.md`; reconstruct live state,
+> perform all safe in-scope work, and ask me only for the next unavoidable user action.
+
+Do not answer that prompt by drafting a new schedule. Reconstruct state, clear post-merge hygiene,
+compute the ready queue, and follow the lifecycle in this document.
+
+---
+
+## 1. Authority and operating contract
+
+Use sources in this order for different questions:
+
+1. **What must ship:** `claude-lens-pages.md`, `gates.md`, `claude-lens-architecture.md`, then the
+   matching task in `claude-lens-plan.md`. Page section tables beat HTML mockups.
+2. **What one issue owns:** its filed GitHub body and local `specs/issues/` record.
+3. **Whether an issue may start:** the conservative start-gate table in this document.
+4. **Whether work is complete:** live GitHub PR/issue state plus required tests and sign-offs. A
+   plan checkbox or local branch alone is never proof.
+
+Default operating rules:
+
+- Use **three concurrent lanes** after the serial spine. The user may request a different width,
+  but the orchestrator must not ask them to choose one routinely.
+- One issue = one short-lived branch = one worktree = one worker session = one PR.
+- The primary checkout is the control plane. Keep it clean, on current `main`, and free of feature
+  implementation.
+- Derive state from GitHub + git on every resume. Do not maintain a hand-edited state file or rely
+  on conversation memory.
+- A successor starts only after every conservative predecessor is closed following a merged PR,
+  not merely started, locally complete, or review-ready.
+- #P4-18 runs last and alone. Phase 5 cannot start until it closes and Phase 4 hygiene is complete.
+
+---
+
+## 2. Why parallel execution is safe
+
+The shared data platform was verified before Phase 4 began:
+
+- `POST /api/metrics` is the common read-only analytics surface.
+- `server/store/store.ts` exposes fleet and per-session reads.
+- All 11 client routes already have separate page files and route stubs.
+- Every page is primarily filter state + preset `MetricsQuery` values + layout.
+
+Most Phase 4 tasks therefore do not contend on core data plumbing. The real coordination points
+are page integration slots, config/gate plumbing, shared primitives, and the terminal E2E suite.
+
+There are three dependency types:
+
+| Dependency | Meaning | Default treatment |
 |---|---|---|
-| Meaning | B literally can't work until A ships — B reuses A's code, upgrades A's page, or drills into A's route | The plan just listed them in a chain for convenience |
-| Can you break it? | No | Yes, freely |
-| How to spot it | The note names a concrete reuse/upgrade/route | The note says "sequential ordering only", "phase ordering", "no functional dependency on…" |
-
-Almost the entire `#P4-4 → #P4-5 → … → #P4-10` page chain is **soft**. The real graph is far wider.
+| Functional/data | A later task imports code, consumes a route, or needs data created by an earlier task | Always wait for merge |
+| Integration target | A later task replaces a page stub, column, badge, feed, or setting created by an earlier task | Wait by default; relax only in maximum-throughput mode |
+| Reference order | The plan listed tasks sequentially, but neither task consumes the other | No start gate |
 
 ---
 
-## Verified foundation (already built)
+## 3. Authoritative conservative start-gate graph
 
-Checked against the codebase (2026-07-16). The shared data layer pages depend on is **done**, which is
-why pages don't contend on data access:
+`Depth` is the longest remaining issue path including the task itself. It is used by the ready
+queue to protect the finish date. `Reservation` names shared surfaces that must not be edited by two
+lanes concurrently unless their start-time plans prove the edits are isolated.
 
-- ✅ **Metrics engine API** — `POST /api/metrics` (`server/routes/metrics.ts`), read-only shared surface.
-- ✅ **Store read surface** — `server/store/store.ts` exposes `listSessions()`, `listCalls()`,
-  `listTurns()`, and per-session `getSession/getTurns/getCalls`. Pages read what they need; no new
-  accessors required.
-- ✅ **Client route stubs** — `#P3-2` scaffolded all 11 page routes + the query-key factory in
-  `App.tsx`, so each page fills its own stub rather than fighting over routing.
+| Plan / GitHub | Start only after these issues close | Depth | Reservation |
+|---|---|---:|---|
+| #P4-1 / #33 Primitives | #32 and #85 | 8 | solo |
+| #P4-19 / #84 Accessible charts | #33 | 7 | solo |
+| #P4-2 / #34 Dashboard | #84 | 6 | solo, Dashboard |
+| #P4-4 / #36 Sessions | #34 | 4 | Sessions |
+| #P4-5 / #37 Session Detail | #34 | 5 | Session Detail |
+| #P4-7 / #39 Projects | #34 | 3 | Projects |
+| #P4-8 / #40 Models | #34 | 4 | Models |
+| #P4-9 / #41 Cache Lab | #34 | 5 | Cache Lab |
+| #P4-10 / #42 Trends/Budget | #34 | 4 | Dashboard, config |
+| #P4-3 / #35 Search | #36 and #37 | 2 | Sessions |
+| #P4-6 / #38 Turn Inspector | #37 | 4 | Turn Inspector |
+| #P4-11 / #43 Gates engine | #41 | 4 | gate/config plumbing |
+| #P4-12 / #44 Report Card UI | #36, #37, #38, #39, #42, and #43 | 2 | cross-page integration |
+| #P4-13 / #45 Premium upgrades | #36, #37, #38, #40, and #41 | 3 | cross-page integration |
+| #P4-14 / #46 Data Health | #45 | 2 | Data Health |
+| #P4-15 / #47 Settings | #36, #37, #42, and #43 | 3 | Sessions, config |
+| #P4-16 / #48 Explore | #47 | 2 | Dashboard |
+| #P4-17 / #49 Export | #36 | 2 | global export |
+| #P4-18 / #50 Cross-page E2E | every issue #35–#49 | 1 | solo terminal gate |
 
-What is **not** yet built: the per-page HTTP routes (each owned by its page task — see the table).
+The integration waits are deliberate:
+
+- #35 fills the search mount shipped by #36 and links into #37.
+- #44 replaces gate stubs across Dashboard, Sessions, Session Detail, Projects, and Trends and
+  validates evidence links through Turn Inspector.
+- #45 verifies premium behavior across Sessions, Session Detail, Turn Inspector, Models, and Cache
+  Lab.
+- #47 makes tags filterable on Sessions, configures anomaly behavior used by Dashboard/Session
+  Detail, and edits thresholds consumed by #43.
+
+Premium C/B/L fixtures belong to #P4-13. The filed #P4-13 dependency text that calls them a
+completed #P0-3 foundation is stale: #P0-3/P2-2 delivered the transcript fixture base. This
+scheduling clarification does not mutate the filed issue body.
 
 ---
 
-## Functional dependency table (Phase 4)
+## 4. Default ready-queue scheduler
 
-Only **hard** predecessors are listed. Soft phase-ordering links are dropped.
+After applying start gates and reservations, choose work without asking the user:
 
-| Task | Real predecessors | Owns route(s) | Notes |
-|---|---|---|---|
-| **#P4-1** Shared primitives | #P3-5, #P1-4 | — | **Universal gate** — every page uses stat-card / data-table / tier-badge |
-| **#P4-19** Accessible charts | **#P4-1** | — | Shared chart boundary; must land before any page composes time-series charts |
-| **#P4-2** Dashboard | **#P4-19** | — | Pattern-setter page; also the target of #P4-10 & #P4-16 cross-writes |
-| **#P4-3** Search | **#P4-2**, **#P4-5** (deep-link target) | `GET /api/search-index` | Fills the stable search slot shipped by #P4-4 |
-| **#P4-4** Sessions | **#P4-2** | `GET /api/sessions` | Ships the stable search slot before #P4-3 fills it |
-| **#P4-5** Session Detail | **#P4-2** | `GET /api/sessions/:id` | — |
-| **#P4-6** Turn Inspector | **#P4-5** | `GET /api/sessions/:id/turns/:n`, `/transcript` | Drills from Session Detail |
-| **#P4-7** Projects | **#P4-2** | — | Gate-pass-rate column stubs until #P4-12 |
-| **#P4-8** Models | **#P4-2** | — | Latency/throughput 🟡 until #P4-13 |
-| **#P4-9** Cache Lab | **#P4-2** | — | Builds the **miss-attribution classifier** reused by gate K2 |
-| **#P4-10** Trends / Budget | **#P4-2** | `GET/PUT /api/config` (budget-only) | Cross-writes threshold alert onto Dashboard |
-| **#P4-11** Gates engine | **#P4-9** (classifier) | — | Unblocks #P4-12 |
-| **#P4-12** Report Card UI | **#P4-11** | — | — |
-| **#P4-13** Premium tier | **#P4-5, #P4-8, #P4-9** (upgrade targets) + premium fixtures | — | #P4-12 dep is ordering-only |
-| **#P4-14** Data Health | **#P4-13** (reconciliation needs premium) | `/api/health` | — |
-| **#P4-15** Settings | **#P4-10** (extends its config store) | `/api/config`, `/api/views`, `/api/tags` | — |
-| **#P4-16** Explore | **#P4-2** (pin saved-view) + **#P4-15** (config/tags) | — | — |
-| **#P4-17** Export | **#P4-4** (export Sessions view) + #P3-3 (done) | `GET /api/export` | #P4-16 dep is ordering-only |
-| **#P4-18** Cross-page E2E | **all pages + features** | — | Genuine terminal gate |
+1. Higher `Depth` first.
+2. For equal depth, prefer the task with more not-yet-done descendants.
+3. For a remaining tie, use the lower GitHub issue number.
+4. Never consume the last free lane with lower-ranked work while a higher-ranked task is ready.
 
----
+Precomputed priority pairs are `(depth, descendant count)`:
 
-## Maximum-parallelism waves
-
-Collapsing the graph by functional level (everything in a wave can run at once):
-
-| Wave | Tasks | Width |
-|---|---|---|
-| **0** | #P4-1 | 1 (serial — blocks all) |
-| **1** | #P4-19 | 1 (serial — chart foundation) |
-| **2** | #P4-2 | 1 (serial — page pattern) |
-| **3** | #P4-4, #P4-5, #P4-7, #P4-8, #P4-9, #P4-10 | **6 parallel** |
-| **4** | #P4-3, #P4-6, #P4-11, #P4-13, #P4-15, #P4-17 | up to **6 parallel** |
-| **5** | #P4-12, #P4-14, #P4-16 | 3 parallel |
-| **6** | #P4-18 | 1 (serial — needs everything) |
-
-**Critical path ≈ 7 stages** versus **19 fully serial.** Longest start-condition chains:
-
-- `#P4-1 → #P4-19 → #P4-2 → #P4-9 → #P4-11 → #P4-12 → #P4-18`
-- `#P4-1 → #P4-19 → #P4-2 → #P4-5 → #P4-13 → #P4-14 → #P4-18`
-- `#P4-1 → #P4-19 → #P4-2 → #P4-10 → #P4-15 → #P4-16 → #P4-18`
-
-```mermaid
-graph LR
-  P41[P4-1 Primitives]
-  P41 --> P419[P4-19 Accessible charts]
-  P419 --> P42[P4-2 Dashboard]
-  P42 --> P44[P4-4 Sessions]
-  P42 --> P45[P4-5 Session Detail]
-  P42 --> P47[P4-7 Projects]
-  P42 --> P48[P4-8 Models]
-  P42 --> P49[P4-9 Cache Lab]
-  P45 --> P46[P4-6 Turn Inspector]
-  P45 --> P43[P4-3 Search]
-  P42 --> P410[P4-10 Trends]
-  P49 --> P411[P4-11 Gates]
-  P411 --> P412[P4-12 Report Card]
-  P45 --> P413[P4-13 Premium]
-  P48 --> P413
-  P49 --> P413
-  P413 --> P414[P4-14 Data Health]
-  P410 --> P415[P4-15 Settings]
-  P42 --> P416[P4-16 Explore]
-  P415 --> P416
-  P44 --> P417[P4-17 Export]
-  P43 --> P418[P4-18 E2E]
-  P46 --> P418
-  P47 --> P418
-  P410 --> P418
-  P412 --> P418
-  P414 --> P418
-  P416 --> P418
-  P417 --> P418
+```text
+#33 (8,18)  #84 (7,17)  #34 (6,16)
+#37 (5,8)   #41 (5,7)
+#36 (4,8)   #38 (4,4)   #42 (4,4)   #43 (4,4)   #40 (4,3)
+#39 (3,2)   #45 (3,2)   #47 (3,2)
+#35 (2,1)   #44 (2,1)   #46 (2,1)   #48 (2,1)   #49 (2,1)
+#50 (1,0)
 ```
 
+With three empty lanes immediately after #34 closes, the default scheduler starts **#37, #41,
+and #36**. Recompute the queue whenever an issue merges; do not wait for a whole wave to finish.
+
+### Shared-file reservations
+
+- **Dashboard:** #34, #42, #44, #45, #48.
+- **Sessions:** #36, #35, #44, #45, #47.
+- **Session Detail:** #37, #44, #45.
+- **Turn Inspector:** #38, #45.
+- **Config/gate plumbing:** #42, #43, #47.
+- **Shared primitives/charts:** #33 and #84 own the foundation. A later page that needs a new
+  primitive lands it in a tiny prerequisite PR first.
+
+Two in-flight issues must not hold the same reservation by default. The orchestrator may relax a
+reservation without asking the user only when both start-time architecture/task plans identify
+disjoint child modules and neither branch edits the same top-level page/config file. Record that
+reason in the status update so a resumed agent can reconstruct the decision.
+
+Where an issue contract expects downstream replacement, build a stable child-component integration
+slot: search, gate feed, Report Card, gate columns, tags, tier upgrades, budget alert, and
+saved-view pins. Later tasks should wire imports/data rather than rewrite large page components.
+
 ---
 
-## Explicit parallel schedule (start-condition table)
+## 5. Optional maximum-throughput mode
 
-> Supersedes the earlier "4 tracks" grouping (2026-07-17). Tracks implied *sequential within a
-> lane*, which is stricter than the real graph and ambiguous to orchestrate. The contract below is
-> exact: an issue may start the moment every issue in its **Starts after** column has **merged to
-> `main`** (not merely started) and a lane is free. Any set of issues whose start conditions are
-> satisfied may be in flight **simultaneously, in any combination** — the two mutexes (Dashboard
-> file, config store) are already implied by these edges, so there are no hidden pairwise conflicts.
+This mode exists for a user explicitly optimizing wall-clock time and accepting more branch sync
+and merge work. Do not enable it implicitly.
 
-**Serial spine first (do not parallelize):** `#P4-1 → #P4-19 → #P4-2`. #P4-1 provides the
-shared dashboard primitives, #P4-19 completes the accessible time-series boundary, and #P4-2
-establishes the page pattern every other page copies.
+It relaxes only integration-target waits; functional/data dependencies remain hard:
 
-| Start | Issue | Starts after (merged) | Role |
+| Issue | Conservative start | Maximum-throughput start | Added risk |
 |---|---|---|---|
-| #P4-1 | #33 | — | **solo** — blocks everything |
-| #P4-19 Accessible charts | #84 | #33 | **solo** — chart foundation |
-| #P4-2 | #34 | #84 | **solo** — pattern-setter |
-| #P4-9 Cache Lab | #41 | #34 | **chain head** (gates chain) |
-| #P4-10 Trends/Budget | #42 | #34 | **chain head** (config chain) |
-| #P4-5 Session Detail | #37 | #34 | **chain head** (premium chain + drill pages) |
-| #P4-8 Models | #40 | #34 | feeds #45 |
-| #P4-4 Sessions | #36 | #34 | filler; feeds #49 |
-| #P4-7 Projects | #39 | #34 | filler (leaf) |
-| #P4-3 Search | #35 | #37 | filler (leaf) |
-| #P4-6 Turn Inspector | #38 | #37 | filler (leaf) |
-| #P4-17 Export | #49 | #36 | filler (leaf) |
-| #P4-11 Gates engine | #43 | #41 | gates chain |
-| #P4-12 Report Card | #44 | #43 | gates chain |
-| #P4-13 Premium | #45 | #37 **and** #40 **and** #41 | premium chain |
-| #P4-14 Data Health | #46 | #45 | premium chain |
-| #P4-15 Settings | #47 | #42 | config chain |
-| #P4-16 Explore | #48 | #47 | config chain |
-| #P4-18 E2E | #50 | **all of #35–#49** | **solo** — nothing else in flight |
+| #35 Search | #36 + #37 | #37 | Search may land before its Sessions mount exists |
+| #44 Report Card | #36 + #37 + #38 + #39 + #42 + #43 | #43 | Several page targets may still be in flight |
+| #45 Premium | #36 + #37 + #38 + #40 + #41 | #37 + #40 + #41 | Sessions/Turn Inspector validation may merge later |
+| #47 Settings | #36 + #37 + #42 + #43 | #42 | Tags, anomaly consumers, or gate plumbing may still be in flight |
 
-**Orchestration algorithm:** when a lane frees, start the ready issue with the longest unfinished
-chain hanging off it. The three chains are equal-length critical paths (7 stages each from #33):
+Under those relaxations, the theoretical graph is approximately seven stages:
 
-- **Gates chain:** #41 → #43 → #44 → (#50)
-- **Premium chain:** {#37, #40, #41} → #45 → #46 → (#50)
-- **Config chain:** #42 → #47 → #48 → (#50)
+| Stage | Tasks |
+|---|---|
+| 0 | #33 |
+| 1 | #84 |
+| 2 | #34 |
+| 3 | #36, #37, #39, #40, #41, #42 |
+| 4 | #35, #38, #43, #45, #47, #49 |
+| 5 | #44, #46, #48 |
+| 6 | #50 alone |
 
-Everything else (#36, #39, #35, #38, #49) is filler — it absorbs idle lanes and never affects the
-finish date. **Fan-out priority when #34 merges: #41 · #42 · #37 first** (the chain heads), then
-#40, then fillers. Width beyond 3 lanes only drains filler earlier; the chains are the floor
-regardless. Max useful width is 6, and only momentarily at fan-out.
+The theoretical initial fan-out is #41/#42/#37. This is a throughput ceiling, not the default
+launch sequence. Before relaxing a gate, the orchestrator must verify the target branch can land a
+self-contained component/API and state which later issue will perform integration.
 
 ---
 
-## Shared-file conflict caveats
+## 6. Reconstruct live state on every orchestration turn
 
-Parallel *branches* collide on files even when tasks are functionally independent.
+Never trust a stale snapshot or prior conversation status:
 
-**Backend is verified low-conflict.** The shared data plumbing already exists (see Foundation). The
-per-page routes aren't built yet, but each touches only **one** shared file — `server/app.ts` — and
-only to add a one-line `registerXRoute(app, store)`. Additive, trivial merge. Not a real conflict file.
+1. Re-read `AGENTS.md`, the Phase 4 plan section, this document, and relevant filed records.
+2. Inspect primary with `git status --short --branch`, `git worktree list --porcelain`, and recent
+   `main` history. Preserve unexplained user changes; never stash or discard them.
+3. Fetch live GitHub state for #33–#50 and #84, plus open PRs whose head branches contain those
+   issue numbers.
+4. Classify each task:
+   - **blocked** — a conservative predecessor is not closed;
+   - **ready** — open, all predecessors closed, no active reservation conflict;
+   - **in flight** — its worktree, branch, or open PR exists;
+   - **merge-ready** — review/tests/sign-off complete and PR awaits merge;
+   - **merged-dirty** — PR merged and issue closed, but cleanup remains;
+   - **done** — issue closed, main updated, worktree removed, artifacts archived, checkbox correct.
+5. Clear `merged-dirty` work before opening another lane.
+6. Set `capacity = 3 - active lane count`, then fill only those slots from the ready queue.
 
-1. **Dashboard page file** — #P4-2 builds it; #P4-10 (threshold alert) and #P4-16 (pin saved-view)
-   write onto it. **The one genuine client merge point.** Sequence after #P4-2 and land one at a time.
-2. **Config store** — #P4-10 creates `settings.ts` + `/api/config` (budget-only); #P4-15 extends it.
-   Hard order #P4-10 → #P4-15; don't run concurrently.
-3. **Shared primitives** — if a page needs a new primitive mid-flight it touches `client/components/`.
-   Front-load anything foreseeable into #P4-1 to avoid cross-lane edits.
-4. **Low-risk / additive** — per-page routes (register line in `app.ts`), per-page Cypress specs,
-   per-page preset `MetricsQuery`s, premium/gate fixtures (#P4-13 / #P4-11) — all additive files.
-5. **Client routes already stubbed** (#P3-2) — pages fill their own stub, so `App.tsx` churn is minor.
-
----
-
-## Phase 5 — fully serial, gated behind all of Phase 4
-
-`#P5-1 Perf → #P5-2 Package hygiene → #P5-3 Docs → #P5-4 Publish`. Each strictly consumes the prior
-task's output (perf numbers → package → documented package → publish). **Do not parallelize Phase 5.**
-And #P5-1 depends on #P4-18, so Phase 5 can't begin until Phase 4 (including the terminal E2E gate) is done.
+If GitHub cannot be read, continue local read-only preparation but do not start a task whose gate
+depends on unverified issue state.
 
 ---
 
-## Bottom line
+## 7. Issue mapping and prerequisites
 
-- **Phase 4:** 19 tasks, but only **~7 sequential stages** on the critical path — roughly **two-thirds
-  is parallelizable.** With 3–4 lanes you can substantially cut wall-clock. The hard floor is the
-  longest of the gates, premium, and config chains shown above, plus terminal #P4-18.
-- **Phase 5:** 4 tasks, **strictly serial**, gated behind all of Phase 4.
-- **Before Phase 4 execution:** merge **#85**, then land **#P4-1, #P4-19, and #P4-2**, and treat the Dashboard page file and
-  the config store as coordination points — everything else is a wide independent band.
+All Phase 4 issues are filed:
+
+| Plan task | GitHub | Plan task | GitHub |
+|---|---:|---|---:|
+| #P4-1 | #33 | #P4-10 | #42 |
+| #P4-2 | #34 | #P4-11 | #43 |
+| #P4-3 | #35 | #P4-12 | #44 |
+| #P4-4 | #36 | #P4-13 | #45 |
+| #P4-5 | #37 | #P4-14 | #46 |
+| #P4-6 | #38 | #P4-15 | #47 |
+| #P4-7 | #39 | #P4-16 | #48 |
+| #P4-8 | #40 | #P4-17 | #49 |
+| #P4-9 | #41 | #P4-18 | #50 |
+| #P4-19 | #84 | infrastructure | #85 |
+
+Serial prerequisites before the fan-out:
+
+1. #32 (#P3-5 Cypress harness) closed.
+2. #85 parallel worktree/port infrastructure merged and closed.
+3. #33 primitives merged.
+4. #84 accessible chart boundary merged.
+5. #34 Dashboard pattern-setter merged.
 
 ---
 
-## Execution playbook (worktrees + per-issue pipeline)
+## 8. Worktree lane lifecycle
 
-**Lanes are scheduling slots, not branches.** This repo's delivery pipeline is strictly
-per-issue (`/start-task <issue#>` → `/plan-architecture`/`/generate-tasks` as needed →
-`/implement` → `/review` → `/commit` → PR with `Closes #N` → merge → `/archive-issue`), so
-parallelism is achieved by running **several instances of that pipeline at once** — one git
-worktree + one branch + one Claude session per in-flight issue, each cut from latest `main`
-and merged back promptly. Long-lived stacked branches would break the one-issue-one-PR flow;
-don't use them. Short-lived branches are also what keep the parallel merges cheap.
+`/start-task` must run in the primary checkout. A worktree adopts its branch immediately afterward.
 
-Two project skills own the worktree mechanics so `/start-task` (user-level, runs only in the
-primary checkout) never has to change: `/move-to-worktree` opens a lane, `/finish-worktree`
-closes it. `/start-task` itself commits `specs/context/<N>.md` on the branch before pushing,
-so the context file travels with the branch into its worktree.
+### Open
 
-### Task → GitHub issue mapping
+1. Confirm the issue is ready, a lane is free, reservations are clear, and primary is clean on
+   current `main`.
+2. Give the user one exact command: `/start-task <issue#>`. Do not ask which ready issue to start.
+3. Immediately run project-local `/move-to-worktree` when available. It must:
+   - verify a clean pushed task branch;
+   - return primary to updated `main`;
+   - create `../claude-lens-<issue#>`;
+   - write the issue-derived port block to `.env.local`;
+   - run `npm ci` in the worktree.
+4. Report the worktree path and exact next user-level skill for its worker session.
 
-All Phase 4 issues below are filed. The parallel-execution infrastructure is tracked separately by
-#85 and must merge before #33 starts.
+### Work
 
-| Plan task | Issue | | Plan task | Issue | | Plan task | Issue |
-|---|---|---|---|---|---|---|---|
-| #P3-5 (gates #P4-1) | #32 | | #P4-7 | #39 | | #P4-13 | #45 |
-| #P4-1 | #33 | | #P4-8 | #40 | | #P4-14 | #46 |
-| #P4-19 | #84 | | | | | | |
-| #P4-2 | #34 | | #P4-9 | #41 | | #P4-15 | #47 |
-| #P4-3 | #35 | | #P4-10 | #42 | | #P4-16 | #48 |
-| #P4-4 | #36 | | #P4-11 | #43 | | #P4-17 | #49 |
-| #P4-5 | #37 | | #P4-12 | #44 | | #P4-18 | #50 |
-| #P4-6 | #38 | | | | | #P5-1 … #P5-4 | #51 … #54 |
+The worker session owns only its issue:
 
-### Preconditions before opening parallel worktrees
+`/plan-architecture` → `/generate-tasks` → `/implement` → `/review` → `/commit`
 
-1. **#32 (#P3-5 Cypress harness) closed** — every page task's definition of done includes a
-   Cypress smoke spec, so the harness must exist first.
-2. **#85 (parallel-execution infrastructure) merged** (see "Port isolation" below) — it installs
-   the lane lifecycle before the first Phase 4 branch starts.
-3. **#33 (#P4-1 primitives) merged to `main`** — serial, blocks all pages.
-4. **#84 (#P4-19 accessible charts) merged** — the shared chart interaction and a11y boundary.
-5. **#34 (#P4-2 Dashboard) merged** — pattern-setter; the parallel fan-out starts only after this.
+These are user-level skills with `disable-model-invocation: true`; agents suggest them by exact
+name and never simulate them. Requirements are already settled for plan tasks. Page issues include
+their Cypress smoke, Storybook states, and real-data visual sign-off. The PR body carries
+`Closes #N`.
 
-### Lane lifecycle (per in-flight issue)
+### Merge and close
 
-`git checkout` can't have one branch in two places, and `/start-task` must check out `main` to
-sync — so `/start-task` always runs in the **primary checkout**, and a worktree adopts the branch
-afterwards:
+1. Confirm findings resolved, required tests green, `npm run verify` green, and visual sign-off
+   present where required.
+2. Present one compact checkpoint: PR, issue, evidence, sign-off, and unlocked successors.
+3. After squash-merge closes the issue, run `/finish-worktree <issue#>` from primary.
+4. Flip the plan checkbox only now, run `/archive-issue` promptly, and commit/push the hygiene.
+5. Rebuild the live ready queue and fill the free lane.
 
-1. **Open** — primary on `main`, clean: `/start-task <issue#>` (creates the branch, commits the
-   context file on it, pushes), then `/move-to-worktree` (returns primary to `main`,
-   `git worktree add ../claude-lens-<issue#> <branch>`, writes the lane's port block to
-   `.env.local`, runs `npm ci` there).
-2. **Work** — open a new Claude session in the worktree; normal pipeline:
-   (`/plan-architecture` → `/generate-tasks`) → `/implement` → `/review` → `/commit` → push
-   (Husky pre-push runs `npm run verify` per-worktree) → PR with `Closes #N`.
-3. **Merge** — squash-and-merge on github.com; auto-delete removes the remote branch.
-4. **Close** — in the primary: `/finish-worktree <issue#>` (pulls `main`, prunes, removes the
-   worktree — never `--force` — and `git branch -D`s the local branch; `-D` because squash-merge
-   hides the merge from git).
+### Per-lane port isolation
 
-- Per-issue artifacts are naturally conflict-free across worktrees: `specs/context/<N>.md`,
-  `specs/issues/` records, and root `CODE-REVIEW-PR-<N>.md` are all keyed by issue/PR number.
-- Opening the next lane needs only: primary on `main` and clean. In-flight lanes are unaffected.
+`CLAUDE_LENS_PORT_BASE` defaults to 4128:
 
-### Port isolation (#85, before the serial spine and fan-out)
+- backend = base;
+- Vite = base + 1;
+- E2E = base + 2;
+- Storybook = base + 3.
 
-Verified hazard (2026-07-17): `server/cli.ts` silently bumps to the next free port when its
-`--port` is busy, while `client/vite.config.ts` hardcodes the proxy target to 4128 and Vite's own
-port auto-bumps too — so two lanes running `npm run dev` don't crash, they **silently cross-wire**
-(lane B's UI reads lane A's backend). Convention can't fix this; env-driven ports must:
+`/move-to-worktree` assigns `4128 + 10 × issue#`, so lanes never share ports. Vite uses
+`strictPort: true`; collisions fail loudly. `CLAUDE_LENS_E2E_PORT` remains an explicit E2E
+override. The CLI's runtime auto-bump remains for end users, but development lanes rely on unique
+bases rather than auto-bumping.
 
-- One variable, `CLAUDE_LENS_PORT_BASE` (default 4128): backend = base, Vite dev = base+1,
-  e2e = base+2, Storybook = base+3 (`scripts/e2e.ts` already honors `CLAUDE_LENS_E2E_PORT`;
-  `npm run storybook` goes through `scripts/storybook.ts`, so page tasks can run Storybook in
-  parallel lanes too).
-- `client/vite.config.ts` reads the base for `server.proxy` and `server.port`, with
-  `strictPort: true` so collisions fail loudly instead of bumping into another lane.
-- The `dev` script stops hardcoding `--port 4128` — a small `scripts/dev.ts` wrapper (same
-  pattern as `scripts/build.ts` / `scripts/e2e.ts`) reads the env and spawns server + Vite with
-  matching ports.
-- `/move-to-worktree` assigns each lane `4128 + 10 × issue#` in the worktree's `.env.local` —
-  unique per issue, zero bookkeeping. (`cli.ts`'s auto-bump stays: it's friendly for `npx`
-  end-users, and unique bases make it moot in dev.)
+---
 
-### Concurrency rules (distilled from the dependency table)
+## 9. Resume algorithm
 
-- Never two of **{#P4-2, #P4-10, #P4-16}** in flight at once — all three write the Dashboard
-  page file.
-- **#P4-15 never in flight while #P4-10 is** — it extends #P4-10's config store.
-- Hard start-gates: #P4-11 only after #P4-9 merges · #P4-12 after #P4-11 · #P4-13 after
-  #P4-5 + #P4-8 + #P4-9 · #P4-14 after #P4-13 · #P4-16 after #P4-15 · #P4-6 after #P4-5 ·
-  **#P4-18 last, alone** (no other Phase 4 work in flight).
-- Start successors only after their hard predecessors merge. Before a PR merges, synchronize an
-  already-pushed lane with `origin/main` using a normal merge; do not rewrite shared branch history.
-- A page discovering it needs a **new shared primitive** lands it as a tiny separate PR to
-  `client/components/` first, rather than inside the page branch — keeps cross-lane edits
-  out of page PRs.
+```text
+refresh live issues, PRs, main, worktrees, and local artifacts
 
-### Launch sequence at 3 parallel lanes (recommended width)
+if primary has unexplained changes:
+    stop mutation; report exact paths and likely owner; never stash/discard
 
-"Start X when Y merges." Lanes fill greedily by chain priority: **chain heads before fillers** —
-a filler must never occupy a lane a chain head is ready for. (Revised 2026-07-17: the fan-out now
-opens with the three chain heads #41/#42/#37, not #36/#41/#40 — starting #42 late would delay the
-whole config chain for no gain.)
+for each merged-dirty issue:
+    finish worktree -> flip checkbox -> archive issue -> restore clean primary
 
-| Step | Start | When |
-|---|---|---|
-| pre | #85 (parallel infrastructure) | now — must merge before opening #33 |
-| 0 | #33 (#P4-1) | #85 merges — solo |
-| 1 | #84 (#P4-19 accessible charts) | #33 merges — solo |
-| 2 | #34 (#P4-2) | #84 merges — solo |
-| 3 | **#41 (Cache Lab) · #42 (Trends/Budget) · #37 (Session Detail)** | #34 merges — fan-out: all three chain heads |
-| 4 | #43 (Gates) | #41 merges (classifier ready) |
-| 5 | #47 (Settings) | #42 merges (config store ready) |
-| 6 | #40 (Models) | first lane freed by #37/other merges — last gate on #45 |
-| 7 | #44 (Report Card) | #43 merges |
-| 8 | #45 (Premium) | #37 + #40 + #41 all merged |
-| 9 | #48 (Explore) | #47 merges (Dashboard write — nothing else touching Dashboard in flight) |
-| 10 | #46 (Data Health) | #45 merges |
-| 11 | #36 (Sessions) · #39 (Projects) · #38 (Turn Inspector) · #35 (Search) | fillers — any free lane from step 4 onward (#38/#35 after #37) |
-| 12 | #49 (Export) | #36 merges + free lane |
-| 13 | #50 (Cross-page E2E) | everything above merged — solo, closes the phase |
+active = issues with a worktree or open PR
+capacity = 3 - active.count
 
-### Post-merge hygiene (every issue, every time)
+ready = open issues
+    whose conservative predecessors are closed
+    whose reservations do not overlap active work
 
-1. Flip the task's checkbox in `specs/claude-lens-plan.md` (checkboxes flip when issues
-   **close**, per the plan's own rule).
-2. Run `/archive-issue` promptly — "PR merged, issue closed" is the trigger (CLAUDE.md
-   standing rule; stale `specs/` files have already bitten twice).
-3. `/finish-worktree <issue#>` removes the worktree and local branch after verifying the merged PR
-   and closed issue. Synchronize only lanes that overlap or are about to merge.
+sort ready by:
+    depth descending
+    descendant count descending
+    GitHub issue number ascending
+
+while capacity > 0 and ready is not empty:
+    nominate first ready issue
+    request only the exact user-only skill invocation required to open it
+    refresh after the branch moves to its worktree
+
+if no issue is ready:
+    report exact blocking issues/PRs; do not invent unplanned work
+
+if #50 closes and hygiene is complete:
+    declare Phase 4 complete; Phase 5 remains strictly serial
+```
+
+Every orchestration update contains four short items:
+
+1. **State:** active lanes and merged-dirty cleanup.
+2. **Ready now:** ordered issues with the selected next issue first.
+3. **Blocked:** only blockers affecting the next unlock.
+4. **User action:** one exact action, or “none” while agent-owned work continues.
+
+---
+
+## 10. Failure and recovery
+
+- **Dirty primary/worktree:** stop destructive cleanup; identify paths and ownership.
+- **Failed verify/test:** the owning worker fixes it in the same issue.
+- **Predecessor merges after a lane starts:** merge current `origin/main` into the consuming lane;
+  never rewrite shared history.
+- **Merge conflict:** the later consumer resolves against the merged predecessor. Stop only that
+  lane if the conflict reveals ambiguous ownership.
+- **Review-blocked PR:** keep its reservations; fill only non-conflicting free lanes.
+- **Closed issue without merged PR:** do not treat it as satisfying a gate; inspect closure reason.
+- **Unavailable GitHub state:** never guess that an issue merged or closed.
+- **Spec conflict:** specs win. If authoritative specs conflict with each other, request one user
+  decision and record it in the plan decisions log.
+- **New feature idea:** route it through the normal requirements/issue pipeline; do not add it to an
+  active Phase 4 issue.
+
+---
+
+## 11. Minimal-intervention boundaries
+
+The orchestrator should not ask the user:
+
+- which ready issue to start;
+- how many lanes to use normally;
+- whether to run routine tests or read-only diagnostics;
+- how to allocate ports or clean a successfully merged lane;
+- whether to resolve a routine in-scope additive conflict.
+
+Ask only at real authority boundaries:
+
+- invoking a user-level skill;
+- manual page visual acceptance;
+- approving/performing an external merge or other GitHub mutation;
+- choosing between conflicting product requirements;
+- handling unexplained user changes or destructive cleanup.
+
+This is not literally zero-touch because implementation skills are intentionally user-only and
+page acceptance is intentionally manual. The target is deterministic, exact, and infrequent user
+intervention.
+
+---
+
+## 12. Phase 5
+
+Phase 5 is fully serial and gated behind #50:
+
+`#P5-1 Performance → #P5-2 Package hygiene → #P5-3 Docs → #P5-4 Publish`
+
+Do not parallelize it. Each task consumes the prior task's output.
+
+---
+
+## 13. Snapshot when consolidated
+
+Informational only; always refresh using §6.
+
+- 2026-07-17: #32 and #85 are closed as completed.
+- All Phase 4 task issues #33–#50 and #84 are open.
+- The serial next issue is #33; #84 and then #34 follow.
+- The #85 infrastructure is present on `main`. If #85's local filed record still exists, archive
+  that closed issue before opening #33.
