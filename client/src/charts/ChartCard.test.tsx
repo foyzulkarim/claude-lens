@@ -227,8 +227,8 @@ describe("ChartCard — range/trend/bucket summary (#84)", () => {
     expect(chartRangeSummary(sampleSeries)).toBe("Jul 8 – Jul 9");
     expect(chartTrendSummary(sampleSeries)).toBe("Trending up 100%");
     expect(bucketRows(sampleSeries)).toEqual([
-      { t: "2026-07-08T00:00:00.000Z", Cost: 1 },
-      { t: "2026-07-09T00:00:00.000Z", Cost: 2 },
+      { t: "2026-07-08T00:00:00.000Z", values: { Cost: 1 } },
+      { t: "2026-07-09T00:00:00.000Z", values: { Cost: 2 } },
     ]);
   });
 
@@ -236,6 +236,95 @@ describe("ChartCard — range/trend/bucket summary (#84)", () => {
     renderCard();
     await waitFor(() => expect(chartSpy).toHaveBeenCalled());
     expect(screen.getByText("Jul 8 – Jul 9 · Trending up 100% · 2 buckets")).toBeInTheDocument();
+  });
+
+  it("describes a declining trend", () => {
+    const declining: Series[] = [
+      {
+        ...sampleSeries[0],
+        points: [
+          { t: "2026-07-08T00:00:00.000Z", value: 4 },
+          { t: "2026-07-09T00:00:00.000Z", value: 4 },
+          { t: "2026-07-10T00:00:00.000Z", value: 2 },
+          { t: "2026-07-11T00:00:00.000Z", value: 2 },
+        ],
+      },
+    ];
+    expect(chartTrendSummary(declining)).toBe("Trending down 50%");
+  });
+
+  it("describes equal, non-zero halves as flat", () => {
+    const flat: Series[] = [
+      {
+        ...sampleSeries[0],
+        points: [
+          { t: "2026-07-08T00:00:00.000Z", value: 2 },
+          { t: "2026-07-09T00:00:00.000Z", value: 2 },
+          { t: "2026-07-10T00:00:00.000Z", value: 2 },
+          { t: "2026-07-11T00:00:00.000Z", value: 2 },
+        ],
+      },
+    ];
+    expect(chartTrendSummary(flat)).toBe("Flat");
+  });
+
+  it("describes a zero-to-zero baseline as flat, and zero-to-positive as trending up with no percent", () => {
+    const allZero: Series[] = [
+      {
+        ...sampleSeries[0],
+        points: [
+          { t: "2026-07-08T00:00:00.000Z", value: 0 },
+          { t: "2026-07-09T00:00:00.000Z", value: 0 },
+        ],
+      },
+    ];
+    expect(chartTrendSummary(allZero)).toBe("Flat");
+
+    const zeroToPositive: Series[] = [
+      {
+        ...sampleSeries[0],
+        points: [
+          { t: "2026-07-08T00:00:00.000Z", value: 0 },
+          { t: "2026-07-09T00:00:00.000Z", value: 5 },
+        ],
+      },
+    ];
+    expect(chartTrendSummary(zeroToPositive)).toBe("Trending up");
+  });
+
+  it("pivots non-finite points through unfiltered, but excludes them from the trend total", () => {
+    expect(bucketRows(summarySeries)).toEqual([
+      { t: "2026-07-08T00:00:00.000Z", values: { Cost: 1, "Secondary cost series": 2 } },
+      { t: "2026-07-09T00:00:00.000Z", values: { Cost: null } },
+      { t: "2026-07-10T00:00:00.000Z", values: { Cost: Number.POSITIVE_INFINITY } },
+      { t: "2026-07-11T00:00:00.000Z", values: { Cost: Number.NEGATIVE_INFINITY } },
+      { t: "2026-07-12T00:00:00.000Z", values: { Cost: Number.NaN } },
+    ]);
+    // Only the first bucket (Cost 1 + Secondary 2 = 3) contributes a finite
+    // total; every non-finite/null bucket contributes 0 to its half's sum.
+    expect(chartTrendSummary(summarySeries)).toBe("Trending down 100%");
+  });
+
+  it("leaves a series absent from a bucket as undefined rather than assuming it's present", () => {
+    const disjoint: Series[] = [
+      {
+        measure: "costComputed",
+        dimensionKey: "time",
+        label: "A",
+        points: [{ t: "2026-07-08T00:00:00.000Z", value: 1 }],
+      },
+      {
+        measure: "costComputed",
+        dimensionKey: "time",
+        label: "B",
+        points: [{ t: "2026-07-09T00:00:00.000Z", value: 2 }],
+      },
+    ];
+    const rows = bucketRows(disjoint);
+    expect(rows[0].values).toEqual({ A: 1 });
+    expect(rows[0].values.B).toBeUndefined();
+    expect(rows[1].values).toEqual({ B: 2 });
+    expect(rows[1].values.A).toBeUndefined();
   });
 });
 
@@ -331,6 +420,42 @@ describe("ChartCard — controls", () => {
     expect(history.at(-1)).toBe(
       "/sessions?from=2026-07-08T00%3A00%3A00.000Z&to=2026-07-09T00%3A00%3A00.000Z",
     );
+  });
+
+  it("data table toggle expands and collapses on repeated clicks (#84)", async () => {
+    const user = userEvent.setup();
+    renderCard();
+    await waitFor(() => expect(chartSpy).toHaveBeenCalled());
+
+    const toggle = screen.getByRole("button", { name: "Data table" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("table")).toBeInTheDocument();
+
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
+  it("renders one data table column per fetched series, with row-relative values (#84)", async () => {
+    const user = userEvent.setup();
+    postMetricsMock.mockResolvedValue(summarySeries);
+    renderCard();
+    await waitFor(() => expect(chartSpy).toHaveBeenCalled());
+
+    await user.click(screen.getByRole("button", { name: "Data table" }));
+
+    expect(screen.getByRole("columnheader", { name: "Cost" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Secondary cost series" })).toBeInTheDocument();
+    // The 07-08 bucket is the only one where both series have a value.
+    expect(screen.getByText("$1.00")).toBeInTheDocument();
+    expect(screen.getByText("$2.00")).toBeInTheDocument();
+    // Later buckets (null/non-finite Cost points, no Secondary point at all)
+    // fall back to the "—" placeholder rather than a fabricated value.
+    expect(screen.getAllByText("—").length).toBeGreaterThan(0);
   });
 
   it("settles on the last selection when unit and grain are toggled in quick succession", async () => {
