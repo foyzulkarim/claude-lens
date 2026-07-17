@@ -21,17 +21,20 @@ declare module "@tanstack/react-table" {
   }
 }
 
-export interface DataTableProps<T> {
+interface DataTableBaseProps<T> {
   data: T[];
   columns: ColumnDef<T, unknown>[];
   isLoading?: boolean;
   empty?: ReactNode;
-  virtualized?: boolean;
-  height?: number;
   onRowClick?: (row: T) => void;
   initialSorting?: SortingState;
   getRowId?: (row: T) => string;
 }
+
+// `height` is required whenever `virtualized` is true (ARCH R3/A5) — the
+// virtualizer needs a bounded scroll viewport to know which rows are visible.
+export type DataTableProps<T> = DataTableBaseProps<T> &
+  ({ virtualized: true; height: number } | { virtualized?: false; height?: never });
 
 const ESTIMATED_ROW_HEIGHT = 36;
 const SKELETON_ROW_COUNT = 5;
@@ -91,6 +94,7 @@ export function DataTable<T>({
     count: rows.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => ESTIMATED_ROW_HEIGHT,
+    enabled: Boolean(virtualized),
   });
 
   const virtualItems = virtualized ? virtualizer.getVirtualItems() : [];
@@ -150,16 +154,25 @@ export function DataTable<T>({
             </tr>
           ))}
         </thead>
-        <tbody role={isLoading ? "status" : undefined}>
+        <tbody>
           {isLoading ? (
-            Array.from({ length: SKELETON_ROW_COUNT }).map((_, i) => (
-              // biome-ignore lint/suspicious/noArrayIndexKey: skeleton rows have no identity
-              <tr key={i}>
-                <td colSpan={colCount} className="p-2">
-                  <div className="h-4 animate-pulse rounded bg-slate-100 dark:bg-[#232B36]" />
+            <>
+              <tr>
+                <td colSpan={colCount} className="p-0">
+                  <span role="status" className="sr-only">
+                    Loading…
+                  </span>
                 </td>
               </tr>
-            ))
+              {Array.from({ length: SKELETON_ROW_COUNT }).map((_, i) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: skeleton rows have no identity
+                <tr key={i}>
+                  <td colSpan={colCount} className="p-2">
+                    <div className="h-4 animate-pulse rounded bg-slate-100 dark:bg-[#232B36]" />
+                  </td>
+                </tr>
+              ))}
+            </>
           ) : rows.length === 0 ? (
             <tr>
               <td colSpan={colCount}>{empty ?? <EmptyState message="No data" />}</td>

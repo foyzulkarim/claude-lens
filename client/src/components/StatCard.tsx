@@ -123,13 +123,15 @@ export interface StatRowProps {
   columns?: number;
 }
 
+// Mockup breakpoint (specs/pages/_chrome.css:73) collapses .statrow to a
+// single column below 980px — Tailwind's stock `md` (768px) is too narrow.
 const COLUMN_CLASS: Record<number, string> = {
-  1: "md:grid-cols-1",
-  2: "md:grid-cols-2",
-  3: "md:grid-cols-3",
-  4: "md:grid-cols-4",
-  5: "md:grid-cols-5",
-  6: "md:grid-cols-6",
+  1: "min-[980px]:grid-cols-1",
+  2: "min-[980px]:grid-cols-2",
+  3: "min-[980px]:grid-cols-3",
+  4: "min-[980px]:grid-cols-4",
+  5: "min-[980px]:grid-cols-5",
+  6: "min-[980px]:grid-cols-6",
 };
 
 export function StatRow({ children, columns = 4 }: StatRowProps) {

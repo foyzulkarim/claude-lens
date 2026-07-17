@@ -56,6 +56,23 @@ export const Empty: Story = {
   args: { data: [], columns },
 };
 
+export const EmptyCustom: Story = {
+  args: {
+    data: [],
+    columns,
+    empty: <p className="p-6 text-center text-sm text-slate-400">No sessions match this filter.</p>,
+  },
+};
+
+export const StableRowId: Story = {
+  args: {
+    data: makeRows(6),
+    columns,
+    getRowId: (row) => row.id,
+    initialSorting: [{ id: "cost", desc: true }],
+  },
+};
+
 export const RowClick: Story = {
   args: {
     data: makeRows(6),
