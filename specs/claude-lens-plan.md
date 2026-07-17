@@ -155,7 +155,7 @@ Pages are cheap by design: filter state + preset `MetricsQuery`s + layout. The H
 2. **The pages spec's section table is the binding section list; the mockup is the visual reference, not an exhaustive contract.** Six known spec-vs-mockup gaps (mockups predate the spec): dashboard — failed-work stat; sessions — compare mode + tags; session-detail — tool mix panel/timeline; cache-lab — baseline weight trend; models — throughput + entrypoint breakdown; trends — stacked weekly bars. Implement these from the spec table.
 3. "Matches the mockup" means: manual visual review sign-off against `specs/pages/X.html` on real data, recorded by flipping the task checkbox — plus the smoke spec green. No automated visual regression (consciously skipped).
 
-- [ ] **#P4-1 — Shared dashboard primitives**
+- [x] **#P4-1 — Shared dashboard primitives**
   `components/`: stat-card (delta + sparkline), data-table (TanStack Table + virtualization), tier-badge, locked-card ("Set up cost capture" CTA), empty-state, chip. Tailwind, no component library. Built in Storybook first.
   *Acceptance:* each primitive has stories covering its states (stat-card delta up/down/flat + sparkline, tier-badge 🟢/🟡/🔴, locked-card CTA, empty-state, table loading/virtualized rows); visual check against the mockups' shared elements.
 - [ ] **#P4-19 — Accessible time-series charts**
