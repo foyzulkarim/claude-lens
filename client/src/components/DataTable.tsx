@@ -29,6 +29,8 @@ interface DataTableBaseProps<T> {
   onRowClick?: (row: T) => void;
   initialSorting?: SortingState;
   getRowId?: (row: T) => string;
+  /** Accessible name for the `<table>` — distinguishes it for screen-reader table navigation. */
+  label?: string;
 }
 
 // `height` is required whenever `virtualized` is true (ARCH R3/A5) — the
@@ -43,7 +45,22 @@ function DataTableRow<T>({ row, onRowClick }: { row: Row<T>; onRowClick?: (row: 
   return (
     <tr
       onClick={onRowClick ? () => onRowClick(row.original) : undefined}
-      className={clsx(onRowClick && "cursor-pointer")}
+      onKeyDown={
+        onRowClick
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onRowClick(row.original);
+              }
+            }
+          : undefined
+      }
+      tabIndex={onRowClick ? 0 : undefined}
+      role={onRowClick ? "button" : undefined}
+      className={clsx(
+        onRowClick &&
+          "cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-slate-400 dark:focus-visible:outline-[#4FC3D9]",
+      )}
     >
       {row.getVisibleCells().map((cell) => {
         const meta = cell.column.columnDef.meta;
@@ -74,6 +91,7 @@ export function DataTable<T>({
   onRowClick,
   initialSorting,
   getRowId,
+  label,
 }: DataTableProps<T>) {
   const [sorting, setSorting] = useState<SortingState>(initialSorting ?? []);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -108,46 +126,48 @@ export function DataTable<T>({
 
   return (
     <div ref={scrollRef} style={virtualized ? { height, overflow: "auto" } : undefined}>
-      <table className="w-full border-collapse text-sm">
+      <table aria-label={label} className="w-full border-collapse text-sm">
         <thead>
           {table.getHeaderGroups().map((headerGroup) => (
             <tr key={headerGroup.id}>
               {headerGroup.headers.map((header) => {
                 const align = header.column.columnDef.meta?.align;
+                const sortable = header.column.getCanSort();
                 const sorted = header.column.getIsSorted();
-                if (!header.column.getCanSort()) {
-                  return (
-                    <th
-                      key={header.id}
-                      className={clsx(
-                        "border-b border-slate-200 p-2 text-left text-[10px] uppercase tracking-wider text-slate-400 dark:border-[#232B36] dark:text-[#5A6675]",
-                        align === "right" && "text-right",
-                      )}
-                    >
-                      {flexRender(header.column.columnDef.header, header.getContext())}
-                    </th>
-                  );
-                }
+                const headerContent = flexRender(
+                  header.column.columnDef.header,
+                  header.getContext(),
+                );
                 return (
                   <th
                     key={header.id}
                     aria-sort={
-                      sorted === "asc" ? "ascending" : sorted === "desc" ? "descending" : "none"
+                      sortable
+                        ? sorted === "asc"
+                          ? "ascending"
+                          : sorted === "desc"
+                            ? "descending"
+                            : "none"
+                        : undefined
                     }
                     className={clsx(
                       "border-b border-slate-200 p-2 text-left text-[10px] uppercase tracking-wider text-slate-400 dark:border-[#232B36] dark:text-[#5A6675]",
                       align === "right" && "text-right",
                     )}
                   >
-                    <button
-                      type="button"
-                      onClick={header.column.getToggleSortingHandler()}
-                      className="inline-flex items-center gap-1"
-                    >
-                      {flexRender(header.column.columnDef.header, header.getContext())}
-                      {sorted === "asc" && <span aria-hidden="true">▲</span>}
-                      {sorted === "desc" && <span aria-hidden="true">▼</span>}
-                    </button>
+                    {sortable ? (
+                      <button
+                        type="button"
+                        onClick={header.column.getToggleSortingHandler()}
+                        className="inline-flex items-center gap-1"
+                      >
+                        {headerContent}
+                        {sorted === "asc" && <span aria-hidden="true">▲</span>}
+                        {sorted === "desc" && <span aria-hidden="true">▼</span>}
+                      </button>
+                    ) : (
+                      headerContent
+                    )}
                   </th>
                 );
               })}
@@ -167,7 +187,7 @@ export function DataTable<T>({
               {Array.from({ length: SKELETON_ROW_COUNT }).map((_, i) => (
                 // biome-ignore lint/suspicious/noArrayIndexKey: skeleton rows have no identity
                 <tr key={i}>
-                  <td colSpan={colCount} className="p-2">
+                  <td colSpan={colCount} className="p-2" aria-hidden="true">
                     <div className="h-4 animate-pulse rounded bg-slate-100 dark:bg-[#232B36]" />
                   </td>
                 </tr>
@@ -175,7 +195,9 @@ export function DataTable<T>({
             </>
           ) : rows.length === 0 ? (
             <tr>
-              <td colSpan={colCount}>{empty ?? <EmptyState message="No data" />}</td>
+              <td colSpan={colCount}>
+                <div role="status">{empty ?? <EmptyState message="No data" />}</div>
+              </td>
             </tr>
           ) : virtualized ? (
             <>

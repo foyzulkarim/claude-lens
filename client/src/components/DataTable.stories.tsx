@@ -18,7 +18,10 @@ const columns: ColumnDef<SessionRow, unknown>[] = [
     accessorKey: "cost",
     header: "Cost",
     meta: { align: "right", mono: true },
-    cell: (info) => `$${(info.getValue() as number).toFixed(2)}`,
+    cell: (info) => {
+      const value = info.getValue();
+      return typeof value === "number" ? `$${value.toFixed(2)}` : "";
+    },
   },
 ];
 
