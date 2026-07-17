@@ -1,6 +1,6 @@
 ---
 name: finish-worktree
-description: "After an issue's PR has squash-merged on GitHub and its issue has closed: fast-forward main, remove the issue-numbered sibling worktree, and delete the local feature branch. Use when the user says to finish, tear down, or clean up a lane or worktree for a merged issue."
+description: "After an issue's PR has squash-merged on GitHub and its issue has closed: fast-forward main, remove the issue-numbered nested worktree (.worktrees/<issue#>), and delete the local feature branch. Use when the user says to finish, tear down, or clean up a lane or worktree for a merged issue."
 ---
 
 # Finish-Worktree
@@ -26,7 +26,7 @@ The script:
    It also requires the remote feature branch to be gone.
 4. `git pull --ff-only` on `main` (brings the squashed work in) +
    `git fetch --prune` (clears the stale tracking ref).
-5. `git worktree remove ../claude-lens-<issue#>` — **never `--force`**: if the
+5. `git worktree remove .worktrees/<issue#>` — **never `--force`**: if the
    worktree has uncommitted work it prints the leftovers and stops.
 6. `git branch -D <branch>` — capital `-D` is deliberate: squash-merge means git
    can't prove the branch merged, so `-d` always refuses; step 3 already

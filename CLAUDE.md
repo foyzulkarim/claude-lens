@@ -54,7 +54,7 @@ new ideas:     /plan-requirements ─► specs/requirements/REQ-<slug>.md ─►
 ## Skill locations
 
 - `/create-issue` — project-local, `.claude/skills/create-issue/`.
-- `/move-to-worktree` — project-local, `.claude/skills/move-to-worktree/`. Moves the clean, pushed `/start-task` branch into an issue-numbered sibling worktree, writes its isolated port block, and returns the primary checkout to current `main`.
+- `/move-to-worktree` — project-local, `.claude/skills/move-to-worktree/`. Moves the clean, pushed `/start-task` branch into an issue-numbered nested worktree (`.worktrees/<issue#>`, inside the repo root — never a `../` sibling), writes its isolated port block, and returns the primary checkout to current `main`.
 - `/finish-worktree` — project-local, `.claude/skills/finish-worktree/`. After squash-merge, verifies the exact merged PR head and closed issue, fast-forwards `main`, and safely removes the clean worktree and local branch.
 - `/archive-issue` — project-local, `.claude/skills/archive-issue/`. Retires a closed issue's `specs/` artifacts straight into the GitHub wiki (never into this repo), resolving every source file from the issue record anchor — see `specs/wiki-structure.md`.
 - `/start-task`, `/plan-requirements`, `/plan-architecture`, `/generate-tasks`, `/implement`, `/review`, `/commit` — user-level (`~/.claude/skills/`), all `disable-model-invocation: true`: only the user can invoke them; suggest them by name, never attempt to trigger them.

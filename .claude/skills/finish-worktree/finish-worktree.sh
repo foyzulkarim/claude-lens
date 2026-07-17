@@ -50,7 +50,7 @@ if [[ "$BRANCH_COUNT" != "1" ]]; then
 fi
 BRANCH="$BRANCHES"
 
-WORKTREE_DIR="$(dirname "$ROOT")/$(basename "$ROOT")-${ISSUE_NUM}"
+WORKTREE_DIR="$ROOT/.worktrees/${ISSUE_NUM}"
 if [[ -d "$WORKTREE_DIR" && -n "$(git -C "$WORKTREE_DIR" status --porcelain)" ]]; then
   echo "Error: worktree at ${WORKTREE_DIR} has uncommitted work:" >&2
   git -C "$WORKTREE_DIR" status --short >&2

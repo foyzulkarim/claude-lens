@@ -255,7 +255,8 @@ Serial prerequisites before the fan-out:
 3. Immediately run project-local `/move-to-worktree` when available. It must:
    - verify a clean pushed task branch;
    - return primary to updated `main`;
-   - create `../claude-lens-<issue#>`;
+   - create `.worktrees/<issue#>` (nested inside the repo root, never a `../`
+     sibling — keeps every routine worktree-lifecycle command inside `$ROOT`);
    - write the issue-derived port block to `.env.local`;
    - run `npm ci` in the worktree.
 4. Report the worktree path and exact next user-level skill for its worker session.

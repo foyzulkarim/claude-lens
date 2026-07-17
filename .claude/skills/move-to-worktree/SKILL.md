@@ -1,6 +1,6 @@
 ---
 name: move-to-worktree
-description: "After /start-task: park the current clean, pushed feature branch in its own issue-numbered sibling worktree and return the primary checkout to current main, so the next parallel lane can start. Writes the lane's port base and runs npm ci in the worktree. Use when the user says to move the branch or task to a worktree or open a parallel lane."
+description: "After /start-task: park the current clean, pushed feature branch in its own issue-numbered nested worktree (.worktrees/<issue#>) and return the primary checkout to current main, so the next parallel lane can start. Writes the lane's port base and runs npm ci in the worktree. Use when the user says to move the branch or task to a worktree or open a parallel lane."
 ---
 
 # Move-to-Worktree
@@ -25,8 +25,9 @@ No arguments — it operates on the branch currently checked out. The script:
 2. Pushes any local-only commits, checks out and fast-forwards `main` (this must
    happen *before* the worktree is created — git refuses to check out a branch
    in two places).
-3. `git worktree add ../claude-lens-<issue#> <branch>`. The context file
-   `specs/context/<issue#>.md` travels with the branch (it's committed).
+3. `git worktree add .worktrees/<issue#> <branch>` — nested inside the repo root
+   (gitignored), never a `../` sibling. The context file `specs/context/<issue#>.md`
+   travels with the branch (it's committed).
 4. Writes the lane's port block to `<worktree>/.env.local` (gitignored):
    `CLAUDE_LENS_PORT_BASE = 4128 + 10 × issue#` — backend = base, Vite = base+1,
    E2E = base+2, Storybook = base+3. Issue-derived, so lanes cannot collide.

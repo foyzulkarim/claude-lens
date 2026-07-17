@@ -51,7 +51,7 @@ fi
 DEFAULT_BRANCH="$(git remote show origin 2>/dev/null | grep 'HEAD branch' | sed 's/.*: //' || true)"
 DEFAULT_BRANCH="${DEFAULT_BRANCH:-main}"
 
-WORKTREE_DIR="$(dirname "$ROOT")/$(basename "$ROOT")-${ISSUE_NUM}"
+WORKTREE_DIR="$ROOT/.worktrees/${ISSUE_NUM}"
 if [[ -e "$WORKTREE_DIR" ]]; then
   echo "Error: $WORKTREE_DIR already exists." >&2
   exit 1
@@ -66,6 +66,7 @@ fi
 # ── Free the branch, then check it out in its own worktree ───────────────────
 git checkout "$DEFAULT_BRANCH" --quiet
 git pull --ff-only origin "$DEFAULT_BRANCH" --quiet
+mkdir -p "$(dirname "$WORKTREE_DIR")"
 git worktree add "$WORKTREE_DIR" "$BRANCH"
 
 # ── Per-lane port block (issue-derived — unique per issue, no bookkeeping) ───
