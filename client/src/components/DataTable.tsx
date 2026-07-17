@@ -30,16 +30,24 @@ interface DataTableBaseProps<T> {
   columns: ColumnDef<T, any>[];
   isLoading?: boolean;
   empty?: ReactNode;
-  onRowClick?: (row: T) => void;
   initialSorting?: SortingState;
   getRowId?: (row: T) => string;
   /** Accessible name for the `<table>` — distinguishes it for screen-reader table navigation. */
   label?: string;
 }
 
+type DataTableRowActionProps<T> =
+  | { onRowClick?: undefined; getRowActionLabel?: never }
+  | {
+      onRowClick: (row: T) => void;
+      /** Accessible name for the real action button rendered in each clickable row. */
+      getRowActionLabel: (row: T) => string;
+    };
+
 // `height` is required whenever `virtualized` is true (ARCH R3/A5) — the
 // virtualizer needs a bounded scroll viewport to know which rows are visible.
 export type DataTableProps<T> = DataTableBaseProps<T> &
+  DataTableRowActionProps<T> &
   ({ virtualized: true; height: number } | { virtualized?: false; height?: never });
 
 const ESTIMATED_ROW_HEIGHT = 36;
@@ -48,19 +56,33 @@ const SKELETON_ROW_COUNT = 5;
 function DataTableRow<T>({
   row,
   onRowClick,
+  getRowActionLabel,
   rowIndex,
 }: {
   row: Row<T>;
   onRowClick?: (row: T) => void;
+  getRowActionLabel?: (row: T) => string;
   /** 1-based logical row position (header row is 1) — lets AT announce true position under virtualization (A2). */
   rowIndex?: number;
 }) {
   return (
     <tr
-      // Mouse convenience only — the canonical, keyboard-operable action lives
-      // in a real <button> in the first cell (A1) so <tr>/<td> keep native
-      // table row/cell semantics instead of being flattened by role="button".
-      onClick={onRowClick ? () => onRowClick(row.original) : undefined}
+      // Mouse convenience only. Interactive descendants keep their own behavior;
+      // the separate button in the first cell is the canonical keyboard action.
+      onClick={
+        onRowClick
+          ? (event) => {
+              const target = event.target;
+              if (
+                target instanceof Element &&
+                target.closest("a, button, input, select, textarea, [role='button'], [role='link']")
+              ) {
+                return;
+              }
+              onRowClick(row.original);
+            }
+          : undefined
+      }
       aria-rowindex={rowIndex}
       className={clsx(onRowClick && "cursor-pointer")}
     >
@@ -76,17 +98,21 @@ function DataTableRow<T>({
               meta?.mono && "font-mono tabular-nums",
             )}
           >
-            {onRowClick && index === 0 ? (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onRowClick(row.original);
-                }}
-                className="block w-full appearance-none bg-transparent p-0 text-left focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-slate-600 dark:focus-visible:outline-[#4FC3D9]"
-              >
-                {content}
-              </button>
+            {onRowClick && getRowActionLabel && index === 0 ? (
+              <div className="flex min-w-0 items-center gap-2">
+                <div className="min-w-0 flex-1">{content}</div>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onRowClick(row.original);
+                  }}
+                  aria-label={getRowActionLabel(row.original)}
+                  className="shrink-0 rounded px-1 text-slate-600 hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-600 dark:text-[#8A96A5] dark:hover:text-[#E8EDF2] dark:focus-visible:outline-[#4FC3D9]"
+                >
+                  <span aria-hidden="true">→</span>
+                </button>
+              </div>
             ) : (
               content
             )}
@@ -105,11 +131,13 @@ export function DataTable<T>({
   virtualized,
   height,
   onRowClick,
+  getRowActionLabel,
   initialSorting,
   getRowId,
   label,
 }: DataTableProps<T>) {
   const [sorting, setSorting] = useState<SortingState>(initialSorting ?? []);
+  const [showAllRows, setShowAllRows] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const table = useReactTable({
@@ -124,14 +152,15 @@ export function DataTable<T>({
 
   const rows = table.getRowModel().rows;
 
+  const isVirtualized = Boolean(virtualized && !showAllRows);
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => ESTIMATED_ROW_HEIGHT,
-    enabled: Boolean(virtualized),
+    enabled: isVirtualized,
   });
 
-  const virtualItems = virtualized ? virtualizer.getVirtualItems() : [];
+  const virtualItems = isVirtualized ? virtualizer.getVirtualItems() : [];
   const paddingTop = virtualItems.length > 0 ? virtualItems[0].start : 0;
   const paddingBottom =
     virtualItems.length > 0
@@ -144,110 +173,131 @@ export function DataTable<T>({
   const ariaRowCount = rows.length + 1;
 
   return (
-    <div ref={scrollRef} style={virtualized ? { height, overflow: "auto" } : undefined}>
-      <table
-        aria-label={label}
-        aria-rowcount={virtualized ? ariaRowCount : undefined}
-        className="w-full border-collapse text-sm"
-      >
-        <thead>
-          {table.getHeaderGroups().map((headerGroup) => (
-            <tr key={headerGroup.id} aria-rowindex={virtualized ? 1 : undefined}>
-              {headerGroup.headers.map((header) => {
-                const align = header.column.columnDef.meta?.align;
-                const sortable = header.column.getCanSort();
-                const sorted = header.column.getIsSorted();
-                const headerContent = flexRender(
-                  header.column.columnDef.header,
-                  header.getContext(),
-                );
-                return (
-                  <th
-                    key={header.id}
-                    aria-sort={
-                      sortable
-                        ? sorted === "asc"
-                          ? "ascending"
-                          : sorted === "desc"
-                            ? "descending"
-                            : "none"
-                        : undefined
-                    }
-                    className={clsx(
-                      "border-b border-slate-200 p-2 text-left text-[10px] uppercase tracking-wider text-slate-600 dark:border-[#232B36] dark:text-[#5A6675]",
-                      align === "right" && "text-right",
-                    )}
-                  >
-                    {sortable ? (
-                      <button
-                        type="button"
-                        onClick={header.column.getToggleSortingHandler()}
-                        className="inline-flex items-center gap-1"
-                      >
-                        {headerContent}
-                        {sorted === "asc" && <span aria-hidden="true">▲</span>}
-                        {sorted === "desc" && <span aria-hidden="true">▼</span>}
-                      </button>
-                    ) : (
-                      headerContent
-                    )}
-                  </th>
-                );
-              })}
-            </tr>
-          ))}
-        </thead>
-        <tbody>
-          {isLoading ? (
-            <>
-              <tr>
-                <td colSpan={colCount} className="p-0">
-                  <span role="status" className="sr-only">
-                    Loading…
-                  </span>
-                </td>
+    <>
+      {virtualized ? (
+        <button
+          type="button"
+          onClick={() => setShowAllRows((current) => !current)}
+          className="sr-only rounded px-2 py-1 text-sm focus:not-sr-only focus:mb-2 focus:inline-flex focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-slate-600 dark:text-[#E8EDF2] dark:focus:outline-[#4FC3D9]"
+        >
+          {showAllRows ? "Use virtualized rows" : `Show all ${rows.length} rows`}
+        </button>
+      ) : null}
+      <div ref={scrollRef} style={isVirtualized ? { height, overflow: "auto" } : undefined}>
+        <table
+          aria-label={label}
+          aria-rowcount={isVirtualized ? ariaRowCount : undefined}
+          className="w-full border-collapse text-sm"
+        >
+          <thead>
+            {table.getHeaderGroups().map((headerGroup) => (
+              <tr key={headerGroup.id} aria-rowindex={isVirtualized ? 1 : undefined}>
+                {headerGroup.headers.map((header) => {
+                  const align = header.column.columnDef.meta?.align;
+                  const sortable = header.column.getCanSort();
+                  const sorted = header.column.getIsSorted();
+                  const headerContent = flexRender(
+                    header.column.columnDef.header,
+                    header.getContext(),
+                  );
+                  return (
+                    <th
+                      key={header.id}
+                      aria-sort={
+                        sortable
+                          ? sorted === "asc"
+                            ? "ascending"
+                            : sorted === "desc"
+                              ? "descending"
+                              : "none"
+                          : undefined
+                      }
+                      className={clsx(
+                        "border-b border-slate-200 p-2 text-left text-[10px] uppercase tracking-wider text-slate-600 dark:border-[#232B36] dark:text-[#8A96A5]",
+                        align === "right" && "text-right",
+                      )}
+                    >
+                      {sortable ? (
+                        <button
+                          type="button"
+                          onClick={header.column.getToggleSortingHandler()}
+                          className="inline-flex items-center gap-1"
+                        >
+                          {headerContent}
+                          {sorted === "asc" && <span aria-hidden="true">▲</span>}
+                          {sorted === "desc" && <span aria-hidden="true">▼</span>}
+                        </button>
+                      ) : (
+                        headerContent
+                      )}
+                    </th>
+                  );
+                })}
               </tr>
-              {Array.from({ length: SKELETON_ROW_COUNT }).map((_, i) => (
-                // biome-ignore lint/suspicious/noArrayIndexKey: skeleton rows have no identity
-                <tr key={i}>
-                  <td colSpan={colCount} className="p-2" aria-hidden="true">
-                    <div className="h-4 animate-pulse rounded bg-slate-100 dark:bg-[#232B36]" />
+            ))}
+          </thead>
+          <tbody>
+            {isLoading ? (
+              <>
+                <tr>
+                  <td colSpan={colCount} className="p-0">
+                    <span role="status" className="sr-only">
+                      Loading…
+                    </span>
                   </td>
                 </tr>
-              ))}
-            </>
-          ) : rows.length === 0 ? (
-            <tr>
-              <td colSpan={colCount}>
-                <div role="status">{empty ?? <EmptyState message="No data" />}</div>
-              </td>
-            </tr>
-          ) : virtualized ? (
-            <>
-              {paddingTop > 0 && (
-                <tr>
-                  <td colSpan={colCount} style={{ height: paddingTop }} aria-hidden="true" />
-                </tr>
-              )}
-              {virtualItems.map((virtualRow) => (
+                {Array.from({ length: SKELETON_ROW_COUNT }).map((_, i) => (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: skeleton rows have no identity
+                  <tr key={i}>
+                    <td colSpan={colCount} className="p-2" aria-hidden="true">
+                      <div className="h-4 animate-pulse rounded bg-slate-100 dark:bg-[#232B36]" />
+                    </td>
+                  </tr>
+                ))}
+              </>
+            ) : rows.length === 0 ? (
+              <tr>
+                <td colSpan={colCount}>
+                  <div role="status">{empty ?? <EmptyState message="No data" />}</div>
+                </td>
+              </tr>
+            ) : isVirtualized ? (
+              <>
+                {paddingTop > 0 && (
+                  // biome-ignore lint/a11y/noAriaHiddenOnFocusable: virtualizer spacer row has no focus behavior and must stay out of the accessibility tree
+                  <tr aria-hidden="true">
+                    <td colSpan={colCount} style={{ height: paddingTop }} />
+                  </tr>
+                )}
+                {virtualItems.map((virtualRow) => (
+                  <DataTableRow
+                    key={rows[virtualRow.index].id}
+                    row={rows[virtualRow.index]}
+                    onRowClick={onRowClick}
+                    getRowActionLabel={getRowActionLabel}
+                    rowIndex={virtualRow.index + 2}
+                  />
+                ))}
+                {paddingBottom > 0 && (
+                  // biome-ignore lint/a11y/noAriaHiddenOnFocusable: virtualizer spacer row has no focus behavior and must stay out of the accessibility tree
+                  <tr aria-hidden="true">
+                    <td colSpan={colCount} style={{ height: paddingBottom }} />
+                  </tr>
+                )}
+              </>
+            ) : (
+              rows.map((row) => (
                 <DataTableRow
-                  key={rows[virtualRow.index].id}
-                  row={rows[virtualRow.index]}
+                  key={row.id}
+                  row={row}
                   onRowClick={onRowClick}
-                  rowIndex={virtualRow.index + 2}
+                  getRowActionLabel={getRowActionLabel}
                 />
-              ))}
-              {paddingBottom > 0 && (
-                <tr>
-                  <td colSpan={colCount} style={{ height: paddingBottom }} aria-hidden="true" />
-                </tr>
-              )}
-            </>
-          ) : (
-            rows.map((row) => <DataTableRow key={row.id} row={row} onRowClick={onRowClick} />)
-          )}
-        </tbody>
-      </table>
-    </div>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }

@@ -83,6 +83,7 @@ export const RowClick: Story = {
     data: makeRows(6),
     columns,
     onRowClick: (row) => alert(`clicked ${row.project}`),
+    getRowActionLabel: (row) => `Open ${row.project} session`,
   },
 };
 

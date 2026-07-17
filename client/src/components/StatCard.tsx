@@ -9,16 +9,24 @@ export interface StatDelta {
   sentiment: "good" | "bad" | "neutral";
 }
 
-export interface StatCardProps {
+interface StatCardBaseProps {
   label: string;
   value: string;
   accent?: "money" | "cache";
-  delta?: StatDelta;
-  sparkline?: number[];
-  /** Accessible trend description for `sparkline` when no `delta` states the trend in text (A4). */
-  sparklineLabel?: string;
   sub?: string;
 }
+
+type StatCardTrendProps =
+  | { delta?: StatDelta; sparkline?: undefined; sparklineLabel?: never }
+  | { delta: StatDelta; sparkline: number[]; sparklineLabel?: never }
+  | {
+      delta?: undefined;
+      sparkline: number[];
+      /** Required text alternative when no adjacent delta states the sparkline trend. */
+      sparklineLabel: string;
+    };
+
+export type StatCardProps = StatCardBaseProps & StatCardTrendProps;
 
 // Matches --money/--cache from specs/pages/_chrome.css. Light theme uses a
 // darker same-hue shade to clear WCAG AA 4.5:1 on white (the mockup's hex is
@@ -87,7 +95,7 @@ function Sparkline({ points, trendLabel }: { points: number[]; trendLabel?: stri
           fill="none"
           stroke="currentColor"
           strokeWidth={1.5}
-          className="text-slate-400 dark:text-[#5A6675]"
+          className="text-slate-400 dark:text-[#8A96A5]"
         />
       </svg>
     </>
@@ -107,7 +115,7 @@ export function StatCard({
     <div className="bg-white p-3.5 dark:bg-[#151A21]">
       <span
         title={label}
-        className="block truncate text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-[#5A6675]"
+        className="block truncate text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-[#8A96A5]"
       >
         {label}
       </span>
@@ -124,7 +132,7 @@ export function StatCard({
         {delta ? <DeltaLabel delta={delta} /> : null}
       </div>
       {sub ? (
-        <span className="mt-0.5 block font-mono text-[11px] text-slate-600 dark:text-[#5A6675]">
+        <span className="mt-0.5 block font-mono text-[11px] text-slate-600 dark:text-[#8A96A5]">
           {sub}
         </span>
       ) : null}

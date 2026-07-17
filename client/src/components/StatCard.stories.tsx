@@ -76,11 +76,16 @@ export const SparklineWithoutDelta: Story = {
 };
 
 export const SparklineEmpty: Story = {
-  args: { label: "Total Cost", value: "$0.00", sparkline: [] },
+  args: { label: "Total Cost", value: "$0.00", sparkline: [], sparklineLabel: "No trend yet" },
 };
 
 export const SparklineSinglePoint: Story = {
-  args: { label: "Total Cost", value: "$4.00", sparkline: [4] },
+  args: {
+    label: "Total Cost",
+    value: "$4.00",
+    sparkline: [4],
+    sparklineLabel: "No trend yet",
+  },
 };
 
 export const SparklineNonFinite: Story = {
@@ -88,6 +93,7 @@ export const SparklineNonFinite: Story = {
     label: "Total Cost",
     value: "$18.00",
     sparkline: [4, Number.NaN, 12, Number.POSITIVE_INFINITY, 9, 18],
+    sparklineLabel: "trending up overall",
   },
 };
 
