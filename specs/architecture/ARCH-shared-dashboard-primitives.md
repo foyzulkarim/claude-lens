@@ -245,5 +245,334 @@ _The concrete answer to "where does this land in the codebase?"_
 
 # Tasks
 
-_This section is populated by the **generate-tasks** skill (Phase 3)._
-_Run: `/generate-tasks from: specs/architecture/ARCH-shared-dashboard-primitives.md`_
+## Task T1: Badge + TierBadge
+
+> **Status:** done
+> **Verification:** ui
+> **Effort:** s
+> **Priority:** high
+> **Depends on:** None
+> **Satisfies REQs:** R4, R5, R6, R8, R9
+> **Footprint slice:** New: `client/src/components/Badge.tsx`, `Badge.stories.tsx`, `TierBadge.tsx`, `TierBadge.stories.tsx`
+> **High-risk areas touched:** None (all L risk in Areas of Impact)
+
+### Description
+
+The mono bordered-pill visual primitive (`Badge`, six variants from `_chrome.css:37–42`) and its tier-semantic wrapper (`TierBadge`, mapping `TierFlags`/a page-declared `locked` state to 🟢/🟡/🔴). `TierBadge` is the visual vocabulary #P4-12 (gates) and #P4-13 (premium tier) import instead of re-deriving.
+
+### Verification Checklist
+
+- **Badge renders all six variants** — `neutral`, `pass`, `warn`, `fail`, `computed`, `premium` each render with the border/text color mapped from `_chrome.css` `.badge.*` classes — expected: visual match in the story canvas, both dark and light theme (toggle in Storybook toolbar) _(verifies R5, R8)_
+- **TierBadge exact** — `level="exact"` renders a 🟢 dot + `premium` (cyan) badge chrome — expected: dot + cyan border/text visible _(verifies R4, R6)_
+- **TierBadge estimated** — `level="estimated"` renders a 🟡 dot + `computed` (orange) badge chrome — expected: dot + orange border/text visible _(verifies R4, R6)_
+- **TierBadge locked** — `level="locked"` renders a 🔴 dot + `fail` (red) badge chrome — expected: dot + red border/text visible _(verifies R4, R6)_
+- **TierBadge optional label** — `children` renders inline after the dot (e.g. "$ computed") — expected: label text visible next to dot in at least one story
+- **costTierLevel mapping** — a story (or inline story-level assertion) exercises `costTierLevel({ costBasis: "observed", ... })` → `"exact"` and `costBasis: "computed"` → `"estimated"` — expected: both mappings shown/confirmed manually (no unit test — ARCH decision A4)
+- **`npm run storybook`** boots with `Components/Badge` and `Components/TierBadge` groups discoverable — expected: no console errors, all named exports render
+
+#### Testable Seams
+
+None — ARCH decision A4: primitives are verified via Storybook stories + manual checklist only, no component tests.
+
+### Implementation Notes
+
+- **Module(s):** `client/src/components/` (Module Boundaries table — no query/api/filters/charts/pages imports)
+- **Pattern reference:** `_chrome.css:37–42` (`.badge` variant classes) for Badge; `shared/types.ts` `TierFlags` for `costTierLevel`
+- **Key decisions:** A3 (generic `Badge` with all five mockup variants, developer decision); A9 (`TierBadge` takes presentational `level`; `costTierLevel(TierFlags)` helper maps the shared contract; `locked` is page-declared, never derived)
+- **Libraries:** `clsx` for variant class composition (existing convention — see `ExampleStat.tsx`, `ChartCard.tsx`)
+- **High-risk callouts:** None
+
+### Scope Boundaries
+
+- Do NOT wire `TierBadge` to any real `TierFlags` data source — `costTierLevel` is a pure mapping function, data plumbing is #P4-13's scope
+- Do NOT add variants beyond the five in `_chrome.css` (`pass`, `warn`, `fail`, `computed`, `premium`) plus `neutral`
+- Only implement the Badge/TierBadge visual + mapping contract from the API Contracts table — no gate-logic (#P4-12) or premium-upgrade logic (#P4-13)
+
+### Files Expected
+
+**New files:**
+- `client/src/components/Badge.tsx` — visual badge, six variants (pattern: `_chrome.css:37–42`)
+- `client/src/components/Badge.stories.tsx` — all variants
+- `client/src/components/TierBadge.tsx` — tier semantics over Badge + `costTierLevel` (pattern: `shared/types.ts` `TierFlags`)
+- `client/src/components/TierBadge.stories.tsx` — 🟢/🟡/🔴 states
+
+**Modified files:** None
+
+**Must NOT modify:** None (no touched-but-not-changed files in this task's slice)
+
+---
+
+## Task T2: StatCard + StatRow
+
+> **Status:** done
+> **Verification:** ui
+> **Effort:** s
+> **Priority:** high
+> **Depends on:** None
+> **Satisfies REQs:** R1, R2, R5, R6, R8, R9
+> **Footprint slice:** New: `client/src/components/StatCard.tsx` (exports `StatCard`, `StatRow`, private `Sparkline`), `StatCard.stories.tsx`
+> **High-risk areas touched:** Page tasks #34–#49 (M risk) — this task defines the `StatCard`/`StatRow` prop contract every page composes against
+
+### Description
+
+The dashboard's core stat-card primitive: label, mono value, period-over-period delta glyph, and an inline-SVG sparkline, plus the `StatRow` grid wrapper mockups use to lay four stats side by side. This is the direct replacement for `client/src/example/ExampleStat.tsx` (deleted in T6).
+
+### Verification Checklist
+
+- **Delta direction × sentiment matrix** — `up`+`bad` (red ▲), `up`+`good` (green ▲), `down`+`good` (green ▼), `down`+`bad` (red ▼), `flat`+`neutral` (— muted) — expected: five stories or story controls covering each combination, colors match `.delta.up`/`.delta.upgood`/`.delta.down` from `_chrome.css` _(verifies R2, R8, ARCH decision A6)_
+- **Sparkline rendering** — `sparkline` with ≥2 finite points renders an SVG polyline; `sparkline` omitted, `[]`, or a single-element array renders no SVG — expected: three stories (with-sparkline, empty-array, single-point) show the documented behavior _(verifies R2, ARCH forward stress-test: "delta undefined, sparkline `[]` or `[x]`")_
+- **Non-finite values dropped** — a sparkline array containing `NaN`/`Infinity` never produces a broken/NaN path — expected: a story with a mixed-finite array renders a valid polyline with no console error
+- **Accent colors** — `accent="money"` and `accent="cache"` render `#E8A33D`/`#4FC3D9` respectively on the value text — expected: visual match in story canvas (pattern: `ExampleStat.tsx` `ACCENT_CLASS`)
+- **`sub` caption** — renders the optional caption text below the value — expected: one story with `sub` set
+- **StatRow grid** — default 4-column grid with 1px line-colored gaps (mockup `.statrow`); collapses to 1 column below `md` (980px per mockup breakpoint) — expected: a `StatRow` story with 4 `StatCard` children, resize the Storybook viewport below 980px and confirm single-column collapse _(verifies R2, Open Question "StatRow responsive collapse")_
+- **Long label truncation** — a `StatCard` with an overly long `label` truncates with a `title` attribute rather than overflowing — expected: story with a long label string shows ellipsis truncation, hover shows native tooltip _(verifies ARCH forward stress-test: "Long project/model names")_
+- **Delta a11y** — the ▲/▼ glyph has adjacent `sr-only` direction text (e.g. "increased"/"decreased") — expected: inspect rendered DOM in Storybook for the `sr-only` span _(verifies A11y baseline)_
+- **Sparkline a11y** — the SVG is `aria-hidden` — expected: inspect rendered DOM
+- **Dark/light theme** — all stories checked under both themes via the Storybook toolbar toggle — expected: no unstyled/invisible elements in either theme
+
+#### Testable Seams
+
+None — ARCH decision A4: stories-only verification, no component tests.
+
+### Implementation Notes
+
+- **Module(s):** `client/src/components/`
+- **Pattern reference:** `client/src/example/ExampleStat.tsx` (visual base — label/value/accent structure), `specs/pages/dashboard.html:37–47` (`.stat`/`.statrow` markup), `_chrome.css:65–72` (`.statrow`, `.stat`, `.stat .v`, `.stat .sub`)
+- **Key decisions:** A2 (sparkline is a private inline-SVG polyline inside StatCard, agent suggestion/developer-delegated — swap-out point if vetoed later); A6 (delta API separates `direction` from `sentiment` — do not infer color from a signed number)
+- **Libraries:** `clsx`; no chart library — sparkline is hand-rolled `<svg><polyline>`, not the `Chart`/ECharts wrapper
+- **High-risk callouts:** M risk — page tasks #34–#49 all compose this contract; keep the prop shape exactly as specified in the ARCH API Contracts table (`StatCardProps`, `StatRowProps`) since post-merge changes ripple across parallel lanes
+
+### Scope Boundaries
+
+- Do NOT use the `Chart`/ECharts wrapper for the sparkline (A2) — keeps this task out of #P4-19's chart-boundary rework
+- Do NOT add data-fetching, query keys, or URL state — pure props-in/JSX-out (A1, A8)
+- Only implement the `StatCardProps`/`StatRowProps` contract from the ARCH API Contracts table
+
+### Files Expected
+
+**New files:**
+- `client/src/components/StatCard.tsx` — StatCard + StatRow + private Sparkline SVG (pattern: `ExampleStat.tsx`, `dashboard.html:37–47`)
+- `client/src/components/StatCard.stories.tsx` — delta up/down/flat, sentiment split, sparkline, accents, sub, StatRow grid (pattern: `ChartCard.stories.tsx`)
+
+**Modified files:** None
+
+**Must NOT modify:** None
+
+---
+
+## Task T3: DataTable
+
+> **Status:** done
+> **Verification:** ui
+> **Effort:** m
+> **Priority:** high
+> **Depends on:** T5 (imports `EmptyState` as the default empty-state fallback)
+> **Satisfies REQs:** R1, R3, R5, R6, R7, R9
+> **Footprint slice:** New: `client/src/components/DataTable.tsx`, `DataTable.stories.tsx`
+> **High-risk areas touched:** Page tasks #34–#49 (M risk) — Sessions/Projects/Models/Cache Lab all compose this contract; Client bundle (L risk) — first real import of `@tanstack/react-table`/`react-virtual`
+
+### Description
+
+The generic, headless table primitive every page with tabular data (Sessions, Projects, Models, Cache Lab, …) composes. Built on `@tanstack/react-table` for sorting/column model and an opt-in `@tanstack/react-virtual` path for thousand-row datasets, rendered with the mockup's exact `<table>` markup and classes.
+
+### Verification Checklist
+
+- **Plain render** — `data`/`columns` render rows matching the mockup table markup (`sessions.html:52–60`: `<table>`, `<th>`, `<td>`, `.num`/`.r` alignment classes) — expected: story with a small static dataset visually matches the mockup
+- **Column meta styling** — a column with `meta: { align: "right" }` and/or `meta: { mono: true }` applies `.r`/`.num`-equivalent Tailwind classes — expected: story includes at least one right-aligned/mono column and shows correct alignment
+- **Sorting** — clicking a sortable `<th><button>` toggles sort direction and updates `aria-sort` on the `<th>` — expected: story demonstrates ascending → descending → (optionally) unsorted cycle, `aria-sort` value inspected in DOM
+- **Loading state** — `isLoading` renders a fixed count of skeleton rows with `role="status"` — expected: loading story shows skeleton rows, no real data rendered
+- **Empty state** — `data.length === 0` renders the `empty` prop, or `<EmptyState message="No data" />` when `empty` is omitted — expected: two stories (custom empty node, default fallback) _(verifies R7)_
+- **Virtualized rows** — `virtualized` + `height` with ~1000 rows renders only the rows in the scrollable viewport via `useVirtualizer`, not all 1000 DOM nodes — expected: story with 1000-row dataset; inspect DOM node count while scrolled to confirm only visible-range rows are mounted _(verifies R3, ARCH forward stress-test: "Sessions page mounts DataTable with 10K rows")_
+- **Row click** — `onRowClick` fires with the row's data when a row is clicked — expected: story with an `onRowClick` handler wired to a visible log/action
+- **`getRowId`/`initialSorting`** — both props are honored (stable row identity across re-sorts; table opens pre-sorted per `initialSorting`) — expected: one story sets `initialSorting` and confirms the initial sort order matches
+
+#### Testable Seams
+
+None — ARCH decision A4: stories-only verification, no component tests. (Note: ARCH's default `ui`-mode guidance suggests component tests for conditional states/handlers; A4 explicitly overrides this for all six primitives — sorting/virtualization behavior is instead covered downstream by the page tasks and #P4-18 cross-page E2E.)
+
+### Implementation Notes
+
+- **Module(s):** `client/src/components/`
+- **Pattern reference:** `specs/pages/sessions.html:52–60` (table markup); TanStack Table v8 headless idiom (column defs + `useReactTable`); TanStack Virtual `useVirtualizer` docs pattern
+- **Key decisions:** A5 (`virtualized` is an explicit prop + required `height` — no auto-enable threshold); A4 (no unit tests for sort/virtualization — page tasks and #P4-18 E2E cover behavior)
+- **Libraries:** `@tanstack/react-table`, `@tanstack/react-virtual` (both already pinned in §2/package.json — first real import point per Areas of Impact)
+- **High-risk callouts:** M risk — #34–#49 all compose `DataTable<T>`; keep the generic signature exactly as the ARCH API Contracts table specifies (`data`, `columns`, `isLoading`, `empty`, `virtualized`, `height`, `onRowClick`, `initialSorting`, `getRowId`) since it's the widest-blast-radius contract in this task
+
+### Scope Boundaries
+
+- Do NOT auto-enable virtualization by row count — always an explicit `virtualized` prop (A5)
+- Do NOT add server-side sorting/pagination — client-side only, per the ARCH API Contracts signature
+- Do NOT add a Cypress smoke spec (Out of Scope — page issues own their own smoke coverage)
+- Only implement the `DataTableProps<T>` contract from the ARCH API Contracts table
+
+### Files Expected
+
+**New files:**
+- `client/src/components/DataTable.tsx` — generic headless table + sorting + loading + empty + virtualization (pattern: `sessions.html:52–60`, TanStack docs idiom)
+- `client/src/components/DataTable.stories.tsx` — plain, sorted, loading, empty, virtualized (1k rows), row-click
+
+**Modified files:** None
+
+**Must NOT modify:**
+- `client/.storybook/main.ts` (silent-regression hotspot — glob auto-discovers `DataTable.stories.tsx`; confirm Storybook boots with zero config edits rather than adding an explicit entry)
+
+---
+
+## Task T4: LockedCard
+
+> **Status:** done
+> **Verification:** ui
+> **Effort:** s
+> **Priority:** medium
+> **Depends on:** None
+> **Satisfies REQs:** R1, R4, R5, R6, R8, R9
+> **Footprint slice:** New: `client/src/components/LockedCard.tsx`, `LockedCard.stories.tsx`
+> **High-risk areas touched:** #P4-13 (premium tier) — L risk, `LockedCard` is the upgrade-path visual that task's data plumbing will drive
+
+### Description
+
+The 🔴-tier "premium feature, no data source" panel: visible title, a blurred veil overlay with a message and a "Set up cost capture" CTA linking to `/settings`, with an optional ghost-content slot behind the veil for partial previews.
+
+### Verification Checklist
+
+- **Default CTA** — no `ctaLabel`/`ctaHref` supplied renders "Set up cost capture →" linking to `/settings` via a wouter `Link` — expected: default story shows the exact CTA text and href _(verifies R4)_
+- **Custom CTA/message/title** — all four text/href props overridden render the custom values — expected: one story with all props overridden
+- **Ghost children** — optional `children` render behind the veil (visible but obscured) — expected: one story with placeholder child content showing through the blur
+- **Dark veil** — mockup's `rgba(14,17,22,.72)` + `backdrop-filter: blur(2px)` veil renders in dark theme — expected: visual match to `_chrome.css:57–60` `.locked .veil` under the Storybook dark toggle
+- **Light veil** — an explicit light-theme equivalent (e.g. `bg-white/75`) renders when the theme toggle is set to light — expected: veil is visibly distinct from the panel background, not the mockup's dark-only rgba value _(verifies Risk scenario "Dark/light theme contrast on the locked veil")_
+- **Router decorator** — the story file wires the same `memoryLocation`/`Router`-based wouter decorator as `FilterBar.stories.tsx` (no query client needed — `Link` only) so the `Link` renders without a real router — expected: no console error about missing router context
+
+#### Testable Seams
+
+None — ARCH decision A4: stories-only verification, no component tests.
+
+### Implementation Notes
+
+- **Module(s):** `client/src/components/`
+- **Pattern reference:** `specs/pages/models.html:93–96` (locked panel markup), `_chrome.css:57–60` (`.locked`, `.veil`), `client/src/filters/FilterBar.stories.tsx` (wouter router-decorator pattern for the `Link`)
+- **Key decisions:** A1/A8 (presentational only — no tier-flag evaluation inside `LockedCard`, the page decides when to render it)
+- **Libraries:** `wouter` (`Link` only — the one primitive allowed this import per Module Boundaries)
+- **High-risk callouts:** L risk — #P4-13 depends on this visual; keep the CTA defaults (`"Set up cost capture →"`, `"/settings"`) exactly as specified so #P4-13 doesn't need a prop-shape change to adopt it
+
+### Scope Boundaries
+
+- Do NOT import `@tanstack/react-query`, `api/`, or `filters/` — `LockedCard` never checks tier flags itself (A1, A8)
+- Do NOT build the premium-tier data plumbing — that's #P4-13's scope
+- Only implement the `LockedCardProps` contract from the ARCH API Contracts table
+
+### Files Expected
+
+**New files:**
+- `client/src/components/LockedCard.tsx` — panel + veil + CTA (pattern: `models.html:93–96`, `_chrome.css:57–60`)
+- `client/src/components/LockedCard.stories.tsx` — CTA default, custom message, ghost children (pattern: `FilterBar.stories.tsx` router decorator)
+
+**Modified files:** None
+
+**Must NOT modify:** None
+
+---
+
+## Task T5: EmptyState + Chip
+
+> **Status:** done
+> **Verification:** ui
+> **Effort:** s
+> **Priority:** high
+> **Depends on:** None
+> **Satisfies REQs:** R1, R5, R6, R7, R9
+> **Footprint slice:** New: `client/src/components/EmptyState.tsx`, `EmptyState.stories.tsx`, `Chip.tsx`, `Chip.stories.tsx`
+> **High-risk areas touched:** T3 (DataTable) depends on `EmptyState` as its default empty-row fallback — land this task first or in the same pass as T3
+
+### Description
+
+Two small, independent primitives paired for a tight review cycle: `EmptyState` (centered muted message + optional reset/action button — the "no data for filter" global-layer state, and `DataTable`'s zero-row fallback), and `Chip` (mono pill for active/inactive/removable tag-like UI, reusing `toggleStyles.ts`'s active treatment).
+
+### Verification Checklist
+
+- **EmptyState message-only** — renders the centered message with no action — expected: default story shows message text, no button
+- **EmptyState with action** — `action.label`/`action.onClick` renders a button that fires the callback on click — expected: story with an action wired to a visible log/counter _(verifies R7 "no data for filter" reset-action slot)_
+- **Chip inactive** — default (no `active`) renders the `.mchip` mono-pill look with no active treatment — expected: default story
+- **Chip active** — `active` applies the same active treatment as `TOGGLE_ACTIVE_CLASS` in `toggleStyles.ts` — expected: story visually matches the active toggle-button look
+- **Chip clickable vs static** — `onClick` set renders a `<button>`; omitted renders a `<span>` — expected: two stories, inspect the rendered element tag in each
+- **Chip removable** — `onRemove` set appends a separate sibling `×` button (never nested inside the main clickable element) with `aria-label="Remove <label>"` — expected: story with `onRemove` shows two distinct interactive elements (main chip + remove button), remove button click fires the callback independently of the main `onClick`
+
+#### Testable Seams
+
+None — ARCH decision A4: stories-only verification, no component tests.
+
+### Implementation Notes
+
+- **Module(s):** `client/src/components/`
+- **Pattern reference:** pages §0 global-filter-layer row for `EmptyState`; `_chrome.css:49` `.mchip` and `client/src/ui/toggleStyles.ts` (`TOGGLE_CLASS`/`TOGGLE_ACTIVE_CLASS`) for `Chip`
+- **Key decisions:** A10 (`Chip` is new and standalone — `FilterBar`'s own `ChipDropdown` is untouched, no refactor in this task)
+- **Libraries:** `clsx`
+- **High-risk callouts:** None directly, but sequence this task before or alongside T3 since `DataTable`'s default empty fallback imports `EmptyState`
+
+### Scope Boundaries
+
+- Do NOT refactor `FilterBar.tsx`'s `ChipDropdown` onto `Chip` (A10 — explicitly out of scope)
+- Do NOT wire `Chip`'s remove/click behavior to any filter state — purely presentational callbacks
+- Only implement the `EmptyStateProps`/`ChipProps` contracts from the ARCH API Contracts table
+
+### Files Expected
+
+**New files:**
+- `client/src/components/EmptyState.tsx` — message + optional reset action (pattern: pages §0 row)
+- `client/src/components/EmptyState.stories.tsx` — message-only, with action
+- `client/src/components/Chip.tsx` — mono pill, active/removable (pattern: `_chrome.css:49` `.mchip`, `toggleStyles.ts`)
+- `client/src/components/Chip.stories.tsx` — active, inactive, removable, clickable
+
+**Modified files:** None
+
+**Must NOT modify:**
+- `client/src/ui/toggleStyles.ts` (silent-regression hotspot — Chip becomes a new consumer of `TOGGLE_ACTIVE_CLASS`; read-only reuse, do not edit the constants)
+- `client/src/filters/FilterBar.tsx` (out of scope per A10 — keeps its own `ChipDropdown`)
+
+---
+
+## Task T6: Delete ExampleStat
+
+> **Status:** done
+> **Verification:** checklist
+> **Effort:** xs
+> **Priority:** low
+> **Depends on:** T2 (StatCard is the named replacement — land it first so the workbench isn't without a smoke-test component)
+> **Satisfies REQs:** R1
+> **Footprint slice:** Deleted: `client/src/example/ExampleStat.tsx`, `client/src/example/ExampleStat.stories.tsx`
+> **High-risk areas touched:** None (L risk — confirmed zero external importers)
+
+### Description
+
+Remove the Storybook workbench smoke-test component `ExampleStat`, whose own banner comment declares it "Replaced by the real stat-card primitive (#P4-1)". Grep confirms only its own story imports it. Last task in the sequence so `StatCard` (T2) exists before the workbench's smoke-test component disappears.
+
+### Verification Checklist
+
+- **No external importers** — `grep -rn "ExampleStat" client/src --include=*.tsx --include=*.ts` (excluding `client/src/example/`) returns zero matches — expected: empty grep result before deleting
+- **`npm run verify`** passes after deletion (typecheck, lint, format, test) — expected: exit code 0, no dangling import errors
+- **`npm run build`** (or at minimum `tsc --noEmit` + `vite build` for `client/`) succeeds — expected: build completes, no missing-module errors
+- **Storybook boots clean** — `npm run storybook` shows no `Components/ExampleStat`/`Example/ExampleStat` group and no console error about a missing story module — expected: glob-based discovery silently drops the deleted story with zero config changes
+
+### Implementation Notes
+
+- **Module(s):** `client/src/example/` (deleted in full)
+- **Pattern reference:** N/A — deletion only
+- **Key decisions:** A7 (delete `client/src/example/` in this task rather than a later cleanup — its banner already names #P4-1 as the replacement)
+- **Libraries:** N/A
+- **High-risk callouts:** None
+
+### Scope Boundaries
+
+- Do NOT delete or modify anything outside `client/src/example/`
+- Do NOT fold this into T2 — kept as its own tiny checklist task so the deletion's verification (grep + build) is independently auditable
+
+### Files Expected
+
+**New files:** None
+
+**Modified files:** None
+
+**Must NOT modify:** None
+
+**Deleted files:**
+- `client/src/example/ExampleStat.tsx` (banner declares replacement by #P4-1)
+- `client/src/example/ExampleStat.stories.tsx` (story of the deleted component)
