@@ -2,7 +2,9 @@
 title: "#P4-19 — Accessible time-series charts"
 labels: phase-4
 milestone: Phase 4 — Pages & features
-status: draft
+status: filed
+issue: 84
+url: https://github.com/foyzulkarim/claude-lens/issues/84
 ---
 
 Task **#P4-19** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 4.
@@ -30,6 +32,5 @@ Complete the shared time-series chart accessibility foundation before Phase 4 pa
 ## References
 
 - [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md)
-- [specs/architecture/ARCH-cypress-steel-thread-smoke.md](../blob/main/specs/architecture/ARCH-cypress-steel-thread-smoke.md) — PR #83's intentionally limited semantic-summary contract
-- `CODE-REVIEW-PR-83-Sol.md` A11Y-1
-- `CODE-REVIEW-PR-83-opus.md` A11Y-2 and manual contrast check
+- [PR #83](../../pull/83) — the Cypress steel-thread implementation whose accessibility review produced this task
+- Archived PR #83 review findings: A11Y-1/A11Y-2 and the manual contrast check

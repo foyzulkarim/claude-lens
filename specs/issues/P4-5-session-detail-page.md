@@ -41,8 +41,8 @@ Spec-vs-mockup gaps to implement from the spec table: Session Detail — tool mi
 - [ ] Manual visual sign-off vs `specs/pages/session-detail.html` on real data; plan checkbox flipped
 
 ## Dependencies
-- Depends on: P4-4
-- Unblocks: P4-6
+- Depends on: #P4-2 / #34 (page-pattern gate)
+- Unblocks: #P4-3 / #35; #P4-6 / #38; #P4-13 / #45
 
 ## References
 - [specs/claude-lens-pages.md](../blob/main/specs/claude-lens-pages.md)

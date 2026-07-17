@@ -11,7 +11,7 @@ url: https://github.com/foyzulkarim/claude-lens/issues/34
 Task **#P4-2** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md) — Phase 4.
 
 ## Summary
-Build the Dashboard page (pages spec §1): all 12 sections, from stat cards to the capture CTA, on top of the #P4-1 shared primitives. Anomaly/gate-feed items may stub until #P4-11 (gates engine).
+Build the Dashboard page (pages spec §1): all 12 sections, from stat cards to the capture CTA, on top of the #P4-1 shared primitives. Anomaly/gate-feed items may stub until #P4-12 wires the gates engine into the page.
 
 ## Scope
 - All 12 sections per pages spec §1: stat cards, cost-over-time chart, burn-rate card, most-recent-session card, mini-leaderboards, anomaly & gate-failure feed (stub OK), records strip, subscription window tracker, leverage ratio headline, savings decomposition stack, failed-work stat, "Set up cost capture" banner
@@ -46,8 +46,8 @@ Spec-vs-mockup gaps to implement from the spec table: **failed-work stat** (mock
 - [ ] Manual visual sign-off vs `specs/pages/dashboard.html` on real data; plan checkbox flipped
 
 ## Dependencies
-- Depends on: #P4-1 (shared dashboard primitives); Phase 3 exit (steel-thread chart layer)
-- Unblocks: #P4-3 onward; #P4-12 replaces the stubbed gate feed
+- Depends on: #P4-19 / #84 (accessible time-series chart foundation); #P4-1 / #33 (shared dashboard primitives); Phase 3 exit (steel-thread chart layer)
+- Unblocks: #P4-4 / #36, #P4-5 / #37, #P4-7 / #39, #P4-8 / #40, #P4-9 / #41, and #P4-10 / #42; #P4-12 replaces the stubbed gate feed
 
 ## References
 - pages spec §0 (global analytics layer) and §1; mockup `specs/pages/dashboard.html` (visual reference, not exhaustive contract)

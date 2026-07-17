@@ -19,7 +19,7 @@ The five cross-page Cypress journeys (search→detail, drill, permalink, export,
 - all five flows green in CI.
 
 ## Dependencies
-- Depends on: P4-17
+- Depends on: all Phase 4 page and feature issues #35–#49 merged; runs alone with no other Phase 4 work in flight
 - Unblocks: none — last in phase
 
 ## References

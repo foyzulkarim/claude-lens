@@ -39,8 +39,8 @@ Spec-vs-mockup gaps to implement from the spec table: Cache Lab — baseline wei
 - [ ] Manual visual sign-off vs `specs/pages/cache-lab.html` on real data; plan checkbox flipped
 
 ## Dependencies
-- Depends on: P4-8
-- Unblocks: P4-10
+- Depends on: #P4-2 / #34 (page-pattern gate)
+- Unblocks: #P4-11 / #43 (reuses the miss-attribution classifier); #P4-13 / #45
 
 ## References
 - [specs/claude-lens-pages.md](../blob/main/specs/claude-lens-pages.md)

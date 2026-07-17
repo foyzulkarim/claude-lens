@@ -44,7 +44,8 @@ afterEach(() => {
 
 describe("runner configuration", () => {
   it("parses the default and an explicit valid port", () => {
-    expect(parsePort({})).toBe(4200);
+    expect(parsePort({})).toBe(4130);
+    expect(parsePort({ CLAUDE_LENS_PORT_BASE: "5000" })).toBe(5002);
     expect(parsePort({ CLAUDE_LENS_E2E_PORT: "54321" })).toBe(54321);
   });
 

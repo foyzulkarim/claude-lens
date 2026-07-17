@@ -37,8 +37,8 @@ Spec-vs-mockup gaps to implement from the spec table: Models — throughput + en
 - [ ] Manual visual sign-off vs `specs/pages/models.html` on real data; plan checkbox flipped
 
 ## Dependencies
-- Depends on: P4-7
-- Unblocks: P4-9
+- Depends on: #P4-2 / #34 (page-pattern gate)
+- Unblocks: #P4-13 / #45 (premium latency/throughput upgrade target)
 
 ## References
 - [specs/claude-lens-pages.md](../blob/main/specs/claude-lens-pages.md)

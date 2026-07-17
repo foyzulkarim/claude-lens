@@ -13,7 +13,7 @@ Task **#P4-10** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-
 Build the Trends, Calendar & Budget page (pages spec §8): temporal heatmaps, Pareto, forecast, and the budget configuration.
 
 ## Scope
-- *(§8)* Calendar heatmap, hour×weekday heatmap, stacked weekly bars, Pareto, rolling efficiency, forecast (EWMA, labeled naive), budget config + projection band + Dashboard threshold alert. Gate pass-rate trend stubs until #P4-11.
+- *(§8)* Calendar heatmap, hour×weekday heatmap, stacked weekly bars, Pareto, rolling efficiency, forecast (EWMA, labeled naive), budget config + projection band + Dashboard threshold alert. Gate pass-rate trend stubs until #P4-12.
 - Includes a minimal `settings.ts` + `GET/PUT /api/config` limited to the budget value — #P4-15 extends it to the full config surface; this task must not lock down the full `/api/config` schema, since #P4-15 owns it.
 
 ## Acceptance criteria
@@ -27,7 +27,7 @@ Build the Trends, Calendar & Budget page (pages spec §8): temporal heatmaps, Pa
 | Stacked weekly bars by project/model (toggle) | T+P | 🟢 | |
 | Pareto panel: top 10% turns = X% of spend; cumulative curve | T+P | 🟢 | |
 | Rolling efficiency: $/day 7d-MA, cache-hit trend, tokens-per-$ deflator | T+P | 🟢 | "Am I getting cheaper per unit of work" |
-| Gate pass-rate trend per week (habits improving?) | T+fs | 🟢 | Promoted from gates.md deferred list; stubs to #P4-11 until gates engine lands |
+| Gate pass-rate trend per week (habits improving?) | T+fs | 🟢 | Promoted from gates.md deferred list; #P4-12 replaces the stub after the gates engine lands |
 | Budget: monthly cap, projection band (linear/EWMA), threshold alerts on Dashboard | T+P + ⚑N budget config | 🟢 | Local notifications only |
 | Forecast: month-end spend projection with confidence band | T+P | 🟢 | Simple EWMA; labeled as naive |
 Spec-vs-mockup gaps to implement from the spec table: Trends — stacked weekly bars
@@ -38,8 +38,8 @@ Spec-vs-mockup gaps to implement from the spec table: Trends — stacked weekly 
 - [ ] Manual visual sign-off vs `specs/pages/trends.html` on real data; plan checkbox flipped
 
 ## Dependencies
-- Depends on: P4-9; #P4-2 (Dashboard threshold alert is a cross-task write onto the Dashboard built in #P4-2)
-- Unblocks: P4-11
+- Depends on: #P4-2 / #34 (Dashboard threshold alert is a cross-task write onto the Dashboard built in #P4-2)
+- Unblocks: #P4-15 / #47 (extends this task's budget-only config store)
 
 ## References
 - [specs/claude-lens-pages.md](../blob/main/specs/claude-lens-pages.md)

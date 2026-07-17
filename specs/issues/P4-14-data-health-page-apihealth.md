@@ -34,8 +34,8 @@ Spec-vs-mockup gaps to implement from the spec table: none for this page
 - [ ] Manual visual sign-off vs `specs/pages/data-health.html` on real data; plan checkbox flipped
 
 ## Dependencies
-- Depends on: P4-13
-- Unblocks: P4-15
+- Depends on: #P4-13 / #45 (premium reconciliation inputs)
+- Unblocks: none
 
 ## References
 - [specs/claude-lens-pages.md](../blob/main/specs/claude-lens-pages.md)

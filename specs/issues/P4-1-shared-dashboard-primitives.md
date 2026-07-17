@@ -19,8 +19,8 @@ The six shared dashboard primitives (stat-card, data-table, tier-badge, locked-c
 - each primitive has stories covering its states (stat-card delta up/down/flat + sparkline, tier-badge 🟢/🟡/🔴, locked-card CTA, empty-state, chip active/inactive/removable, table loading/virtualized rows); visual check against the mockups' shared elements.
 
 ## Dependencies
-- Depends on: P1-4 (Storybook — primitives are built stories-first); P3-5
-- Unblocks: P4-2
+- Depends on: P1-4 (Storybook — primitives are built stories-first); P3-5; execution infrastructure #85 merged before `/start-task #33`
+- Unblocks: #P4-19 / #84
 
 ## References
 - [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md)

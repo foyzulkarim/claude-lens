@@ -13,14 +13,14 @@ Task **#P4-12** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-
 Render gate results everywhere they surface: Report Card on Session Detail, feeds on Dashboard, trend on Trends, filter/column on Sessions.
 
 ## Scope
-- Report Card section on Session Detail; anomaly & gate-failure feed on Dashboard; gate pass-rate trend on Trends; gate-status filter/column on Sessions.
+- Report Card section on Session Detail; anomaly & gate-failure feed on Dashboard; gate pass-rate trend on Trends; gate-status filter/column on Sessions; replace the Projects gate-pass-rate stub with live results.
 
 ## Acceptance criteria
 - turn-keyed evidence (V1/V2/P3/C3/K2) deep-links to Turn Inspector at the exact turn; session-keyed E1/E2 evidence links to Session Detail with `filePath`+`detail` (it has no `turnN` — gates.md §1, plan decisions log 2026-07-06).
 
 ## Dependencies
-- Depends on: P4-11
-- Unblocks: P4-13 (sequential ordering — premium parsing has no functional dependency on the Report Card UI)
+- Depends on: #P4-11 / #43
+- Unblocks: none — terminal gate-UI integration
 
 ## References
 - [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md)

@@ -29,8 +29,8 @@ The gates engine: six gates over shared preprocessing, session scoring, and evid
 - `E1/E2` size total follows `@import` references one level, per `gates.md`.
 
 ## Dependencies
-- Depends on: P4-10 (phase ordering); #P4-9 (functional — reuses the Cache Lab miss-attribution classifier for gate K2)
-- Unblocks: P4-12; #P4-7 (Projects gate-pass-rate column stubbed until this lands)
+- Depends on: #P4-9 / #41 (functional — reuses the Cache Lab miss-attribution classifier for gate K2)
+- Unblocks: #P4-12 / #44 (all gate-result UI, including the Projects stub replacement)
 
 ## References
 - [specs/gates.md](../blob/main/specs/gates.md) — evidence contract; Report Card scoring
