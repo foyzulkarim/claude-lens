@@ -158,7 +158,7 @@ Pages are cheap by design: filter state + preset `MetricsQuery`s + layout. The H
 - [x] **#P4-1 — Shared dashboard primitives**
   `components/`: stat-card (delta + sparkline), data-table (TanStack Table + virtualization), tier-badge, locked-card ("Set up cost capture" CTA), empty-state, chip. Tailwind, no component library. Built in Storybook first.
   *Acceptance:* each primitive has stories covering its states (stat-card delta up/down/flat + sparkline, tier-badge 🟢/🟡/🔴, locked-card CTA, empty-state, table loading/virtualized rows); visual check against the mockups' shared elements.
-- [ ] **#P4-19 — Accessible time-series charts**
+- [x] **#P4-19 — Accessible time-series charts**
   Extend the shared `Chart` / `ChartCard` boundary with an equivalent non-canvas representation of range, trend, and bucket values; provide a focusable keyboard route from each drillable bucket to the same filtered Sessions destination; and bring loading/error status text to WCAG 2.1 AA contrast. This foundation lands before page composition so every Phase 4 chart inherits it.
   *Acceptance:* every time-series chart exposes its range, trend, and bucket values without relying on the canvas; every drillable bucket reaches the same filtered Sessions view by keyboard; loading/error status text meets WCAG 2.1 AA contrast; keyboard and screen-reader validation passes.
 - [ ] **#P4-2 — Dashboard page** *(pages spec §1)*
