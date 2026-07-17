@@ -9,7 +9,7 @@ Phases 0–3 are complete: the V2 TypeScript app lives in `shared/`, `server/`, 
 ## Commands (V2 — active app)
 
 - `npm ci` — locked install; run separately in each worktree.
-- `npm run dev` — backend on 4128 and Vite on 4129 by default; `CLAUDE_LENS_PORT_BASE=N` derives backend `N`, Vite `N+1`, and E2E `N+2`.
+- `npm run dev` — backend on 4128 and Vite on 4129 by default; `CLAUDE_LENS_PORT_BASE=N` derives backend `N`, Vite `N+1`, E2E `N+2`, and Storybook `N+3` (so `npm run storybook` defaults to 4131, not Storybook's stock 6006).
 - `npm run verify` — complete typecheck, lint, format, and unit/integration test gate.
 - `npm run build` — production CLI and SPA bundle under `dist/`.
 - `npm run test:e2e` — isolated fixture copy + built server + Cypress.

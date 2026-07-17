@@ -62,7 +62,9 @@ export async function runDev(argv = process.argv.slice(2)): Promise<void> {
     ...process.env,
     CLAUDE_LENS_PORT_BASE: String(ports.backend),
   };
-  console.log(`[dev] ports: backend ${ports.backend} · vite ${ports.vite} · e2e ${ports.e2e}`);
+  console.log(
+    `[dev] ports: backend ${ports.backend} · vite ${ports.vite} · e2e ${ports.e2e} · storybook ${ports.storybook}`,
+  );
 
   const children = buildDevProcesses(env, { serverOnly: argv.includes("--server-only") }).map(
     (spec) => startProcess(spec, env),

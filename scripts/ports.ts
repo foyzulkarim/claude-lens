@@ -9,6 +9,7 @@ export interface LanePorts {
   backend: number;
   vite: number;
   e2e: number;
+  storybook: number;
 }
 
 function parsePort(name: string, raw: string): number {
@@ -29,13 +30,13 @@ export function resolveLanePorts(env: NodeJS.ProcessEnv = process.env): LanePort
     "CLAUDE_LENS_PORT_BASE",
     env.CLAUDE_LENS_PORT_BASE ?? String(DEFAULT_PORT_BASE),
   );
-  if (backend > MAX_PORT - 2) {
+  if (backend > MAX_PORT - 3) {
     throw new Error(
-      `CLAUDE_LENS_PORT_BASE must leave room for Vite and E2E ports (maximum ${MAX_PORT - 2}); got ${backend}`,
+      `CLAUDE_LENS_PORT_BASE must leave room for the Vite, E2E, and Storybook ports (maximum ${MAX_PORT - 3}); got ${backend}`,
     );
   }
 
-  return { backend, vite: backend + 1, e2e: backend + 2 };
+  return { backend, vite: backend + 1, e2e: backend + 2, storybook: backend + 3 };
 }
 
 export function resolveE2ePort(env: NodeJS.ProcessEnv = process.env): number {

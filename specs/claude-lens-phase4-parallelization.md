@@ -292,7 +292,9 @@ port auto-bumps too — so two lanes running `npm run dev` don't crash, they **s
 (lane B's UI reads lane A's backend). Convention can't fix this; env-driven ports must:
 
 - One variable, `CLAUDE_LENS_PORT_BASE` (default 4128): backend = base, Vite dev = base+1,
-  e2e = base+2 (`scripts/e2e.ts` already honors `CLAUDE_LENS_E2E_PORT`).
+  e2e = base+2, Storybook = base+3 (`scripts/e2e.ts` already honors `CLAUDE_LENS_E2E_PORT`;
+  `npm run storybook` goes through `scripts/storybook.ts`, so page tasks can run Storybook in
+  parallel lanes too).
 - `client/vite.config.ts` reads the base for `server.proxy` and `server.port`, with
   `strictPort: true` so collisions fail loudly instead of bumping into another lane.
 - The `dev` script stops hardcoding `--port 4128` — a small `scripts/dev.ts` wrapper (same

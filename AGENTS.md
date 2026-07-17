@@ -20,7 +20,7 @@ npm run test:e2e                           # build + isolated Cypress harness
 npm start                                  # run the built dist/cli.js
 ```
 
-- Set `CLAUDE_LENS_PORT_BASE` to isolate a checkout: backend = base, Vite = base + 1, E2E = base + 2. `/move-to-worktree` writes it to `.env.local` automatically.
+- Set `CLAUDE_LENS_PORT_BASE` to isolate a checkout: backend = base, Vite = base + 1, E2E = base + 2, Storybook = base + 3. `/move-to-worktree` writes it to `.env.local` automatically.
 - V1 remains runnable from `legacy/`; its instructions are in `legacy/README.md`.
 
 ## V2 delivery pipeline (spec-driven, batch issues)

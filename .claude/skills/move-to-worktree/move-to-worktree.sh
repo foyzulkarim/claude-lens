@@ -58,7 +58,7 @@ if [[ -e "$WORKTREE_DIR" ]]; then
 fi
 
 PORT_BASE=$((4128 + 10 * ISSUE_NUM))
-if (( PORT_BASE > 65533 )); then
+if (( PORT_BASE > 65532 )); then
   echo "Error: issue #${ISSUE_NUM} produces an invalid port block starting at ${PORT_BASE}." >&2
   exit 1
 fi
@@ -69,7 +69,8 @@ git pull --ff-only origin "$DEFAULT_BRANCH" --quiet
 git worktree add "$WORKTREE_DIR" "$BRANCH"
 
 # ── Per-lane port block (issue-derived — unique per issue, no bookkeeping) ───
-# backend = base, vite dev = base+1, e2e = base+2. Gitignored via .env.local.
+# backend = base, vite = base+1, e2e = base+2, storybook = base+3. Gitignored
+# via .env.local.
 cat > "$WORKTREE_DIR/.env.local" <<EOF
 # Lane ports for issue #${ISSUE_NUM} — written by /move-to-worktree (gitignored)
 CLAUDE_LENS_PORT_BASE=${PORT_BASE}
@@ -86,7 +87,7 @@ fi
 echo ""
 echo "Worktree: $WORKTREE_DIR"
 echo "Branch:   $BRANCH (issue #${ISSUE_NUM})"
-echo "Ports:    backend ${PORT_BASE} · vite $((PORT_BASE + 1)) · e2e $((PORT_BASE + 2))"
+echo "Ports:    backend ${PORT_BASE} · vite $((PORT_BASE + 1)) · e2e $((PORT_BASE + 2)) · storybook $((PORT_BASE + 3))"
 echo "Primary checkout is back on ${DEFAULT_BRANCH}."
 echo ""
 echo "Next: open a new Claude session in ${WORKTREE_DIR} and continue the pipeline there."

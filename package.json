@@ -24,7 +24,7 @@
     "build": "tsx scripts/build.ts",
     "test:e2e": "tsx scripts/e2e.ts",
     "start": "node dist/cli.js",
-    "storybook": "storybook dev -p 6006 -c client/.storybook",
+    "storybook": "tsx scripts/storybook.ts",
     "build-storybook": "storybook build -c client/.storybook -o client/storybook-static",
     "bench:ingest": "tsx server/ingest/benchmark.ts",
     "prepare": "husky"

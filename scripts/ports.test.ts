@@ -13,7 +13,7 @@ afterEach(() => {
 
 describe("lane ports", () => {
   it("uses the single-checkout defaults", () => {
-    expect(resolveLanePorts({})).toEqual({ backend: 4128, vite: 4129, e2e: 4130 });
+    expect(resolveLanePorts({})).toEqual({ backend: 4128, vite: 4129, e2e: 4130, storybook: 4131 });
     expect(resolveE2ePort({})).toBe(4130);
   });
 
@@ -22,6 +22,7 @@ describe("lane ports", () => {
       backend: 5000,
       vite: 5001,
       e2e: 5002,
+      storybook: 5003,
     });
   });
 
@@ -31,7 +32,14 @@ describe("lane ports", () => {
     );
   });
 
-  it.each(["0", "65534", "65535", "1.5", "not-a-port"])("rejects an unusable base %s", (value) => {
+  it.each([
+    "0",
+    "65533",
+    "65534",
+    "65535",
+    "1.5",
+    "not-a-port",
+  ])("rejects an unusable base %s", (value) => {
     expect(() => resolveLanePorts({ CLAUDE_LENS_PORT_BASE: value })).toThrow(
       /CLAUDE_LENS_PORT_BASE/,
     );

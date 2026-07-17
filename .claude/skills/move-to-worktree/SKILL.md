@@ -29,7 +29,7 @@ No arguments — it operates on the branch currently checked out. The script:
    `specs/context/<issue#>.md` travels with the branch (it's committed).
 4. Writes the lane's port block to `<worktree>/.env.local` (gitignored):
    `CLAUDE_LENS_PORT_BASE = 4128 + 10 × issue#` — backend = base, Vite = base+1,
-   E2E = base+2. Issue-derived, so lanes cannot collide.
+   E2E = base+2, Storybook = base+3. Issue-derived, so lanes cannot collide.
 5. Runs `npm ci` in the worktree (per-worktree `node_modules`; also wires
    the Husky pre-push hook so `npm run verify` gates pushes from this lane).
 
