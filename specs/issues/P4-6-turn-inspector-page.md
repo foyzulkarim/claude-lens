@@ -34,8 +34,8 @@ Spec-vs-mockup gaps to implement from the spec table: none for this page
 - [ ] Manual visual sign-off vs `specs/pages/turn-inspector.html` on real data; plan checkbox flipped
 
 ## Dependencies
-- Depends on: P4-5
-- Unblocks: P4-7
+- Depends on: #P4-5 / #37 (drill source and parent route)
+- Unblocks: none — #P4-12 later wires gate-evidence links into this route
 
 ## References
 - [specs/claude-lens-pages.md](../blob/main/specs/claude-lens-pages.md)

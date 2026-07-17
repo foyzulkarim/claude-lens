@@ -5,11 +5,11 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
+import { loadRepoEnv, resolveE2ePort } from "./ports.js";
 
 const execFileAsync = promisify(execFile);
 const rootDir = dirname(dirname(fileURLToPath(import.meta.url)));
 const sourceFixtureRoot = join(rootDir, "test", "fixtures");
-const DEFAULT_PORT = 4200;
 const READY_TIMEOUT_MS = 30_000;
 const RETRY_INTERVAL_MS = 250;
 const STOP_TIMEOUT_MS = 5_000;
@@ -54,12 +54,7 @@ function errorText(error: unknown): string {
 }
 
 export function parsePort(env: NodeJS.ProcessEnv = process.env): number {
-  const raw = env.CLAUDE_LENS_E2E_PORT ?? String(DEFAULT_PORT);
-  const port = Number(raw);
-  if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    throw new Error(`CLAUDE_LENS_E2E_PORT must be an integer between 1 and 65535; got ${raw}`);
-  }
-  return port;
+  return resolveE2ePort(env);
 }
 
 export async function assertPortFree(port: number): Promise<void> {
@@ -321,6 +316,7 @@ export function installInterruptHandlers(
 }
 
 export async function runE2e(): Promise<void> {
+  loadRepoEnv(rootDir);
   const port = parsePort();
   const baseUrl = `http://127.0.0.1:${port}`;
   let runFixtureRoot: string | undefined;

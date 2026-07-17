@@ -33,8 +33,8 @@ Spec-vs-mockup gaps to implement from the spec table: none for this page
 - [ ] Manual visual sign-off vs `specs/pages/explore.html` on real data; plan checkbox flipped
 
 ## Dependencies
-- Depends on: P4-15; #P4-2 (save-as-Saved-View pins to the Dashboard built in #P4-2 — cross-task write)
-- Unblocks: P4-17
+- Depends on: #P4-15 / #47 (saved views and tags); #P4-2 / #34 (Dashboard pin target)
+- Unblocks: none
 
 ## References
 - [specs/claude-lens-pages.md](../blob/main/specs/claude-lens-pages.md)

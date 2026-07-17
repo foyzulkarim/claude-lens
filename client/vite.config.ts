@@ -1,21 +1,27 @@
 import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
+import { resolveLanePorts } from "../scripts/ports.js";
 
-// Must match server/cli.ts's DEFAULT_PORT — the dev npm script pins the
-// backend to this port so the proxy target is predictable.
-const BACKEND_PORT = 4128;
+const clientRoot = fileURLToPath(new URL(".", import.meta.url));
+const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 
-export default defineConfig({
-  root: fileURLToPath(new URL(".", import.meta.url)),
-  plugins: [tailwindcss()],
-  server: {
-    proxy: {
-      "/api": `http://127.0.0.1:${BACKEND_PORT}`,
-      "/ws": {
-        target: `ws://127.0.0.1:${BACKEND_PORT}`,
-        ws: true,
+export default defineConfig(({ mode }) => {
+  const env = { ...loadEnv(mode, repoRoot, ""), ...process.env };
+  const ports = resolveLanePorts(env);
+  return {
+    root: clientRoot,
+    plugins: [tailwindcss()],
+    server: {
+      port: ports.vite,
+      strictPort: true,
+      proxy: {
+        "/api": `http://127.0.0.1:${ports.backend}`,
+        "/ws": {
+          target: `ws://127.0.0.1:${ports.backend}`,
+          ws: true,
+        },
       },
     },
-  },
+  };
 });

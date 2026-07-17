@@ -13,7 +13,7 @@ Task **#P4-7** from [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-p
 Build the Projects page (pages spec §5): spend, composition, and efficiency by project and branch.
 
 ## Scope
-- *(§5)* Spend + WoW, stacked-area composition, efficiency table, per-branch breakdown, → Sessions links. Gate pass-rate column in the efficiency table stubs until #P4-11.
+- *(§5)* Spend + WoW, stacked-area composition, efficiency table, per-branch breakdown, → Sessions links. Gate pass-rate column in the efficiency table stubs until #P4-12 replaces it with live results.
 
 ## Acceptance criteria
 - matches `projects.html`.
@@ -34,8 +34,8 @@ Spec-vs-mockup gaps to implement from the spec table: none for this page
 - [ ] Manual visual sign-off vs `specs/pages/projects.html` on real data; plan checkbox flipped
 
 ## Dependencies
-- Depends on: P4-6
-- Unblocks: P4-8
+- Depends on: #P4-2 / #34 (page-pattern gate)
+- Unblocks: none — #P4-12 later replaces the gate-pass-rate stub
 
 ## References
 - [specs/claude-lens-pages.md](../blob/main/specs/claude-lens-pages.md)

@@ -2,15 +2,18 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Repo state: transitional (V1 app + V2 specs)
+## Repo state: V2 active (Phase 4)
 
-The root currently holds two generations at once: the **V1 dashboard** (runnable Express app) and the **V2 design specs** (`specs/`). Task #P0-2 moves every V1 file into `legacy/`; V2 code does not exist yet — Phases 1–5 build it from the specs. Don't extend V1 beyond keep-it-running fixes, and don't scaffold V2 pieces outside their plan tasks.
+Phases 0–3 are complete: the V2 TypeScript app lives in `shared/`, `server/`, and `client/`, and Phase 4 page/feature work is next. The old Express dashboard is preserved under `legacy/`; don't extend it beyond keep-it-running fixes. Keep V2 work inside the active plan task and its settled specs.
 
-## Commands (V1 — the currently runnable app)
+## Commands (V2 — active app)
 
-- `node server.js` — dashboard at http://localhost:3456 (`npm run dev` for nodemon reload)
-- Config via `.env` (`cp .env.example .env`): `CLAUDE_DIR` (defaults to `~/.claude`), `RATE_INPUT`/`RATE_OUTPUT`/`RATE_CACHE_READ`/`RATE_CACHE_CREATE` pricing per 1M tokens
-- There are **no tests, lint, or build** yet. V2 tooling lands in Phase 1: vitest + CI (#P1-3), Storybook (#P1-4), Biome (#P1-5), Cypress (#P3-5)
+- `npm ci` — locked install; run separately in each worktree.
+- `npm run dev` — backend on 4128 and Vite on 4129 by default; `CLAUDE_LENS_PORT_BASE=N` derives backend `N`, Vite `N+1`, E2E `N+2`, and Storybook `N+3` (so `npm run storybook` defaults to 4131, not Storybook's stock 6006).
+- `npm run verify` — complete typecheck, lint, format, and unit/integration test gate.
+- `npm run build` — production CLI and SPA bundle under `dist/`.
+- `npm run test:e2e` — isolated fixture copy + built server + Cypress.
+- `npm start` — run the built app. V1 instructions are in `legacy/README.md`.
 
 ## Before pushing (V2)
 
@@ -18,9 +21,9 @@ The root currently holds two generations at once: the **V1 dashboard** (runnable
 
 ## Architecture
 
-**V1** (root, destined for `legacy/`): one ~640-line `server.js` — Express serving the static single-file `index.html`, with `/api/*` endpoints that re-scan and parse `~/.claude/projects/**/*.jsonl` transcripts on each request. No build step, no framework, pricing from env.
+**V1** (`legacy/`, maintenance only): one ~640-line `server.js` — Express serving the static single-file `index.html`, with `/api/*` endpoints that re-scan and parse `~/.claude/projects/**/*.jsonl` transcripts on each request. No build step, no framework, pricing from env.
 
-**V2** (specs only — the four docs under `specs/` are authoritative; this is just the map):
+**V2** (active — the specs remain authoritative; this is just the map):
 
 - **One npm package, one port**: Fastify serves the built SPA, `/api/*`, and a `/ws` upgrade. Three strict-TS roots: `shared/` (contracts), `server/`, `client/` (architecture §3; deps are pinned by §2 — deviating requires editing the doc first).
 - **Ingest pipeline** (§5): discovery (fast-glob over roots) → poller (fast stat loop + slow re-glob) → tailer (byte-offset incremental reads, partial-line safe) → parser (JSONL line → `ApiCall`, `message.id` dedupe, malformed lines counted never thrown) → in-memory columnar store → derived turns/sessions → debounced per-session invalidation.
@@ -36,7 +39,7 @@ Which doc for what: `claude-lens-architecture.md` (how) · `claude-lens-pages.md
 **Specs decide what, issues track what, start-time skills decide how, and the plan doc decides when.**
 
 ```
-planned work:  specs/claude-lens-plan.md ──► /create-issue ─► /start-task <issue#> ─► (/plan-architecture ─► /generate-tasks) ─► /implement ─► /review ─► /commit ─► PR merges, issue closes ─► /archive-issue
+planned work:  specs/claude-lens-plan.md ──► /create-issue ─► /start-task <issue#> ─► /move-to-worktree ─► (/plan-architecture ─► /generate-tasks) ─► /implement ─► /review ─► /commit ─► PR merges, issue closes ─► /finish-worktree ─► /archive-issue
 new ideas:     /plan-requirements ─► specs/requirements/REQ-<slug>.md ─► /create-issue ─► same as above
 ```
 
@@ -51,6 +54,8 @@ new ideas:     /plan-requirements ─► specs/requirements/REQ-<slug>.md ─►
 ## Skill locations
 
 - `/create-issue` — project-local, `.claude/skills/create-issue/`.
+- `/move-to-worktree` — project-local, `.claude/skills/move-to-worktree/`. Moves the clean, pushed `/start-task` branch into an issue-numbered sibling worktree, writes its isolated port block, and returns the primary checkout to current `main`.
+- `/finish-worktree` — project-local, `.claude/skills/finish-worktree/`. After squash-merge, verifies the exact merged PR head and closed issue, fast-forwards `main`, and safely removes the clean worktree and local branch.
 - `/archive-issue` — project-local, `.claude/skills/archive-issue/`. Retires a closed issue's `specs/` artifacts straight into the GitHub wiki (never into this repo), resolving every source file from the issue record anchor — see `specs/wiki-structure.md`.
 - `/start-task`, `/plan-requirements`, `/plan-architecture`, `/generate-tasks`, `/implement`, `/review`, `/commit` — user-level (`~/.claude/skills/`), all `disable-model-invocation: true`: only the user can invoke them; suggest them by name, never attempt to trigger them.
 

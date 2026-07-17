@@ -20,8 +20,8 @@ Streaming CSV/JSON export of the current filtered view, plus export + copy-perma
 - exported JSON of a filtered Sessions view round-trips (opens/parses correctly).
 
 ## Dependencies
-- Depends on: P4-16 (phase ordering); #P3-3 (permalink reproduces the view via P3-3's URL↔filter sync — this task adds only the clipboard affordance); #P4-4 (acceptance exports a Sessions view)
-- Unblocks: P4-18
+- Depends on: #P4-4 / #36 (acceptance exports a Sessions view); completed #P3-3 (URL↔filter sync for permalinks)
+- Unblocks: #P4-18 / #50
 
 ## References
 - [specs/claude-lens-plan.md](../blob/main/specs/claude-lens-plan.md)

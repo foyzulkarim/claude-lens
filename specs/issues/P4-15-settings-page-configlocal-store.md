@@ -36,8 +36,8 @@ Spec-vs-mockup gaps to implement from the spec table: none for this page
 - [ ] Manual visual sign-off vs `specs/pages/settings.html` on real data; plan checkbox flipped
 
 ## Dependencies
-- Depends on: P4-14
-- Unblocks: P4-16
+- Depends on: #P4-10 / #42 (extends its budget-only config store)
+- Unblocks: #P4-16 / #48
 
 ## References
 - [specs/claude-lens-pages.md](../blob/main/specs/claude-lens-pages.md)
