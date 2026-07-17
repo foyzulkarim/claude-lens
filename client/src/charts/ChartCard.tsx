@@ -1,4 +1,5 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { createColumnHelper } from "@tanstack/react-table";
 import clsx from "clsx";
 import { addDays, addHours, addMonths, addWeeks } from "date-fns";
 import type { ECElementEvent } from "echarts/core";
@@ -7,6 +8,7 @@ import { useLocation } from "wouter";
 import type { Grain, Series, SeriesMetricsQuery } from "../../../shared/metrics-contract.js";
 import { postMetrics } from "../api/metrics.js";
 import { qk } from "../api/queryKeys.js";
+import { DataTable } from "../components/DataTable.js";
 import { filtersToQuery, serializeFilters } from "../filters/state.js";
 import { useFilters } from "../filters/useFilters.js";
 import { TOGGLE_ACTIVE_CLASS, TOGGLE_CLASS } from "../ui/toggleStyles.js";
@@ -75,6 +77,14 @@ function bucketEnd(timestamp: string, grain: Grain): string {
   }
 }
 
+/** Shared by the canvas click handler and the data table's row action so
+ * both interaction paths land on the identical filtered Sessions URL. */
+function sessionsHrefForBucket(timestamp: string, grain: Grain): string {
+  const from = timestamp;
+  const to = bucketEnd(timestamp, grain);
+  return `/sessions?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+}
+
 function sumSeriesValues(series: Series[]): number {
   return series.reduce(
     (total, currentSeries) =>
@@ -97,6 +107,108 @@ export function chartAriaLabel(
 ): string | undefined {
   if (!data) return undefined;
   return `${title} chart; ${data.length} series; total ${formatUnitValue(sumSeriesValues(data), unit)}`;
+}
+
+export interface BucketRow {
+  t: string;
+  [seriesLabel: string]: string | number | null;
+}
+
+/** Pivots `Series[]` into one row per bucket timestamp — the non-canvas
+ * representation of range/trend/bucket values (issue #84), and the shape
+ * `DataTable` renders as the keyboard-operable data table. */
+export function bucketRows(data: Series[] | undefined): BucketRow[] {
+  if (!data || data.length === 0) return [];
+  const byTimestamp = new Map<string, BucketRow>();
+  for (const series of data) {
+    for (const point of series.points) {
+      let row = byTimestamp.get(point.t);
+      if (!row) {
+        row = { t: point.t };
+        byTimestamp.set(point.t, row);
+      }
+      row[series.label] = point.value;
+    }
+  }
+  return [...byTimestamp.values()].sort((a, b) => a.t.localeCompare(b.t));
+}
+
+function bucketTotal(row: BucketRow): number {
+  let total = 0;
+  for (const [key, value] of Object.entries(row)) {
+    if (key === "t") continue;
+    if (typeof value === "number" && Number.isFinite(value)) total += value;
+  }
+  return total;
+}
+
+// UTC-pinned: bucket boundaries are computed server-side in UTC (grain
+// math, `bucketEnd` above), so displaying in the viewer's local timezone
+// would make a bucket's own label disagree with its own boundaries.
+const RANGE_DATE_FORMAT = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  timeZone: "UTC",
+});
+
+/** Visible (not just `aria-label`-only) range text — the first/last bucket
+ * timestamps rendered as dates. */
+export function chartRangeSummary(data: Series[] | undefined): string | undefined {
+  const rows = bucketRows(data);
+  if (rows.length === 0) return undefined;
+  const first = RANGE_DATE_FORMAT.format(new Date(rows[0].t));
+  const last = RANGE_DATE_FORMAT.format(new Date(rows[rows.length - 1].t));
+  return first === last ? first : `${first} – ${last}`;
+}
+
+/** Visible trend text: compares the bucket-value sum across the first half
+ * of the range to the second half. Needs at least two buckets to say anything. */
+export function chartTrendSummary(data: Series[] | undefined): string | undefined {
+  const rows = bucketRows(data);
+  if (rows.length < 2) return undefined;
+  const mid = Math.ceil(rows.length / 2);
+  const firstHalf = rows.slice(0, mid).reduce((sum, row) => sum + bucketTotal(row), 0);
+  const secondHalf = rows.slice(mid).reduce((sum, row) => sum + bucketTotal(row), 0);
+  if (firstHalf === 0) return secondHalf === 0 ? "Flat" : "Trending up";
+  const pct = Math.round(Math.abs(((secondHalf - firstHalf) / firstHalf) * 100));
+  if (pct === 0) return "Flat";
+  return secondHalf >= firstHalf ? `Trending up ${pct}%` : `Trending down ${pct}%`;
+}
+
+const BUCKET_DATE_FORMAT = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+  timeZone: "UTC",
+});
+
+function formatBucketLabel(timestamp: string): string {
+  return BUCKET_DATE_FORMAT.format(new Date(timestamp));
+}
+
+const bucketColumnHelper = createColumnHelper<BucketRow>();
+
+/** Timestamp column + one column per series label, rebuilt only when the
+ * fetched series set or display unit changes. */
+function buildBucketColumns(seriesLabels: string[], unit: Unit) {
+  return [
+    bucketColumnHelper.accessor("t", {
+      header: "Bucket",
+      cell: (info) => formatBucketLabel(info.getValue()),
+    }),
+    ...seriesLabels.map((label) =>
+      bucketColumnHelper.accessor((row) => row[label], {
+        id: label,
+        header: label,
+        meta: { align: "right", mono: true },
+        cell: (info) => {
+          const value = info.getValue();
+          return typeof value === "number" ? formatUnitValue(value, unit) : "—";
+        },
+      }),
+    ),
+  ];
 }
 
 export interface ChartCardProps {
@@ -122,6 +234,7 @@ export function ChartCard({ title, defaultUnit }: ChartCardProps) {
   const [grain, setGrain] = useState<Grain>("day");
   const [compare, setCompare] = useState(false);
   const [smoothing, setSmoothing] = useState(false);
+  const [showDataTable, setShowDataTable] = useState(false);
   const [updateAnnouncement, setUpdateAnnouncement] = useState<string>();
   const previousAriaLabel = useRef<string | undefined>(undefined);
 
@@ -156,6 +269,11 @@ export function ChartCard({ title, defaultUnit }: ChartCardProps) {
   );
 
   const ariaLabel = useMemo(() => chartAriaLabel(data, title, unit), [data, title, unit]);
+  const rangeSummary = useMemo(() => chartRangeSummary(data), [data]);
+  const trendSummary = useMemo(() => chartTrendSummary(data), [data]);
+  const rows = useMemo(() => bucketRows(data), [data]);
+  const seriesLabels = useMemo(() => (data ?? []).map((s) => s.label), [data]);
+  const bucketColumns = useMemo(() => buildBucketColumns(seriesLabels, unit), [seriesLabels, unit]);
 
   useEffect(() => {
     if (!ariaLabel) return;
@@ -173,15 +291,26 @@ export function ChartCard({ title, defaultUnit }: ChartCardProps) {
       const value = params.value;
       const timestamp = Array.isArray(value) ? value[0] : undefined;
       if (typeof timestamp !== "string") return;
-      const from = timestamp;
-      const to = bucketEnd(timestamp, grain);
-      navigate(`/sessions?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+      navigate(sessionsHrefForBucket(timestamp, grain));
+    },
+    [grain, navigate],
+  );
+
+  // Keyboard-operable twin of `handlePointClick` — reuses the exact same
+  // `sessionsHrefForBucket` mapping so a data-table row and its matching
+  // canvas point always resolve to the same filtered Sessions URL (#84 A11Y-2).
+  const handleRowClick = useCallback(
+    (row: BucketRow): void => {
+      navigate(sessionsHrefForBucket(row.t, grain));
     },
     [grain, navigate],
   );
 
   return (
-    <div className="rounded-md border border-slate-200 bg-white p-4 dark:border-[#232B36] dark:bg-[#151A21]">
+    <div
+      data-testid="chart-card"
+      className="rounded-md border border-slate-200 bg-white p-4 dark:border-[#232B36] dark:bg-[#151A21]"
+    >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-sm font-semibold text-slate-900 dark:text-[#E8EDF2]">{title}</h2>
         <div className="flex flex-wrap items-center gap-2">
@@ -218,17 +347,33 @@ export function ChartCard({ title, defaultUnit }: ChartCardProps) {
           >
             MA7
           </button>
+          <button
+            type="button"
+            onClick={() => setShowDataTable((v) => !v)}
+            aria-pressed={showDataTable}
+            className={clsx(TOGGLE_CLASS, showDataTable && TOGGLE_ACTIVE_CLASS)}
+          >
+            Data table
+          </button>
         </div>
       </div>
 
+      {(rangeSummary || trendSummary) && (
+        <p className="mt-1 text-sm text-slate-600 dark:text-[#8A96A5]">
+          {[rangeSummary, trendSummary, rows.length > 0 ? `${rows.length} buckets` : undefined]
+            .filter(Boolean)
+            .join(" · ")}
+        </p>
+      )}
+
       <div className="relative mt-4">
         {isPending && (
-          <p role="status" className="text-sm text-slate-400">
+          <p role="status" className="text-sm text-slate-500 dark:text-[#8B98A9]">
             Loading…
           </p>
         )}
         {isError && (
-          <p role="alert" className="text-sm text-red-500">
+          <p role="alert" className="text-sm text-[#B23A3A] dark:text-[#E05252]">
             {error.message}
           </p>
         )}
@@ -246,6 +391,19 @@ export function ChartCard({ title, defaultUnit }: ChartCardProps) {
           />
         )}
       </div>
+
+      {showDataTable && (
+        <div className="mt-4">
+          <DataTable
+            data={rows}
+            columns={bucketColumns}
+            label={`${title} data table`}
+            getRowId={(row) => row.t}
+            onRowClick={handleRowClick}
+            getRowActionLabel={(row) => `View sessions for ${formatBucketLabel(row.t)}`}
+          />
+        </div>
+      )}
     </div>
   );
 }

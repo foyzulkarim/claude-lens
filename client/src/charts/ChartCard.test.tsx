@@ -36,7 +36,8 @@ vi.mock("../api/metrics.js", () => ({
   postMetrics: (query: unknown) => postMetricsMock(query),
 }));
 
-const { ChartCard, chartAriaLabel } = await import("./ChartCard.js");
+const { ChartCard, chartAriaLabel, chartRangeSummary, chartTrendSummary, bucketRows } =
+  await import("./ChartCard.js");
 
 function latestQuery<T>(): T {
   const calls = postMetricsMock.mock.calls;
@@ -207,6 +208,37 @@ describe("ChartCard — semantic summary", () => {
   });
 });
 
+describe("ChartCard — range/trend/bucket summary (#84)", () => {
+  it("leaves range and trend undefined until data exists", () => {
+    expect(chartRangeSummary(undefined)).toBeUndefined();
+    expect(chartTrendSummary(undefined)).toBeUndefined();
+    expect(bucketRows(undefined)).toEqual([]);
+  });
+
+  it("needs at least two buckets to describe a trend, but not a range", () => {
+    const single: Series[] = [
+      { ...sampleSeries[0], points: [{ t: "2026-07-08T00:00:00.000Z", value: 1 }] },
+    ];
+    expect(chartRangeSummary(single)).toBe("Jul 8");
+    expect(chartTrendSummary(single)).toBeUndefined();
+  });
+
+  it("derives range, trend, and bucket rows from the fetched series", () => {
+    expect(chartRangeSummary(sampleSeries)).toBe("Jul 8 – Jul 9");
+    expect(chartTrendSummary(sampleSeries)).toBe("Trending up 100%");
+    expect(bucketRows(sampleSeries)).toEqual([
+      { t: "2026-07-08T00:00:00.000Z", Cost: 1 },
+      { t: "2026-07-09T00:00:00.000Z", Cost: 2 },
+    ]);
+  });
+
+  it("renders the visible range/trend summary text under the chart title", async () => {
+    renderCard();
+    await waitFor(() => expect(chartSpy).toHaveBeenCalled());
+    expect(screen.getByText("Jul 8 – Jul 9 · Trending up 100% · 2 buckets")).toBeInTheDocument();
+  });
+});
+
 describe("ChartCard — controls", () => {
   it("unit toggle requeries with the mapped measure(s)", async () => {
     const user = userEvent.setup();
@@ -281,6 +313,23 @@ describe("ChartCard — controls", () => {
     const lastPath = history.at(-1);
     expect(lastPath).toBe(
       "/sessions?from=2026-07-10T00%3A00%3A00.000Z&to=2026-07-11T00%3A00%3A00.000Z",
+    );
+  });
+
+  it("data table row action is keyboard-operable and reaches the same drill-down URL as a canvas click (#84)", async () => {
+    const user = userEvent.setup();
+    const { history } = renderCard();
+    await waitFor(() => expect(chartSpy).toHaveBeenCalled());
+
+    await user.click(screen.getByRole("button", { name: "Data table" }));
+    const [rowButton] = await screen.findAllByRole("button", { name: /View sessions for/ });
+
+    rowButton.focus();
+    expect(rowButton).toHaveFocus();
+    await user.keyboard("{Enter}");
+
+    expect(history.at(-1)).toBe(
+      "/sessions?from=2026-07-08T00%3A00%3A00.000Z&to=2026-07-09T00%3A00%3A00.000Z",
     );
   });
 
