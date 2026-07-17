@@ -25,10 +25,16 @@ describe("storybook lane configuration", () => {
 
   it.each([
     ["-p", "7000"],
+    ["-p7000"],
     ["--port=7000"],
     ["--exact-port"],
     ["-c", "elsewhere"],
+    ["-celsewhere"],
   ])("rejects overrides of wrapper-managed flags: %s", (...override) => {
     expect(() => buildStorybookArgs({}, [...override])).toThrow(/managed by this wrapper/);
+  });
+
+  it("does not confuse long flags with reserved short prefixes", () => {
+    expect(buildStorybookArgs({}, ["--ci", "--preview-url=http://x"])).toContain("--ci");
   });
 });

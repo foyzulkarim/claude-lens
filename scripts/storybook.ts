@@ -7,16 +7,25 @@ const rootDir = dirname(dirname(fileURLToPath(import.meta.url)));
 
 // The wrapper owns where Storybook binds; user flags that would fight it are rejected.
 const RESERVED_FLAGS = ["-p", "--port", "--exact-port", "-c", "--config-dir"];
+// Short flags also accept attached values (-p63501, -celsewhere) — catch those too.
+const RESERVED_SHORT_FLAGS = RESERVED_FLAGS.filter((flag) => /^-[^-]$/.test(flag));
+
+function reservedFlagIn(arg: string): string | undefined {
+  const flag = arg.split("=", 1)[0] ?? arg;
+  if (RESERVED_FLAGS.includes(flag)) return flag;
+  if (arg.startsWith("--")) return undefined;
+  return RESERVED_SHORT_FLAGS.find((short) => arg.startsWith(short));
+}
 
 export function buildStorybookArgs(
   env: NodeJS.ProcessEnv = process.env,
   extraArgs: string[] = [],
 ): string[] {
   for (const arg of extraArgs) {
-    const flag = arg.split("=", 1)[0] ?? arg;
-    if (RESERVED_FLAGS.includes(flag)) {
+    const reserved = reservedFlagIn(arg);
+    if (reserved) {
       throw new Error(
-        `${flag} is managed by this wrapper; set CLAUDE_LENS_PORT_BASE to move the lane instead`,
+        `${reserved} is managed by this wrapper; set CLAUDE_LENS_PORT_BASE to move the lane instead`,
       );
     }
   }
