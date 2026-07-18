@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionDetailResponse } from "../../../../shared/session-detail-contract.js";
 import { Route, Router, Switch } from "wouter";
@@ -334,5 +334,145 @@ describe("SessionDetail — Header + CostTimeline (T7)", () => {
     const displayGroup = screen.getByRole("group", { name: "Display" });
     const activeBtn = displayGroup.querySelector('button[aria-pressed="true"]');
     expect(activeBtn).toHaveTextContent("cumulative");
+  });
+});
+
+describe("SessionDetail — TurnsSection, CacheStrip, ToolMix (T8)", () => {
+  beforeEach(() => {
+    getSessionDetailMock.mockReset();
+  });
+  afterEach(() => {
+    cleanup();
+    getSessionDetailMock.mockReset();
+  });
+
+  it("TurnsSection renders stacked bars, anomaly badge, and drill links", async () => {
+    const turns = [
+      {
+        turnNumber: 1,
+        promptId: "p1",
+        startedAt: "2026-07-14T10:00:00.000Z",
+        endedAt: "2026-07-14T10:01:00.000Z",
+        cost: 0.1,
+        mainCost: 0.1,
+        sidechainCost: 0,
+        tokens: 100,
+        inputTokens: 100,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheCreateTokens: 0,
+        callCount: 1,
+        cacheHitPct: 0,
+        tools: [{ name: "Read", count: 1, inputBytes: 10 }],
+        fleetPercentile: 50,
+        isAnomaly: false,
+        hasSidechain: false,
+        primaryModel: "claude-sonnet-5",
+        models: ["claude-sonnet-5"],
+      },
+      {
+        turnNumber: 2,
+        promptId: "p2",
+        startedAt: "2026-07-14T10:02:00.000Z",
+        endedAt: "2026-07-14T10:03:00.000Z",
+        cost: 5,
+        mainCost: 5,
+        sidechainCost: 0,
+        tokens: 100,
+        inputTokens: 100,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheCreateTokens: 0,
+        callCount: 1,
+        cacheHitPct: 0,
+        tools: [],
+        fleetPercentile: 99,
+        isAnomaly: true,
+        hasSidechain: false,
+        primaryModel: "claude-sonnet-5",
+        models: ["claude-sonnet-5"],
+      },
+    ];
+    const distribution = {
+      populationSize: 100,
+      p50: 0.5,
+      p90: 1.5,
+      p99: 4,
+      histogram: [
+        { rangeStart: 0, rangeEnd: 1, count: 60 },
+        { rangeStart: 1, rangeEnd: 5, count: 40 },
+      ],
+      basis: "all-history" as const,
+    };
+    getSessionDetailMock.mockResolvedValue(makeResponse({ turns, turnDistribution: distribution }));
+    const { Wrapper } = makeWrapper();
+
+    render(<Wrapper><div /></Wrapper>);
+
+    expect(await screen.findByTestId("session-detail-turns")).toBeInTheDocument();
+    // Drill link uses the canonical /session/:sessionId/turn/:turnNumber shape
+    // (A11). Today `promptId` is used as the session id surrogate in the link
+    // until the Turn Inspector route (#P4-6) wires real session ids.
+    const drillLink = screen.getByTestId("turn-drill-2");
+    expect(drillLink).toHaveAttribute("href", "/session/p2/turn/2");
+    // Anomaly badge present
+    expect(screen.getByText("flag")).toBeInTheDocument();
+  });
+
+  it("CacheStrip renders K2 cause badges for cache writes", async () => {
+    const cache = [
+      {
+        callIndex: 0,
+        timestamp: "2026-07-14T10:00:00.000Z",
+        cacheReadTokens: 0,
+        cacheCreateTokens: 1000,
+        hitRate: 0,
+        cause: "first-call" as const,
+        isWriteSpike: true,
+      },
+      {
+        callIndex: 1,
+        timestamp: "2026-07-14T10:01:00.000Z",
+        cacheReadTokens: 500,
+        cacheCreateTokens: 100,
+        hitRate: 0.83,
+        cause: "model-switch" as const,
+        isWriteSpike: false,
+      },
+    ];
+    getSessionDetailMock.mockResolvedValue(makeResponse({ cache }));
+    const { Wrapper } = makeWrapper();
+
+    render(<Wrapper><div /></Wrapper>);
+
+    const cacheEl = await screen.findByTestId("session-detail-cache");
+    expect(cacheEl).toBeInTheDocument();
+    // Cause labels appear both in the per-call strip and in the cause
+    // table — assert at least one of each is rendered inside the cache panel.
+    expect(within(cacheEl).getAllByText("first call").length).toBeGreaterThan(0);
+    expect(within(cacheEl).getAllByText("model switch").length).toBeGreaterThan(0);
+  });
+
+  it("ToolMix + Tool Timeline render with the binding mix/timeline shape", async () => {
+    const toolMix = [
+      { name: "Read", callCount: 5, inputBytes: 100, resultBytes: 200, share: 0.5 },
+      { name: "Bash", callCount: 3, inputBytes: 50, resultBytes: 200, share: 0.5 },
+    ];
+    const toolTimeline = [
+      { callIndex: 0, timestamp: "2026-07-14T10:00:00.000Z", toolName: "Read", turnNumber: 1 },
+      { callIndex: 1, timestamp: "2026-07-14T10:01:00.000Z", toolName: "Bash", turnNumber: 1 },
+    ];
+    getSessionDetailMock.mockResolvedValue(makeResponse({ toolMix, toolTimeline }));
+    const { Wrapper } = makeWrapper();
+
+    render(<Wrapper><div /></Wrapper>);
+
+    const toolMixEl = await screen.findByTestId("session-detail-tool-mix");
+    expect(toolMixEl).toBeInTheDocument();
+    expect(within(toolMixEl).getAllByText(/Read/).length).toBeGreaterThan(0);
+    expect(within(toolMixEl).getAllByText(/Bash/).length).toBeGreaterThan(0);
+    // Turn numbers (T1) appear once per timeline event; assert at least
+    // one is rendered (events in the test fixture both carry turn 1).
+    expect(within(toolMixEl).getAllByText("T1").length).toBeGreaterThan(0);
   });
 });
