@@ -88,10 +88,6 @@ function CacheRow({
   point: SessionDetailCachePoint;
   totalReadWrite: number;
 }): React.JSX.Element {
-  const eligible =
-    point.cacheReadTokens +
-    point.cacheCreateTokens +
-    (totalReadWrite - point.cacheReadTokens - point.cacheCreateTokens);
   // Render a stacked bar with read and write portions at the call's own
   // share of the strip's total tokens. This keeps the visual proportion
   // across calls stable.
@@ -103,7 +99,6 @@ function CacheRow({
   // call doesn't visually flatten the strip.
   const localTokens = point.cacheReadTokens + point.cacheCreateTokens;
   const width = totalReadWrite > 0 ? (localTokens / totalReadWrite) * 100 : 0;
-  void eligible;
   return (
     <li
       className="flex items-center gap-2 text-[11px]"

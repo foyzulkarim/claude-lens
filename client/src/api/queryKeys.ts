@@ -1,5 +1,4 @@
 import type { MetricsQuery } from "../../../shared/metrics-contract.js";
-import type { SessionDetailResponse } from "../../../shared/session-detail-contract.js";
 import type { SessionListParams } from "../../../shared/sessions-contract.js";
 
 /**
@@ -37,10 +36,3 @@ export const qk = {
     sessions: ["sessions"] as const,
   },
 };
-
-/**
- * Helper to keep `useSessionDetail(id)` typed against the contract without
- * importing `SessionDetailResponse` from a separate path. Re-exported here
- * so the api barrel stays the single import for callers.
- */
-export type { SessionDetailResponse };

@@ -3,9 +3,9 @@ import type {
   SessionDetailError,
   SessionDetailResponse,
 } from "../../shared/session-detail-contract.js";
-import type { TokenUsage } from "../../shared/types.js";
 import { projectSessionDetail, type RuntimeMetadata } from "../session-detail/projector.js";
 import type { Store } from "../store/store.js";
+import type { Pricer } from "../store/derive-session.js";
 import { aggregateLogicalTurnCost, groupLogicalTurns } from "../store/logical-turns.js";
 
 // GET /api/sessions/:id — Session Detail (ARCH T5 / #P4-5).
@@ -15,13 +15,6 @@ import { aggregateLogicalTurnCost, groupLogicalTurns } from "../store/logical-tu
 // the WS/debounce state. The route never re-reads the filesystem and never
 // performs cross-session aggregation beyond the fleet baseline that the
 // metrics engine already maintains.
-
-/**
- * Per-usage pricer shared with the Store so `header.costComputed` agrees
- * with `Session.costComputed` and the dashboard's per-turn trace.
- * Mirrors `RegisterSessionsRouteOptions` — when omitted, every cost is 0.
- */
-type Pricer = (usage: TokenUsage, model: string) => number;
 
 export interface RegisterSessionDetailRouteOptions {
   pricer?: Pricer;

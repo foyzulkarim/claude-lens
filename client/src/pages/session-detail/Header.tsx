@@ -55,7 +55,7 @@ export function Header({ header }: HeaderProps): React.JSX.Element {
         </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+      <dl className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat label="Cost (computed)" value={formatCost(header.costComputed)} />
         <Stat label="vs median" value={formatMedianDelta(header)} />
         <Stat label="Logical turns" value={String(header.logicalTurnCount)} />
@@ -70,7 +70,7 @@ export function Header({ header }: HeaderProps): React.JSX.Element {
           label="Last activity"
           value={header.lastAt ? header.lastAt.slice(0, 16).replace("T", " ") : "—"}
         />
-      </div>
+      </dl>
 
       {isPremiumUnavailable(header) ? (
         <p

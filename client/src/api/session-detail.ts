@@ -67,19 +67,36 @@ function isStringArray(value: unknown): value is string[] {
 }
 
 const CAUSE_LABELS = new Set(["first-call", "model-switch", "compaction", "unexplained"]);
+const AVAILABILITY_FIELDS = new Set([
+  "header.drift",
+  "header.contextPct",
+  "turn.apiMs",
+  "turn.linesAdded",
+  "turn.linesRemoved",
+  "turn.cacheSavings",
+  "turn.gateStatus",
+  "toolMix.targetPaths",
+  "toolMix.shellCommands",
+  "cache.cause.freshSession",
+  "cache.cause.modelSwitch",
+  "cache.cause.compaction",
+]);
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
 
 function isTimelinePoint(value: unknown): boolean {
   if (!isObject(value)) return false;
   return (
-    typeof value.callIndex === "number" &&
+    isFiniteNumber(value.callIndex) &&
     typeof value.timestamp === "string" &&
-    typeof value.cumulativeCost === "number" &&
-    Number.isFinite(value.cumulativeCost) &&
-    typeof value.cumulativeTokens === "number" &&
-    typeof value.cost === "number" &&
-    typeof value.tokens === "number" &&
-    (value.contextPct === null || typeof value.contextPct === "number") &&
-    typeof value.turnNumber === "number" &&
+    isFiniteNumber(value.cumulativeCost) &&
+    isFiniteNumber(value.cumulativeTokens) &&
+    isFiniteNumber(value.cost) &&
+    isFiniteNumber(value.tokens) &&
+    (value.contextPct === null || isFiniteNumber(value.contextPct)) &&
+    isFiniteNumber(value.turnNumber) &&
     typeof value.isTurnBoundary === "boolean" &&
     typeof value.isCompaction === "boolean"
   );
@@ -88,21 +105,22 @@ function isTimelinePoint(value: unknown): boolean {
 function isTurn(value: unknown): boolean {
   if (!isObject(value)) return false;
   return (
-    typeof value.turnNumber === "number" &&
+    isFiniteNumber(value.turnNumber) &&
     typeof value.promptId === "string" &&
     typeof value.startedAt === "string" &&
     typeof value.endedAt === "string" &&
-    typeof value.cost === "number" &&
-    typeof value.mainCost === "number" &&
-    typeof value.sidechainCost === "number" &&
-    typeof value.tokens === "number" &&
-    typeof value.inputTokens === "number" &&
-    typeof value.outputTokens === "number" &&
-    typeof value.cacheReadTokens === "number" &&
-    typeof value.cacheCreateTokens === "number" &&
-    typeof value.callCount === "number" &&
-    typeof value.cacheHitPct === "number" &&
+    isFiniteNumber(value.cost) &&
+    isFiniteNumber(value.mainCost) &&
+    isFiniteNumber(value.sidechainCost) &&
+    isFiniteNumber(value.tokens) &&
+    isFiniteNumber(value.inputTokens) &&
+    isFiniteNumber(value.outputTokens) &&
+    isFiniteNumber(value.cacheReadTokens) &&
+    isFiniteNumber(value.cacheCreateTokens) &&
+    isFiniteNumber(value.callCount) &&
+    isFiniteNumber(value.cacheHitPct) &&
     Array.isArray(value.tools) &&
+    value.tools.every(isTurnTool) &&
     isFiniteOrNull(value.fleetPercentile) &&
     typeof value.isAnomaly === "boolean" &&
     typeof value.hasSidechain === "boolean" &&
@@ -119,14 +137,23 @@ function isTurn(value: unknown): boolean {
   );
 }
 
+function isTurnTool(value: unknown): boolean {
+  return (
+    isObject(value) &&
+    typeof value.name === "string" &&
+    isFiniteNumber(value.count) &&
+    isFiniteNumber(value.inputBytes)
+  );
+}
+
 function isCachePoint(value: unknown): boolean {
   if (!isObject(value)) return false;
   return (
-    typeof value.callIndex === "number" &&
+    isFiniteNumber(value.callIndex) &&
     typeof value.timestamp === "string" &&
-    typeof value.cacheReadTokens === "number" &&
-    typeof value.cacheCreateTokens === "number" &&
-    typeof value.hitRate === "number" &&
+    isFiniteNumber(value.cacheReadTokens) &&
+    isFiniteNumber(value.cacheCreateTokens) &&
+    isFiniteNumber(value.hitRate) &&
     typeof value.cause === "string" &&
     CAUSE_LABELS.has(value.cause) &&
     typeof value.isWriteSpike === "boolean"
@@ -137,27 +164,27 @@ function isToolMixItem(value: unknown): boolean {
   if (!isObject(value)) return false;
   return (
     typeof value.name === "string" &&
-    typeof value.callCount === "number" &&
-    typeof value.inputBytes === "number" &&
-    typeof value.resultBytes === "number" &&
-    typeof value.share === "number"
+    isFiniteNumber(value.callCount) &&
+    isFiniteNumber(value.inputBytes) &&
+    isFiniteNumber(value.resultBytes) &&
+    isFiniteNumber(value.share)
   );
 }
 
 function isToolTimelineEvent(value: unknown): boolean {
   if (!isObject(value)) return false;
   return (
-    typeof value.callIndex === "number" &&
+    isFiniteNumber(value.callIndex) &&
     typeof value.timestamp === "string" &&
     typeof value.toolName === "string" &&
-    typeof value.turnNumber === "number"
+    isFiniteNumber(value.turnNumber)
   );
 }
 
 function isPrompt(value: unknown): boolean {
   if (!isObject(value)) return false;
   return (
-    typeof value.turnNumber === "number" &&
+    isFiniteNumber(value.turnNumber) &&
     typeof value.promptId === "string" &&
     typeof value.timestamp === "string" &&
     typeof value.text === "string"
@@ -173,16 +200,23 @@ function isWorkflowStage(value: unknown): boolean {
       value.id === "verify" ||
       value.id === "commit") &&
     typeof value.label === "string" &&
-    typeof value.count === "number"
+    isFiniteNumber(value.count)
   );
 }
 
 function isContextItem(value: unknown): boolean {
   if (!isObject(value)) return false;
   return (
-    typeof value.toolName === "string" &&
-    typeof value.bytes === "number" &&
-    typeof value.share === "number"
+    typeof value.toolName === "string" && isFiniteNumber(value.bytes) && isFiniteNumber(value.share)
+  );
+}
+
+function isHistogramBucket(value: unknown): boolean {
+  return (
+    isObject(value) &&
+    isFiniteNumber(value.rangeStart) &&
+    isFiniteNumber(value.rangeEnd) &&
+    isFiniteNumber(value.count)
   );
 }
 
@@ -202,15 +236,20 @@ function assertSessionDetailResponse(value: unknown): asserts value is SessionDe
     !isStringArray(h.models) ||
     typeof h.firstAt !== "string" ||
     typeof h.lastAt !== "string" ||
-    typeof h.logicalTurnCount !== "number" ||
-    typeof h.callCount !== "number" ||
-    typeof h.costComputed !== "number" ||
+    !isFiniteNumber(h.logicalTurnCount) ||
+    !isFiniteNumber(h.callCount) ||
+    !isFiniteNumber(h.costComputed) ||
+    !isFiniteOrUndefined(h.costObserved) ||
+    !isFiniteOrUndefined(h.contextPctEstimated) ||
     !isFiniteOrNull(h.fleetCostMedian) ||
     !isFiniteOrNull(h.fleetCostRankPct) ||
     !isObject(h.tier) ||
-    typeof (h.tier as Record<string, unknown>).costBasis !== "string" ||
-    ((h.tier as Record<string, unknown>).costBasis !== "computed" &&
-      (h.tier as Record<string, unknown>).costBasis !== "observed")
+    typeof h.tier.hasCostSamples !== "boolean" ||
+    typeof h.tier.hasTurnBoundaries !== "boolean" ||
+    typeof h.tier.hasCostLog !== "boolean" ||
+    (h.tier.costBasis !== "computed" && h.tier.costBasis !== "observed") ||
+    (h.drift !== undefined &&
+      (!isObject(h.drift) || !isFiniteNumber(h.drift.delta) || !isFiniteNumber(h.drift.pct)))
   ) {
     throw new SessionDetailResponseShapeError("header does not match the contract shape");
   }
@@ -220,7 +259,16 @@ function assertSessionDetailResponse(value: unknown): asserts value is SessionDe
   if (!Array.isArray(value.turns) || !value.turns.every(isTurn)) {
     throw new SessionDetailResponseShapeError("turns does not match the contract shape");
   }
-  if (!isObject(value.turnDistribution) || value.turnDistribution.basis !== "all-history") {
+  if (
+    !isObject(value.turnDistribution) ||
+    !isFiniteNumber(value.turnDistribution.populationSize) ||
+    !isFiniteOrNull(value.turnDistribution.p50) ||
+    !isFiniteOrNull(value.turnDistribution.p90) ||
+    !isFiniteOrNull(value.turnDistribution.p99) ||
+    !Array.isArray(value.turnDistribution.histogram) ||
+    !value.turnDistribution.histogram.every(isHistogramBucket) ||
+    value.turnDistribution.basis !== "all-history"
+  ) {
     throw new SessionDetailResponseShapeError("turnDistribution missing or wrong basis");
   }
   if (!Array.isArray(value.cache) || !value.cache.every(isCachePoint)) {
@@ -240,11 +288,11 @@ function assertSessionDetailResponse(value: unknown): asserts value is SessionDe
   }
   const w = value.workflow;
   if (
-    typeof w.baseEditCount !== "number" ||
-    typeof w.readFirstCount !== "number" ||
-    typeof w.plannedCount !== "number" ||
-    typeof w.verifiedCount !== "number" ||
-    typeof w.committedCount !== "number" ||
+    !isFiniteNumber(w.baseEditCount) ||
+    !isFiniteNumber(w.readFirstCount) ||
+    !isFiniteNumber(w.plannedCount) ||
+    !isFiniteNumber(w.verifiedCount) ||
+    !isFiniteNumber(w.committedCount) ||
     !Array.isArray(w.stages) ||
     !w.stages.every(isWorkflowStage)
   ) {
@@ -255,10 +303,10 @@ function assertSessionDetailResponse(value: unknown): asserts value is SessionDe
   }
   const tf = value.tokenFunnel;
   if (
-    typeof tf.contextOffered !== "number" ||
-    typeof tf.cacheServed !== "number" ||
-    typeof tf.freshBilled !== "number" ||
-    typeof tf.output !== "number"
+    !isFiniteNumber(tf.contextOffered) ||
+    !isFiniteNumber(tf.cacheServed) ||
+    !isFiniteNumber(tf.freshBilled) ||
+    !isFiniteNumber(tf.output)
   ) {
     throw new SessionDetailResponseShapeError("tokenFunnel does not match the contract shape");
   }
@@ -267,8 +315,18 @@ function assertSessionDetailResponse(value: unknown): asserts value is SessionDe
       "contextComposition does not match the contract shape",
     );
   }
-  if (!isObject(value.meta)) {
-    throw new SessionDetailResponseShapeError("meta missing");
+  if (
+    !isObject(value.meta) ||
+    (value.meta.costBasis !== "computed" && value.meta.costBasis !== "observed") ||
+    typeof value.meta.isEmpty !== "boolean" ||
+    typeof value.meta.isLive !== "boolean" ||
+    !Array.isArray(value.meta.availability) ||
+    !value.meta.availability.every(
+      (field): field is string => typeof field === "string" && AVAILABILITY_FIELDS.has(field),
+    ) ||
+    !isFiniteNumber(value.meta.fleetBaselineSize)
+  ) {
+    throw new SessionDetailResponseShapeError("meta does not match the contract shape");
   }
 }
 

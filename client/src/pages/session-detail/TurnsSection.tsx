@@ -1,11 +1,13 @@
 import { useMemo, useState } from "react";
-import { Link } from "wouter";
+import type { ColumnDef } from "@tanstack/react-table";
+import { Link, useSearch } from "wouter";
 import clsx from "clsx";
 import type {
   SessionDetailDistribution,
   SessionDetailTurn,
 } from "../../../../shared/session-detail-contract.js";
 import { formatCost, formatPercent, formatTokens } from "./format.js";
+import { DataTable } from "../../components/DataTable.js";
 
 export interface TurnsSectionProps {
   sessionId: string;
@@ -36,6 +38,7 @@ export function TurnsSection({
   distribution,
 }: TurnsSectionProps): React.JSX.Element {
   const peak = useMemo(() => turns.reduce((m, t) => (t.cost > m ? t.cost : m), 0), [turns]);
+  const search = useSearch();
 
   return (
     <section
@@ -57,7 +60,7 @@ export function TurnsSection({
 
       <div className="mt-6">
         <h3 className="text-xs font-medium text-slate-500 dark:text-[#8A96A5]">Turn table</h3>
-        <TurnTable sessionId={sessionId} turns={turns} />
+        <TurnTable sessionId={sessionId} turns={turns} search={search} />
       </div>
 
       <div className="mt-6">
@@ -90,7 +93,9 @@ function TurnBars({
           <li
             key={turn.turnNumber}
             className="flex items-center gap-2 text-xs"
-            aria-label={`Turn ${turn.turnNumber} — ${formatCost(turn.cost)}`}
+            aria-label={`Turn ${turn.turnNumber} — ${formatCost(turn.cost)}${
+              turn.isAnomaly ? ", anomaly" : ""
+            }`}
           >
             <span className="w-8 text-right font-mono text-slate-500 dark:text-[#8A96A5]">
               #{turn.turnNumber}
@@ -127,64 +132,89 @@ function TurnBars({
 function TurnTable({
   sessionId,
   turns,
+  search,
 }: {
   sessionId: string;
   turns: SessionDetailTurn[];
+  search: string;
 }): React.JSX.Element {
+  const columns = useMemo<ColumnDef<SessionDetailTurn>[]>(
+    () => [
+      {
+        id: "turn",
+        header: "#",
+        cell: ({ row }) => (
+          <Link
+            href={`/session/${sessionId}/turn/${row.original.turnNumber}${search ? `?${search}` : ""}`}
+            className="text-slate-900 underline-offset-2 hover:underline dark:text-[#E8EDF2]"
+            data-testid={`turn-drill-${row.original.turnNumber}`}
+          >
+            #{row.original.turnNumber}
+          </Link>
+        ),
+        meta: { mono: true },
+      },
+      {
+        header: "$",
+        accessorKey: "cost",
+        cell: ({ getValue }) => formatCost(getValue<number>()),
+        meta: { mono: true },
+      },
+      {
+        header: "tokens",
+        accessorKey: "tokens",
+        cell: ({ getValue }) => formatTokens(getValue<number>()),
+        meta: { mono: true },
+      },
+      {
+        header: "hit %",
+        accessorKey: "cacheHitPct",
+        cell: ({ getValue }) => `${Math.round(getValue<number>() * 100)}%`,
+        meta: { mono: true },
+      },
+      { header: "calls", accessorKey: "callCount", meta: { mono: true } },
+      {
+        header: "tools",
+        cell: ({ row }) =>
+          row.original.tools
+            .slice(0, 2)
+            .map((tool) => `${tool.name}×${tool.count}`)
+            .join(", "),
+        meta: { mono: true },
+      },
+      {
+        header: "models",
+        cell: ({ row }) => row.original.primaryModel || "—",
+        meta: { mono: true },
+      },
+      {
+        header: "anomaly",
+        cell: ({ row }) =>
+          row.original.isAnomaly ? (
+            <span className="rounded bg-rose-100 px-1.5 py-0.5 text-[10px] text-rose-700 dark:bg-rose-900/30 dark:text-rose-200">
+              flag
+            </span>
+          ) : (
+            "—"
+          ),
+        meta: { mono: true },
+      },
+    ],
+    [search, sessionId],
+  );
+
   if (turns.length === 0) {
     return <p className="mt-2 text-xs text-slate-500 dark:text-[#8A96A5]">No turns yet.</p>;
   }
+
   return (
-    <div className="mt-2 overflow-x-auto">
-      <table className="w-full border-collapse text-xs">
-        <thead>
-          <tr className="border-b border-slate-200 text-left text-[10px] uppercase tracking-wide text-slate-500 dark:border-[#232B36] dark:text-[#8A96A5]">
-            <th className="py-1 pr-2">#</th>
-            <th className="py-1 pr-2">$</th>
-            <th className="py-1 pr-2">tokens</th>
-            <th className="py-1 pr-2">hit %</th>
-            <th className="py-1 pr-2">calls</th>
-            <th className="py-1 pr-2">tools</th>
-            <th className="py-1 pr-2">models</th>
-            <th className="py-1 pr-2">anomaly</th>
-          </tr>
-        </thead>
-        <tbody>
-          {turns.map((turn) => (
-            <tr key={turn.turnNumber} className="border-b border-slate-100 dark:border-[#232B36]">
-              <td className="py-1 pr-2 font-mono">
-                <Link
-                  href={`/session/${sessionId}/turn/${turn.turnNumber}`}
-                  className="text-slate-900 underline-offset-2 hover:underline dark:text-[#E8EDF2]"
-                  data-testid={`turn-drill-${turn.turnNumber}`}
-                >
-                  #{turn.turnNumber}
-                </Link>
-              </td>
-              <td className="py-1 pr-2 font-mono">{formatCost(turn.cost)}</td>
-              <td className="py-1 pr-2 font-mono">{formatTokens(turn.tokens)}</td>
-              <td className="py-1 pr-2 font-mono">{Math.round(turn.cacheHitPct * 100)}%</td>
-              <td className="py-1 pr-2 font-mono">{turn.callCount}</td>
-              <td className="py-1 pr-2 font-mono">
-                {turn.tools
-                  .slice(0, 2)
-                  .map((t) => `${t.name}×${t.count}`)
-                  .join(", ")}
-              </td>
-              <td className="py-1 pr-2 font-mono">{turn.primaryModel || "—"}</td>
-              <td className="py-1 pr-2 font-mono">
-                {turn.isAnomaly ? (
-                  <span className="rounded bg-rose-100 px-1.5 py-0.5 text-[10px] text-rose-700 dark:bg-rose-900/30 dark:text-rose-200">
-                    flag
-                  </span>
-                ) : (
-                  "—"
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="mt-2 max-h-72 overflow-auto">
+      <DataTable
+        data={turns}
+        columns={columns}
+        getRowId={(turn) => String(turn.turnNumber)}
+        label="Session turns"
+      />
     </div>
   );
 }

@@ -199,11 +199,9 @@ function buildTimeline(
   runtime: RuntimeMetadata,
 ): {
   timeline: SessionDetailTimelinePoint[];
-  modelForCall: string[];
   compactionsAfterCall: boolean[];
 } {
   const timeline: SessionDetailTimelinePoint[] = [];
-  const modelForCall: string[] = [];
   const compactionsAfterCall: boolean[] = [];
 
   const turnNumberByCall = new Map<ApiCall, number>();
@@ -283,11 +281,10 @@ function buildTimeline(
       isTurnBoundary: firstOfTurn,
       isCompaction,
     });
-    modelForCall.push(call.model);
     compactionsAfterCall.push(isCompaction);
   }
 
-  return { timeline, modelForCall, compactionsAfterCall };
+  return { timeline, compactionsAfterCall };
 }
 
 // ---------------------------------------------------------------------------
@@ -303,33 +300,17 @@ function classifyCacheCause(ctx: CallTimelineContext, call: ApiCall): SessionDet
 
 function buildCacheStrip(
   orderedCalls: ApiCall[],
-  orderedCompactions: CompactionRecord[],
   compactionsAfterCall: boolean[],
 ): SessionDetailCachePoint[] {
   const points: SessionDetailCachePoint[] = [];
   let previousModel: string | undefined;
-  let seenCompaction = false;
-  let compactionIndex = 0;
 
   for (let i = 0; i < orderedCalls.length; i++) {
     const call = orderedCalls[i];
     if (!call) continue;
 
-    // Advance the compaction pointer based on call timestamp — the same
-    // rule the timeline uses, so the two panels agree.
-    while (compactionIndex < orderedCompactions.length) {
-      const marker = orderedCompactions[compactionIndex];
-      if (!marker?.timestamp) break;
-      if (Date.parse(marker.timestamp) <= Date.parse(call.timestamp)) {
-        compactionIndex++;
-        seenCompaction = true;
-      } else {
-        break;
-      }
-    }
-
     const cause: SessionDetailCacheCause = classifyCacheCause(
-      { previousModel, seenCompaction },
+      { previousModel, seenCompaction: compactionsAfterCall[i] === true },
       call,
     );
 
@@ -353,9 +334,6 @@ function buildCacheStrip(
       isWriteSpike,
     });
     previousModel = call.model;
-    // seenCompaction stays true once set — subsequent calls revert to
-    // model-switch/unexplained rather than re-asserting "compaction".
-    void compactionsAfterCall[i];
   }
 
   return points;
@@ -471,7 +449,6 @@ function buildTurns(
 function buildToolMixAndTimeline(
   orderedCalls: ApiCall[],
   toolResults: ToolResultBytesRecord[],
-  callToToolUseIds: Map<ApiCall, string[]>,
   logicalTurns: LogicalTurn[],
 ): { toolMix: SessionDetailToolMixItem[]; toolTimeline: SessionDetailToolTimelineEvent[] } {
   const toolStats = new Map<
@@ -504,7 +481,6 @@ function buildToolMixAndTimeline(
         turnNumber,
       });
     }
-    void callToToolUseIds; // currently unused; kept for future per-call enrichment
   }
 
   // Roll tool-result bytes by originating tool. We look up the tool name
@@ -575,51 +551,6 @@ function buildPrompts(
 // ---------------------------------------------------------------------------
 
 function buildWorkflow(logicalTurns: LogicalTurn[]): SessionDetailWorkflow {
-  let baseEditCount = 0;
-  let readFirstCount = 0;
-  let plannedCount = 0;
-  let verifiedCount = 0;
-  let committedCount = 0;
-
-  for (const group of logicalTurns) {
-    const allCalls: ApiCall[] = [];
-    if (group.main) allCalls.push(...group.main.calls);
-    for (const side of group.sidechains) allCalls.push(...side.calls);
-
-    const toolNames = new Set<string>();
-    let _hasCommit = false;
-    let hasRead = false;
-    let hasEdit = false;
-    let hasVerify = false;
-    for (const call of allCalls) {
-      for (const tool of call.tools) {
-        toolNames.add(tool.name);
-        if (EDIT_TOOLS.has(tool.name)) hasEdit = true;
-        if (READ_TOOLS.has(tool.name)) hasRead = true;
-        if (VERIFY_TOOLS.has(tool.name)) hasVerify = true;
-        if (PLAN_TOOLS.has(tool.name)) {
-          // `plannedCount` is the cumulative funnel stage, so once any
-          // planning tool shows up across the session the count includes
-          // every earlier edit turn too. We compute it below outside this
-          // per-turn loop.
-        }
-        if (tool.name === "Bash" && tool.bashKind === GIT_COMMIT_KIND) {
-          _hasCommit = true;
-        }
-      }
-    }
-
-    if (hasEdit) baseEditCount++;
-    // "Read first" — edit turn whose prompt-side work included a Read call
-    // before any Edit. We approximate via the same-turn presence of Read
-    // among Edit calls; a future revision could enforce strict ordering.
-    if (hasEdit && hasRead) readFirstCount++;
-    // "Planned" — turn that has any planning tool, OR every prior edit turn
-    // when later planning happens. We implement the cumulative invariant
-    // below; here we just record per-turn planning presence.
-    void hasVerify;
-  }
-
   // Compute cumulative stage counts: each later stage is monotonic non-
   // increasing (architecture A6). "Planned" turns = number of edit turns
   // that are either themselves planning or have an earlier turn that
@@ -677,11 +608,11 @@ function buildWorkflow(logicalTurns: LogicalTurn[]): SessionDetailWorkflow {
     editIndex++;
   }
 
-  baseEditCount = editIndex;
-  readFirstCount = editTurns.filter((t) => t.hasEdit && t.hasRead).length;
-  plannedCount = plannedAt;
-  verifiedCount = verifiedAt;
-  committedCount = committedAt;
+  const baseEditCount = editIndex;
+  const readFirstCount = editTurns.filter((t) => t.hasEdit && t.hasRead).length;
+  const plannedCount = plannedAt;
+  const verifiedCount = verifiedAt;
+  const committedCount = committedAt;
 
   return {
     baseEditCount,
@@ -797,22 +728,19 @@ export function projectSessionDetail(
     return aMs - bMs;
   });
 
-  const { timeline, modelForCall, compactionsAfterCall } = buildTimeline(
+  const { timeline, compactionsAfterCall } = buildTimeline(
     snapshot.calls,
     logicalTurns,
     orderedCompactions,
     runtime,
   );
-  void modelForCall; // reserved for future per-call premium enrichment
-
-  const cache = buildCacheStrip(snapshot.calls, orderedCompactions, compactionsAfterCall);
+  const cache = buildCacheStrip(snapshot.calls, compactionsAfterCall);
 
   const turns = buildTurns(logicalTurns, fleetTurnCostsSortedAsc, runtime);
 
   const { toolMix, toolTimeline } = buildToolMixAndTimeline(
     snapshot.calls,
     snapshot.toolResults,
-    new Map(), // reserved: pass precomputed toolUseId→call lookup when available
     logicalTurns,
   );
 

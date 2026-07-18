@@ -476,6 +476,54 @@ describe("GET /api/sessions — pagination, trace, and meta", () => {
     }
   });
 
+  it("include=trace merges main and sidechain segments that share a prompt", async () => {
+    const meta = buildRuntimeMetadata();
+    const traceStore = new Store({
+      onInvalidate: () => {},
+      pricer: meta.pricer,
+      pricing: meta.pricing,
+    });
+    const sessionId = "s-trace-sidechain";
+    const mainAt = iso(2026, 6, 10, 10, 0);
+    const sidechainAt = iso(2026, 6, 10, 10, 1);
+    traceStore.applyRecords(sessionId, {
+      calls: [
+        call({
+          sessionId,
+          messageId: "main",
+          timestamp: mainAt,
+          usage: { inputTokens: 1000, outputTokens: 0, cacheReadTokens: 0, cacheCreateTokens: 0 },
+        }),
+        call({
+          sessionId,
+          messageId: "side",
+          timestamp: sidechainAt,
+          isSidechain: true,
+          usage: { inputTokens: 500, outputTokens: 0, cacheReadTokens: 0, cacheCreateTokens: 0 },
+        }),
+      ],
+      prompts: [prompt(sessionId, "p-sidechain", "hi", mainAt)],
+      toolResultBytes: [],
+      compactions: [],
+      duplicateCount: 0,
+      malformedCount: 0,
+    });
+    const traceApp = buildApp({ store: traceStore, logger: false, metadata: meta });
+
+    try {
+      const response = await traceApp.inject({
+        method: "GET",
+        url: "/api/sessions?include=trace&limit=5",
+      });
+      const trace = response.json().items[0].trace;
+      expect(trace).toHaveLength(1);
+      expect(trace[0].cost).toBeCloseTo(0.0075);
+    } finally {
+      traceStore.stop();
+      await traceApp.close();
+    }
+  });
+
   it("include=trace rejects with 400 when limit exceeds the trace cap", async () => {
     const response = await app.inject({
       method: "GET",

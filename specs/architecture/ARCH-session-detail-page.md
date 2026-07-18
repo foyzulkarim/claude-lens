@@ -1003,7 +1003,8 @@ per-session invalidation tuple into the canonical query-key factory operation.
 
 **Must NOT modify:**
 
-- `client/src/ws.ts` (existing invalidation implementation is authoritative)
+- `client/src/ws.ts` except to replace the retired `qk.prefixes.session(id)` call with the
+  canonical `qk.session(id)` key; the resulting exact invalidation behavior is authoritative.
 - `shared/ws-protocol.ts` (no protocol change)
 - `server/ingest/` (HTTP never crosses into filesystem ingestion)
 
@@ -1073,7 +1074,8 @@ WebSocket invalidation path refetches exactly the addressed session.
 ### Scope Boundaries
 
 - Do NOT implement final page sections, chart options, or visual polish in this task.
-- Do NOT modify FilterBar, AppShell, or `client/src/ws.ts`.
+- Do NOT modify FilterBar or AppShell. `client/src/ws.ts` may make the same behavior-preserving
+  canonical-key migration described in T5.
 - Do NOT aggregate response data in React.
 - Only implement resource states, validated data handoff, and invalidation evidence.
 
@@ -1091,7 +1093,7 @@ WebSocket invalidation path refetches exactly the addressed session.
 
 **Must NOT modify:**
 
-- `client/src/ws.ts` (silent-regression hotspot)
+- `client/src/ws.ts` beyond the behavior-preserving canonical-key migration described in T5.
 - `client/src/filters/FilterBar.tsx` and `client/src/layout/AppShell.tsx` (global behavior is settled)
 - `client/src/charts/Chart.tsx` and `client/src/components/DataTable.tsx`
 

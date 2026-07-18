@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import type React from "react";
 import clsx from "clsx";
 import type { SessionDetailTimelinePoint } from "../../../../shared/session-detail-contract.js";
-import { formatCost, formatPercent, formatTokens } from "./format.js";
+import { formatCost, formatTokens } from "./format.js";
 import { TOGGLE_ACTIVE_CLASS, TOGGLE_CLASS } from "../../ui/toggleStyles.js";
 
 export interface CostTimelineProps {
@@ -69,6 +69,18 @@ export function CostTimeline({ timeline }: CostTimelineProps): React.JSX.Element
       </div>
 
       <TimelineChart timeline={timeline} values={values} display={display} metric={metric} />
+      <ul className="sr-only" aria-label="Timeline markers">
+        {timeline
+          .filter((point) => point.isTurnBoundary || point.isCompaction)
+          .map((point) => (
+            <li key={point.callIndex}>
+              Call {point.callIndex + 1}
+              {point.isTurnBoundary ? ` starts turn ${point.turnNumber}` : ""}
+              {point.isTurnBoundary && point.isCompaction ? " and" : ""}
+              {point.isCompaction ? " has a compaction marker" : ""}.
+            </li>
+          ))}
+      </ul>
     </section>
   );
 }
@@ -263,4 +275,3 @@ function summaryAriaLabel(values: number[], metric: Metric, total: number): stri
 
 // Suppress "unused" warnings for helpers only referenced through types or in
 // future sections.
-void formatPercent;

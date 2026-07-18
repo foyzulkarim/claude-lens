@@ -1,4 +1,7 @@
+import type { ColumnDef } from "@tanstack/react-table";
+import { useMemo } from "react";
 import type { SessionDetailPrompt } from "../../../../shared/session-detail-contract.js";
+import { DataTable } from "../../components/DataTable.js";
 
 export interface PromptListProps {
   prompts: SessionDetailPrompt[];
@@ -17,6 +20,32 @@ export interface PromptListProps {
  * them — it shows only `text` + `timestamp` from the contract.
  */
 export function PromptList({ prompts }: PromptListProps): React.JSX.Element {
+  const columns = useMemo<ColumnDef<SessionDetailPrompt>[]>(
+    () => [
+      {
+        header: "turn",
+        accessorKey: "turnNumber",
+        cell: ({ getValue }) => `#${getValue<number>()}`,
+        meta: { mono: true },
+      },
+      {
+        header: "timestamp",
+        accessorKey: "timestamp",
+        cell: ({ getValue }) => getValue<string>().slice(0, 16).replace("T", " "),
+        meta: { mono: true },
+      },
+      {
+        header: "prompt",
+        accessorKey: "text",
+        cell: ({ getValue }) => (
+          <span className="whitespace-pre-wrap break-words">
+            {getValue<string>() || "(empty prompt)"}
+          </span>
+        ),
+      },
+    ],
+    [],
+  );
   if (prompts.length === 0) {
     return (
       <section
@@ -38,22 +67,14 @@ export function PromptList({ prompts }: PromptListProps): React.JSX.Element {
       className="rounded-md border border-slate-200 bg-white p-4 dark:border-[#232B36] dark:bg-[#151A21]"
     >
       <h2 className="text-sm font-semibold text-slate-900 dark:text-[#E8EDF2]">Prompts</h2>
-      <ol className="mt-3 max-h-72 space-y-3 overflow-y-auto" aria-label="Ordered prompts">
-        {prompts.map((prompt) => (
-          <li
-            key={prompt.promptId}
-            className="border-b border-slate-100 pb-3 last:border-b-0 dark:border-[#232B36]"
-          >
-            <div className="flex items-baseline gap-2 text-[11px] text-slate-500 dark:text-[#8A96A5]">
-              <span className="font-mono">turn #{prompt.turnNumber}</span>
-              <span className="font-mono">{prompt.timestamp.slice(0, 16).replace("T", " ")}</span>
-            </div>
-            <p className="mt-1 whitespace-pre-wrap break-words text-sm text-slate-900 dark:text-[#E8EDF2]">
-              {prompt.text || "(empty prompt)"}
-            </p>
-          </li>
-        ))}
-      </ol>
+      <div className="mt-3 max-h-72 overflow-auto">
+        <DataTable
+          data={prompts}
+          columns={columns}
+          getRowId={(prompt) => prompt.promptId}
+          label="Ordered prompts"
+        />
+      </div>
     </section>
   );
 }
