@@ -551,5 +551,834 @@ changes.
 
 # Tasks
 
-_This section is populated by the **generate-tasks** skill (Phase 3)._
-_Run: `/generate-tasks from: specs/architecture/ARCH-sessions-page.md`_
+## Task T1: Establish the Session Population Core
+
+> **Status:** not started
+> **Date:** 2026-07-18
+> **Verification:** tdd
+> **Effort:** m
+> **Priority:** critical
+> **Depends on:** None
+> **Satisfies REQs:** R2, R3, R7, R9, R11, R14
+> **Footprint slice:** New: session-population helper and tests; Modified: Sessions contract and
+> metrics engine session-scope path
+> **High-risk areas touched:** Shared metrics contract/engine (H); Sessions HTTP/client contract (M)
+
+### Description
+
+Define the strict Sessions-page vocabulary and the single server-side predicate that decides which
+sessions participate in every page section. Replace the metrics engine's repeated per-session scans
+with request-local session indexes while preserving all existing series and distribution semantics.
+
+### Test Plan
+
+#### Test File(s)
+
+- `shared/sessions-contract.test.ts`
+- `server/metrics/session-population.test.ts`
+- `server/metrics/engine.test.ts`
+
+#### Test Scenarios
+
+##### Contract Vocabulary
+
+- **keeps compact and page contracts distinct** — GIVEN existing compact session-list types WHEN
+  page projection types are added THEN both contracts remain constructible without widening the
+  compact item or response _(verifies R3, R14)_
+
+##### Population Matching
+
+- **matches inclusive range and categorical criteria** — GIVEN sessions at range boundaries and
+  varied project/model/branch/host/entrypoint values WHEN criteria are applied THEN only sessions
+  satisfying every active criterion match _(verifies R2)_
+- **selects whole sessions for a model criterion** — GIVEN a multi-model session WHEN one model is
+  allowed THEN the session matches and its scope retains all calls and turns _(verifies R2)_
+- **composes cost, drilldown, and ID criteria** — GIVEN sessions above/below cost bounds, with/without
+  turns, and multiple IDs WHEN criteria are combined THEN the exact intersection matches and
+  `hasDrilldown` means `turnCount > 0` _(verifies R2, R7, R9)_
+- **excludes unusable session timestamps** — GIVEN a session with an empty or unparseable start WHEN
+  a ranged population is built THEN it does not silently enter the population _(verifies R2)_
+
+##### Scope Indexing and Scale
+
+- **isolates a large synthetic population by session** — GIVEN many sessions, calls, and turns WHEN
+  indexed scopes are built THEN each session receives only its own records and exact totals
+  _(verifies R11 and the ARCH scale scenario)_
+
+##### Regression Guard
+
+- **preserves existing metrics outputs** — GIVEN the existing engine fixtures WHEN series and
+  distribution queries run through indexed scopes THEN grouping, range, cost basis, smoothing,
+  compare, and distribution results remain unchanged _(guards backward-regression risk for
+  `server/metrics/measures.ts` and `server/metrics/distributions.ts`)_
+
+### Implementation Notes
+
+- **Module(s):** `shared/sessions-contract.ts`, `server/metrics/session-population.ts`,
+  `server/metrics/engine.ts`
+- **Pattern reference:** pure extraction/matching helpers in `server/metrics/dimensions.ts`
+- **Key decisions:** A2 single population; A5 exact aggregate with bounded rendering later
+- **Libraries:** TypeScript and Vitest only
+- **High-risk callouts:** The engine is H-risk. Keep selection separate from measure computation and
+  pin every existing engine mode before later scatter dispatch touches the same file.
+
+### Scope Boundaries
+
+- Do NOT change `Session`, `Measure`, or distribution calculation semantics.
+- Do NOT add HTTP parsing, page projection, scatter mode, premium ingestion, or gate calculation.
+- Only implement shared vocabulary, canonical matching, and indexed session scopes.
+
+### Files Expected
+
+**New files:**
+
+- `server/metrics/session-population.ts` (canonical matcher and scope indexing, following
+  `server/metrics/dimensions.ts`)
+- `server/metrics/session-population.test.ts` (population contract coverage)
+
+**Modified files:**
+
+- `shared/sessions-contract.ts` (add page/population vocabulary while preserving compact types)
+- `shared/sessions-contract.test.ts` (pin both contract families)
+- `server/metrics/engine.ts` (reuse indexed entity scopes without adding scatter yet)
+- `server/metrics/engine.test.ts` (population and aggregate regression coverage)
+
+**Must NOT modify:**
+
+- `shared/types.ts` (existing derived data shape is sufficient)
+- `server/metrics/measures.ts` (single source of measure semantics)
+- `server/metrics/distributions.ts` (single source of exact distribution semantics)
+
+### TDD Sequence
+
+1. Add failing contract and population-matcher tests.
+2. Add failing scope-isolation and engine-regression tests.
+3. Implement the contract, matcher, and index path until all old/new engine tests pass.
+
+---
+
+## Task T2: Add the Sessions Page API Projection
+
+> **Status:** not started
+> **Date:** 2026-07-18
+> **Verification:** tdd
+> **Effort:** m
+> **Priority:** high
+> **Depends on:** T1
+> **Satisfies REQs:** R2, R3, R4, R7, R9, R11, R12
+> **Footprint slice:** Modified: sessions route/tests and client sessions wrapper/tests
+> **High-risk areas touched:** Sessions HTTP/client contract (M); Existing Dashboard (M)
+
+### Description
+
+Add `view=page`, expanded page filters/sorts, timeline projection, and comparison hydration to the
+existing Sessions endpoint. Provide a separately guarded client wrapper so the compact Dashboard
+response and trace behavior remain unchanged by default.
+
+### Test Plan
+
+#### Test File(s)
+
+- `server/routes/sessions.test.ts`
+- `client/src/api/sessions.test.ts`
+
+#### Test Scenarios
+
+##### Page Projection
+
+- **returns strict page rows with exact paging** — GIVEN a matched population with tied values WHEN
+  `view=page` requests a supported sort and page THEN fields, total, order, tie-breaking, and page
+  boundaries are exact _(verifies R3)_
+- **builds timeline before pagination** — GIVEN more matched sessions than one table page WHEN
+  `include=timeline` is requested THEN timeline metadata describes the full eligible population and
+  the table remains paged _(verifies R4, R11)_
+- **discloses timeline exclusions and sampling** — GIVEN invalid timestamps or more than 500 eligible
+  sessions WHEN timeline is projected THEN exclusion and sampling counts are honest and the returned
+  set is bounded _(verifies R4, R11)_
+- **hydrates comparison under current criteria** — GIVEN two or three selected IDs WHEN page filters
+  are active THEN only selected sessions still in that population are returned _(verifies R2, R7,
+  R9)_
+
+##### Validation and Client Boundary
+
+- **rejects invalid page requests** — GIVEN contradictory/non-finite cost bounds, oversized ID lists,
+  unknown sorts, or incompatible view/include pairs WHEN requested THEN the route returns HTTP 400
+  with `{ error }` _(verifies R2)_
+- **guards and cancels page requests** — GIVEN valid, malformed, rejected, and aborted page responses
+  WHEN the client wrapper runs THEN valid data resolves, malformed data throws a shape error,
+  non-2xx throws a typed API error, and cancellation propagates _(verifies R3)_
+
+##### Stress and Regression Guard
+
+- **keeps concurrent sorting request-local** — GIVEN concurrent requests with different sorts WHEN
+  both complete THEN each is deterministic and Store order is unchanged _(verifies ARCH concurrency
+  scenario)_
+- **preserves compact route behavior and registration** — GIVEN existing Dashboard/trace requests
+  WHEN the extended route is registered THEN summary shape, trace caps, capture/extent metadata,
+  route count, and `/api/metrics` reachability remain unchanged _(guards backward-regression risk for
+  `client/src/pages/dashboard/*` and `server/app.ts`)_
+
+### Implementation Notes
+
+- **Module(s):** `server/routes/sessions.ts`, `client/src/api/sessions.ts`
+- **Pattern reference:** current sessions parser/projector and response guard in the same files
+- **Key decisions:** A1 page discriminator; A2 shared population; A5 bounded timeline; A10 compare
+- **Libraries:** Fastify, TypeScript, Vitest
+- **High-risk callouts:** Existing Dashboard consumers share this endpoint. Default requests must not
+  receive page-only required fields or changed trace/meta semantics.
+
+### Scope Boundaries
+
+- Do NOT add Session Detail, Turn Inspector, raw transcript, search, tags, gates, or premium parsing.
+- Do NOT replace the compact response or register a new endpoint.
+- Only implement page projection, validation, timeline, compare hydration, and page client guarding.
+
+### Files Expected
+
+**New files:**
+
+- None.
+
+**Modified files:**
+
+- `server/routes/sessions.ts` (validate/project page responses and timeline)
+- `server/routes/sessions.test.ts` (page behavior and compact-route regression coverage)
+- `client/src/api/sessions.ts` (serialize/guard `listSessionsPage` separately)
+- `client/src/api/sessions.test.ts` (page wrapper and compact-wrapper regression coverage)
+
+**Must NOT modify:**
+
+- `server/app.ts` (route already registered exactly once)
+- `client/src/pages/dashboard/*` (compact consumers must remain compatible)
+
+### TDD Sequence
+
+1. Add failing route validation/projection/timeline tests.
+2. Implement the server page discriminator without changing defaults.
+3. Add failing client serialization/shape tests, then implement the page wrapper.
+
+---
+
+## Task T3: Implement the Scatter Metrics Core
+
+> **Status:** not started
+> **Date:** 2026-07-18
+> **Verification:** tdd
+> **Effort:** m
+> **Priority:** critical
+> **Depends on:** T1
+> **Satisfies REQs:** R2, R5, R6, R11, R14
+> **Footprint slice:** New: scatter calculator/tests; Modified: metrics contract and engine dispatch
+> **High-risk areas touched:** Shared metrics contract/engine (H)
+
+### Description
+
+Define the discriminated session-scatter contract and implement measure pairing, full-population
+ordinary-least-squares regression, eligibility accounting, and deterministic visual sampling. Add
+engine dispatch without changing the existing series/distribution result family.
+
+### Test Plan
+
+#### Test File(s)
+
+- `shared/metrics-contract.test.ts`
+- `server/metrics/scatter.test.ts`
+- `server/metrics/engine.test.ts`
+
+#### Test Scenarios
+
+##### Scatter Contract and Calculation
+
+- **keeps scatter discriminated from aggregate metrics** — GIVEN the metrics type vocabulary WHEN a
+  scatter query/result is constructed THEN aggregate callers remain narrowed to `Series[]`
+  _(verifies R5, R14)_
+- **pairs arbitrary measures from complete session scopes** — GIVEN supported x/y/optional-size
+  measures WHEN scatter is computed THEN every eligible point uses existing measure semantics and
+  full-session records _(verifies R2, R5)_
+- **computes a known regression exactly** — GIVEN hand-computed session points WHEN regression runs
+  THEN slope, intercept, and R-squared match expected values over the full eligible set _(verifies
+  R5)_
+- **returns null for degenerate regression** — GIVEN zero/one point or identical X values WHEN
+  scatter is computed THEN regression is null and no result field is NaN or infinite _(verifies ARCH
+  degenerate-population scenario)_
+
+##### Sampling and Availability
+
+- **caps only visual identities** — GIVEN more than 500 eligible sessions WHEN scatter is computed
+  THEN points are deterministic and outlier-preserving, counts disclose sampling, and regression
+  still reflects the full set _(verifies R5, R11)_
+- **excludes unavailable measures honestly** — GIVEN transcript-only sessions and a premium measure
+  WHEN scatter is computed THEN null-valued entities are excluded/count-reported rather than emitted
+  as zero _(verifies R5)_
+
+##### Engine Regression Guard
+
+- **preserves ordinary metrics modes** — GIVEN existing series/distribution/compare/smoothing
+  fixtures WHEN scatter dispatch is added THEN every existing result remains unchanged and session
+  distributions use the canonical population _(verifies R6; guards backward-regression risk for
+  `server/metrics/measures.ts` and `server/metrics/distributions.ts`)_
+
+### Implementation Notes
+
+- **Module(s):** `shared/metrics-contract.ts`, `server/metrics/scatter.ts`,
+  `server/metrics/engine.ts`
+- **Pattern reference:** `server/metrics/distributions.ts` for pure exact analytics helpers
+- **Key decisions:** A3 existing distributions; A4 discriminated scatter; A5 full aggregate before cap
+- **Libraries:** TypeScript and Vitest only
+- **High-risk callouts:** Metrics is H-risk. Reuse `computeMeasure`, keep response families narrowed,
+  and make sampling a post-calculation projection.
+
+### Scope Boundaries
+
+- Do NOT add measure/dimension literals or client-side numerical logic.
+- Do NOT approximate histogram or regression and do not add non-session scatter entities.
+- Only implement shared scatter types, pure calculation, and engine dispatch.
+
+### Files Expected
+
+**New files:**
+
+- `server/metrics/scatter.ts` (session point projection, regression, sampling)
+- `server/metrics/scatter.test.ts` (pure scatter behavior)
+
+**Modified files:**
+
+- `shared/metrics-contract.ts` (add discriminated scatter query/result)
+- `shared/metrics-contract.test.ts` (pin discriminators and exhaustive guards)
+- `server/metrics/engine.ts` (dispatch scatter using T1 population/indexes)
+- `server/metrics/engine.test.ts` (scatter dispatch and existing-mode regression coverage)
+
+**Must NOT modify:**
+
+- `server/metrics/measures.ts` (reuse existing measure semantics)
+- `server/metrics/distributions.ts` (retain exact histogram/percentile implementation)
+
+### TDD Sequence
+
+1. Add failing contract and pure-regression tests.
+2. Add failing eligibility/sampling tests and implement the pure helper.
+3. Add failing engine-dispatch/regression tests, then wire the new mode.
+
+---
+
+## Task T4: Expose Scatter Through the Metrics Boundary
+
+> **Status:** not started
+> **Date:** 2026-07-18
+> **Verification:** tdd
+> **Effort:** s
+> **Priority:** high
+> **Depends on:** T3
+> **Satisfies REQs:** R2, R5, R6, R12, R14
+> **Footprint slice:** New: client metrics tests; Modified: metrics HTTP route and client wrapper
+> **High-risk areas touched:** Shared metrics contract/engine (H)
+
+### Description
+
+Validate scatter/session-population requests at the existing metrics HTTP boundary and expose them
+through a separately narrowed, response-guarded client wrapper. Preserve `postMetrics` and every
+existing query/invalidation consumer as aggregate-only paths.
+
+### Test Plan
+
+#### Test File(s)
+
+- `server/routes/metrics.test.ts`
+- `client/src/api/metrics.test.ts`
+
+#### Test Scenarios
+
+##### HTTP Validation
+
+- **returns the response family selected by mode** — GIVEN valid scatter and aggregate requests WHEN
+  posted THEN scatter returns a discriminated object and series/distribution continue returning
+  arrays _(verifies R5, R6)_
+- **rejects malformed scatter input** — GIVEN unknown modes/entities/measures, invalid ranges/caps,
+  or malformed session-population criteria WHEN posted THEN the route returns HTTP 400 with
+  `{ error }` before engine computation _(verifies R2, R5)_
+
+##### Client Boundary
+
+- **preserves the aggregate wrapper** — GIVEN an aggregate query and `Series[]` response WHEN
+  `postMetrics` runs THEN current serialization, cancellation, errors, and result typing remain
+  unchanged _(guards backward-regression risk for existing metrics callers)_
+- **guards scatter responses** — GIVEN valid and malformed scatter responses WHEN
+  `postScatterMetrics` runs THEN valid data resolves and malformed 2xx data throws a shape error
+  _(verifies R5)_
+- **surfaces rejected and aborted scatter requests** — GIVEN non-2xx or cancellation WHEN the scatter
+  wrapper runs THEN it throws the typed failure or propagates the abort _(verifies ARCH API-failure
+  scenario)_
+
+##### Invalidation Regression Guard
+
+- **retains existing query prefixes** — GIVEN both metrics query families WHEN keys are built and a
+  session invalidation arrives THEN existing metrics prefixes cover them without a new WS message
+  _(guards backward-regression risk for `client/src/api/queryKeys.ts` and `client/src/ws.ts`)_
+
+### Implementation Notes
+
+- **Module(s):** `server/routes/metrics.ts`, `client/src/api/metrics.ts`
+- **Pattern reference:** validation/typed-error patterns in metrics route and `client/src/api/sessions.ts`
+- **Key decisions:** A4 separate scatter result; A12 reuse endpoint, keys, WS, auth, deployment
+- **Libraries:** Fastify, Fetch API, TypeScript, Vitest
+- **High-risk callouts:** Never cast a widened HTTP union through the existing aggregate wrapper;
+  each wrapper must validate the response shape it promises.
+
+### Scope Boundaries
+
+- Do NOT add an endpoint, query prefix, WS message, auth layer, or telemetry system.
+- Do NOT change engine math or page rendering.
+- Only implement HTTP validation/dispatch and client serialization/guarding.
+
+### Files Expected
+
+**New files:**
+
+- `client/src/api/metrics.test.ts` (aggregate/scatter wrapper coverage)
+
+**Modified files:**
+
+- `server/routes/metrics.ts` (validate/discriminate scatter requests)
+- `server/routes/metrics.test.ts` (scatter HTTP and aggregate regression coverage)
+- `client/src/api/metrics.ts` (narrow aggregate wrapper and add scatter wrapper)
+
+**Must NOT modify:**
+
+- `client/src/api/queryKeys.ts` (existing key factory accepts the query union)
+- `client/src/ws.ts` (existing metrics prefix invalidation is sufficient)
+
+### TDD Sequence
+
+1. Add failing HTTP validation/response-family tests.
+2. Implement route discrimination.
+3. Add failing client guard/error/cancellation tests, then add the scatter wrapper.
+
+---
+
+## Task T5: Establish Canonical Sessions URL State
+
+> **Status:** not started
+> **Date:** 2026-07-18
+> **Verification:** tdd
+> **Effort:** m
+> **Priority:** high
+> **Depends on:** T1
+> **Satisfies REQs:** R2, R5, R6, R7, R10, R12
+> **Footprint slice:** New: Sessions page state/tests; Modified: global filter state and hook
+> **High-risk areas touched:** URL/filter ownership (M)
+
+### Description
+
+Create the canonical parser/serializer and query builders for every shareable Sessions control.
+Change global FilterBar commits to patch their owned keys so incoming drill parameters and
+Sessions-specific state survive global range/chip changes and browser history.
+
+### Test Plan
+
+#### Test File(s)
+
+- `client/src/filters/state.test.ts`
+- `client/src/pages/sessions/state.test.ts`
+
+#### Test Scenarios
+
+##### Page State
+
+- **round-trips all Sessions controls canonically** — GIVEN filters, sort/order/offset, views,
+  scatter measures, and comparison IDs WHEN serialized and parsed THEN values round-trip in stable
+  order with defaults omitted _(verifies R2, R7, R10)_
+- **normalizes malformed page values** — GIVEN invalid enums/dates/cost bounds, duplicate IDs, or
+  more than three IDs WHEN parsed THEN safe defaults/unique capped values result and no invalid query
+  is emitted _(verifies R2, R7, R10)_
+
+##### Query Mapping
+
+- **builds one population for every API** — GIVEN global and page filters WHEN list, distribution,
+  and scatter queries are built THEN resolved range and population criteria are equivalent
+  _(verifies R2, R5, R6)_
+- **maps Dashboard drill state into page queries** — GIVEN incoming `from`/`to` and categorical URL
+  values WHEN page queries are built THEN the Sessions population matches the drill URL _(verifies
+  R12)_
+
+##### Global Filter Merge and Regression Guard
+
+- **preserves page-owned keys on global updates** — GIVEN a Sessions URL with page state WHEN range
+  or global chips change THEN only global keys are replaced and page keys remain _(verifies R10)_
+- **removes cleared global keys only** — GIVEN active global and page values WHEN a global filter is
+  cleared THEN its key disappears without disturbing other state _(verifies R10)_
+- **preserves navigation history behavior** — GIVEN global filter changes through `useFilters` WHEN
+  committed THEN navigation remains a real history entry rather than hidden local state _(guards
+  backward-regression risk for global FilterBar behavior)_
+
+### Implementation Notes
+
+- **Module(s):** `client/src/filters/state.ts`, `client/src/filters/useFilters.ts`,
+  `client/src/pages/sessions/state.ts`
+- **Pattern reference:** pure URL core in `client/src/filters/state.ts`
+- **Key decisions:** A6 all shareable state in URL; A7 patch global-owned keys
+- **Libraries:** wouter, URLSearchParams, TypeScript, Vitest
+- **High-risk callouts:** URL ownership is M-risk. Keep page parsing pure, canonical, and separate
+  from the global `FilterState` vocabulary.
+
+### Scope Boundaries
+
+- Do NOT add Sessions fields to global `FilterState`, React context, or browser storage.
+- Do NOT change FilterBar rendering or API fetch logic.
+- Only implement URL parsing/serialization, query mapping, and global-key merging.
+
+### Files Expected
+
+**New files:**
+
+- `client/src/pages/sessions/state.ts` (Sessions state and query builders)
+- `client/src/pages/sessions/state.test.ts` (canonical URL/query coverage)
+
+**Modified files:**
+
+- `client/src/filters/state.ts` (pure global-key merge)
+- `client/src/filters/state.test.ts` (merge regression coverage)
+- `client/src/filters/useFilters.ts` (commit merged search state)
+
+**Must NOT modify:**
+
+- `client/src/filters/FilterBar.tsx` (existing UI consumes the hook unchanged)
+- `client/src/api/queryKeys.ts` (existing factories remain canonical)
+
+### TDD Sequence
+
+1. Add failing page parse/serialize/query-builder tests.
+2. Implement the page state core.
+3. Add failing global-merge regression tests, then update `useFilters` commits.
+
+---
+
+## Task T6: Extend the Shared Table and Chart Primitives
+
+> **Status:** not started
+> **Date:** 2026-07-18
+> **Verification:** test-after
+> **Effort:** s
+> **Priority:** medium
+> **Depends on:** None
+> **Satisfies REQs:** R3, R5, R6, R13
+> **Footprint slice:** New: DataTable tests; Modified: DataTable and Chart implementations/stories
+> **High-risk areas touched:** Shared DataTable (M); Shared Chart (M)
+
+### Description
+
+Add opt-in externally controlled/manual sorting to `DataTable` and register scatter options through
+the existing ECharts lifecycle shell. Keep the current uncontrolled table and time-series chart
+paths as the defaults for every existing consumer.
+
+### Test Plan
+
+#### Test File(s)
+
+- `client/src/components/DataTable.test.tsx`
+- `client/src/charts/Chart.test.tsx`
+
+#### Test Scenarios
+
+##### Controlled and Existing Table Behavior
+
+- **reports controlled sorting without local reorder** — GIVEN manual sorting props WHEN a sortable
+  header is activated THEN the callback receives the next state and supplied page order remains
+  unchanged _(verifies R3)_
+- **announces controlled sort state** — GIVEN externally controlled ascending/descending state WHEN
+  rendered THEN the header exposes matching `aria-sort` _(verifies R3, R13)_
+- **preserves the uncontrolled path** — GIVEN an existing DataTable caller WHEN headers,
+  virtualization, or row actions are used THEN internal sorting and accessibility behavior remain
+  unchanged _(guards backward-regression risk for existing table consumers)_
+
+##### Chart Registration and Regression Guard
+
+- **registers and renders scatter options** — GIVEN a scatter option WHEN Chart mounts THEN ECharts
+  receives the option and click handling works _(verifies R5)_
+- **preserves chart lifecycle** — GIVEN existing line/bar options WHEN Chart mounts, resizes,
+  rerenders, and unmounts THEN initialization, resize, setOption, and disposal behavior remain
+  unchanged _(guards backward-regression risk for `client/src/charts/ChartCard.tsx`)_
+- **renders shared Storybook states** — GIVEN controlled-table and scatter stories WHEN Storybook
+  loads THEN both states render without errors alongside existing stories _(verifies R13)_
+
+### Implementation Notes
+
+- **Module(s):** `client/src/components/DataTable.tsx`, `client/src/charts/Chart.tsx`
+- **Pattern reference:** existing prop-discriminated DataTable unions and Chart lifecycle effects
+- **Key decisions:** A8 opt-in controlled sorting; A9 reuse ECharts with semantic UI handled by pages
+- **Libraries:** TanStack Table/Virtual, ECharts, React, Testing Library, Storybook
+- **High-risk callouts:** Both primitives are M-risk. Add narrow opt-in paths and retain all existing
+  tests rather than changing default control ownership.
+
+### Scope Boundaries
+
+- Do NOT redesign DataTable, ChartCard, or the global chart layer.
+- Do NOT add Sessions business logic, a chart library, or generic chart controls.
+- Only add controlled sorting and scatter registration/generic option typing.
+
+### Files Expected
+
+**New files:**
+
+- `client/src/components/DataTable.test.tsx` (controlled and regression coverage)
+
+**Modified files:**
+
+- `client/src/components/DataTable.tsx` (optional controlled/manual sorting)
+- `client/src/components/DataTable.stories.tsx` (controlled sorting story)
+- `client/src/charts/Chart.tsx` (scatter registration and generic option boundary)
+- `client/src/charts/Chart.test.tsx` (registration/lifecycle regression coverage)
+- `client/src/charts/Chart.stories.tsx` (scatter-family story)
+
+**Must NOT modify:**
+
+- `client/src/charts/ChartCard.tsx` (existing time-series consumer remains unchanged)
+
+---
+
+## Task T7: Build the Session Browser and Controls
+
+> **Status:** not started
+> **Date:** 2026-07-18
+> **Verification:** ui
+> **Effort:** l
+> **Priority:** high
+> **Depends on:** T2, T5, T6
+> **Satisfies REQs:** R1, R2, R3, R4, R7, R8, R9, R10, R11, R13
+> **Footprint slice:** New: search slot, page filters, session browser, compare components with tests
+> and stories
+> **High-risk areas touched:** Sessions page UI (M); URL/filter ownership (M); Sessions HTTP/client
+> contract (M)
+
+### Description
+
+Build the Sessions identity-oriented UI: stable search seam, page filters, exact sortable/paged
+table, semantic timeline, row selection, and two/three-session comparison. All components consume
+the established URL/API boundaries and render unavailable future-owned data honestly.
+
+### Verification Checklist
+
+- **Search integration seam** — expected: a clearly unavailable prompt-search mount point renders,
+  performs no request, and can later be replaced without changing the Sessions shell _(R8)_
+- **Page filters** — expected: cost, entrypoint, and drilldown controls update canonical URL state and
+  reset pagination; gate/tag controls are visibly unavailable _(R2, R8, R10)_
+- **Exact session table** — expected: required transcript columns, optional premium/gate/tag states,
+  server sorting, paging, selection, and accessible drill actions render correctly _(R3)_
+- **No-refetch view toggle** — expected: table/timeline switching uses the already-fetched response
+  and preserves the exact population _(R4)_
+- **Semantic timeline** — expected: each bar is a focusable session link and sampling/invalid-time
+  exclusions are visible when present _(R4, R11, R13)_
+- **Bounded comparison** — expected: two/three IDs persist in the URL, a fourth is blocked, and IDs
+  that stop matching show an honest unavailable state _(R7, R10)_
+- **Component-state coverage** — expected: Storybook visibly covers loading, empty, error, sampled,
+  transcript-only, premium, two-way, three-way, and missing-selection states _(R13)_
+- **Accessible responsive review** — expected: keyboard order/names and desktop/narrow layouts follow
+  established page patterns with no inaccessible canvas-only action _(R13)_
+
+#### Testable Seams
+
+- URL update handlers and pagination reset
+- Controlled sorting/paging and row selection
+- Timeline link names and sampling messages
+- Compare limit, hydration, and missing-ID conditions
+- Loading, empty, error, and tier-dependent conditional rendering
+
+### Implementation Notes
+
+- **Module(s):** page components under `client/src/pages/sessions/`
+- **Pattern reference:** `FilterBar.tsx`, `LeaderboardsCard.tsx`, its tests/stories, and
+  `RecordsStrip.tsx`
+- **Key decisions:** A9 semantic timeline; A10 URL comparison; A11 explicit integration seams
+- **Libraries:** React, wouter, TanStack Query/Table, Tailwind, Testing Library, Storybook
+- **High-risk callouts:** Do not duplicate URL population logic in components. The browser must use
+  the strict page wrapper and share one response between table/timeline.
+
+### Scope Boundaries
+
+- Do NOT implement real search, tags, gates, premium parsing, exports, or detail pages.
+- Do NOT calculate analytics or add local/session persistence.
+- Only implement identity views, filters, selection, compare, and their component states.
+
+### Files Expected
+
+**New files:**
+
+- `client/src/pages/sessions/PromptSearchSlot.tsx` (stable #P4-3 mount point)
+- `client/src/pages/sessions/SessionsFilters.tsx` (page-only controls)
+- `client/src/pages/sessions/SessionsFilters.test.tsx` (interaction coverage)
+- `client/src/pages/sessions/SessionsFilters.stories.tsx` (filter states)
+- `client/src/pages/sessions/SessionBrowser.tsx` (table/timeline/query ownership)
+- `client/src/pages/sessions/SessionBrowser.test.tsx` (browser interactions)
+- `client/src/pages/sessions/SessionBrowser.stories.tsx` (browser states)
+- `client/src/pages/sessions/SessionCompare.tsx` (bounded comparison)
+- `client/src/pages/sessions/SessionCompare.test.tsx` (comparison interactions)
+- `client/src/pages/sessions/SessionCompare.stories.tsx` (comparison states)
+
+**Modified files:**
+
+- None.
+
+**Must NOT modify:**
+
+- `specs/pages/sessions.html` and `specs/pages/sessions.png` (read-only visual references)
+- `client/src/routes.ts` (existing `/sessions` path is stable)
+- Session Detail and Turn Inspector modules (separate issues)
+
+---
+
+## Task T8: Compose the Sessions Analytics Page
+
+> **Status:** not started
+> **Date:** 2026-07-18
+> **Verification:** ui
+> **Effort:** l
+> **Priority:** high
+> **Depends on:** T3, T4, T5, T6, T7
+> **Satisfies REQs:** R1, R5, R6, R8, R11, R12, R13
+> **Footprint slice:** New: distribution/scatter components and page test; Modified: Sessions page shell
+> **High-risk areas touched:** Shared metrics contract/engine (H); Sessions page UI (M); Shared Chart
+> (M)
+
+### Description
+
+Build the cost-distribution and efficiency-scatter cards, then replace the `/sessions` stub with the
+complete page composition in binding spec order. Keep analytics server-produced, canvas content
+semantically equivalent, and fetch failures isolated to their owning sections.
+
+### Verification Checklist
+
+- **Binding section order** — expected: every Sessions table row is represented in the page and
+  compare/tag treatment missing from the mockup is still visible _(R1, R8)_
+- **Exact cost distribution** — expected: histogram and p50/p90/p99 toggle over one server result
+  without client aggregation or refetch-driven population changes _(R6)_
+- **Distribution accessibility** — expected: bucket and percentile values are available in semantic
+  non-canvas content _(R6, R13)_
+- **Scatter controls and interaction** — expected: presets/custom measures render points/regression,
+  and point activation identifies/filters the corresponding session _(R5)_
+- **Scatter edge states** — expected: degenerate, unavailable-premium, sampled, empty, loading, and
+  error states are finite, honest, and visible _(R5, R11)_
+- **Section-local failures** — expected: failing sessions, distribution, or scatter requests do not
+  unmount successful sibling sections _(ARCH API-failure scenario)_
+- **Live invalidation** — expected: mounted list/distribution/scatter queries use existing prefixes
+  and refresh after session invalidation _(R12)_
+- **Visual comparison** — expected: desktop and narrow layouts follow `sessions.html`/`.png` for
+  typography, spacing, color, hierarchy, and shared chrome _(R13)_
+
+#### Testable Seams
+
+- Distribution query and histogram/percentile toggle
+- Scatter preset/custom query construction and point activation
+- Semantic chart summaries/tables
+- Empty, unavailable, sampled, loading, and error branches
+- Whole-page section composition and independent failures
+
+### Implementation Notes
+
+- **Module(s):** analytics components under `client/src/pages/sessions/` and
+  `client/src/pages/Sessions.tsx`
+- **Pattern reference:** `ChartCard.tsx`, its tests/stories, and `Dashboard.tsx` composition shell
+- **Key decisions:** A3 exact distribution; A4 server scatter; A9 accessible ECharts; A11 seams; A12
+  existing invalidation
+- **Libraries:** React, TanStack Query, ECharts through `Chart`, Tailwind, Testing Library, Storybook
+- **High-risk callouts:** Metrics is H-risk. Components must render contract results rather than
+  re-aggregate page rows or weaken response typing.
+
+### Scope Boundaries
+
+- Do NOT implement search, tags, gates, exports, detail endpoints, or client-side analytics math.
+- Do NOT add query prefixes, WS events, or infrastructure.
+- Only implement analytics presentation and final Sessions page composition.
+
+### Files Expected
+
+**New files:**
+
+- `client/src/pages/sessions/CostDistributionCard.tsx` (distribution query/presentation)
+- `client/src/pages/sessions/CostDistributionCard.test.tsx` (component state coverage)
+- `client/src/pages/sessions/CostDistributionCard.stories.tsx` (distribution stories)
+- `client/src/pages/sessions/EfficiencyScatterCard.tsx` (scatter query/presentation)
+- `client/src/pages/sessions/EfficiencyScatterCard.test.tsx` (component state coverage)
+- `client/src/pages/sessions/EfficiencyScatterCard.stories.tsx` (scatter stories)
+- `client/src/pages/sessions/Sessions.test.tsx` (whole-page composition/error coverage)
+
+**Modified files:**
+
+- `client/src/pages/Sessions.tsx` (replace PageStub with binding-order composition)
+
+**Must NOT modify:**
+
+- `client/src/routes.ts` (route already targets Sessions)
+- `client/src/ws.ts` and `client/src/api/queryKeys.ts` (existing invalidation prefixes)
+- `client/src/charts/ChartCard.tsx` (existing generic time-series card)
+
+---
+
+## Task T9: Complete the Phase 4 Sessions Page Gate
+
+> **Status:** not started
+> **Date:** 2026-07-18
+> **Verification:** checklist
+> **Effort:** m
+> **Priority:** high
+> **Depends on:** T8
+> **Satisfies REQs:** R1, R12, R13, R14
+> **Footprint slice:** New: Sessions Cypress smoke; Modified: Dashboard drill smoke and fixture docs
+> **High-risk areas touched:** Sessions page UI (M); Existing Dashboard (M)
+
+### Description
+
+Verify the built Sessions page against the existing fixture population, cross-page drill contract,
+repository quality gates, Storybook states, and visual reference. This is the Phase 4 page completion
+gate, not a place to add product behavior or rewrite fixtures to suit the UI.
+
+### Verification Checklist
+
+- **Sessions fixture smoke** — expected: the built `/sessions` route renders every binding section
+  from the existing four-session fixture set _(R1, R13)_
+- **Fixture-derived sections** — expected: real fixture values appear in table, timeline,
+  distribution, scatter, and the comparison journey _(R13)_
+- **Session drill** — expected: keyboard/pointer activation reaches the expected `/sessions/:id`
+  destination _(R13)_
+- **Filtered Dashboard drill** — expected: the Sessions stat navigates with filters and the live page
+  visibly renders only the matching population _(R12)_
+- **Repository verification** — expected: `npm run verify` exits 0 after typecheck, lint,
+  format-check, and all Vitest tests
+- **Production build** — expected: `npm run build` exits 0 with no new dependency or route topology
+  _(R14)_
+- **Built-app E2E** — expected: `npm run test:e2e` exits 0 in the isolated fixture harness
+- **Storybook and visual evidence** — expected: required component states render in Storybook and a
+  real-data comparison against `specs/pages/sessions.html`/`.png` records the manual sign-off
+  _(R13)_
+
+### Implementation Notes
+
+- **Module(s):** Cypress E2E and fixture documentation only
+- **Pattern reference:** `cypress/e2e/dashboard.cy.ts`, `cypress/e2e/steel-thread.cy.ts`, and
+  `test/fixtures/README.md`
+- **Key decisions:** A9 accessible interactions; A11 honest seams; A12 unchanged deployment
+- **Libraries:** Cypress, existing repo E2E helpers, npm scripts
+- **High-risk callouts:** Dashboard is M-risk. Strengthen its destination assertion without changing
+  Dashboard implementation or making Cypress own Storybook state coverage.
+
+### Scope Boundaries
+
+- Do NOT add product behavior, automated visual regression, deployment, PR creation, or issue closure.
+- Do NOT rewrite fixture JSONL unless implementation demonstrates a real settled-requirement gap.
+- Do NOT modify page specs/mockups or flip the plan checkbox before issue closure.
+- Only add/strengthen verification evidence and fixture documentation.
+
+### Files Expected
+
+**New files:**
+
+- `cypress/e2e/sessions.cy.ts` (fixture-backed Sessions journey)
+
+**Modified files:**
+
+- `cypress/e2e/dashboard.cy.ts` (assert filtered destination content)
+- `test/fixtures/README.md` (document Sessions coverage supplied by existing fixtures)
+
+**Must NOT modify:**
+
+- `test/fixtures/projects/**/*.jsonl` (reuse unless a real coverage gap is demonstrated)
+- `specs/pages/sessions.html` and `specs/pages/sessions.png` (visual references)
+- `specs/claude-lens-plan.md` (checkbox flips only when issue closes)
