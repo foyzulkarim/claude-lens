@@ -82,9 +82,16 @@ const summarySeries: Series[] = [
 
 function renderCard(search = "") {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  // `memoryLocation` always inserts a `?` between path and searchPath, so a
+  // leading `?` on `search` produces `/??project=...`, which URLSearchParams
+  // parses as a single key `?project=…` (with the leading `?` as part of the
+  // name) — useFilters would then see no project filter at all. Strip the
+  // leading `?` here so the test setup mirrors how `useSearch()` returns a
+  // real location's search portion.
+  const searchPath = search.startsWith("?") ? search.slice(1) : search;
   const { hook, searchHook, history } = memoryLocation({
     path: "/",
-    searchPath: search,
+    searchPath,
     record: true,
   });
   const tree = (
@@ -340,7 +347,7 @@ describe("ChartCard — controls", () => {
     expect(lastQuery.measures).toEqual(["inputTokens", "outputTokens"]);
   });
 
-  it("family toggle re-renders without a new fetch", async () => {
+  it("family toggle requeries (dimensions change) and re-renders the chart as a bar series", async () => {
     const user = userEvent.setup();
     renderCard();
     await waitFor(() => expect(postMetricsMock).toHaveBeenCalledTimes(1));
@@ -351,7 +358,12 @@ describe("ChartCard — controls", () => {
       const [entry] = lastCall.option.series as { type: string }[];
       expect(entry.type).toBe("bar");
     });
-    expect(postMetricsMock).toHaveBeenCalledTimes(1);
+    // T8 makes `family` query-affecting: area sends dimensions: ["time"],
+    // bars sends dimensions: []. The toggle therefore refetches — the
+    // chart re-render is on top of the new query result, not a no-fetch
+    // local re-render.
+    expect(postMetricsMock).toHaveBeenCalledTimes(2);
+    expect(latestQuery<{ dimensions: string[] }>().dimensions).toEqual([]);
   });
 
   it("grain toggle requeries with the updated grain", async () => {
@@ -400,8 +412,10 @@ describe("ChartCard — controls", () => {
 
     await user.click(screen.getByTestId("chart-stub"));
     const lastPath = history.at(-1);
+    // Default grain is "day"; per ARCH T8 single-day buckets drill to a
+    // point (from = to = dayStart), not a range.
     expect(lastPath).toBe(
-      "/sessions?from=2026-07-10T00%3A00%3A00.000Z&to=2026-07-11T00%3A00%3A00.000Z",
+      "/sessions?from=2026-07-10T00%3A00%3A00.000Z&to=2026-07-10T00%3A00%3A00.000Z",
     );
   });
 
@@ -417,8 +431,10 @@ describe("ChartCard — controls", () => {
     expect(rowButton).toHaveFocus();
     await user.keyboard("{Enter}");
 
+    // Default grain is "day"; per ARCH T8 single-day buckets drill to a
+    // point (from = to = dayStart).
     expect(history.at(-1)).toBe(
-      "/sessions?from=2026-07-08T00%3A00%3A00.000Z&to=2026-07-09T00%3A00%3A00.000Z",
+      "/sessions?from=2026-07-08T00%3A00%3A00.000Z&to=2026-07-08T00%3A00%3A00.000Z",
     );
   });
 
@@ -519,5 +535,142 @@ describe("ChartCard — regression guards", () => {
       7 * 24 * 60 * 60 * 1000,
     );
     expect(sentQuery.filters).toEqual({});
+  });
+});
+
+describe("ChartCard — time-dimension query", () => {
+  it("requests dimensions: ['time'] for area family (area chart = time series)", async () => {
+    renderCard();
+    await waitFor(() => expect(postMetricsMock).toHaveBeenCalledTimes(1));
+    const sentQuery = latestQuery<{ dimensions: string[] }>();
+    expect(sentQuery.dimensions).toEqual(["time"]);
+  });
+
+  it("still sends dimensions: [] for bars family (no time dimension = aggregate)", async () => {
+    const { rerenderUnchanged } = renderCard();
+    await waitFor(() => expect(postMetricsMock).toHaveBeenCalledTimes(1));
+
+    // Switch to bars family (second control on the toolbar)
+    const barsButton = screen.getByRole("button", { name: "bars" });
+    await userEvent.click(barsButton);
+    await waitFor(() => expect(postMetricsMock).toHaveBeenCalledTimes(2));
+
+    const sentQuery = latestQuery<{ dimensions: string[] }>();
+    expect(sentQuery.dimensions).toEqual([]);
+  });
+
+  it("still sends dimensions: [] in aggregate mode (no regression)", async () => {
+    // The bars family sends dimensions: [] — this is the same observable
+    // contract; this test documents the intent explicitly.
+    const { rerenderUnchanged } = renderCard();
+    await waitFor(() => expect(postMetricsMock).toHaveBeenCalledTimes(1));
+
+    const barsButton = screen.getByRole("button", { name: "bars" });
+    await userEvent.click(barsButton);
+    await waitFor(() => expect(postMetricsMock).toHaveBeenCalledTimes(2));
+
+    const sentQuery = latestQuery<{ dimensions: string[] }>();
+    expect(sentQuery.dimensions).toEqual([]);
+  });
+
+  it("grain matches the selected grain control", async () => {
+    renderCard();
+    await waitFor(() => expect(postMetricsMock).toHaveBeenCalledTimes(1));
+    const sentQuery = latestQuery<{ grain: string }>();
+    // Default grain is "day"
+    expect(sentQuery.grain).toBe("day");
+  });
+});
+
+describe("ChartCard — bucket drill link", () => {
+  it("preserves active categorical filters when drilling to a bucket", async () => {
+    const { history } = renderCard("?project=alpha,beta&model=fable");
+    await waitFor(() => expect(chartSpy).toHaveBeenCalled());
+
+    // Trigger point click via the stub button
+    const stub = screen.getByTestId("chart-stub");
+    await userEvent.click(stub);
+
+    await waitFor(() => expect(history).toHaveLength(2));
+    const drillUrl = history[1];
+    const params = new URLSearchParams(drillUrl.split("?")[1] ?? "");
+
+    expect(params.get("project")).toBe("alpha,beta");
+    expect(params.get("model")).toBe("fable");
+    // No branch or host filters set
+    expect(params.has("branch")).toBe(false);
+    expect(params.has("host")).toBe(false);
+  });
+
+  it("preserves all four chip dimensions when all are active", async () => {
+    const { history } = renderCard("?project=p&model=m&branch=b&host=h");
+    await waitFor(() => expect(chartSpy).toHaveBeenCalled());
+
+    const stub = screen.getByTestId("chart-stub");
+    await userEvent.click(stub);
+
+    await waitFor(() => expect(history).toHaveLength(2));
+    const drillUrl = history[1];
+    const params = new URLSearchParams(drillUrl.split("?")[1] ?? "");
+
+    expect(params.get("project")).toBe("p");
+    expect(params.get("model")).toBe("m");
+    expect(params.get("branch")).toBe("b");
+    expect(params.get("host")).toBe("h");
+  });
+
+  it("replaces the global date range with the clicked bucket's boundaries", async () => {
+    const { history } = renderCard("?range=30d");
+    await waitFor(() => expect(chartSpy).toHaveBeenCalled());
+
+    const stub = screen.getByTestId("chart-stub");
+    await userEvent.click(stub);
+
+    await waitFor(() => expect(history).toHaveLength(2));
+    const drillUrl = history[1];
+    const params = new URLSearchParams(drillUrl.split("?")[1] ?? "");
+
+    // The stub button's onClick fires with value ["2026-07-10T00:00:00.000Z", 5]
+    // which is a day-grain bucket; its from/to must be ISO strings, not the 30d preset
+    expect(params.has("range")).toBe(false);
+    expect(params.get("from")).toBeTruthy();
+    expect(params.get("to")).toBeTruthy();
+    expect(params.get("from")).not.toBe("30d");
+    expect(params.get("to")).not.toBe("30d");
+  });
+
+  it("single-day bucket sets from == to (drills to a point, not a range)", async () => {
+    const { history } = renderCard();
+    await waitFor(() => expect(chartSpy).toHaveBeenCalled());
+
+    const stub = screen.getByTestId("chart-stub");
+    await userEvent.click(stub);
+
+    await waitFor(() => expect(history).toHaveLength(2));
+    const drillUrl = history[1];
+    const params = new URLSearchParams(drillUrl.split("?")[1] ?? "");
+
+    // Default grain is "day"; day buckets have from == to in the drill URL
+    expect(params.get("from")).toBe(params.get("to"));
+  });
+
+  it("multiday bucket (hour grain) sets distinct from and to", async () => {
+    const { history } = renderCard();
+    await waitFor(() => expect(chartSpy).toHaveBeenCalled());
+
+    // Switch to hour grain
+    const grainSelect = screen.getByLabelText("Grain");
+    await userEvent.selectOptions(grainSelect, "hour");
+    await waitFor(() => expect(postMetricsMock).toHaveBeenCalledTimes(2));
+
+    const stub = screen.getByTestId("chart-stub");
+    await userEvent.click(stub);
+
+    await waitFor(() => expect(history).toHaveLength(2));
+    const drillUrl = history[1];
+    const params = new URLSearchParams(drillUrl.split("?")[1] ?? "");
+
+    // Hour grain: bucketEnd = timestamp + 1h, so from !== to
+    expect(params.get("from")).not.toBe(params.get("to"));
   });
 });
