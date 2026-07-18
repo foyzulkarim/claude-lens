@@ -92,6 +92,30 @@ function assistantLine(messageId: string): string {
   });
 }
 
+function assistantToolLine(messageId: string, toolUseId: string, toolName: string): string {
+  const line = JSON.parse(assistantLine(messageId)) as {
+    message: { content: unknown[] };
+  };
+  line.message.content = [
+    { type: "tool_use", id: toolUseId, name: toolName, input: { command: "false" } },
+  ];
+  return JSON.stringify(line);
+}
+
+function toolResultLine(toolUseId: string, content: string): string {
+  return JSON.stringify({
+    type: "user",
+    sessionId: "session-1",
+    promptId: "prompt-1",
+    timestamp: "2026-07-03T04:47:51.065Z",
+    isSidechain: false,
+    message: {
+      role: "user",
+      content: [{ type: "tool_result", tool_use_id: toolUseId, content }],
+    },
+  });
+}
+
 function stubCache(overrides: Partial<WarmCache> = {}): WarmCache & {
   saved: Array<{ key: WarmCacheKey; entry: WarmCacheEntry }>;
 } {
@@ -173,6 +197,30 @@ describe("Tailer — growth reads", () => {
 
     expect(records).toHaveLength(2);
     expect(records[1].result.calls.map((c) => c.messageId)).toEqual(["msg_3"]);
+  });
+
+  it("retains Bash tool attribution across incremental read boundaries", async () => {
+    const root = await makeTmpDir();
+    const filePath = join(root, "a.jsonl");
+    const toolUse = `${assistantToolLine("msg_1", "toolu_incremental", "Bash")}\n`;
+    await writeFile(filePath, toolUse);
+
+    const { records, events } = collectEvents();
+    const tailer = new Tailer(events);
+    const file = registeredFile(filePath, Buffer.byteLength(toolUse));
+    await tailer.onFileAdded(file);
+
+    const toolResult = `${toolResultLine("toolu_incremental", "exit code 7")}\n`;
+    await writeFile(filePath, toolUse + toolResult);
+    file.size = Buffer.byteLength(toolUse + toolResult);
+    await tailer.onFileChanged(file);
+
+    expect(records).toHaveLength(2);
+    expect(records[1].result.toolResultBytes).toHaveLength(1);
+    expect(records[1].result.toolResultBytes[0]).toMatchObject({
+      toolUseId: "toolu_incremental",
+      isError: true,
+    });
   });
 
   it("withholds a partial trailing line, mid-write", async () => {
@@ -429,6 +477,32 @@ describe("Tailer — warm-cache hit", () => {
     expect(records).toHaveLength(2);
     expect(records[1].result.calls.map((c) => c.messageId)).toEqual(["msg_2"]);
     expect(records[1].result.duplicateCount).toBe(1);
+  });
+
+  it("rebuilds Bash tool attribution from cached calls before live growth", async () => {
+    const root = await makeTmpDir();
+    const filePath = join(root, "a.jsonl");
+    const cachedLine = `${assistantLine("msg_cached")}\n`;
+    await writeFile(filePath, cachedLine);
+    const file = registeredFile(filePath, Buffer.byteLength(cachedLine), { mtime: 42 });
+
+    const entry = cachedEntry(["msg_cached"]);
+    entry.calls[0].tools = [{ id: "toolu_cached", name: "Bash", inputBytes: 18 }];
+    const cache = stubCache({ load: async () => entry });
+    const { records, events } = collectEvents();
+    const tailer = new Tailer(events, cache);
+    await tailer.onFileAdded(file);
+
+    const toolResult = `${toolResultLine("toolu_cached", "exit code 9")}\n`;
+    await writeFile(filePath, cachedLine + toolResult);
+    file.size = Buffer.byteLength(cachedLine + toolResult);
+    await tailer.onFileChanged(file);
+
+    expect(records).toHaveLength(2);
+    expect(records[1].result.toolResultBytes[0]).toMatchObject({
+      toolUseId: "toolu_cached",
+      isError: true,
+    });
   });
 });
 

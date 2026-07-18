@@ -507,6 +507,26 @@ describe("GET /api/sessions — pagination, trace, and meta", () => {
     expect(noMatches.json().items).toEqual([]);
   });
 
+  it("computes matchedExtent by instant when equivalent ISO forms sort differently as strings", async () => {
+    const { app: extentApp, store: extentStore } = buildTestApp();
+    const offsetEarlier = "2026-07-01T01:00:00+02:00"; // 2026-06-30T23:00:00Z
+    const zuluLater = "2026-07-01T00:00:00Z";
+    addSession(extentStore, { sessionId: "s-offset-earlier", timestamp: offsetEarlier });
+    addSession(extentStore, { sessionId: "s-zulu-later", timestamp: zuluLater });
+
+    try {
+      const response = await extentApp.inject({ method: "GET", url: "/api/sessions" });
+      expect(response.statusCode).toBe(200);
+      expect(response.json().meta.matchedExtent).toEqual({
+        from: offsetEarlier,
+        to: zuluLater,
+      });
+    } finally {
+      extentStore.stop();
+      await extentApp.close();
+    }
+  });
+
   it('meta.matchedExtent ignores a session with no parsed calls yet (firstAt/lastAt still "")', async () => {
     // A session discovered but not yet tailed past its first line (or one
     // whose only lines so far don't produce an ApiCall) derives firstAt/

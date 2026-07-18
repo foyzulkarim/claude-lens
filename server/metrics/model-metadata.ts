@@ -4,7 +4,7 @@
  * Context: used by T4's derive-session to compute the optional `contextPctEstimated`
  * field on the Dashboard page (#P4-2, #P4-4).
  *
- * Token values are placeholder (200 000) — TODO(#dashboard-context-windows):
+ * Token values are placeholder (200 000) — TODO(#90):
  * wire real per-model numbers from the official Anthropic model reference
  * before production use. The current placeholder makes `contextPctEstimated`
  * accurate only relative to a uniform 200k cap, which is good enough for the

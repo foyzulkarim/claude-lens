@@ -5,6 +5,7 @@ import type { SessionListItem, SessionListParams } from "../../../../shared/sess
 import { postMetrics } from "../../api/metrics.js";
 import { qk } from "../../api/queryKeys.js";
 import { listSessions } from "../../api/sessions.js";
+import { pointValueOrNull } from "../../charts/series-math.js";
 import { formatUnitValueOrDash } from "../../charts/units.js";
 import { CHIP_DIMENSION, type FilterState, serializeFilters } from "../../filters/state.js";
 import { useFilters } from "../../filters/useFilters.js";
@@ -106,8 +107,9 @@ export function dayRecordRow(data: Series[] | undefined): RecordRow {
   const points = data?.find((s) => s.measure === "costComputed")?.points ?? [];
   let best: { t: string; value: number } | null = null;
   for (const point of points) {
-    if (typeof point.value !== "number" || !Number.isFinite(point.value)) continue;
-    if (!best || point.value > best.value) best = { t: point.t, value: point.value };
+    const value = pointValueOrNull(point);
+    if (value === null) continue;
+    if (!best || value > best.value) best = { t: point.t, value };
   }
   if (!best) return { label, value: "—" };
   return {

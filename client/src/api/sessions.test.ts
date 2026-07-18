@@ -231,6 +231,34 @@ describe("listSessions — response shape guard", () => {
   // `SessionsResponseShapeError`, so TanStack Query's `isError` boundary
   // engages instead.
 
+  function responseWithItem(itemOverrides: Record<string, unknown> = {}): unknown {
+    return {
+      items: [
+        {
+          sessionId: "s1",
+          startedAt: "2026-07-01T00:00:00Z",
+          lastAt: "2026-07-01T00:05:00Z",
+          project: "demo",
+          model: "opus",
+          durationMs: 300_000,
+          turnCount: 4,
+          costComputed: 1.25,
+          ...itemOverrides,
+        },
+      ],
+      total: 1,
+      meta: {
+        matchedExtent: { from: "2026-07-01T00:00:00Z", to: "2026-07-01T00:05:00Z" },
+        globalCapture: {
+          hasCostSamples: true,
+          hasTurnBoundaries: true,
+          hasCostLog: false,
+          costBasis: "computed",
+        },
+      },
+    };
+  }
+
   it("throws SessionsResponseShapeError when `items` is not an array", async () => {
     installFetch(async () =>
       makeResponse({
@@ -306,6 +334,31 @@ describe("listSessions — response shape guard", () => {
       }),
     );
     await expect(listSessions()).rejects.toMatchObject({
+      name: "SessionsResponseShapeError",
+    });
+  });
+
+  it("rejects a partially-shaped matched extent", async () => {
+    const body = responseWithItem() as {
+      meta: { matchedExtent: { from: string; to?: string } };
+    };
+    delete body.meta.matchedExtent.to;
+    installFetch(async () => makeResponse(body));
+
+    await expect(listSessions()).rejects.toMatchObject({
+      name: "SessionsResponseShapeError",
+    });
+  });
+
+  it.each([
+    ["optional branch", { branch: 42 }],
+    ["optional numeric", { cacheSavingsComputed: null }],
+    ["required numeric", { durationMs: "five minutes" }],
+    ["trace point", { trace: [{ turnIndex: 0, cost: "expensive", timestamp: "now" }] }],
+  ])("rejects a malformed %s field", async (_label, itemOverrides) => {
+    installFetch(async () => makeResponse(responseWithItem(itemOverrides)));
+
+    await expect(listSessions({ include: "trace" })).rejects.toMatchObject({
       name: "SessionsResponseShapeError",
     });
   });

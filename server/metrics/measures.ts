@@ -22,20 +22,18 @@ export type PricingTable = Record<string, ModelRate>;
 // numbers.
 const PLACEHOLDER_RATE: ModelRate = { input: 5.0, output: 25.0, cacheRead: 0.5, cacheCreate: 6.25 };
 
+/**
+ * The Opus model key — used both as the pricing-table entry and as the
+ * counterfactual assumption in `routingSavingsComputed`.
+ */
+export const OPUS_MODEL_KEY = "claude-opus-4-8";
+
 export const DEFAULT_PRICING_TABLE: PricingTable = {
   "claude-sonnet-5": PLACEHOLDER_RATE,
   "claude-fable-5": PLACEHOLDER_RATE,
-  "claude-opus-4-8": PLACEHOLDER_RATE,
+  [OPUS_MODEL_KEY]: PLACEHOLDER_RATE,
   "claude-haiku-4-5": PLACEHOLDER_RATE,
 };
-
-/**
- * The Opus model key — used both as the pricing-table entry and as the
- * counterfactual assumption in `routingSavingsComputed`. Kept as a single
- * named constant so a future rename (or a second reference model) can't
- * silently diverge between the two lookup sites.
- */
-export const OPUS_MODEL_KEY = "claude-opus-4-8";
 
 /** An already-filtered/grouped/bucketed slice of data for one (measure x group x bucket) cell. */
 export interface MeasureScope {

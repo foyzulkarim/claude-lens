@@ -5,6 +5,7 @@ import type { SessionListParams } from "../../../../shared/sessions-contract.js"
 import { postMetrics } from "../../api/metrics.js";
 import { qk } from "../../api/queryKeys.js";
 import { listSessions } from "../../api/sessions.js";
+import { pointValueOrNull } from "../../charts/series-math.js";
 import { formatUnitValue } from "../../charts/units.js";
 import { filtersToQuery, serializeFilters, type FilterState } from "../../filters/state.js";
 import { useFilters } from "../../filters/useFilters.js";
@@ -58,8 +59,9 @@ function toPoints(series: Series[]): Point[] {
     for (const p of s.points) {
       // Skip null/non-finite points — KEEP real zero values, which carry
       // information (no token activity in that hour).
-      if (typeof p.value !== "number" || !Number.isFinite(p.value)) continue;
-      points.push({ t: new Date(p.t).getTime(), value: p.value });
+      const value = pointValueOrNull(p);
+      if (value === null) continue;
+      points.push({ t: new Date(p.t).getTime(), value });
     }
   }
   points.sort((a, b) => a.t - b.t);
@@ -150,7 +152,7 @@ function formatCountdown(ms: number): string {
 
 export interface SubscriptionWindowProps {
   /**
-   * Settings-calibrated ceiling in USD, replacing the computed historical
+   * Settings-calibrated ceiling in tokens, replacing the computed historical
    * peak as the comparison basis when set. No Settings-backed calibration
    * exists yet (#P4-15) — the app itself never passes this, so the tracker
    * always falls back to the historical peak today. Exposed as a prop so
@@ -188,10 +190,9 @@ function probeParams(filters: FilterState): SessionListParams {
  * Architecture CQ2/#9: the card derives from one hourly series of summed
  * tokens (the four measures' matching-hour buckets are summed into a single
  * cost-equivalent token series; "token units" is what the helper math was
- * originally written against). Review CQ2 wanted the card in USD — `ceiling`
- * is still labeled in dollars since it's a Settings-configurable spend
- * cap, but the per-row tracker bars are token counts. The visual hierarchy
- * stays the same (current → peak/ceiling → expiry countdown).
+ * originally written against). The optional Settings ceiling and per-row
+ * tracker bars therefore use the same token unit. The visual hierarchy stays
+ * the same (current → peak/ceiling → expiry countdown).
  */
 export function SubscriptionWindow({ ceiling, now: injectedNow }: SubscriptionWindowProps) {
   const { filters } = useFilters();
@@ -232,6 +233,7 @@ export function SubscriptionWindow({ ceiling, now: injectedNow }: SubscriptionWi
   // search.
   const { filters: categoricalFilters } = filtersToQuery(filters, now);
   const extentFrom = sessionsExtent?.from ?? extentTo;
+  const metricsEnabled = probeQuery.isSuccess && sessionsExtent !== null;
 
   const tokenQueries = useQueries({
     queries: TOKEN_MEASURES.map(
@@ -255,15 +257,17 @@ export function SubscriptionWindow({ ceiling, now: injectedNow }: SubscriptionWi
               },
               signal,
             ),
-          enabled: !probeQuery.isPending && probeQuery.isSuccess === true,
+          enabled: metricsEnabled,
           placeholderData: keepPreviousData,
         }) as const,
     ),
   });
 
-  const isPending = probeQuery.isPending || tokenQueries.some((q) => q.isPending);
-  const isError = probeQuery.isError || tokenQueries.some((q) => q.isError);
-  const error = probeQuery.error ?? tokenQueries.find((q) => q.isError)?.error;
+  const isPending =
+    probeQuery.isPending || (metricsEnabled && tokenQueries.some((q) => q.isPending));
+  const isError = probeQuery.isError || (metricsEnabled && tokenQueries.some((q) => q.isError));
+  const error =
+    probeQuery.error ?? (metricsEnabled ? tokenQueries.find((q) => q.isError)?.error : null);
   const noMatchedExtent = !probeQuery.isPending && sessionsExtent === null;
 
   // Merge the four token measures' per-hour points into one cost-equivalent
@@ -324,7 +328,8 @@ export function SubscriptionWindow({ ceiling, now: injectedNow }: SubscriptionWi
             // disagrees with the visual calculation basis. Always derive the
             // declared basis from `ceilingBasis` here.
             const basisLabel = ceiling !== undefined ? "Settings ceiling" : "historical peak";
-            const basisTokens = ceiling !== undefined ? ceiling : row.peak;
+            const basisTokens = Math.max(0, ceiling !== undefined ? ceiling : row.peak);
+            const rangeValue = Math.min(Math.max(0, row.current), basisTokens);
             return (
               <div key={row.key}>
                 <output
@@ -341,9 +346,9 @@ export function SubscriptionWindow({ ceiling, now: injectedNow }: SubscriptionWi
                 <div
                   role="progressbar"
                   aria-label={`${row.label} window usage: ${formatUnitValue(row.current, "tokens")} tokens of ${basisLabel} ${formatUnitValue(basisTokens, "tokens")} tokens`}
-                  aria-valuenow={Math.round(row.current)}
+                  aria-valuenow={rangeValue}
                   aria-valuemin={0}
-                  aria-valuemax={Math.max(basisTokens, row.current, 1)}
+                  aria-valuemax={basisTokens}
                   aria-valuetext={`${formatUnitValue(row.current, "tokens")} tokens of ${basisLabel.toLowerCase()} ${formatUnitValue(basisTokens, "tokens")} tokens`}
                   className="mt-1 h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-[#0B0F14]"
                 >

@@ -148,15 +148,13 @@ describe("dashboard cards — stable default time (review #4)", () => {
     expect(queryClient.getQueryCache().getAll()).toHaveLength(1);
   });
 
-  it("ChartCard rolls its range forward when useStableNow ticks (review: frozen new Date())", async () => {
+  it("ChartCard rolls its range forward when its injected time changes", async () => {
     // Pre-fix, ChartCard's query memo called `new Date()` directly instead
     // of routing through `useStableNow` — since the memo's dependency array
     // never included that call's result, the captured value froze at mount
     // forever, and the query never rolled its default preset range forward.
-    // Exercised here the same way `useStableNow`'s tick eventually presents
-    // a new `now` to the component: via a fresh Date passed back in as the
-    // `now` prop (the same seam BurnRateCard/SubscriptionWindow use for
-    // their own frozen-time regression tests).
+    // This pins the component's injected-time seam. The hook's real
+    // interval-driven behavior is covered separately in useStableNow.test.tsx.
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const { hook, searchHook } = memoryLocation({ path: "/", static: true });
     const initialNow = new Date("2026-07-16T12:00:00.000Z");
