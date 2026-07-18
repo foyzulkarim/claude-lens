@@ -1,4 +1,4 @@
-import type { ApiCall, Session, Turn } from "../../shared/types.js";
+import type { ApiCall, CompactionRecord, Session, Turn } from "../../shared/types.js";
 import type { WsServerMessage } from "../../shared/ws-protocol.js";
 import type {
   ParseTranscriptResult,
@@ -25,9 +25,26 @@ interface SessionState {
   calls: ApiCall[];
   prompts: PromptTextRecord[];
   toolResultBytes: ToolResultBytesRecord[];
+  compactions: CompactionRecord[];
   sidecars: SessionSidecarFlags;
   turns: Turn[];
   session: Session | null;
+}
+
+/**
+ * Coherent, read-only snapshot of one session's compact state. Returned by
+ * `Store.getSessionSnapshot` after a fresh recompute, so every array and
+ * the `session` rollup reflect the same revision — the Session Detail
+ * projector consumes this directly without holding pointers into the live
+ * Store. (#P4-5, T2)
+ */
+export interface SessionSnapshot {
+  session: Session;
+  calls: ApiCall[];
+  turns: Turn[];
+  prompts: PromptTextRecord[];
+  toolResults: ToolResultBytesRecord[];
+  compactions: CompactionRecord[];
 }
 
 function emptySidecars(): SessionSidecarFlags {
@@ -92,6 +109,7 @@ export class Store {
         calls: [],
         prompts: [],
         toolResultBytes: [],
+        compactions: [],
         sidecars: emptySidecars(),
         turns: [],
         session: null,
@@ -108,6 +126,7 @@ export class Store {
     state.calls.push(...result.calls);
     state.prompts.push(...result.prompts);
     state.toolResultBytes.push(...result.toolResultBytes);
+    state.compactions.push(...result.compactions);
     this.invalidator.markDirty(sessionId);
   }
 
@@ -132,6 +151,7 @@ export class Store {
     state.calls = [];
     state.prompts = [];
     state.toolResultBytes = [];
+    state.compactions = [];
     state.turns = [];
     state.session = null;
     this.invalidator.markDirty(sessionId);
@@ -173,6 +193,44 @@ export class Store {
 
   getCalls(sessionId: string): ApiCall[] {
     return this.sessions.get(sessionId)?.calls ?? [];
+  }
+
+  /**
+   * Atomic, read-only snapshot of one session's compact state. Triggers a
+   * synchronous recompute before returning so every array and the session
+   * rollup reflect the same revision — the Session Detail projector
+   * consumes this snapshot directly and never reaches back into live
+   * Store state. Unknown IDs return `undefined`; an empty-but-known session
+   * returns a snapshot with empty arrays and a freshly-derived Session.
+   * (#P4-5, T2)
+   */
+  getSessionSnapshot(sessionId: string): SessionSnapshot | undefined {
+    const state = this.sessions.get(sessionId);
+    if (!state) return undefined;
+    this.recompute(sessionId);
+    // recompute re-derives `state.session`; re-read in case it was null and
+    // recompute didn't run (e.g. zero calls/session with no pricing — that
+    // path still produces a Session with mostly empty fields, which is the
+    // honest empty case the route must surface as 200/empty, not 404).
+    const session = state.session;
+    if (!session) {
+      // Defensive: a known session state must always yield a Session after
+      // recompute (derive-session produces a Session even with empty input).
+      // If this branch ever fires, the API contract — known != undefined —
+      // would break; surface it loudly so a future refactor can't drift
+      // silently.
+      throw new Error(
+        `unreachable: known session ${sessionId} has no derived Session after recompute`,
+      );
+    }
+    return {
+      session,
+      calls: state.calls.slice(),
+      turns: state.turns.slice(),
+      prompts: state.prompts.slice(),
+      toolResults: state.toolResultBytes.slice(),
+      compactions: state.compactions.slice(),
+    };
   }
 
   /**

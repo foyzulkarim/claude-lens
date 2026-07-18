@@ -1,4 +1,4 @@
-import type { ApiCall } from "../../shared/types.js";
+import type { ApiCall, CompactionRecord } from "../../shared/types.js";
 
 export interface PromptTextRecord {
   sessionId: string;
@@ -32,6 +32,7 @@ export type ParsedLine =
   | { kind: "call"; call: ApiCall }
   | { kind: "prompt"; prompt: PromptTextRecord }
   | { kind: "tool-result-bytes"; record: ToolResultBytesRecord }
+  | { kind: "compaction"; record: CompactionRecord }
   | { kind: "duplicate" }
   | { kind: "skipped" }
   | { kind: "malformed" };
@@ -40,6 +41,7 @@ export interface ParseTranscriptResult {
   calls: ApiCall[];
   prompts: PromptTextRecord[];
   toolResultBytes: ToolResultBytesRecord[];
+  compactions: CompactionRecord[];
   duplicateCount: number;
   malformedCount: number;
 }
@@ -141,6 +143,46 @@ function extractExitCode(text: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+// (#P4-5) Tools whose `input` object carries a `file_path` / `notebook_path`
+// we want to surface as `targetPath` for workflow analysis. Anything outside
+// this list leaves `targetPath` undefined so wire payloads stay compact.
+const PATH_BEARING_TOOLS = new Set(["Read", "Edit", "Write", "NotebookEdit", "MultiEdit"]);
+
+function extractTargetPath(toolName: string, input: unknown): string | undefined {
+  if (!PATH_BEARING_TOOLS.has(toolName)) return undefined;
+  if (!isRecord(input)) return undefined;
+  const candidate =
+    typeof input.file_path === "string"
+      ? input.file_path
+      : typeof input.notebook_path === "string"
+        ? input.notebook_path
+        : undefined;
+  if (candidate === undefined || candidate === "") return undefined;
+  // Compact normalization only: trim whitespace, never resolve symlinks or
+  // canonicalize (the architecture contract is "normalized" = "trimmed and
+  // stable shape" — see ARCH-session-detail-page.md, Compact Tool Metadata).
+  return candidate.trim();
+}
+
+// (#P4-5) Bash command classification for the workflow funnel. The check is
+// the leading-token form (case-insensitive, leading whitespace tolerated) so
+// `git commit`, `  git commit -m "..."`, and `GIT COMMIT --amend` all classify
+// the same way. We never retain the command body itself.
+const GIT_COMMIT_RE = /^\s*git\s+commit\b/i;
+
+function classifyBash(input: unknown): "git-commit" | "other" {
+  if (!isRecord(input)) return "other";
+  const command = typeof input.command === "string" ? input.command : "";
+  return GIT_COMMIT_RE.test(command) ? "git-commit" : "other";
+}
+
+interface RawCompactBoundaryLine {
+  type: "system/compact_boundary";
+  sessionId?: unknown;
+  timestamp?: unknown;
+  promptId?: unknown;
+}
+
 function parseAssistantLine(
   line: RawAssistantLine,
   toolNameByToolUseId: Map<string, string>,
@@ -169,11 +211,23 @@ function parseAssistantLine(
           // (review #11 / CQ4).
           toolNameByToolUseId.set(id, name);
         }
-        tools.push({
+        // (#P4-5) Populate the additive compact metadata for path-bearing
+        // tools and Bash. The `input` is captured for sizing only; never
+        // retained past `inputBytes` / the classification.
+        const input = block.input ?? {};
+        const toolRef: ApiCall["tools"][number] = {
           name,
           id: id !== "" ? id : undefined,
-          inputBytes: Buffer.byteLength(JSON.stringify(block.input ?? {}), "utf8"),
-        });
+          inputBytes: Buffer.byteLength(JSON.stringify(input), "utf8"),
+        };
+        const targetPath = extractTargetPath(name, input);
+        if (targetPath !== undefined) {
+          toolRef.targetPath = targetPath;
+        }
+        if (name === "Bash") {
+          toolRef.bashKind = classifyBash(input);
+        }
+        tools.push(toolRef);
       }
     }
   }
@@ -293,6 +347,10 @@ export function parseTranscriptLine(
     return parseUserLine(parsed as unknown as RawUserLine, toolNameByToolUseId);
   }
 
+  if (parsed.type === "system/compact_boundary") {
+    return parseCompactBoundaryLine(parsed as unknown as RawCompactBoundaryLine);
+  }
+
   if (parsed.type !== "assistant") {
     return { kind: "skipped" };
   }
@@ -309,6 +367,23 @@ export function parseTranscriptLine(
   return result;
 }
 
+// (#P4-5) Recognized but minimal: a missing sessionId would mean the
+// record can't be partitioned into any session snapshot, so it's skipped
+// rather than malformed — every other "missing required" line has a clear
+// session-less treatment in parseUserLine. Optional fields stay optional.
+function parseCompactBoundaryLine(line: RawCompactBoundaryLine): ParsedLine {
+  const sessionId = toStr(line.sessionId);
+  if (sessionId === "") {
+    return { kind: "skipped" };
+  }
+  const timestamp = toOptionalStr(line.timestamp);
+  const promptId = toOptionalStr(line.promptId);
+  const record: CompactionRecord = { sessionId };
+  if (timestamp !== undefined) record.timestamp = timestamp;
+  if (promptId !== undefined) record.promptId = promptId;
+  return { kind: "compaction", record };
+}
+
 export function parseTranscriptLines(
   rawLines: string[],
   seenMessageIds: Set<string>,
@@ -322,6 +397,7 @@ export function parseTranscriptLines(
     calls: [],
     prompts: [],
     toolResultBytes: [],
+    compactions: [],
     duplicateCount: 0,
     malformedCount: 0,
   };
@@ -343,6 +419,9 @@ export function parseTranscriptLines(
         break;
       case "tool-result-bytes":
         result.toolResultBytes.push(parsed.record);
+        break;
+      case "compaction":
+        result.compactions.push(parsed.record);
         break;
       case "duplicate":
         result.duplicateCount++;

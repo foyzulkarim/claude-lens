@@ -203,6 +203,120 @@ describe("parseTranscriptLine — dedupe", () => {
   });
 });
 
+describe("parseTranscriptLine — compact workflow metadata (#P4-5)", () => {
+  // (#P4-5) targetPath / bashKind populate the wire types without retaining
+  // raw inputs — see ARCH-session-detail-page.md Compact Tool Metadata.
+  function toolUseLine(
+    toolName: string,
+    input: Record<string, unknown>,
+    id: string,
+    messageId = "msg_compact",
+  ): string {
+    return assistantLine({
+      message: {
+        id: messageId,
+        model: "claude-sonnet-5",
+        usage: { input_tokens: 1, output_tokens: 1 },
+        content: [{ type: "tool_use", id, name: toolName, input }],
+      },
+    });
+  }
+
+  it("captures normalized targetPath for Read", () => {
+    const line = toolUseLine("Read", { file_path: "  src/index.ts  " }, "toolu_read");
+    const call = expectCall(parseTranscriptLine(line, new Set()));
+    expect(call.tools[0]).toMatchObject({ name: "Read", targetPath: "src/index.ts" });
+  });
+
+  it("captures targetPath for Edit, Write, NotebookEdit, MultiEdit", () => {
+    const ids = ["t1", "t2", "t3", "t4"];
+    const lines = [
+      toolUseLine("Edit", { file_path: "/a/b.ts" }, ids[0], "m1"),
+      toolUseLine("Write", { file_path: "/a/c.ts" }, ids[1], "m2"),
+      toolUseLine("NotebookEdit", { notebook_path: "/nb.ipynb" }, ids[2], "m3"),
+      toolUseLine("MultiEdit", { file_path: "/a/d.ts" }, ids[3], "m4"),
+    ];
+    const result = parseTranscriptLines(lines, new Set());
+    const targets = result.calls.map((c) => c.tools[0]?.targetPath);
+    expect(targets).toEqual(["/a/b.ts", "/a/c.ts", "/nb.ipynb", "/a/d.ts"]);
+  });
+
+  it("does not set targetPath for non-path-bearing tools", () => {
+    const line = toolUseLine("Bash", { command: "ls" }, "toolu_bash");
+    const call = expectCall(parseTranscriptLine(line, new Set()));
+    expect(call.tools[0]?.targetPath).toBeUndefined();
+  });
+
+  it("classifies Bash git commit as bashKind=git-commit (leading whitespace tolerated)", () => {
+    const variants = ['git commit -m "msg"', "  GIT COMMIT --amend", "\tgit commit"];
+    for (const command of variants) {
+      const line = toolUseLine("Bash", { command }, "toolu_bash_gc");
+      const call = expectCall(parseTranscriptLine(line, new Set()));
+      expect(call.tools[0]?.bashKind).toBe("git-commit");
+    }
+  });
+
+  it("classifies non-commit Bash invocations as bashKind=other", () => {
+    const line = toolUseLine("Bash", { command: "ls -la" }, "toolu_bash_ls");
+    const call = expectCall(parseTranscriptLine(line, new Set()));
+    expect(call.tools[0]?.bashKind).toBe("other");
+  });
+
+  it("does not retain raw tool inputs in the resulting record", () => {
+    const line = toolUseLine("Read", { file_path: "/secret/path" }, "toolu_secret");
+    const call = expectCall(parseTranscriptLine(line, new Set()));
+    // The size measure is allowed; the raw input string is not.
+    expect(JSON.stringify(call)).not.toContain('"file_path":"/secret/path"');
+  });
+});
+
+describe("parseTranscriptLine — compact_boundary markers (#P4-5)", () => {
+  function compactLine(overrides: Record<string, unknown> = {}): string {
+    return JSON.stringify({
+      type: "system/compact_boundary",
+      sessionId: "s1",
+      timestamp: "2026-07-03T04:50:00.000Z",
+      promptId: "p1",
+      ...overrides,
+    });
+  }
+
+  it("emits a compaction record with session, timestamp, and promptId", () => {
+    const result = parseTranscriptLine(compactLine(), new Set());
+    expect(result.kind).toBe("compaction");
+    if (result.kind !== "compaction") throw new Error("expected compaction");
+    expect(result.record).toEqual({
+      sessionId: "s1",
+      timestamp: "2026-07-03T04:50:00.000Z",
+      promptId: "p1",
+    });
+  });
+
+  it("emits a compaction record with only required sessionId when other fields are absent", () => {
+    const result = parseTranscriptLine(
+      compactLine({ timestamp: undefined, promptId: undefined }),
+      new Set(),
+    );
+    expect(result.kind).toBe("compaction");
+    if (result.kind !== "compaction") throw new Error("expected compaction");
+    expect(result.record).toEqual({ sessionId: "s1" });
+  });
+
+  it("skips a compact_boundary line without a sessionId", () => {
+    const result = parseTranscriptLine(
+      compactLine({ sessionId: undefined, timestamp: undefined, promptId: undefined }),
+      new Set(),
+    );
+    expect(result.kind).toBe("skipped");
+  });
+
+  it("never counts compact_boundary lines as malformed", () => {
+    const batch = parseTranscriptLines([compactLine()], new Set());
+    expect(batch.compactions).toHaveLength(1);
+    expect(batch.malformedCount).toBe(0);
+  });
+});
+
 describe("parseTranscriptLine — user line handling", () => {
   it("captures typed prompt text", () => {
     const result = parseTranscriptLine(userLine(), new Set());

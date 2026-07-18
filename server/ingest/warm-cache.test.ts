@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ApiCall } from "../../shared/types.js";
 import type { WarmCacheEntry, WarmCacheKey } from "./warm-cache.js";
-import { createWarmCache } from "./warm-cache.js";
+import { WARM_CACHE_SCHEMA_VERSION, createWarmCache } from "./warm-cache.js";
 
 const tmpDirs: string[] = [];
 
@@ -50,6 +50,7 @@ function sampleEntry(overrides: Partial<WarmCacheEntry> = {}): WarmCacheEntry {
     toolResultBytes: [
       { sessionId: "s1", promptId: "p1", toolUseId: "t1", bytes: 42, isError: false },
     ],
+    compactions: [],
     duplicateCount: 0,
     malformedCount: 0,
     ...overrides,
@@ -139,7 +140,7 @@ describe("createWarmCache — cache miss conditions", () => {
     await cache.save(key, sampleEntry());
     const files = await readdir(dir);
     const cacheFile = join(dir, files[0] ?? "");
-    const raw = `${JSON.stringify(key)}\n${JSON.stringify({ kind: "mystery", value: 1 })}\n`;
+    const raw = `${JSON.stringify({ ...key, version: WARM_CACHE_SCHEMA_VERSION })}\n${JSON.stringify({ kind: "mystery", value: 1 })}\n`;
     await writeFile(cacheFile, raw, "utf8");
 
     const loaded = await cache.load(key);
@@ -174,7 +175,7 @@ describe("createWarmCache — cache miss conditions", () => {
     await cache.save(key, sampleEntry());
     const files = await readdir(dir);
     const cacheFile = join(dir, files[0] ?? "");
-    const raw = `${JSON.stringify(key)}\n${JSON.stringify({ kind: "call", call: { uuid: "u1" } })}\n`;
+    const raw = `${JSON.stringify({ ...key, version: WARM_CACHE_SCHEMA_VERSION })}\n${JSON.stringify({ kind: "call", call: { uuid: "u1" } })}\n`;
     await writeFile(cacheFile, raw, "utf8");
 
     const loaded = await cache.load(key);
@@ -193,9 +194,39 @@ describe("createWarmCache — cache miss conditions", () => {
     await cache.save(key, sampleEntry());
     const files = await readdir(dir);
     const cacheFile = join(dir, files[0] ?? "");
+    const raw = `${JSON.stringify({ ...key, version: WARM_CACHE_SCHEMA_VERSION })}\n${JSON.stringify(
+      {
+        kind: "prompt",
+        prompt: { sessionId: "s1", promptId: "p1", text: "hello" },
+      },
+    )}\n`;
+    await writeFile(cacheFile, raw, "utf8");
+
+    const loaded = await cache.load(key);
+
+    expect(loaded).toBeNull();
+  });
+
+  it("returns null for a cache entry written before the schema-version gate (pre-versioned header)", async () => {
+    // (#P4-5 / ARCH T1 stress test) An on-disk entry whose header predates
+    // the `version` field must be treated as a cache miss — the safe-miss
+    // contract from ARCH-session-detail-page.md. The tailer will re-parse
+    // from source on the next read; transcripts are never mutated.
+    const dir = await makeTmpDir();
+    const cache = createWarmCache(dir);
+    const key: WarmCacheKey = { path: "/fake/k.jsonl", size: 100, mtime: 1 };
+
+    await cache.save(key, sampleEntry());
+    const files = await readdir(dir);
+    const cacheFile = join(dir, files[0] ?? "");
     const raw = `${JSON.stringify(key)}\n${JSON.stringify({
       kind: "prompt",
-      prompt: { sessionId: "s1", promptId: "p1", text: "hello" },
+      prompt: {
+        sessionId: "s1",
+        promptId: "p1",
+        text: "hello",
+        timestamp: "2026-07-13T00:00:00.000Z",
+      },
     })}\n`;
     await writeFile(cacheFile, raw, "utf8");
 

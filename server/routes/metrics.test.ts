@@ -53,6 +53,7 @@ describe("POST /api/metrics", () => {
       calls: [call({ uuid: "c1", timestamp: iso(2026, 6, 14, 10, 0) })],
       prompts: [],
       toolResultBytes: [],
+      compactions: [],
       duplicateCount: 0,
       malformedCount: 0,
     });
@@ -215,6 +216,7 @@ describe("POST /api/metrics", () => {
       calls: [call({ uuid: "scatter-call" })],
       prompts: [],
       toolResultBytes: [],
+      compactions: [],
       duplicateCount: 0,
       malformedCount: 0,
     });

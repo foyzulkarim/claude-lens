@@ -60,7 +60,11 @@ export function invalidateForMessage(queryClient: QueryClient, message: WsServer
       return;
     case "session-updated":
       queryClient.invalidateQueries({ queryKey: qk.prefixes.metrics });
-      queryClient.invalidateQueries({ queryKey: qk.prefixes.session(message.sessionId) });
+      // Per-session invalidation (ARCH T5, #P4-5): mounted detail queries
+      // for THIS session refetch; the metrics/list paths invalidate too
+      // because the row's badge/cost can shift as a side effect of the
+      // append.
+      queryClient.invalidateQueries({ queryKey: qk.session(message.sessionId) });
       queryClient.invalidateQueries({ queryKey: qk.prefixes.sessions });
       return;
     default: {

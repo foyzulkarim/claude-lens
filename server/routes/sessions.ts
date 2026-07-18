@@ -15,6 +15,7 @@ import type {
 import type { Session } from "../../shared/types.js";
 import type { PricingTable } from "../metrics/measures.js";
 import type { Pricer } from "../store/derive-session.js";
+import { aggregateLogicalTurnCost, groupLogicalTurns } from "../store/logical-turns.js";
 import type { Store } from "../store/store.js";
 import { applyRange, totalTokensForSession } from "../metrics/session-population.js";
 
@@ -518,22 +519,26 @@ function aggregateGlobalCapture(sessions: Session[]): SessionListMeta["globalCap
  * falls back to 0 per turn when no pricer is wired (legacy `buildApp({ store })`
  * callers). Capped at `SESSIONS_MAX_TRACE_POINTS` per item — the rest are
  * dropped, not extrapolated, to keep the response bounded.
+ *
+ * (#P4-5, A4) Each point represents one *logical* prompt turn — sidechain
+ * segments are folded under their parent prompt so the dashboard trace and
+ * the Session Detail page observe the same one-based turn numbering.
  */
 function buildTrace(store: Store, session: Session, pricer: Pricer | undefined): TracePoint[] {
   const turns = store.getTurns(session.sessionId);
+  const logicalTurns = groupLogicalTurns(turns);
   const points: TracePoint[] = [];
   let cumulative = 0;
-  const limit = Math.min(turns.length, SESSIONS_MAX_TRACE_POINTS);
+  const limit = Math.min(logicalTurns.length, SESSIONS_MAX_TRACE_POINTS);
   for (let i = 0; i < limit; i++) {
-    const turn = turns[i];
+    const group = logicalTurns[i];
+    if (!group) continue;
     let turnCost = 0;
     if (pricer) {
-      for (const call of turn.calls) {
-        turnCost += pricer(call.usage, call.model);
-      }
+      turnCost = aggregateLogicalTurnCost(group, pricer);
     }
     cumulative += turnCost;
-    points.push({ turnIndex: i, cost: cumulative, timestamp: turn.startedAt });
+    points.push({ turnIndex: i, cost: cumulative, timestamp: group.startedAt ?? "" });
   }
   return points;
 }

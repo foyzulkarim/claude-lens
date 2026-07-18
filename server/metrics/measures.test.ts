@@ -99,12 +99,31 @@ describe("computeMeasure — token and count measures", () => {
   it("counts calls, turns, and sessions in scope", () => {
     const scope: MeasureScope = {
       calls: [call(), call(), call()],
-      turns: [turn(), turn()],
+      // (#P4-5, A4) `turns` now counts logical prompt turns, so each turn
+      // gets a distinct promptId here. Sidechain-only groupings collapse
+      // into the parent's logical turn and are covered in their own test.
+      turns: [turn({ promptId: "p1" }), turn({ promptId: "p2" })],
       sessions: [session()],
     };
     expect(computeMeasure("apiCalls", scope, DEFAULT_PRICING_TABLE)).toBe(3);
     expect(computeMeasure("turns", scope, DEFAULT_PRICING_TABLE)).toBe(2);
     expect(computeMeasure("sessions", scope, DEFAULT_PRICING_TABLE)).toBe(1);
+  });
+
+  it("turns measure groups sidechain segments under their parent prompt", () => {
+    const scope: MeasureScope = {
+      calls: [],
+      // Two derived Turn records sharing promptId="p1" — one main, one
+      // sidechain — must collapse to a single logical turn so Session
+      // Detail and the dashboard agree.
+      turns: [
+        turn({ promptId: "p1", isSidechain: false }),
+        turn({ promptId: "p1", isSidechain: true }),
+        turn({ promptId: "p2", isSidechain: false }),
+      ],
+      sessions: [],
+    };
+    expect(computeMeasure("turns", scope, DEFAULT_PRICING_TABLE)).toBe(2);
   });
 
   it("counts total tool invocations, not distinct tools", () => {
