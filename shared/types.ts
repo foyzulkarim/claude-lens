@@ -53,6 +53,7 @@ export interface Turn {
   toolResultBytes: number;
   wallMs?: number;
   gateStatus?: string;
+  errorToolResults?: number;
 }
 
 export interface TierFlags {
@@ -84,4 +85,16 @@ export interface Session {
   linesAdded?: number;
   linesRemoved?: number;
   gateScore?: number;
+  cacheSavingsComputed?: number;
+  maxTurnCostComputed?: number;
+  contextPctEstimated?: number;
+}
+/**
+ * A pre-priced turn sample used by the anomaly detector.
+ * costComputed is expected to be a finite, non-negative number.
+ */
+export interface TurnCostSample {
+  sessionId: string;
+  turnId: string;
+  costComputed: number;
 }

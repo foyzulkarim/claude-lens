@@ -34,9 +34,9 @@ function batch(calls: ApiCall[]): ParseTranscriptResult {
   return { calls, prompts: [], toolResultBytes: [], duplicateCount: 0, malformedCount: 0 };
 }
 
-function makeStore(debounceMs = 300) {
+function makeStore(debounceMs = 300, opts: Partial<import("./store.js").StoreOptions> = {}) {
   const invalidations: WsServerMessage[] = [];
-  const store = new Store({ debounceMs, onInvalidate: (m) => invalidations.push(m) });
+  const store = new Store({ debounceMs, onInvalidate: (m) => invalidations.push(m), ...opts });
   return { store, invalidations };
 }
 
@@ -223,5 +223,67 @@ describe("Store — listTurns", () => {
     // No debounce advance yet — nothing recomputed via the invalidator path.
     const turns = store.listTurns();
     expect(turns.map((t) => t.sessionId).sort()).toEqual(["s1", "s2"]);
+  });
+});
+describe("Store — recompute threading", () => {
+  it("costComputed reflects injected pricer", () => {
+    const pricer = () => 1.5;
+    const pricing = {
+      "claude-sonnet-5": { input: 5, output: 25, cacheRead: 0.5, cacheCreate: 6.25 },
+    };
+    const { store } = makeStore(300, { pricer, pricing });
+
+    store.applyRecords("s1", batch([call({ sessionId: "s1" })]));
+    vi.advanceTimersByTime(300);
+
+    const session = store.getSession("s1");
+    expect(session?.costComputed).toBe(1.5);
+  });
+
+  it("changing pricing triggers recompute", () => {
+    const pricerA = () => 1;
+    const pricerB = () => 5;
+    const pricing = {
+      "claude-sonnet-5": { input: 5, output: 25, cacheRead: 0.5, cacheCreate: 6.25 },
+    };
+    const { store } = makeStore(300, { pricer: pricerA, pricing });
+
+    store.applyRecords("s1", batch([call({ sessionId: "s1" })]));
+    vi.advanceTimersByTime(300);
+    expect(store.getSession("s1")?.costComputed).toBe(1);
+
+    store.updatePricing({ pricer: pricerB });
+    store.recompute("s1");
+
+    expect(store.getSession("s1")?.costComputed).toBe(5);
+  });
+
+  it("existing derive-turns/derive-session invariants preserved", () => {
+    const pricer = () => 0;
+    const pricing = {};
+    const { store } = makeStore(300, { pricer, pricing });
+
+    const prompt1 = {
+      sessionId: "s1",
+      promptId: "p1",
+      text: "hi",
+      timestamp: "2026-07-13T00:00:00.000Z",
+    };
+    store.applyRecords("s1", {
+      calls: [call({ sessionId: "s1", messageId: "m1" })],
+      prompts: [prompt1],
+      toolResultBytes: [],
+      duplicateCount: 0,
+      malformedCount: 0,
+    });
+    vi.advanceTimersByTime(300);
+
+    const turns = store.getTurns("s1");
+    const session = store.getSession("s1");
+
+    expect(turns).toHaveLength(1);
+    expect(turns[0].promptId).toBe("p1");
+    expect(session?.callCount).toBe(1);
+    expect(session?.turnCount).toBe(1);
   });
 });

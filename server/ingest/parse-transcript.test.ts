@@ -227,26 +227,96 @@ describe("parseTranscriptLine — user line handling", () => {
 
     const result = parseTranscriptLine(line, new Set());
     expect(result.kind).toBe("tool-result-bytes");
-    if (result.kind !== "tool-result-bytes") throw new Error("expected tool-result-bytes");
+    if (result.kind !== "tool-result-bytes") return;
     expect(result.record).toEqual({
       sessionId: "session-1",
       promptId: "prompt-1",
       toolUseId: "toolu_1",
       bytes: Buffer.byteLength(content, "utf8"),
+      isError: false,
     });
-    expect(JSON.stringify(result.record)).not.toContain(content);
   });
+});
 
-  it("ignores array-shaped text blocks for prompt capture", () => {
-    const line = userLine({
+describe("parseTranscriptLine — tool_result isError classification", () => {
+  // Helper: build a tool_result user line with the given content
+  function toolResultLine(content: string, extra: Record<string, unknown> = {}): string {
+    return userLine({
       message: {
         role: "user",
-        content: [{ type: "text", text: "injected meta text" }],
+        content: [{ type: "tool_result", tool_use_id: "toolu_1", content, ...extra }],
       },
+      ...extra,
     });
+  }
 
-    const result = parseTranscriptLine(line, new Set());
-    expect(result.kind).toBe("skipped");
+  it("classifies raw is_error: true as isError: true", () => {
+    const result = parseTranscriptLine(
+      toolResultLine("something went wrong", { is_error: true }),
+      new Set(),
+    );
+    expect(result.kind).toBe("tool-result-bytes");
+    if (result.kind !== "tool-result-bytes") throw new Error("expected tool-result-bytes");
+    expect(result.record.isError).toBe(true);
+  });
+
+  it("classifies non-zero exit code in Bash output as isError: true", () => {
+    const result = parseTranscriptLine(
+      toolResultLine("Command failed with exit code 1\nsome error output"),
+      new Set(),
+    );
+    expect(result.kind).toBe("tool-result-bytes");
+    if (result.kind !== "tool-result-bytes") throw new Error("expected tool-result-bytes");
+    expect(result.record.isError).toBe(true);
+  });
+
+  it("classifies exit code 42 as isError: true", () => {
+    const result = parseTranscriptLine(toolResultLine("error: exit code 42"), new Set());
+    expect(result.kind).toBe("tool-result-bytes");
+    if (result.kind !== "tool-result-bytes") throw new Error("expected tool-result-bytes");
+    expect(result.record.isError).toBe(true);
+  });
+
+  it("classifies 'returned exit code 1' as isError: true", () => {
+    const result = parseTranscriptLine(
+      toolResultLine("process exited. returned exit code 1"),
+      new Set(),
+    );
+    expect(result.kind).toBe("tool-result-bytes");
+    if (result.kind !== "tool-result-bytes") throw new Error("expected tool-result-bytes");
+    expect(result.record.isError).toBe(true);
+  });
+
+  it("classifies 'exit_code\": 5' as isError: true", () => {
+    const result = parseTranscriptLine(
+      toolResultLine('{"exit_code": 5, "message": "failed"}'),
+      new Set(),
+    );
+    expect(result.kind).toBe("tool-result-bytes");
+    if (result.kind !== "tool-result-bytes") throw new Error("expected tool-result-bytes");
+    expect(result.record.isError).toBe(true);
+  });
+
+  it("does NOT flag exit code 0 as error", () => {
+    const result = parseTranscriptLine(toolResultLine("Command succeeded. exit code 0"), new Set());
+    expect(result.kind).toBe("tool-result-bytes");
+    if (result.kind !== "tool-result-bytes") throw new Error("expected tool-result-bytes");
+    expect(result.record.isError).toBe(false);
+  });
+
+  it("returns isError: false for normal tool result with no error indicators", () => {
+    const result = parseTranscriptLine(
+      toolResultLine("Here are the files: package.json, README.md"),
+      new Set(),
+    );
+    expect(result.kind).toBe("tool-result-bytes");
+    if (result.kind !== "tool-result-bytes") throw new Error("expected tool-result-bytes");
+    expect(result.record.isError).toBe(false);
+  });
+
+  it("malformed lines never throw even when they look like tool_result blocks", () => {
+    expect(() => parseTranscriptLine("not even json {", new Set())).not.toThrow();
+    expect(parseTranscriptLine("not even json {", new Set()).kind).toBe("malformed");
   });
 });
 

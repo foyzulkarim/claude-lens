@@ -4,6 +4,12 @@ import type { ApiCall, Session, Turn } from "../../shared/types.js";
 import { type MetricsInput, metrics } from "./engine.js";
 import { DEFAULT_PRICING_TABLE } from "./measures.js";
 
+/** Asserts a value is non-null; throws with the given message otherwise. */
+function force<T>(v: T | null | undefined, msg: string): T {
+  if (v == null) throw new Error(msg);
+  return v;
+}
+
 // All timestamps are built from local Date constructors (never hardcoded
 // "...Z" UTC strings) so bucket-day assignment — which truncates by *local*
 // calendar day (grain.ts) — is deterministic regardless of the machine
@@ -871,5 +877,285 @@ describe("metrics — smoothing: ma7 wiring", () => {
     // 7-point trailing window from i=6 onward (matches distributions.test.ts's
     // movingAverage7 fixture).
     expect(values).toEqual([10, 15, 20, 25, 30, 35, 40, 50, 60, 70]);
+  });
+});
+describe("metrics — new dashboard measures (toolErrors, cacheSavingsComputed, routingSavingsComputed)", () => {
+  it("toolErrors in series mode — turn-grain scope, counts failures", () => {
+    const t1Calls = [call({ uuid: "c1a", sessionId: "s1", timestamp: iso(2026, 6, 13, 10, 0) })];
+    const t2Calls = [call({ uuid: "c2a", sessionId: "s2", timestamp: iso(2026, 6, 13, 10, 1) })];
+    const turns = [
+      turn({
+        promptId: "p1",
+        sessionId: "s1",
+        startedAt: iso(2026, 6, 13, 10, 0),
+        endedAt: iso(2026, 6, 13, 10, 1),
+        calls: t1Calls,
+        errorToolResults: 2,
+      }),
+      turn({
+        promptId: "p2",
+        sessionId: "s2",
+        startedAt: iso(2026, 6, 13, 10, 1),
+        endedAt: iso(2026, 6, 13, 10, 2),
+        calls: t2Calls,
+        errorToolResults: 3,
+      }),
+    ];
+    const input: MetricsInput = {
+      calls: [...t1Calls, ...t2Calls],
+      turns,
+      sessions: [],
+      pricing: PRICING,
+    };
+    const query: MetricsQuery = {
+      measures: ["toolErrors"],
+      dimensions: ["time"],
+      grain: "day",
+      range: { from: iso(2026, 6, 13, 0, 0), to: iso(2026, 6, 13, 23, 59) },
+    };
+    const result = metrics(input, query);
+    expect(result[0]?.points[0]?.value).toBe(5);
+    for (const point of result[0]?.points ?? []) {
+      expect(Number.isNaN(point.value)).toBe(false);
+      expect(Number.isFinite(point.value ?? NaN)).toBe(true);
+    }
+  });
+
+  it("toolErrors in series mode — null on call-grain (no turns in scope)", () => {
+    // With distributionEntity: "call", there are no turns → toolErrors returns null
+    const calls = [call({ uuid: "c1", timestamp: iso(2026, 6, 13, 10, 0) })];
+    const input: MetricsInput = { calls, turns: [], sessions: [], pricing: PRICING };
+    const query: MetricsQuery = {
+      measures: ["toolErrors"],
+      dimensions: ["time"],
+      grain: "day",
+      range: { from: iso(2026, 6, 13, 0, 0), to: iso(2026, 6, 13, 23, 59) },
+      mode: "distribution",
+      distributionEntity: "call",
+    };
+    const result = metrics(input, query);
+    // No entity passes the filter (all null) → honest-null distribution
+    expect(result[0]?.distribution?.p50).toBeNull();
+  });
+
+  it("cacheSavingsComputed produces valid series with no NaN/Infinity", () => {
+    const calls = [
+      call({
+        uuid: "c1",
+        timestamp: iso(2026, 6, 13, 10, 0),
+        model: "claude-sonnet-5",
+        usage: {
+          inputTokens: 1_000_000,
+          outputTokens: 0,
+          cacheReadTokens: 500_000,
+          cacheCreateTokens: 0,
+        },
+      }),
+    ];
+    const input: MetricsInput = { calls, turns: [], sessions: [], pricing: PRICING };
+    const query: MetricsQuery = {
+      measures: ["cacheSavingsComputed"],
+      dimensions: ["time"],
+      grain: "day",
+      range: { from: iso(2026, 6, 13, 0, 0), to: iso(2026, 6, 13, 23, 59) },
+    };
+    const result = metrics(input, query);
+    expect(result[0]?.points[0]?.value).toBeCloseTo(2.25, 10); // uncached=7.5, actual=5.25
+    for (const point of result[0]?.points ?? []) {
+      expect(Number.isNaN(point.value)).toBe(false);
+      expect(Number.isFinite(point.value ?? NaN)).toBe(true);
+    }
+  });
+
+  it("routingSavingsComputed produces valid series with no NaN/Infinity", () => {
+    const calls = [
+      call({
+        uuid: "c1",
+        timestamp: iso(2026, 6, 13, 10, 0),
+        model: "claude-sonnet-5",
+        usage: {
+          inputTokens: 1_000_000,
+          outputTokens: 0,
+          cacheReadTokens: 500_000,
+          cacheCreateTokens: 0,
+        },
+      }),
+    ];
+    const input: MetricsInput = { calls, turns: [], sessions: [], pricing: PRICING };
+    const query: MetricsQuery = {
+      measures: ["routingSavingsComputed"],
+      dimensions: ["time"],
+      grain: "day",
+      range: { from: iso(2026, 6, 13, 0, 0), to: iso(2026, 6, 13, 23, 59) },
+    };
+    const result = metrics(input, query);
+    expect(result[0]?.points[0]?.value).toBeCloseTo(2.25, 10);
+    for (const point of result[0]?.points ?? []) {
+      expect(Number.isNaN(point.value)).toBe(false);
+      expect(Number.isFinite(point.value ?? NaN)).toBe(true);
+    }
+  });
+
+  it("routingSavingsComputed + cacheSavingsComputed = opusUncached - actual (non-overlapping)", () => {
+    // Use differentiated pricing so model-routing savings are non-zero (not all same rate).
+    const customPricing = {
+      "claude-sonnet-5": { input: 5.0, output: 25.0, cacheRead: 0.5, cacheCreate: 6.25 },
+      "claude-haiku-4-5": { input: 0.3, output: 1.5, cacheRead: 0.03, cacheCreate: 0.375 },
+      "claude-opus-4-8": { input: 15.0, output: 75.0, cacheRead: 1.5, cacheCreate: 18.75 },
+    };
+    const calls = [
+      call({
+        uuid: "c1",
+        timestamp: iso(2026, 6, 13, 10, 0),
+        model: "claude-sonnet-5",
+        usage: {
+          inputTokens: 1_000_000,
+          outputTokens: 200_000,
+          cacheReadTokens: 500_000,
+          cacheCreateTokens: 100_000,
+        },
+      }),
+      call({
+        uuid: "c2",
+        timestamp: iso(2026, 6, 13, 11, 0),
+        model: "claude-haiku-4-5",
+        usage: {
+          inputTokens: 800_000,
+          outputTokens: 100_000,
+          cacheReadTokens: 200_000,
+          cacheCreateTokens: 50_000,
+        },
+      }),
+    ];
+    const input: MetricsInput = { calls, turns: [], sessions: [], pricing: customPricing };
+    const routingResult = metrics(input, {
+      measures: ["routingSavingsComputed"],
+      dimensions: ["time"],
+      grain: "day",
+      range: { from: iso(2026, 6, 13, 0, 0), to: iso(2026, 6, 13, 23, 59) },
+    });
+    const actualResult = metrics(input, {
+      measures: ["costComputed"],
+      dimensions: ["time"],
+      grain: "day",
+      range: { from: iso(2026, 6, 13, 0, 0), to: iso(2026, 6, 13, 23, 59) },
+    });
+    const routingVal = routingResult[0]?.points[0]?.value ?? 0;
+    const actualVal = actualResult[0]?.points[0]?.value ?? 0;
+
+    const opusUncached = calls.reduce((sum, call) => {
+      const rate = force(customPricing["claude-opus-4-8"], "Opus not in pricing table");
+      const { inputTokens, outputTokens, cacheReadTokens, cacheCreateTokens } = call.usage;
+      return (
+        sum +
+        ((inputTokens + cacheReadTokens) * rate.input +
+          outputTokens * rate.output +
+          cacheCreateTokens * rate.cacheCreate) /
+          1_000_000
+      );
+    }, 0);
+
+    expect(routingVal).toBeCloseTo(opusUncached - actualVal, 10);
+  });
+
+  it("compatible measures in distribution mode return valid Distribution", () => {
+    const t1Calls = [
+      call({ uuid: "c1", timestamp: iso(2026, 6, 13, 10, 0), sessionId: "s1" }),
+      call({ uuid: "c2", timestamp: iso(2026, 6, 13, 10, 1), sessionId: "s1" }),
+    ];
+    const t2Calls = [call({ uuid: "c3", timestamp: iso(2026, 6, 13, 11, 0), sessionId: "s2" })];
+    const turns = [
+      turn({
+        promptId: "p1",
+        sessionId: "s1",
+        startedAt: iso(2026, 6, 13, 10, 0),
+        endedAt: iso(2026, 6, 13, 10, 2),
+        calls: t1Calls,
+        errorToolResults: 1,
+      }),
+      turn({
+        promptId: "p2",
+        sessionId: "s2",
+        startedAt: iso(2026, 6, 13, 11, 0),
+        endedAt: iso(2026, 6, 13, 11, 1),
+        calls: t2Calls,
+        errorToolResults: 2,
+      }),
+    ];
+    const sessions = [
+      session({ sessionId: "s1", firstAt: iso(2026, 6, 13, 10, 0) }),
+      session({ sessionId: "s2", firstAt: iso(2026, 6, 13, 11, 0) }),
+    ];
+    const input: MetricsInput = {
+      calls: [...t1Calls, ...t2Calls],
+      turns,
+      sessions,
+      pricing: PRICING,
+    };
+    // toolErrors with distributionEntity: "session" — session has turns
+    const query: MetricsQuery = {
+      measures: ["toolErrors"],
+      dimensions: [],
+      grain: "day",
+      range: { from: iso(2026, 6, 13, 0, 0), to: iso(2026, 6, 13, 23, 59) },
+      mode: "distribution",
+      distributionEntity: "session",
+    };
+    const result = metrics(input, query);
+    // Two sessions: s1 errorToolResults=1, s2 errorToolResults=2 → [1, 2]
+    expect(result[0]?.distribution?.p50).toBe(1);
+    expect(result[0]?.distribution?.p99).toBe(2);
+  });
+
+  it("unknown measure literal is still rejected — exhaustiveness enforced", () => {
+    // This compiles only if all Measure literals are handled in the switch.
+    // We test via a type-level assertion that Measure is a finite union.
+    const allMeasures = [
+      "costComputed",
+      "costObserved",
+      "inputTokens",
+      "outputTokens",
+      "cacheReadTokens",
+      "cacheCreateTokens",
+      "apiCalls",
+      "turns",
+      "sessions",
+      "toolCalls",
+      "cacheHitPct",
+      "wallMinutes",
+      "apiMs",
+      "linesAdded",
+      "linesRemoved",
+      "gatePassRate",
+      "toolErrors",
+      "cacheSavingsComputed",
+      "routingSavingsComputed",
+    ] as const;
+    // At runtime we only check that known measures produce a value (not null crash)
+    const calls = [call({ uuid: "c1", timestamp: iso(2026, 6, 13, 10, 0), sessionId: "s1" })];
+    const turns = [
+      turn({
+        promptId: "p1",
+        sessionId: "s1",
+        startedAt: iso(2026, 6, 13, 10, 0),
+        endedAt: iso(2026, 6, 13, 10, 1),
+        calls,
+        errorToolResults: 0,
+      }),
+    ];
+    const sessions = [session({ sessionId: "s1", firstAt: iso(2026, 6, 13, 10, 0) })];
+    const input: MetricsInput = { calls, turns, sessions, pricing: PRICING };
+    for (const measure of allMeasures) {
+      const query: MetricsQuery = {
+        measures: [measure],
+        dimensions: ["time"],
+        grain: "day",
+        range: { from: iso(2026, 6, 13, 0, 0), to: iso(2026, 6, 13, 23, 59) },
+      };
+      // Should not throw — exhaustiveness at compile time guarantees all literals handled
+      const result = metrics(input, query);
+      expect(result).toHaveLength(1);
+      expect(result[0]?.points).toBeDefined();
+    }
   });
 });

@@ -16,6 +16,8 @@ export interface ToolResultBytesRecord {
   promptId: string;
   toolUseId: string;
   bytes: number;
+  /** True when the tool reported a failure (is_error flag or non-zero exit code in Bash output). */
+  isError: boolean;
 }
 
 export type ParsedLine =
@@ -100,6 +102,16 @@ function toOptionalNum(value: unknown): number | undefined {
   return typeof value === "number" ? value : undefined;
 }
 
+// Detects non-zero exit codes in Bash tool-result text.
+// Matches: "exit code N", "exit_code: N", "returned exit code N", etc.
+// where N is 1-9 (digit 0 is explicitly excluded).
+// Greedy .+ between the keyword and [1-9] ensures we skip any separator chars.
+const FAILED_EXIT_RE = /(?:exit ?code|exit_code|returned\s+exit\s+code).+[1-9]/i;
+
+function hasFailedExitCode(text: string): boolean {
+  return FAILED_EXIT_RE.test(text);
+}
+
 function parseAssistantLine(line: RawAssistantLine): ParsedLine {
   const message = line.message;
   const messageId = message?.id;
@@ -174,13 +186,16 @@ function parseUserLine(line: RawUserLine): ParsedLine {
     // tool calls landing multiple tool_result blocks on a single line.
     for (const block of content) {
       if (isRecord(block) && block.type === "tool_result" && typeof block.content === "string") {
+        const rawContent = block.content;
+        const isError = block.is_error === true || hasFailedExitCode(rawContent);
         return {
           kind: "tool-result-bytes",
           record: {
             sessionId,
             promptId,
             toolUseId: toStr(block.tool_use_id),
-            bytes: Buffer.byteLength(block.content, "utf8"),
+            bytes: Buffer.byteLength(rawContent, "utf8"),
+            isError,
           },
         };
       }

@@ -1,6 +1,19 @@
 import { describe, expect, it } from "vitest";
 import type { ApiCall, Session, Turn } from "../../shared/types.js";
-import { DEFAULT_PRICING_TABLE, type MeasureScope, computeMeasure } from "./measures.js";
+import {
+  DEFAULT_PRICING_TABLE,
+  uncachedPrice,
+  type MeasureScope,
+  computeMeasure,
+} from "./measures.js";
+
+/** Asserts a value is non-null; throws with the given message otherwise. Used to
+ * satisfy Biome's noNonNullAssertion rule when we *know* a fixture produces a
+ * real value (test is the contract, not production). */
+function force<T>(v: T | null | undefined, msg: string): T {
+  if (v == null) throw new Error(msg);
+  return v;
+}
 
 function call(overrides: Partial<ApiCall> = {}): ApiCall {
   return {
@@ -260,5 +273,319 @@ describe("computeMeasure — empty scope", () => {
     ] as const) {
       expect(computeMeasure(measure, EMPTY_SCOPE, DEFAULT_PRICING_TABLE)).toBeNull();
     }
+  });
+});
+describe("computeMeasure — toolErrors", () => {
+  it("sums errorToolResults across scope turns", () => {
+    const scope: MeasureScope = {
+      calls: [],
+      turns: [
+        turn({ errorToolResults: 1 }),
+        turn({ errorToolResults: 2 }),
+        turn({ errorToolResults: 0 }),
+      ],
+      sessions: [],
+    };
+    expect(computeMeasure("toolErrors", scope, DEFAULT_PRICING_TABLE)).toBe(3);
+  });
+
+  it("returns null for a call-grain scope (no turns)", () => {
+    const scope: MeasureScope = {
+      calls: [call()],
+      turns: [],
+      sessions: [],
+    };
+    expect(computeMeasure("toolErrors", scope, DEFAULT_PRICING_TABLE)).toBeNull();
+  });
+
+  it("zero errorToolResults is a real 0, not null", () => {
+    const scope: MeasureScope = {
+      calls: [],
+      turns: [turn({ errorToolResults: 0 })],
+      sessions: [],
+    };
+    expect(computeMeasure("toolErrors", scope, DEFAULT_PRICING_TABLE)).toBe(0);
+    expect(computeMeasure("toolErrors", scope, DEFAULT_PRICING_TABLE)).not.toBeNull();
+  });
+
+  it("undefined errorToolResults is treated as 0", () => {
+    const scope: MeasureScope = {
+      calls: [],
+      turns: [turn({ errorToolResults: undefined })],
+      sessions: [],
+    };
+    expect(computeMeasure("toolErrors", scope, DEFAULT_PRICING_TABLE)).toBe(0);
+  });
+});
+
+describe("computeMeasure — cacheSavingsComputed", () => {
+  it("computes (uncached cost) - (actual cost) correctly", () => {
+    // Rates: input=5, output=25, cacheRead=0.5, cacheCreate=6.25
+    // Call: 1M input, 1M cacheRead, 0 output, 0 cacheCreate
+    // uncached = (1M+1M)*5/1M = 10
+    // actual   = 1M*5/1M + 1M*0.5/1M = 5 + 0.5 = 5.5
+    // savings  = 10 - 5.5 = 4.5
+    const scope: MeasureScope = {
+      calls: [
+        call({
+          usage: {
+            inputTokens: 1_000_000,
+            outputTokens: 0,
+            cacheReadTokens: 1_000_000,
+            cacheCreateTokens: 0,
+          },
+        }),
+      ],
+      turns: [],
+      sessions: [],
+    };
+    expect(computeMeasure("cacheSavingsComputed", scope, DEFAULT_PRICING_TABLE)).toBeCloseTo(
+      4.5,
+      10,
+    );
+  });
+
+  it("matches hand-rolled expectations on a mixed call", () => {
+    // Rates: input=5, output=25, cacheRead=0.5, cacheCreate=6.25
+    // Call: 200k input, 100k output, 80k cacheRead, 20k cacheCreate
+    // uncached = (200k+80k)*5/1M + 100k*25/1M + 20k*6.25/1M = 1.4 + 2.5 + 0.125 = 4.025
+    // actual   = 200k*5/1M + 100k*25/1M + 80k*0.5/1M + 20k*6.25/1M = 1.0 + 2.5 + 0.04 + 0.125 = 3.665
+    // savings  = 4.025 - 3.665 = 0.36
+    const scope: MeasureScope = {
+      calls: [
+        call({
+          usage: {
+            inputTokens: 200_000,
+            outputTokens: 100_000,
+            cacheReadTokens: 80_000,
+            cacheCreateTokens: 20_000,
+          },
+        }),
+      ],
+      turns: [],
+      sessions: [],
+    };
+    expect(computeMeasure("cacheSavingsComputed", scope, DEFAULT_PRICING_TABLE)).toBeCloseTo(
+      0.36,
+      10,
+    );
+  });
+
+  it("sums across multiple calls", () => {
+    const scope: MeasureScope = {
+      calls: [
+        call({
+          usage: {
+            inputTokens: 1_000_000,
+            outputTokens: 0,
+            cacheReadTokens: 1_000_000,
+            cacheCreateTokens: 0,
+          },
+        }),
+        call({
+          usage: {
+            inputTokens: 1_000_000,
+            outputTokens: 0,
+            cacheReadTokens: 0,
+            cacheCreateTokens: 0,
+          },
+        }),
+      ],
+      turns: [],
+      sessions: [],
+    };
+    // Call 1: uncached=10, actual=5.5, savings=4.5
+    // Call 2: uncached=5, actual=5, savings=0
+    // total = 4.5
+    expect(computeMeasure("cacheSavingsComputed", scope, DEFAULT_PRICING_TABLE)).toBeCloseTo(
+      4.5,
+      10,
+    );
+  });
+
+  it("returns null when any call's model is unpriced", () => {
+    const scope: MeasureScope = {
+      calls: [
+        call({
+          model: "unknown-model",
+          usage: {
+            inputTokens: 1_000_000,
+            outputTokens: 0,
+            cacheReadTokens: 0,
+            cacheCreateTokens: 0,
+          },
+        }),
+      ],
+      turns: [],
+      sessions: [],
+    };
+    expect(computeMeasure("cacheSavingsComputed", scope, DEFAULT_PRICING_TABLE)).toBeNull();
+  });
+
+  it("returns null for an empty call list", () => {
+    const scope: MeasureScope = { calls: [], turns: [], sessions: [] };
+    expect(computeMeasure("cacheSavingsComputed", scope, DEFAULT_PRICING_TABLE)).toBeNull();
+  });
+});
+
+describe("computeMeasure — routingSavingsComputed", () => {
+  it("computes (all-Opus uncached cost) - (actual cost) correctly", () => {
+    // Rates: input=5, output=25, cacheRead=0.5, cacheCreate=6.25 (same for all models in placeholder)
+    // Call: 1M input, 1M cacheRead, 0 output, 0 cacheCreate
+    // opusUncached = (1M+1M)*5/1M = 10
+    // actual       = 1M*5/1M + 1M*0.5/1M = 5.5
+    // savings      = 10 - 5.5 = 4.5
+    const scope: MeasureScope = {
+      calls: [
+        call({
+          usage: {
+            inputTokens: 1_000_000,
+            outputTokens: 0,
+            cacheReadTokens: 1_000_000,
+            cacheCreateTokens: 0,
+          },
+        }),
+      ],
+      turns: [],
+      sessions: [],
+    };
+    expect(computeMeasure("routingSavingsComputed", scope, DEFAULT_PRICING_TABLE)).toBeCloseTo(
+      4.5,
+      10,
+    );
+  });
+
+  it("routing = opusUncached - actual (counterfactual); cache = current_uncached - actual (non-overlapping)", () => {
+    // Use explicit pricing where Opus is meaningfully more expensive than Sonnet/Haiku.
+    const pricing = {
+      "claude-sonnet-5": { input: 5.0, output: 25.0, cacheRead: 0.5, cacheCreate: 6.25 },
+      "claude-haiku-4-5": { input: 0.3, output: 1.5, cacheRead: 0.03, cacheCreate: 0.375 },
+      "claude-opus-4-8": { input: 15.0, output: 75.0, cacheRead: 1.5, cacheCreate: 18.75 },
+    };
+    const scope: MeasureScope = {
+      calls: [
+        call({
+          model: "claude-sonnet-5",
+          usage: {
+            inputTokens: 1_000_000,
+            outputTokens: 200_000,
+            cacheReadTokens: 500_000,
+            cacheCreateTokens: 100_000,
+          },
+        }),
+        call({
+          model: "claude-haiku-4-5",
+          usage: {
+            inputTokens: 800_000,
+            outputTokens: 100_000,
+            cacheReadTokens: 200_000,
+            cacheCreateTokens: 50_000,
+          },
+        }),
+      ],
+      turns: [],
+      sessions: [],
+    };
+
+    const cache = force(
+      computeMeasure("cacheSavingsComputed", scope, pricing),
+      "cacheSavingsComputed unexpectedly null",
+    );
+    const routing = force(
+      computeMeasure("routingSavingsComputed", scope, pricing),
+      "routingSavingsComputed unexpectedly null",
+    );
+    const actual = force(
+      computeMeasure("costComputed", scope, pricing),
+      "costComputed unexpectedly null",
+    );
+    const opusRate = force(pricing["claude-opus-4-8"], "Opus not in pricing table");
+    // routing = opusUncached - actual
+    const opusUncached = scope.calls.reduce((sum, call) => {
+      const { inputTokens, outputTokens, cacheReadTokens, cacheCreateTokens } = call.usage;
+      return (
+        sum +
+        ((inputTokens + cacheReadTokens) * opusRate.input +
+          outputTokens * opusRate.output +
+          cacheCreateTokens * opusRate.cacheCreate) /
+          1_000_000
+      );
+    }, 0);
+    const currentUncached = scope.calls.reduce(
+      (sum, call) => sum + force(uncachedPrice(call, pricing), "uncachedPrice unexpectedly null"),
+      0,
+    );
+    expect(cache).toBeCloseTo(currentUncached - actual, 10);
+    expect(routing).toBeCloseTo(opusUncached - actual, 10);
+
+    // Non-overlapping: cache and routing measure independent counterfactuals
+    // Total = (opusUncached - actual) + (currentUncached - actual)
+    //       = opusUncached + currentUncached - 2*actual
+    // This is NOT equal to opusUncached - actual; they measure different things.
+  });
+
+  it("returns null when Opus is not in the pricing table", () => {
+    const emptyPricing: typeof DEFAULT_PRICING_TABLE = {};
+    const scope: MeasureScope = {
+      calls: [
+        call({
+          usage: {
+            inputTokens: 1_000_000,
+            outputTokens: 0,
+            cacheReadTokens: 0,
+            cacheCreateTokens: 0,
+          },
+        }),
+      ],
+      turns: [],
+      sessions: [],
+    };
+    expect(computeMeasure("routingSavingsComputed", scope, emptyPricing)).toBeNull();
+  });
+
+  it("returns null for an empty call list", () => {
+    const scope: MeasureScope = { calls: [], turns: [], sessions: [] };
+    expect(computeMeasure("routingSavingsComputed", scope, DEFAULT_PRICING_TABLE)).toBeNull();
+  });
+
+  it("handles a known cheap model vs Opus", () => {
+    // Sonnet input=5, Opus input=5 (placeholder). When cache is involved,
+    // routing savings come purely from cache vs no-cache on Opus.
+    const scope: MeasureScope = {
+      calls: [
+        call({
+          model: "claude-haiku-4-5",
+          usage: {
+            inputTokens: 1_000_000,
+            outputTokens: 0,
+            cacheReadTokens: 500_000,
+            cacheCreateTokens: 0,
+          },
+        }),
+      ],
+      turns: [],
+      sessions: [],
+    };
+    // opusUncached = (1M+500k)*5/1M = 7.5
+    // actual       = 1M*5/1M + 500k*0.5/1M = 5 + 0.25 = 5.25
+    // savings     = 7.5 - 5.25 = 2.25
+    expect(computeMeasure("routingSavingsComputed", scope, DEFAULT_PRICING_TABLE)).toBeCloseTo(
+      2.25,
+      10,
+    );
+  });
+});
+
+describe("computeMeasure — premium-gated measures return null today", () => {
+  // toolErrors, cacheSavingsComputed, routingSavingsComputed are now implemented
+  it.each([
+    "costObserved",
+    "linesAdded",
+    "linesRemoved",
+    "gatePassRate",
+    "apiMs",
+  ] as const)("%s returns null regardless of scope contents", (measure) => {
+    const scope: MeasureScope = { calls: [call()], turns: [turn()], sessions: [session()] };
+    expect(computeMeasure(measure, scope, DEFAULT_PRICING_TABLE)).toBeNull();
   });
 });

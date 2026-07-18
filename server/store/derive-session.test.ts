@@ -103,3 +103,136 @@ describe("deriveSession — fixture-driven rollups", () => {
     expect(session.durationMs).toBeUndefined();
   });
 });
+describe("deriveSession — computed field derivation", () => {
+  const noSidecars = { hasCostSamples: false, hasTurnBoundaries: false, hasCostLog: false };
+
+  // Simple pricer: $1 per call
+  const flatPricer = () => 1;
+
+  // Simple pricing table
+  const simplePricing = {
+    "claude-sonnet-5": { input: 5, output: 25, cacheRead: 0.5, cacheCreate: 6.25 },
+  };
+
+  function makeCall(
+    messageId: string,
+    model = "claude-sonnet-5",
+    usage = { inputTokens: 100, outputTokens: 50, cacheReadTokens: 0, cacheCreateTokens: 0 },
+  ): import("../../shared/types.js").ApiCall {
+    return {
+      uuid: `u-${messageId}`,
+      sessionId: "s1",
+      messageId,
+      timestamp: "2026-07-13T00:00:00.000Z",
+      model,
+      usage,
+      isSidechain: false,
+      tools: [],
+      cwd: "/repo",
+      gitBranch: "main",
+      version: "1.0.0",
+      entrypoint: "cli",
+    };
+  }
+
+  function makeTurn(
+    promptId: string,
+    calls: import("../../shared/types.js").ApiCall[],
+  ): import("../../shared/types.js").Turn {
+    return {
+      promptId,
+      sessionId: "s1",
+      isSidechain: false,
+      startedAt: "2026-07-13T00:00:00.000Z",
+      endedAt: "2026-07-13T00:00:01.000Z",
+      calls,
+      usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreateTokens: 0 },
+      toolResultBytes: 0,
+    };
+  }
+
+  it("costComputed > 0 with priced calls", () => {
+    const calls = [makeCall("m1")];
+    const turns = [makeTurn("p1", calls)];
+    const session = deriveSession("s1", calls, turns, noSidecars, flatPricer, simplePricing);
+    expect(session.costComputed).toBeGreaterThan(0);
+  });
+
+  it("costComputed = 0 with empty pricing table (no pricer injected)", () => {
+    const calls = [makeCall("m1")];
+    const turns = [makeTurn("p1", calls)];
+    const session = deriveSession("s1", calls, turns, noSidecars, undefined, {});
+    expect(session.costComputed).toBe(0);
+  });
+
+  it("cacheSavingsComputed computed from pricing", () => {
+    // With 50% cache read, uncached > actual → positive savings
+    const calls = [
+      makeCall("m1", "claude-sonnet-5", {
+        inputTokens: 1000,
+        outputTokens: 100,
+        cacheReadTokens: 1000,
+        cacheCreateTokens: 0,
+      }),
+    ];
+    const turns = [makeTurn("p1", calls)];
+    const session = deriveSession("s1", calls, turns, noSidecars, flatPricer, simplePricing);
+    // Cache savings = (uncached - actual)
+    // uncached = (1000+1000)*5/1e6 + 100*25/1e6 = 10.0025
+    // actual   = 1000*5/1e6 + 1000*0.5/1e6 + 100*25/1e6 = 0.005 + 0.0005 + 0.0025 = 0.008
+    // savings  ≈ 0.0025
+    expect(session.cacheSavingsComputed).toBeGreaterThan(0);
+  });
+
+  it("maxTurnCostComputed is the max per-turn cost", () => {
+    // Turn 1: 1 call at $1 = $1, Turn 2: 3 calls at $1 = $3
+    const calls1 = [makeCall("m1")];
+    const calls2 = [makeCall("m2"), makeCall("m3"), makeCall("m4")];
+    const turns = [makeTurn("p1", calls1), makeTurn("p2", calls2)];
+    const allCalls = [...calls1, ...calls2];
+    const session = deriveSession("s1", allCalls, turns, noSidecars, flatPricer, simplePricing);
+    expect(session.maxTurnCostComputed).toBe(3);
+  });
+
+  it("contextPctEstimated is in [0, 1] for known model", () => {
+    const calls = [
+      makeCall("m1", "claude-sonnet-5", {
+        inputTokens: 50_000,
+        outputTokens: 10_000,
+        cacheReadTokens: 0,
+        cacheCreateTokens: 0,
+      }),
+    ];
+    const turns = [makeTurn("p1", calls)];
+    // Update turn usage to reflect call
+    turns[0].usage = { ...calls[0].usage };
+    const session = deriveSession("s1", calls, turns, noSidecars, flatPricer, simplePricing);
+    expect(session.contextPctEstimated).toBeGreaterThanOrEqual(0);
+    expect(session.contextPctEstimated).toBeLessThanOrEqual(1);
+  });
+
+  it("contextPctEstimated is undefined for unknown model", () => {
+    const calls = [
+      makeCall("m1", "claude-unknown-99", {
+        inputTokens: 1000,
+        outputTokens: 100,
+        cacheReadTokens: 0,
+        cacheCreateTokens: 0,
+      }),
+    ];
+    const turns = [makeTurn("p1", calls)];
+    turns[0].usage = { ...calls[0].usage };
+    const session = deriveSession("s1", calls, turns, noSidecars, flatPricer, simplePricing);
+    expect(session.contextPctEstimated).toBeUndefined();
+  });
+
+  it("returns a zeroed rollup for a session with no calls", () => {
+    const session = deriveSession("empty-session", [], [], noSidecars, flatPricer, simplePricing);
+    expect(session.callCount).toBe(0);
+    expect(session.turnCount).toBe(0);
+    expect(session.usage.inputTokens).toBe(0);
+    expect(session.cacheHitPct).toBe(0);
+    expect(session.firstAt).toBe("");
+    expect(session.durationMs).toBeUndefined();
+  });
+});

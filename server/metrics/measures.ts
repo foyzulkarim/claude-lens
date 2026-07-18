@@ -36,7 +36,7 @@ export interface MeasureScope {
   sessions: Session[];
 }
 
-function priceCall(call: ApiCall, pricing: PricingTable): number {
+export function priceCall(call: ApiCall, pricing: PricingTable): number {
   const rate = pricing[call.model];
   if (!rate) return 0;
   const { inputTokens, outputTokens, cacheReadTokens, cacheCreateTokens } = call.usage;
@@ -45,6 +45,38 @@ function priceCall(call: ApiCall, pricing: PricingTable): number {
       outputTokens * rate.output +
       cacheReadTokens * rate.cacheRead +
       cacheCreateTokens * rate.cacheCreate) /
+    1_000_000
+  );
+}
+
+/**
+ * The uncached-cost counterfactual for one call: price it as if no tokens were
+ * served from cache — cache-read tokens are priced at the input rate instead.
+ * Returns null if the call's model is unpriced.
+ */
+export function uncachedPrice(call: ApiCall, pricing: PricingTable): number | null {
+  const rate = pricing[call.model];
+  if (!rate) return null;
+  const { inputTokens, outputTokens, cacheReadTokens, cacheCreateTokens } = call.usage;
+  return (
+    ((inputTokens + cacheReadTokens) * rate.input +
+      outputTokens * rate.output +
+      cacheCreateTokens * rate.cacheCreate) /
+    1_000_000
+  );
+}
+
+/**
+ * The all-Opus-uncached counterfactual: prices every call at the Opus model's
+ * rates with zero cache benefit. Returns null if Opus is unpriced (shouldn't
+ * happen with DEFAULT_PRICING_TABLE, but defensive).
+ */
+function opusUncachedPrice(call: ApiCall, opusRate: ModelRate): number {
+  const { inputTokens, outputTokens, cacheReadTokens, cacheCreateTokens } = call.usage;
+  return (
+    ((inputTokens + cacheReadTokens) * opusRate.input +
+      outputTokens * opusRate.output +
+      cacheCreateTokens * opusRate.cacheCreate) /
     1_000_000
   );
 }
@@ -101,6 +133,46 @@ export function computeMeasure(
         const ms = Date.parse(turn.endedAt) - Date.parse(turn.startedAt);
         return sum + (Number.isFinite(ms) ? ms / 60_000 : 0);
       }, 0);
+    case "toolErrors": {
+      // Turn-grain only: calls don't have classified tool-result failure metadata.
+      // Return null for call/distribution scopes that have no turns.
+      if (scope.turns.length === 0) return null;
+      return scope.turns.reduce((sum, turn) => sum + (turn.errorToolResults ?? 0), 0);
+    }
+    case "cacheSavingsComputed": {
+      // Cache savings = (uncached cost at current model rates) - (actual cost).
+      // Any unpriced call makes the whole bucket's result null.
+      // Returns null for a completely empty call list too (no data → no savings claim).
+      if (scope.calls.length === 0) return null;
+      let savings = 0;
+      for (const call of scope.calls) {
+        const uncached = uncachedPrice(call, pricing);
+        if (uncached === null) return null; // unpriced model poisons the whole bucket
+        const actual = priceCall(call, pricing);
+        savings += uncached - actual;
+      }
+      return savings;
+    }
+    case "routingSavingsComputed": {
+      // Routing savings = (all-Opus uncached cost) - (actual cost).
+      // Non-overlapping with cache savings: cacheSavings + routingSavings =
+      //   (uncached - actual) + (opusUncached - actual)
+      //   = opusUncached - actual  ← single counterfactual, no double-count
+      // Opus is assumed to be in the pricing table (default entry always present).
+      // Any unpriced call makes the whole bucket's result null.
+      const opusRate = pricing["claude-opus-4-8"];
+      if (!opusRate || scope.calls.length === 0) return null;
+      let savings = 0;
+      for (const call of scope.calls) {
+        // opusUncachedPrice always succeeds (opusRate confirmed above).
+        // But if the call's model is unpriced, actual cost is $0 and the
+        // counterfactual savings claim is meaningless — poison the bucket.
+        if (!(call.model in pricing)) return null;
+        const actual = priceCall(call, pricing);
+        savings += opusUncachedPrice(call, opusRate) - actual;
+      }
+      return savings;
+    }
     case "costObserved":
     case "apiMs":
     case "linesAdded":

@@ -140,3 +140,96 @@ describe("deriveTurns — fixture-driven", () => {
     expect(turn2?.calls.map((c) => c.messageId)).toEqual(["m2"]);
   });
 });
+describe("deriveTurns — errorToolResults aggregation", () => {
+  function makeCall(messageId: string, sessionId = "s1"): import("../../shared/types.js").ApiCall {
+    return {
+      uuid: `u-${messageId}`,
+      sessionId,
+      messageId,
+      timestamp: "2026-07-13T00:00:00.000Z",
+      model: "claude-sonnet-5",
+      usage: { inputTokens: 100, outputTokens: 50, cacheReadTokens: 0, cacheCreateTokens: 0 },
+      isSidechain: false,
+      tools: [],
+      cwd: "/repo",
+      gitBranch: "main",
+      version: "1.0.0",
+      entrypoint: "cli",
+    };
+  }
+
+  function makePrompt(promptId: string, sessionId = "s1") {
+    return {
+      sessionId,
+      promptId,
+      text: `prompt ${promptId}`,
+      timestamp: "2026-07-13T00:00:00.000Z",
+    };
+  }
+
+  function makeToolResult(promptId: string, toolUseId: string, isError: boolean) {
+    return {
+      sessionId: "s1",
+      promptId,
+      toolUseId,
+      bytes: 100,
+      isError,
+    };
+  }
+
+  it("aggregates failed tool results per Turn", () => {
+    const calls = [makeCall("m1")];
+    const prompts = [makePrompt("p1")];
+    const toolResults = [
+      makeToolResult("p1", "t1", false),
+      makeToolResult("p1", "t2", true),
+      makeToolResult("p1", "t3", true),
+    ];
+
+    const turns = deriveTurns(calls, prompts, toolResults);
+    expect(turns).toHaveLength(1);
+    expect(turns[0].errorToolResults).toBe(2);
+  });
+
+  it("returns 0 errorToolResults when no tool results are errored", () => {
+    const calls = [makeCall("m1")];
+    const prompts = [makePrompt("p1")];
+    const toolResults = [makeToolResult("p1", "t1", false), makeToolResult("p1", "t2", false)];
+
+    const turns = deriveTurns(calls, prompts, toolResults);
+    expect(turns[0].errorToolResults).toBe(0);
+  });
+
+  it("returns 0 errorToolResults for a turn with no tool results at all", () => {
+    const calls = [makeCall("m1")];
+    const prompts = [makePrompt("p1")];
+
+    const turns = deriveTurns(calls, prompts, []);
+    expect(turns[0].errorToolResults).toBe(0);
+  });
+
+  it("missing isError field defaults to false", () => {
+    const calls = [makeCall("m1")];
+    const prompts = [makePrompt("p1")];
+    const toolResults = [
+      {
+        sessionId: "s1",
+        promptId: "p1",
+        toolUseId: "t1",
+        bytes: 50,
+      } as import("../ingest/parse-transcript.js").ToolResultBytesRecord,
+    ];
+
+    const turns = deriveTurns(calls, prompts, toolResults);
+    expect(turns[0].errorToolResults).toBe(0);
+  });
+
+  it("does not count errored tool results from other prompts", () => {
+    const calls = [makeCall("m1")];
+    const prompts = [makePrompt("p1")];
+    const toolResults = [makeToolResult("p2", "t1", true), makeToolResult("p1", "t2", false)];
+
+    const turns = deriveTurns(calls, prompts, toolResults);
+    expect(turns[0].errorToolResults).toBe(0);
+  });
+});

@@ -56,7 +56,11 @@ function assignPromptIds(calls: ApiCall[], prompts: PromptTextRecord[]): Map<Api
   return assignment;
 }
 
-function buildTurn(acc: TurnAccumulator, toolResultBytesByPromptId: Map<string, number>): Turn {
+function buildTurn(
+  acc: TurnAccumulator,
+  toolResultBytesByPromptId: Map<string, number>,
+  errorToolResultCountByPromptId: Map<string, number>,
+): Turn {
   // acc.calls is never empty: an accumulator is only created in the same
   // iteration as its first `calls.push(call)` (see the loop in deriveTurns),
   // and nothing ever removes from it afterward. Indexing directly here (not
@@ -85,6 +89,7 @@ function buildTurn(acc: TurnAccumulator, toolResultBytesByPromptId: Map<string, 
     calls: acc.calls,
     usage,
     toolResultBytes: acc.isSidechain ? 0 : (toolResultBytesByPromptId.get(acc.promptId) ?? 0),
+    errorToolResults: acc.isSidechain ? 0 : (errorToolResultCountByPromptId.get(acc.promptId) ?? 0),
   };
 }
 
@@ -95,12 +100,22 @@ export function deriveTurns(
 ): Turn[] {
   const promptIdByCall = assignPromptIds(calls, prompts);
   const promptTextById = new Map(prompts.map((p) => [p.promptId, p.text]));
+
+  // Sum bytes per promptId
   const toolResultBytesByPromptId = new Map<string, number>();
+  // Count isError=true records per promptId
+  const errorToolResultCountByPromptId = new Map<string, number>();
   for (const record of toolResultBytes) {
     toolResultBytesByPromptId.set(
       record.promptId,
       (toolResultBytesByPromptId.get(record.promptId) ?? 0) + record.bytes,
     );
+    if (record.isError) {
+      errorToolResultCountByPromptId.set(
+        record.promptId,
+        (errorToolResultCountByPromptId.get(record.promptId) ?? 0) + 1,
+      );
+    }
   }
 
   const accumulators = new Map<string, TurnAccumulator>();
@@ -130,6 +145,6 @@ export function deriveTurns(
   return order.map((key) => {
     const acc = accumulators.get(key);
     if (!acc) throw new Error(`unreachable: missing turn accumulator for key ${key}`);
-    return buildTurn(acc, toolResultBytesByPromptId);
+    return buildTurn(acc, toolResultBytesByPromptId, errorToolResultCountByPromptId);
   });
 }
