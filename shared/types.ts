@@ -26,6 +26,23 @@ export interface ToolUseRef {
    * predate this field remain valid.
    */
   id?: string;
+  /**
+   * Normalized target path for path-bearing tools (Read, Edit, Write,
+   * NotebookEdit). Omitted for all other tool names so wire payloads and
+   * warm-cache entries for non-path tools stay compact. Powers the
+   * Session Detail "tool mix by file type" panels without retaining
+   * tool inputs in general. (#P4-5)
+   */
+  targetPath?: string;
+  /**
+   * Coarse classification of Bash tool invocations. Only set when
+   * `name === "Bash"`. `"git-commit"` covers any command that begins with
+   * `git commit` (case-insensitive, leading whitespace tolerated) — the
+   * one workflow signal needed by the Session Detail workflow funnel and
+   * the future #P4-11/#P4-12 gates. Full command strings are never
+   * retained. (#P4-5, A7)
+   */
+  bashKind?: "git-commit" | "other";
 }
 
 export interface ApiCall {
@@ -114,4 +131,26 @@ export interface TurnCostSample {
   sessionId: string;
   turnId: string;
   costComputed: number;
+}
+
+/**
+ * Marker for an explicit transcript compaction event, sourced from the
+ * `system/compact_boundary` line type. Used by Session Detail to draw
+ * compaction flags on the cost timeline; never used for cost or count
+ * aggregation. (#P4-5)
+ */
+export interface CompactionRecord {
+  /** Store partition key; matches the call's `sessionId`. */
+  sessionId: string;
+  /**
+   * Timestamp from the source line when present and parseable. The
+   * projector places the flag against the next logical turn/call by
+   * ordering, so this is advisory rather than required.
+   */
+  timestamp?: string;
+  /**
+   * Direct prompt attribution when the source line supplies one. Optional
+   * because not every compaction marker carries a prompt identity.
+   */
+  promptId?: string;
 }

@@ -31,7 +31,7 @@ function call(overrides: Partial<ApiCall> = {}): ApiCall {
 }
 
 function batch(calls: ApiCall[]): ParseTranscriptResult {
-  return { calls, prompts: [], toolResultBytes: [], duplicateCount: 0, malformedCount: 0 };
+  return { calls, prompts: [], toolResultBytes: [], compactions: [], duplicateCount: 0, malformedCount: 0 };
 }
 
 function makeStore(debounceMs = 300, opts: Partial<import("./store.js").StoreOptions> = {}) {
@@ -209,6 +209,7 @@ describe("Store — listTurns", () => {
       calls: [call({ sessionId: "s1", messageId: "m1" })],
       prompts: [prompt1],
       toolResultBytes: [],
+      compactions: [],
       duplicateCount: 0,
       malformedCount: 0,
     });
@@ -216,6 +217,7 @@ describe("Store — listTurns", () => {
       calls: [call({ sessionId: "s2", messageId: "m2" })],
       prompts: [prompt2],
       toolResultBytes: [],
+      compactions: [],
       duplicateCount: 0,
       malformedCount: 0,
     });
@@ -273,6 +275,7 @@ describe("Store — recompute threading", () => {
       calls: [call({ sessionId: "s1", messageId: "m1" })],
       prompts: [prompt1],
       toolResultBytes: [],
+      compactions: [],
       duplicateCount: 0,
       malformedCount: 0,
     });
@@ -285,5 +288,143 @@ describe("Store — recompute threading", () => {
     expect(turns[0].promptId).toBe("p1");
     expect(session?.callCount).toBe(1);
     expect(session?.turnCount).toBe(1);
+  });
+});
+
+describe("Store — getSessionSnapshot (#P4-5 T2)", () => {
+  it("returns undefined for an unknown session id", () => {
+    const { store } = makeStore();
+    expect(store.getSessionSnapshot("does-not-exist")).toBeUndefined();
+  });
+
+  it("returns a coherent snapshot with session, calls, turns, prompts, toolResults, compactions", () => {
+    const { store } = makeStore();
+    const prompt = {
+      sessionId: "s1",
+      promptId: "p1",
+      text: "hi",
+      timestamp: "2026-07-13T00:00:00.000Z",
+    };
+    const toolResult = {
+      sessionId: "s1",
+      promptId: "p1",
+      toolUseId: "t1",
+      bytes: 100,
+      isError: false,
+    };
+    const compaction = { sessionId: "s1", timestamp: "2026-07-13T00:01:00.000Z" };
+    store.applyRecords("s1", {
+      calls: [call({ sessionId: "s1", messageId: "m1" })],
+      prompts: [prompt],
+      toolResultBytes: [toolResult],
+      compactions: [compaction],
+      duplicateCount: 0,
+      malformedCount: 0,
+    });
+    vi.advanceTimersByTime(300);
+
+    const snap = store.getSessionSnapshot("s1");
+
+    expect(snap).toBeDefined();
+    expect(snap?.session.callCount).toBe(1);
+    expect(snap?.calls).toHaveLength(1);
+    expect(snap?.turns).toHaveLength(1);
+    expect(snap?.prompts).toEqual([prompt]);
+    expect(snap?.toolResults).toEqual([toolResult]);
+    expect(snap?.compactions).toEqual([compaction]);
+    // Logical turn count groups sidechains under the parent prompt.
+    expect(snap?.session.turnCount).toBe(1);
+  });
+
+  it("returns an honest empty snapshot for a known session with no records", () => {
+    const { store } = makeStore();
+    // A "known" session is created on first applyRecords; after a reset we
+    // want the same surface, so seed + reset + read.
+    store.applyRecords("s-empty", batch([]));
+    vi.advanceTimersByTime(300);
+    store.resetSession("s-empty");
+    vi.advanceTimersByTime(300);
+
+    const snap = store.getSessionSnapshot("s-empty");
+
+    expect(snap).toBeDefined();
+    expect(snap?.calls).toEqual([]);
+    expect(snap?.turns).toEqual([]);
+    expect(snap?.prompts).toEqual([]);
+    expect(snap?.toolResults).toEqual([]);
+    expect(snap?.compactions).toEqual([]);
+    expect(snap?.session.callCount).toBe(0);
+    expect(snap?.session.turnCount).toBe(0);
+  });
+
+  it("resetSession clears every compact record from the next snapshot", () => {
+    const { store } = makeStore();
+    store.applyRecords("s1", {
+      calls: [call({ sessionId: "s1", messageId: "m1" })],
+      prompts: [],
+      toolResultBytes: [],
+      compactions: [{ sessionId: "s1" }],
+      duplicateCount: 0,
+      malformedCount: 0,
+    });
+    vi.advanceTimersByTime(300);
+    expect(store.getSessionSnapshot("s1")?.compactions).toHaveLength(1);
+
+    store.resetSession("s1");
+    store.applyRecords("s1", {
+      calls: [call({ sessionId: "s1", messageId: "m2" })],
+      prompts: [],
+      toolResultBytes: [],
+      compactions: [],
+      duplicateCount: 0,
+      malformedCount: 0,
+    });
+    vi.advanceTimersByTime(300);
+
+    const snap = store.getSessionSnapshot("s1");
+    expect(snap?.compactions).toEqual([]);
+    expect(snap?.calls.map((c) => c.messageId)).toEqual(["m2"]);
+  });
+
+  it("forces a fresh recompute so the snapshot reflects pending dirty state", () => {
+    const { store } = makeStore();
+    store.applyRecords("s1", batch([call({ sessionId: "s1", messageId: "m1" })]));
+    // No vi.advanceTimersByTime here — debounce hasn't flushed yet.
+
+    // Snapshot still reflects the latest applyRecords because it recomputes
+    // synchronously, independent of the debounce.
+    const snap = store.getSessionSnapshot("s1");
+    expect(snap?.session.callCount).toBe(1);
+    expect(snap?.calls).toHaveLength(1);
+  });
+
+  it("derives logical rollups (turnCount + maxTurnCostComputed) over grouped prompt turns", () => {
+    const { store } = makeStore();
+    const flatPricer = (u: { inputTokens: number }) => u.inputTokens * 0.001;
+
+    store.updatePricing({ pricer: flatPricer });
+    store.applyRecords("s1", {
+      calls: [
+        call({ sessionId: "s1", messageId: "m1", promptId: "p1", usage: { inputTokens: 100, outputTokens: 0, cacheReadTokens: 0, cacheCreateTokens: 0 } }),
+        // sidechain on the same promptId — must roll into p1's logical turn
+        call({ sessionId: "s1", messageId: "m2", promptId: "p1", isSidechain: true, usage: { inputTokens: 50, outputTokens: 0, cacheReadTokens: 0, cacheCreateTokens: 0 } }),
+      ],
+      prompts: [
+        { sessionId: "s1", promptId: "p1", text: "do thing", timestamp: "2026-07-13T00:00:00.000Z" },
+      ],
+      toolResultBytes: [],
+      compactions: [],
+      duplicateCount: 0,
+      malformedCount: 0,
+    });
+    vi.advanceTimersByTime(300);
+
+    const snap = store.getSessionSnapshot("s1");
+    // Two derived `Turn` records (one main, one sidechain) collapse to one
+    // logical prompt turn — see ARCH-session-detail-page.md A4 / T2.
+    expect(snap?.session.turnCount).toBe(1);
+    // cost = (100 + 50) * 0.001 = 0.15 — both segments counted exactly once.
+    expect(snap?.session.costComputed).toBeCloseTo(0.15);
+    expect(snap?.session.maxTurnCostComputed).toBeCloseTo(0.15);
   });
 });

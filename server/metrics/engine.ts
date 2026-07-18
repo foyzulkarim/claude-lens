@@ -9,6 +9,10 @@ import type {
 } from "../../shared/metrics-contract.js";
 import type { ApiCall, Session, Turn } from "../../shared/types.js";
 import {
+  groupLogicalTurns,
+  type LogicalTurn,
+} from "../store/logical-turns.js";
+import {
   type CallDimension,
   callDimensionValue,
   matchesFilter,
@@ -292,13 +296,58 @@ function computeSeriesForRange(
   return series;
 }
 
+/**
+ * Projects one logical prompt turn back into a synthetic `Turn` whose
+ * `.calls` is the union of its main + sidechain segment calls. Used only
+ * by the `entity: "turn"` distribution path so a logical turn's measures
+ * (cost, tokens, wall time) account for every segment exactly once.
+ * `startedAt`/`endedAt` carry the logical group's min/max, so the
+ * existing `wallMinutes` measure sums across the full logical window
+ * instead of double-counting per segment. (#P4-5, A4)
+ */
+function logicalTurnToSyntheticTurn(group: LogicalTurn): Turn {
+  // An existing Turn is the cheapest template — preserves promptId,
+  // sessionId, promptText, gateStatus from the main segment (or the first
+  // sidechain if there is no main, which is the documented logical-turn
+  // edge case).
+  const template = group.main ?? group.sidechains[0];
+  if (!template) {
+    // groupLogicalTurns only ever produces a group with at least one
+    // segment, so this branch is unreachable in practice. Throw rather
+    // than fabricate an empty Turn so a future refactor that breaks the
+    // invariant fails loudly instead of silently producing $0 buckets.
+    throw new Error(`unreachable: logical turn for prompt ${group.promptId} has no segments`);
+  }
+  const calls = [
+    ...(group.main?.calls ?? []),
+    ...group.sidechains.flatMap((side) => side.calls),
+  ];
+  return {
+    ...template,
+    calls,
+    isSidechain: false,
+    startedAt: group.startedAt ?? template.startedAt,
+    endedAt: group.endedAt ?? template.endedAt,
+  };
+}
+
 /** One MeasureScope per distribution-mode entity, reusing an already range/group-scoped MeasureScope as the source population (decision A8). A `"turn"` entity uses the Turn's own `.calls` directly, matching how `measures.ts` already treats turn-grain aggregation; a `"session"` entity narrows the group's calls/turns down to that session's own. */
 function entityScopesFor(entity: DistributionEntity, scope: MeasureScope): MeasureScope[] {
   switch (entity) {
     case "call":
       return scope.calls.map((call) => ({ calls: [call], turns: [], sessions: [] }));
     case "turn":
-      return scope.turns.map((turn) => ({ calls: turn.calls, turns: [turn], sessions: [] }));
+      // (#P4-5, A4) Group derived turns by promptId first so each entity
+      // bucket reflects one logical user prompt, with main + sidechain
+      // costs summed and the window's full timestamp range.
+      return groupLogicalTurns(scope.turns).map((group) => ({
+        calls: [
+          ...(group.main?.calls ?? []),
+          ...group.sidechains.flatMap((side) => side.calls),
+        ],
+        turns: [logicalTurnToSyntheticTurn(group)],
+        sessions: [],
+      }));
     case "session":
       return scope.sessions.map((session) => ({
         calls: scope.calls.filter((call) => call.sessionId === session.sessionId),

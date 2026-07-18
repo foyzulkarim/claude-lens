@@ -99,6 +99,7 @@ function addSession(
     ],
     prompts: [prompt(args.sessionId, promptId, "hi", ts)],
     toolResultBytes: [],
+    compactions: [],
     duplicateCount: 0,
     malformedCount: 0,
   });
@@ -542,6 +543,7 @@ describe("GET /api/sessions — pagination, trace, and meta", () => {
       calls: [],
       prompts: [],
       toolResultBytes: [],
+      compactions: [],
       duplicateCount: 0,
       malformedCount: 0,
     });
@@ -565,6 +567,7 @@ describe("GET /api/sessions — pagination, trace, and meta", () => {
       calls: [],
       prompts: [],
       toolResultBytes: [],
+      compactions: [],
       duplicateCount: 0,
       malformedCount: 0,
     });

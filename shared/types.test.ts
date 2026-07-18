@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Session, Turn } from "./types.js";
+import type { CompactionRecord, Session, ToolUseRef, Turn } from "./types.js";
 
 describe("Session — additive optional fields", () => {
   it("cacheSavingsComputed defaults to undefined", () => {
@@ -179,5 +179,45 @@ describe("Turn — additive optional field", () => {
     expect(turn.toolResultBytes).toBe(1024);
     expect(turn.wallMs).toBe(3000);
     expect(turn.gateStatus).toBe("pass");
+  });
+});
+
+describe("ToolUseRef — additive compact fields (#P4-5)", () => {
+  it("targetPath defaults to undefined and accepts a normalized string", () => {
+    const minimal: ToolUseRef = { name: "Bash", inputBytes: 0 };
+    expect(minimal.targetPath).toBeUndefined();
+    const withPath: ToolUseRef = { name: "Read", inputBytes: 12, targetPath: "src/index.ts" };
+    expect(withPath.targetPath).toBe("src/index.ts");
+  });
+
+  it("bashKind defaults to undefined and only accepts the documented values", () => {
+    const minimal: ToolUseRef = { name: "Read", inputBytes: 0 };
+    expect(minimal.bashKind).toBeUndefined();
+    const commit: ToolUseRef = { name: "Bash", inputBytes: 1, bashKind: "git-commit" };
+    const other: ToolUseRef = { name: "Bash", inputBytes: 1, bashKind: "other" };
+    expect(commit.bashKind).toBe("git-commit");
+    expect(other.bashKind).toBe("other");
+  });
+
+  it("existing fields (id, inputBytes) remain unchanged", () => {
+    const ref: ToolUseRef = { name: "Read", inputBytes: 8, id: "toolu_x" };
+    expect(ref.name).toBe("Read");
+    expect(ref.id).toBe("toolu_x");
+    expect(ref.inputBytes).toBe(8);
+  });
+});
+
+describe("CompactionRecord — wire shape (#P4-5)", () => {
+  it("requires only sessionId; timestamp and promptId are optional", () => {
+    const minimal: CompactionRecord = { sessionId: "s1" };
+    expect(minimal.timestamp).toBeUndefined();
+    expect(minimal.promptId).toBeUndefined();
+    const full: CompactionRecord = {
+      sessionId: "s1",
+      timestamp: "2024-01-01T10:00:00Z",
+      promptId: "p1",
+    };
+    expect(full.timestamp).toBe("2024-01-01T10:00:00Z");
+    expect(full.promptId).toBe("p1");
   });
 });

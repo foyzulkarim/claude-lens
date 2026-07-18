@@ -1,5 +1,6 @@
 import type { Measure } from "../../shared/metrics-contract.js";
 import type { ApiCall, Session, TokenUsage, Turn } from "../../shared/types.js";
+import { groupLogicalTurns } from "../store/logical-turns.js";
 
 export interface ModelRate {
   /** $ per 1,000,000 input tokens */
@@ -130,7 +131,11 @@ export function computeMeasure(
     case "apiCalls":
       return scope.calls.length;
     case "turns":
-      return scope.turns.length;
+      // (#P4-5, A4) Counts logical prompt turns, not raw derived turns —
+      // sidechain segments are folded under their parent prompt so the
+      // Session Detail page and the dashboard's `turns` chip agree on
+      // "one turn = one user prompt".
+      return groupLogicalTurns(scope.turns).length;
     case "sessions":
       return scope.sessions.length;
     case "toolCalls":
