@@ -288,21 +288,20 @@ export function ChartCard({ title, defaultUnit }: ChartCardProps) {
   // on a fresh object — so unrelated re-renders (e.g. opening the data
   // table) don't change the query's identity and trigger a spurious
   // refetch (same pitfall Dashboard.tsx's previous inline logic
-  // documented; ARCH-react-shell.md Open Question). `family` is included
-  // because T8 makes it query-affecting: the `dimensions` array depends
-  // on it (area requests ["time"], bars sends []), so a family toggle
-  // legitimately refetches.
+  // documented; ARCH-react-shell.md Open Question). `family` (area/bars)
+  // is a display-only toggle and must not affect `dimensions` — both need
+  // one point per time bucket from the engine, so both request ["time"].
   // biome-ignore lint/correctness/useExhaustiveDependencies: filters is covered by its stable serialized identity (filtersKey)
   const query = useMemo<SeriesMetricsQuery>(
     () => ({
       measures: UNIT_MEASURES[unit],
-      dimensions: family === "area" ? ["time"] : [],
+      dimensions: ["time"],
       grain,
       ...filtersToQuery(filters, new Date()),
       ...(compare ? { compare: "previous-period" as const } : {}),
       ...(smoothing ? { smoothing: "ma7" as const } : {}),
     }),
-    [filtersKey, unit, family, grain, compare, smoothing],
+    [filtersKey, unit, grain, compare, smoothing],
   );
 
   const { data, isPending, isError, error } = useQuery({
