@@ -61,6 +61,19 @@ describe("invalidateForMessage", () => {
     expect(spy).toHaveBeenCalledTimes(3);
   });
 
+  it("invalidates only the matching detail key when two session IDs are mounted", () => {
+    // T6 evidence: mounted detail queries for two IDs invalidate only
+    // their own on a `session-updated` for one of them. TanStack Query's
+    // prefix matching means a `["session"]` key matches all detail pages,
+    // but the `qk.session(id)` exact key matches just the addressed one —
+    // what the page-level query uses.
+    const queryClient = new QueryClient();
+    const spy = vi.spyOn(queryClient, "invalidateQueries");
+    invalidateForMessage(queryClient, { type: "session-updated", sessionId: "s1" });
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["session", "s1"] });
+    expect(spy).not.toHaveBeenCalledWith({ queryKey: ["session", "s2"] });
+  });
+
   it("invalidates the sessions prefix on session-updated", () => {
     const queryClient = new QueryClient();
     const spy = vi.spyOn(queryClient, "invalidateQueries");

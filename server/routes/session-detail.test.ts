@@ -1,7 +1,11 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { ApiCall, ParseTranscriptResult, TokenUsage } from "../../shared/types.js";
-import type { PromptTextRecord, ToolResultBytesRecord } from "../ingest/parse-transcript.js";
+import type { ApiCall, TokenUsage } from "../../shared/types.js";
+import type {
+  ParseTranscriptResult,
+  PromptTextRecord,
+  ToolResultBytesRecord,
+} from "../ingest/parse-transcript.js";
 import { Store } from "../store/store.js";
 import { registerSessionDetailRoute } from "./session-detail.js";
 
