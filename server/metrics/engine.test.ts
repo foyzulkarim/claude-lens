@@ -586,6 +586,32 @@ describe("metrics — mode: distribution dispatch", () => {
     expect(alpha?.distribution?.p50).toBeCloseTo(0.005, 10);
   });
 
+  it("narrows session distributions with sessionPopulation before computing percentiles", () => {
+    const input: MetricsInput = {
+      calls: [
+        call({ sessionId: "s1", usage: usage(100) }),
+        call({ sessionId: "s2", usage: usage(900) }),
+      ],
+      turns: [],
+      sessions: [
+        session({ sessionId: "s1", project: "/repo/alpha" }),
+        session({ sessionId: "s2", project: "/repo/beta" }),
+      ],
+      pricing: PRICING,
+    };
+    const result = metrics(input, {
+      measures: ["inputTokens"],
+      dimensions: [],
+      grain: "day",
+      range: { from: iso(2026, 6, 13), to: iso(2026, 6, 15) },
+      mode: "distribution",
+      distributionEntity: "session",
+      sessionPopulation: { project: ["/repo/alpha"] },
+    });
+    expect(result[0]?.distribution?.p50).toBe(100);
+    expect(result[0]?.distribution?.p99).toBe(100);
+  });
+
   describe("distribution entity population selection", () => {
     it('distributionEntity: "call" builds the population from individual calls', () => {
       const calls = [
@@ -665,6 +691,70 @@ describe("metrics — mode: distribution dispatch", () => {
       // Per-turn totals: t1=150, t2=300. N=2: p50 index=1 -> 150; p99 index=2 -> 300
       expect(result[0]?.distribution?.p50).toBe(150);
       expect(result[0]?.distribution?.p99).toBe(300);
+    });
+
+    it('distributionEntity: "turn" folds sidechains into their prompt and retains sidechain-only work', () => {
+      const mainCall = call({
+        uuid: "main",
+        sessionId: "s1",
+        timestamp: iso(2026, 6, 13, 10, 0),
+        usage: usage(100),
+      });
+      const sidechainCall = call({
+        uuid: "side",
+        sessionId: "s1",
+        timestamp: iso(2026, 6, 13, 10, 1),
+        isSidechain: true,
+        usage: usage(50),
+      });
+      const sidechainOnlyCall = call({
+        uuid: "side-only",
+        sessionId: "s2",
+        timestamp: iso(2026, 6, 13, 11, 0),
+        isSidechain: true,
+        usage: usage(25),
+      });
+      const input: MetricsInput = {
+        calls: [mainCall, sidechainCall, sidechainOnlyCall],
+        turns: [
+          turn({
+            promptId: "p1",
+            sessionId: "s1",
+            startedAt: mainCall.timestamp,
+            calls: [mainCall],
+          }),
+          turn({
+            promptId: "p1",
+            sessionId: "s1",
+            isSidechain: true,
+            startedAt: sidechainCall.timestamp,
+            calls: [sidechainCall],
+          }),
+          turn({
+            promptId: "p2",
+            sessionId: "s2",
+            isSidechain: true,
+            startedAt: sidechainOnlyCall.timestamp,
+            calls: [sidechainOnlyCall],
+          }),
+        ],
+        sessions: [],
+        pricing: PRICING,
+      };
+      const query: MetricsQuery = {
+        measures: ["inputTokens"],
+        dimensions: [],
+        grain: "day",
+        range: { from: iso(2026, 6, 13, 0, 0), to: iso(2026, 6, 13, 23, 59) },
+        mode: "distribution",
+        distributionEntity: "turn",
+      };
+
+      const result = metrics(input, query);
+
+      // Logical turn p1 is 100 + 50, while p2's sidechain-only turn remains 25.
+      expect(result[0]?.distribution?.p50).toBe(25);
+      expect(result[0]?.distribution?.p99).toBe(150);
     });
 
     it('distributionEntity: "session" builds the population from per-session call totals', () => {

@@ -1,12 +1,26 @@
 {
   "name": "@foyzulkarim/claude-lens",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "Local-first observability dashboard for Claude Code sessions.",
   "type": "module",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/foyzulkarim/claude-lens.git"
+  },
+  "homepage": "https://github.com/foyzulkarim/claude-lens#readme",
+  "bugs": {
+    "url": "https://github.com/foyzulkarim/claude-lens/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "bin": {
     "claude-lens": "dist/cli.js"
   },
+  "files": [
+    "dist"
+  ],
   "engines": {
     "node": ">=22"
   },
@@ -27,7 +41,8 @@
     "storybook": "tsx scripts/storybook.ts",
     "build-storybook": "storybook build -c client/.storybook -o client/storybook-static",
     "bench:ingest": "tsx server/ingest/benchmark.ts",
-    "prepare": "husky"
+    "prepare": "node scripts/prepare.mjs",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "@fastify/static": "^9.3.0",

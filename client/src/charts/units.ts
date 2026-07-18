@@ -47,3 +47,12 @@ export function formatUnitValue(value: number, unit: Unit): string {
 export function formatUnitValueOrDash(value: number | null | undefined, unit: Unit): string {
   return typeof value === "number" && Number.isFinite(value) ? formatUnitValue(value, unit) : "—";
 }
+
+/** Compact duration used consistently by session table and comparison rows. */
+export function formatDuration(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return "—";
+  const totalMinutes = Math.round(ms / 60_000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return hours > 0 ? `${hours}h ${String(minutes).padStart(2, "0")}m` : `${minutes}m`;
+}

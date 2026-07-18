@@ -148,6 +148,7 @@ function cachedEntry(messageIds: string[]): WarmCacheEntry {
     })),
     prompts: [],
     toolResultBytes: [],
+    compactions: [],
     duplicateCount: 0,
     malformedCount: 0,
   };

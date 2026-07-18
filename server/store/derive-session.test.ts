@@ -38,7 +38,11 @@ describe("deriveSession — fixture-driven rollups", () => {
     );
 
     expect(session.callCount).toBe(parsed.calls.length);
-    expect(session.turnCount).toBe(turns.length);
+    // (#P4-5, A4) turnCount now reflects logical prompt turns — sidechain
+    // segments are folded under their parent prompt rather than counted as
+    // separate user turns. The fixture has 2 prompts, so the logical count
+    // is 2 even though the raw derived-turn array has 3 entries.
+    expect(session.turnCount).toBe(2);
     expect(session.models.sort()).toEqual(["claude-fable-5", "claude-sonnet-5"]);
     // Exact totals across all 5 deduped calls in the fixture (computed independently
     // from the raw fixture JSON, not derived from this code) — a stronger check than

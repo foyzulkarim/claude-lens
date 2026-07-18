@@ -3,6 +3,8 @@
  * specs/architecture/ARCH-shared-contracts.md.
  */
 
+import type { SessionPopulationCriteria } from "./sessions-contract.js";
+
 // Forces every literal of T into the returned array — the `[T] extends
 // [U[number]] ? unknown : never` trick (wrapped in tuples to block union
 // distribution) fails to compile if `array` omits a union member, so
@@ -108,9 +110,63 @@ export type SeriesMetricsQuery = BaseMetricsQuery & {
 export type DistributionMetricsQuery = BaseMetricsQuery & {
   mode: "distribution";
   distributionEntity: DistributionEntity;
+  /**
+   * Optional session-population narrowing for distribution queries (ARCH
+   * A2 / Sessions page). When present, the distribution computes over
+   * the session-scoped population criteria instead of the global
+   * metric-filter shape. Currently used by the Sessions page's cost
+   * histogram / percentiles — and by any future session-level
+   * distribution.
+   *
+   * The shape mirrors `ScatterMetricsQuery.sessionPopulation` exactly so
+   * the two can share one helper (`buildSessionPopulation` in
+   * `client/src/pages/sessions/state.ts`) and so a future server route
+   * change can validate one schema for both call sites.
+   */
+  sessionPopulation?: SessionPopulationCriteria;
 };
 
-export type MetricsQuery = SeriesMetricsQuery | DistributionMetricsQuery;
+/**
+ * The scatter-only `"totalTokens"` literal (sum of the four token
+ * categories per session). It is NOT a `Measure` (the metrics contract
+ * pins `MEASURES.length === 19`), but it is a valid scatter axis so the
+ * "tokens × turns" preset can request it without widening the metrics
+ * contract's MEASURES union (ARCH A11).
+ */
+export type ScatterMeasure = Measure | "totalTokens";
+
+/**
+ * Per-session scatter query (ARCH `ScatterMetricsQuery`). Returns a
+ * `ScatterMetricsResult` rather than `Series[]` — the engine's existing
+ * return type stays `Series[]`, so this is dispatched through a sibling
+ * helper (`metricsScatter`) instead of widening `metrics()`.
+ *
+ * `xMeasure`/`yMeasure` accept the `ScatterMeasure` union (existing
+ * `Measure` plus the scatter-only `totalTokens` preset). Aggregation
+ * measures (`apiCalls`, `sessions`, etc.) are valid on a scatter axis
+ * even though they make less intuitive sense — the contract doesn't
+ * second-guess user choice.
+ *
+ * `measures` is widened to `ScatterMeasure[]` via `Omit` so the inherited
+ * `Measure[]` strictness doesn't reject a scatter query that requests the
+ * preset `totalTokens` axis. The base shape's required `measures: []`
+ * invariant is preserved by always populating it with the requested axes.
+ *
+ * `sessionPopulation` is the metrics-query shape (`Omit<…, "range">`); the
+ * query's own top-level `range` and the population's `from`/`to` are
+ * reconciled by the engine — see `server/metrics/session-population.ts`.
+ */
+export type ScatterMetricsQuery = Omit<BaseMetricsQuery, "measures"> & {
+  mode: "scatter";
+  entity: "session";
+  measures: ScatterMeasure[];
+  xMeasure: ScatterMeasure;
+  yMeasure: ScatterMeasure;
+  sizeMeasure?: ScatterMeasure;
+  sessionPopulation: SessionPopulationCriteria;
+};
+
+export type MetricsQuery = SeriesMetricsQuery | DistributionMetricsQuery | ScatterMetricsQuery;
 
 export interface SeriesPoint {
   t: string;
@@ -136,4 +192,64 @@ export interface Series {
   basis?: "computed" | "observed";
   compareGhost?: SeriesPoint[];
   distribution?: Distribution;
+}
+
+/**
+ * One scatter point (ARCH `ScatterPoint`). `sessionId` is the row identity
+ * (so the UI can drill into a single point), `x`/`y` are the requested
+ * measure values, and `size` is the optional third-measure value. Any
+ * field can be `null` when the measure is unavailable on that session
+ * (e.g. `costObserved` on a transcript-only session) — the scatter
+ * contract deliberately excludes those from `points` rather than
+ * fabricating a 0 (ARCH A11).
+ */
+export interface ScatterPoint {
+  sessionId: string;
+  x: number | null;
+  y: number | null;
+  size?: number | null;
+}
+
+/**
+ * Ordinary least squares regression. `null` when fewer than two usable
+ * points are present or all X values are identical — the degenerate case
+ * would otherwise produce NaN/Infinity slope/intercept (ARCH degenerate-
+ * population scenario).
+ */
+export interface ScatterRegression {
+  slope: number;
+  intercept: number;
+  rSquared: number;
+}
+
+/**
+ * Population metadata for a scatter result. Mirrors the
+ * `SessionTimelineSet` accounting — full population is `matched`,
+ * `eligible` excludes sessions where one of the requested measures is
+ * unavailable, and `returned` is the visible-point count after sampling.
+ */
+export interface ScatterPopulationMeta {
+  matched: number;
+  eligible: number;
+  returned: number;
+  excludedMissingMeasures: number;
+  sampled: boolean;
+}
+
+/**
+ * Session scatter response (ARCH `ScatterMetricsResult`). The discriminator
+ * (`mode: "scatter"`) lets `client/src/api/metrics.ts` write a separate,
+ * narrower wrapper (`postScatterMetrics`) without widening the existing
+ * `postMetrics` aggregate response type.
+ */
+export interface ScatterMetricsResult {
+  mode: "scatter";
+  entity: "session";
+  xMeasure: ScatterMeasure;
+  yMeasure: ScatterMeasure;
+  sizeMeasure?: ScatterMeasure;
+  points: ScatterPoint[];
+  /** `null` for degenerate populations (<2 usable points or identical X). */
+  regression: ScatterRegression | null;
+  population: ScatterPopulationMeta;
 }

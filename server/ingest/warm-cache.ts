@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { ApiCall } from "../../shared/types.js";
+import type { ApiCall, CompactionRecord } from "../../shared/types.js";
 import type {
   ParseTranscriptResult,
   PromptTextRecord,
@@ -22,10 +22,23 @@ export interface WarmCache {
   save(key: WarmCacheKey, entry: WarmCacheEntry): Promise<void>;
 }
 
+/**
+ * Schema version baked into every saved cache header. Bump this whenever the
+ * `WarmCacheEntry` shape gains/removes/renames a field that the existing
+ * record-line validators below cannot tolerate. On a mismatch the entry is
+ * treated as a cache miss (safe rebuild from source transcripts), not a
+ * throw — see ARCH-session-detail-page.md T1 stress test: "treats old cache
+ * schemas as safe misses". (#P4-5)
+ */
+export const WARM_CACHE_SCHEMA_VERSION = 2;
+
+type CacheHeader = WarmCacheKey & { version: number };
+
 type CacheRecordLine =
   | { kind: "call"; call: ApiCall }
   | { kind: "prompt"; prompt: PromptTextRecord }
   | { kind: "tool-result-bytes"; record: ToolResultBytesRecord }
+  | { kind: "compaction"; record: CompactionRecord }
   | { kind: "meta"; duplicateCount: number; malformedCount: number };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -38,6 +51,14 @@ function isWarmCacheKey(value: unknown): value is WarmCacheKey {
     typeof value.path === "string" &&
     typeof value.size === "number" &&
     typeof value.mtime === "number"
+  );
+}
+
+function isCacheHeader(value: unknown): value is CacheHeader {
+  return (
+    isWarmCacheKey(value) &&
+    typeof (value as unknown as Record<string, unknown>).version === "number" &&
+    (value as unknown as Record<string, unknown>).version === WARM_CACHE_SCHEMA_VERSION
   );
 }
 
@@ -77,13 +98,23 @@ function isToolResultBytesRecordShape(value: Record<string, unknown>): boolean {
   );
 }
 
+// (#P4-5) Compact validation: sessionId is the only required field. Both
+// optional fields may be absent on a transcript that didn't supply them.
+function isCompactionRecordShape(value: Record<string, unknown>): boolean {
+  if (typeof value.sessionId !== "string" || value.sessionId === "") return false;
+  if (value.timestamp !== undefined && typeof value.timestamp !== "string") return false;
+  if (value.promptId !== undefined && typeof value.promptId !== "string") return false;
+  return true;
+}
+
 function keyFilePath(cacheDir: string, path: string): string {
   const hash = createHash("sha1").update(path).digest("hex").slice(0, 16);
   return join(cacheDir, `${hash}.ndjson`);
 }
 
 function serializeEntry(key: WarmCacheKey, entry: WarmCacheEntry): string {
-  const lines: string[] = [JSON.stringify(key)];
+  const header: CacheHeader = { ...key, version: WARM_CACHE_SCHEMA_VERSION };
+  const lines: string[] = [JSON.stringify(header)];
   for (const call of entry.calls) {
     lines.push(JSON.stringify({ kind: "call", call } satisfies CacheRecordLine));
   }
@@ -92,6 +123,9 @@ function serializeEntry(key: WarmCacheKey, entry: WarmCacheEntry): string {
   }
   for (const record of entry.toolResultBytes) {
     lines.push(JSON.stringify({ kind: "tool-result-bytes", record } satisfies CacheRecordLine));
+  }
+  for (const record of entry.compactions) {
+    lines.push(JSON.stringify({ kind: "compaction", record } satisfies CacheRecordLine));
   }
   lines.push(
     JSON.stringify({
@@ -113,7 +147,11 @@ function deserializeEntry(raw: string, expectedKey: WarmCacheKey): WarmCacheEntr
   } catch {
     return null;
   }
-  if (!isWarmCacheKey(header)) return null;
+  // (#P4-5) Schema-version gate: pre-versioned entries (missing `version`
+  // or carrying a lower one) are rejected as cache misses here so the
+  // tailer falls back to a full re-parse. Source transcripts are never
+  // mutated. See ARCH-session-detail-page.md T1 stress test.
+  if (!isCacheHeader(header)) return null;
   if (
     header.path !== expectedKey.path ||
     header.size !== expectedKey.size ||
@@ -126,6 +164,7 @@ function deserializeEntry(raw: string, expectedKey: WarmCacheKey): WarmCacheEntr
     calls: [],
     prompts: [],
     toolResultBytes: [],
+    compactions: [],
     duplicateCount: 0,
     malformedCount: 0,
   };
@@ -151,6 +190,10 @@ function deserializeEntry(raw: string, expectedKey: WarmCacheKey): WarmCacheEntr
       case "tool-result-bytes":
         if (!isRecord(parsed.record) || !isToolResultBytesRecordShape(parsed.record)) return null;
         entry.toolResultBytes.push(parsed.record as unknown as ToolResultBytesRecord);
+        break;
+      case "compaction":
+        if (!isRecord(parsed.record) || !isCompactionRecordShape(parsed.record)) return null;
+        entry.compactions.push(parsed.record as unknown as CompactionRecord);
         break;
       case "meta":
         if (

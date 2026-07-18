@@ -2,6 +2,7 @@ import type { ApiCall, Session, TierFlags, TokenUsage, Turn } from "../../shared
 import type { PricingTable } from "../metrics/measures.js";
 import { priceCall, uncachedPrice } from "../metrics/measures.js";
 import { resolveContextWindow } from "../metrics/model-metadata.js";
+import { aggregateLogicalTurnCost, groupLogicalTurns } from "./logical-turns.js";
 import { addUsage, emptyUsage } from "./token-usage.js";
 
 // Per-session tier detection (architecture §4): which sidecar files exist for
@@ -70,16 +71,18 @@ export function deriveSession(
     if (hasUnpricedModel) cacheSavingsComputed = 0;
   }
 
-  // maxTurnCostComputed: max per-turn cost across all turns.
+  // maxTurnCostComputed: max per-logical-turn cost across the session. The
+  // logical grouping folds sidechain segments into their parent prompt so
+  // a sidechain-heavy turn doesn't double-count against the metric
+  // (Session Detail, the dashboard session list, and the metrics turn
+  // distribution all share this view). (#P4-5, A4)
   let maxTurnCostComputed = 0;
   if (pricer) {
-    for (const turn of turns) {
-      let turnCost = 0;
-      for (const call of turn.calls) {
-        turnCost += pricer(call.usage, call.model);
-      }
-      if (turnCost > maxTurnCostComputed) {
-        maxTurnCostComputed = turnCost;
+    const groups = groupLogicalTurns(turns);
+    for (const group of groups) {
+      const groupCost = aggregateLogicalTurnCost(group, pricer);
+      if (groupCost > maxTurnCostComputed) {
+        maxTurnCostComputed = groupCost;
       }
     }
   }
@@ -143,7 +146,10 @@ export function deriveSession(
     // Replace with the real `call.host` field once per-host capture lands.
     host: "default",
     usage,
-    turnCount: turns.length,
+    // Logical turn count — groups sidechain segments under their parent
+    // prompt so Session Detail, dashboard session-list traces, and the
+    // metrics turn count agree on "one turn = one user prompt". (#P4-5, A4)
+    turnCount: groupLogicalTurns(turns).length,
     callCount: calls.length,
     costComputed,
     cacheHitPct,

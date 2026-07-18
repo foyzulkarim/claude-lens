@@ -20,6 +20,26 @@ file below, added to as new fixtures land.
 | `44444444-4444-4444-8444-444444444444.jsonl` | **Dashboard anomaly + failed tool result (#P4-2, T15).** Three turns, timestamped after the other fixture sessions so this session sorts as most-recent (`sort: "lastAt"`, feeding `RecentSessionCard`). Turn 2 uses a ~50x-scaled `input_tokens`/`output_tokens` usage block (50,000 in / 3,000 out vs. the ~1,000/50 pattern elsewhere in this tree) so its computed cost clears the anomaly detector's 5×-median threshold (`shared/anomaly.ts` `detectTurnCostAnomalies`, consumed by `AnomalyFeed`'s pooled turn-cost-delta sampling) against the combined population of all fixture sessions. Turn 3 includes a `tool_result` block with `"is_error": true` (a simulated failed `npm test` run) to exercise the `toolErrors` measure that feeds `FailedWorkStat`. |
 | `55555555-5555-4555-8555-555555555555.jsonl` | **Cache Lab fixture (#P4-9, T1).** Session timestamped 2026-06-15, deliberately earlier than `4444…` so it never becomes the most-recent session and does not change `Dashboard`'s established "latest session" anchor. The main-stream sequence exercises every K2 cause branch and TTL-overlay outcome in order: (a) **first-call** spike at 09:00 (no prior call), (b) low-write cache hit at 09:30 that establishes a high read baseline, (c) **compaction** spike at 09:55 (prev read drops 14k→100 vs. 0→14k baseline), (d) **model-switch** spike at 10:05 from `sonnet` → `fable`, (e) **prefix-change** (`unknown` base cause) at 10:16 with 60s gap inside the 5m TTL, (f) **ttl-lapse** at 10:35 with 19-min gap beyond the 5m TTL, (g) **mixed-bucket unknown** at 11:00 (5m + 1h both non-zero), (h) **missing-bucket unknown** at 11:30 (no `cache_creation.ephemeral_*_input_tokens` fields). Two additional sidechain streams close the file: `agent-5555a` (two calls, finishes with a compaction spike) and `agent-5555b` (single first-call spike) — together they exercise `classifier`'s stream-partitioning input under both K2 branches. Used by `server/cache/classifier.test.ts`'s fixture regression guard and by the Cache Lab route test. Out of scope: gate-scenario fixtures for K2's pass/fail UI (owned by #P4-11). |
 
+## Sessions page coverage (#P4-4 / ARCH-sessions-page.md T9)
+
+The Sessions page (`cypress/e2e/sessions.cy.ts`) reuses this same four-session
+fixture set — no task-specific fixture rewrite was needed:
+
+- All four sessions fall inside the July 2026 fixture range and populate the
+  Sessions table, timeline, cost distribution, and efficiency scatter with
+  real (not zero-valued) rows.
+- The `11111111-…` (clean multi-turn, model switch, both cache buckets) and
+  `44444444-…` (anomaly + failed tool result) sessions are used by the
+  compare-mode smoke test — both have distinct, well-formed cost/token/turn
+  totals that render clearly in a side-by-side table.
+- `22222222-…` (malformed lines) and `33333333-…` (partial trailing line)
+  exercise the honest-partial-data path: their session-level totals reflect
+  only the successfully parsed lines, which the Sessions table/timeline must
+  render without crashing or fabricating missing values.
+- The Dashboard → Sessions drill-link test (`cypress/e2e/dashboard.cy.ts`)
+  asserts the destination renders the live composed page (not the pre-#36
+  `PageStub` placeholder) with fixture-matching rows.
+
 ## Scope
 
 Out of scope for this tree (added later by their own tasks, under this same

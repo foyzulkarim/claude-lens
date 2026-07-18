@@ -19,14 +19,19 @@ export interface AppRoute {
 
 // Single source of truth for both the wouter <Switch> (App.tsx) and the nav
 // (layout/AppShell.tsx) so they can't drift apart. Order = the page map in
-// specs/claude-lens-pages.md. Session Detail / Turn Inspector param shapes
-// are provisional (ARCH-react-shell.md Open Question); reconciled when
-// #P4-4/#P4-5 build the real pages.
+// specs/claude-lens-pages.md. Session Detail's param shape is settled
+// (#P4-5); Turn Inspector's route is the canonical one-based evidence-link
+// shape from `specs/gates.md` (A11) — the page body itself remains a stub
+// until #P4-6.
 export const routes: AppRoute[] = [
   { path: "/", label: "Dashboard", component: Dashboard },
   { path: "/sessions", label: "Sessions", component: Sessions },
   { path: "/sessions/:id", label: "Session Detail", component: SessionDetail },
-  { path: "/turns/:id", label: "Turn Inspector", component: TurnInspector },
+  {
+    path: "/session/:sessionId/turn/:turnNumber",
+    label: "Turn Inspector",
+    component: TurnInspector,
+  },
   { path: "/projects", label: "Projects", component: Projects },
   { path: "/models", label: "Models", component: Models },
   { path: "/cache", label: "Cache Lab", component: CacheLab },

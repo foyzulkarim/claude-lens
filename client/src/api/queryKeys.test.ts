@@ -92,9 +92,21 @@ describe("qk.prefixes", () => {
   it("exposes static prefix arrays for invalidation", () => {
     expect(qk.prefixes.metrics).toEqual(["metrics"]);
     expect(qk.prefixes.sessions).toEqual(["sessions"]);
+    expect(qk.prefixes.session).toEqual(["session"]);
+  });
+});
+
+describe("qk.session", () => {
+  it("returns the canonical per-id detail key", () => {
+    expect(qk.session("abc")).toEqual(["session", "abc"]);
   });
 
-  it("exposes a per-id session prefix for future session-detail pages", () => {
-    expect(qk.prefixes.session("abc")).toEqual(["session", "abc"]);
+  it("lives under qk.prefixes.session (invalidation prefix match)", () => {
+    const key = qk.session("xyz");
+    expect(key[0]).toBe(qk.prefixes.session[0]);
+  });
+
+  it("is exact-match keyed — distinct IDs produce distinct keys", () => {
+    expect(qk.session("a")).not.toEqual(qk.session("b"));
   });
 });
