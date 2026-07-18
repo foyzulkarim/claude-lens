@@ -9,7 +9,7 @@
  * call `buildRuntimeMetadata(custom)` once with the user's overrides —
  * every downstream consumer reads the same shape.
  */
-import { DEFAULT_PRICING_TABLE, type PricingTable } from "./metrics/measures.js";
+import { DEFAULT_PRICING_TABLE, priceUsage, type PricingTable } from "./metrics/measures.js";
 import { resolveContextWindow } from "./metrics/model-metadata.js";
 import type { ContextResolver, Pricer } from "./store/derive-session.js";
 
@@ -41,23 +41,15 @@ export interface RuntimeMetadata {
  * Partial overrides are deep-merged — passing only `{ pricing }` keeps the
  * default resolver; the `pricer` is always rebuilt from the final
  * `pricing` so the two never drift.
+ *
+ * Review #8: `pricer` delegates to `priceUsage(usage, model, pricing)` (the
+ * single-source primitive also used by `priceCall`) rather than hand-
+ * copying the formula. A future pricing change (rounding, new token
+ * category) now has one site to land.
  */
 export function buildRuntimeMetadata(overrides: Partial<RuntimeMetadata> = {}): RuntimeMetadata {
   const pricing = overrides.pricing ?? DEFAULT_PRICING_TABLE;
-  const pricer: Pricer = (usage, model) => {
-    const rate = pricing[model];
-    if (!rate) return 0;
-    // Mirrors `priceCall` from measures.ts: rate-per-1M-token * tokens / 1M.
-    // Kept inline so the runtime doesn't synthesize a fake ApiCall just to
-    // reuse the public `priceCall(call, pricing)` shape.
-    return (
-      (usage.inputTokens * rate.input +
-        usage.outputTokens * rate.output +
-        usage.cacheReadTokens * rate.cacheRead +
-        usage.cacheCreateTokens * rate.cacheCreate) /
-      1_000_000
-    );
-  };
+  const pricer: Pricer = (usage, model) => priceUsage(usage, model, pricing);
   const contextResolver = overrides.contextResolver ?? ((model) => resolveContextWindow(model));
   return { pricing, pricer, contextResolver };
 }

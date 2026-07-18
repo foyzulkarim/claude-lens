@@ -63,6 +63,7 @@ function session(overrides: Partial<Session> = {}): Session {
     models: ["claude-sonnet-5"],
     gitBranch: "main",
     version: "1.2.3",
+    host: "default", // review #13: synthetic, mirrors metrics engine
     tier: {
       hasCostSamples: false,
       hasTurnBoundaries: false,
@@ -968,6 +969,10 @@ describe("metrics — new dashboard measures (toolErrors, cacheSavingsComputed, 
   });
 
   it("routingSavingsComputed produces valid series with no NaN/Infinity", () => {
+    // All placeholder rates are identical, so the Opus-uncached and
+    // current-model-uncached counterfactuals are equal — routing = 0 by
+    // construction. (Pre-fix, this was wrongly 2.25 from the
+    // `opusUncached - actual` formula; post-fix it is correctly 0.)
     const calls = [
       call({
         uuid: "c1",
@@ -989,14 +994,14 @@ describe("metrics — new dashboard measures (toolErrors, cacheSavingsComputed, 
       range: { from: iso(2026, 6, 13, 0, 0), to: iso(2026, 6, 13, 23, 59) },
     };
     const result = metrics(input, query);
-    expect(result[0]?.points[0]?.value).toBeCloseTo(2.25, 10);
+    expect(result[0]?.points[0]?.value).toBeCloseTo(0, 10);
     for (const point of result[0]?.points ?? []) {
       expect(Number.isNaN(point.value)).toBe(false);
       expect(Number.isFinite(point.value ?? NaN)).toBe(true);
     }
   });
 
-  it("routingSavingsComputed + cacheSavingsComputed = opusUncached - actual (non-overlapping)", () => {
+  it("routingSavingsComputed + cacheSavingsComputed = opusUncached - actual (A8 invariant, post-fix)", () => {
     // Use differentiated pricing so model-routing savings are non-zero (not all same rate).
     const customPricing = {
       "claude-sonnet-5": { input: 5.0, output: 25.0, cacheRead: 0.5, cacheCreate: 6.25 },
@@ -1034,6 +1039,12 @@ describe("metrics — new dashboard measures (toolErrors, cacheSavingsComputed, 
       grain: "day",
       range: { from: iso(2026, 6, 13, 0, 0), to: iso(2026, 6, 13, 23, 59) },
     });
+    const cacheResult = metrics(input, {
+      measures: ["cacheSavingsComputed"],
+      dimensions: ["time"],
+      grain: "day",
+      range: { from: iso(2026, 6, 13, 0, 0), to: iso(2026, 6, 13, 23, 59) },
+    });
     const actualResult = metrics(input, {
       measures: ["costComputed"],
       dimensions: ["time"],
@@ -1041,6 +1052,7 @@ describe("metrics — new dashboard measures (toolErrors, cacheSavingsComputed, 
       range: { from: iso(2026, 6, 13, 0, 0), to: iso(2026, 6, 13, 23, 59) },
     });
     const routingVal = routingResult[0]?.points[0]?.value ?? 0;
+    const cacheVal = cacheResult[0]?.points[0]?.value ?? 0;
     const actualVal = actualResult[0]?.points[0]?.value ?? 0;
 
     const opusUncached = calls.reduce((sum, call) => {
@@ -1055,7 +1067,10 @@ describe("metrics — new dashboard measures (toolErrors, cacheSavingsComputed, 
       );
     }, 0);
 
-    expect(routingVal).toBeCloseTo(opusUncached - actualVal, 10);
+    // Post-fix: routing = opusUncached - currentUncached, NOT opusUncached - actual.
+    // The A8 invariant (the only thing the UI asserts) is cache + routing =
+    // opusUncached - actual — independent of how the two terms split.
+    expect(routingVal + cacheVal).toBeCloseTo(opusUncached - actualVal, 10);
   });
 
   it("compatible measures in distribution mode return valid Distribution", () => {

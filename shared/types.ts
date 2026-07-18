@@ -75,6 +75,14 @@ export interface Session {
   tier: TierFlags;
   firstAt: string;
   lastAt: string;
+  /**
+   * Synthesized host for cross-route parity with the metrics engine (which
+   * uses a constant `"default"` — server/metrics/dimensions.ts). Review #13:
+   * the route now filters on this field rather than silently accepting the
+   * `host` chip and returning the unfiltered set. Replace with a real per-
+   * call host field once capture lands.
+   */
+  host: string;
   usage: TokenUsage;
   turnCount: number;
   callCount: number;

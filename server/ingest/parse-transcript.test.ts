@@ -234,6 +234,7 @@ describe("parseTranscriptLine — user line handling", () => {
       toolUseId: "toolu_1",
       bytes: Buffer.byteLength(content, "utf8"),
       isError: false,
+      isSidechain: false, // review #3: main-thread default
     });
   });
 });
@@ -250,7 +251,15 @@ describe("parseTranscriptLine — tool_result isError classification", () => {
     });
   }
 
-  it("classifies raw is_error: true as isError: true", () => {
+  // Review #11: the Bash-only exit-code fallback requires the parser to
+  // know the originating tool's name. In real transcripts this is recorded
+  // by the earlier assistant tool_use block; in unit tests we pre-seed the
+  // map so each `parseTranscriptLine` call can resolve it directly.
+  function bashToolUseMap(): Map<string, string> {
+    return new Map([["toolu_1", "Bash"]]);
+  }
+
+  it("classifies raw is_error: true as isError: true (any tool)", () => {
     const result = parseTranscriptLine(
       toolResultLine("something went wrong", { is_error: true }),
       new Set(),
@@ -260,54 +269,124 @@ describe("parseTranscriptLine — tool_result isError classification", () => {
     expect(result.record.isError).toBe(true);
   });
 
-  it("classifies non-zero exit code in Bash output as isError: true", () => {
+  it("classifies raw is_error: true as isError: true even when originating tool is not Bash", () => {
+    // Read tool_result with is_error=true stays authoritative regardless
+    // of which tool produced it (review #11 — we never silence is_error
+    // for non-Bash tools).
+    const readMap = new Map([["toolu_1", "Read"]]);
+    const result = parseTranscriptLine(
+      toolResultLine("ENOENT: no such file", { is_error: true }),
+      new Set(),
+      readMap,
+    );
+    expect(result.kind).toBe("tool-result-bytes");
+    if (result.kind !== "tool-result-bytes") throw new Error("expected tool-result-bytes");
+    expect(result.record.isError).toBe(true);
+  });
+
+  it("classifies non-zero Bash exit code 1 as isError: true", () => {
     const result = parseTranscriptLine(
       toolResultLine("Command failed with exit code 1\nsome error output"),
       new Set(),
+      bashToolUseMap(),
     );
     expect(result.kind).toBe("tool-result-bytes");
     if (result.kind !== "tool-result-bytes") throw new Error("expected tool-result-bytes");
     expect(result.record.isError).toBe(true);
   });
 
-  it("classifies exit code 42 as isError: true", () => {
-    const result = parseTranscriptLine(toolResultLine("error: exit code 42"), new Set());
+  it("classifies Bash exit code 42 as isError: true", () => {
+    const result = parseTranscriptLine(
+      toolResultLine("error: exit code 42"),
+      new Set(),
+      bashToolUseMap(),
+    );
     expect(result.kind).toBe("tool-result-bytes");
     if (result.kind !== "tool-result-bytes") throw new Error("expected tool-result-bytes");
     expect(result.record.isError).toBe(true);
   });
 
-  it("classifies 'returned exit code 1' as isError: true", () => {
+  it("classifies 'returned exit code 1' as isError: true (Bash)", () => {
     const result = parseTranscriptLine(
       toolResultLine("process exited. returned exit code 1"),
       new Set(),
+      bashToolUseMap(),
     );
     expect(result.kind).toBe("tool-result-bytes");
     if (result.kind !== "tool-result-bytes") throw new Error("expected tool-result-bytes");
     expect(result.record.isError).toBe(true);
   });
 
-  it("classifies 'exit_code\": 5' as isError: true", () => {
+  it("classifies 'exit_code: 5' JSON-style exit code as isError: true (Bash)", () => {
     const result = parseTranscriptLine(
       toolResultLine('{"exit_code": 5, "message": "failed"}'),
       new Set(),
+      bashToolUseMap(),
     );
     expect(result.kind).toBe("tool-result-bytes");
     if (result.kind !== "tool-result-bytes") throw new Error("expected tool-result-bytes");
     expect(result.record.isError).toBe(true);
   });
 
-  it("does NOT flag exit code 0 as error", () => {
-    const result = parseTranscriptLine(toolResultLine("Command succeeded. exit code 0"), new Set());
+  it("does NOT flag Bash exit code 0 as error", () => {
+    const result = parseTranscriptLine(
+      toolResultLine("Command succeeded. exit code 0"),
+      new Set(),
+      bashToolUseMap(),
+    );
     expect(result.kind).toBe("tool-result-bytes");
     if (result.kind !== "tool-result-bytes") throw new Error("expected tool-result-bytes");
     expect(result.record.isError).toBe(false);
   });
 
-  it("returns isError: false for normal tool result with no error indicators", () => {
+  it("review #11 regression: 'exit code 0; copied 1 file' is NOT an error (anchored regex)", () => {
+    // The pre-fix greedy regex matched the trailing "1" in "copied 1 file"
+    // because the dot-star swallowed any characters before [1-9]. The
+    // fix anchors the parsed number to be the immediately-following token.
+    const result = parseTranscriptLine(
+      toolResultLine("Some log line\nCommand succeeded. exit code 0; copied 1 file\nDone"),
+      new Set(),
+      bashToolUseMap(),
+    );
+    expect(result.kind).toBe("tool-result-bytes");
+    if (result.kind !== "tool-result-bytes") throw new Error("expected tool-result-bytes");
+    expect(result.record.isError).toBe(false);
+  });
+
+  it("review #11 regression: exit code 1 preceded by other '1' digits is still detected", () => {
+    // Anchored regex still picks up the immediately-adjacent exit code
+    // even when other "1" digits appear later in the body.
+    const result = parseTranscriptLine(
+      toolResultLine("Iteration 1 of 5\nexit code 1\nran 1 test"),
+      new Set(),
+      bashToolUseMap(),
+    );
+    expect(result.kind).toBe("tool-result-bytes");
+    if (result.kind !== "tool-result-bytes") throw new Error("expected tool-result-bytes");
+    expect(result.record.isError).toBe(true);
+  });
+
+  it("review #11: non-Bash tool mentioning 'exit code 1' is NOT flagged (review #11 / CQ4)", () => {
+    // The pre-fix regex ran unconditionally on every tool_result body and
+    // would falsely flag non-Bash tools (e.g. a Read tool_result quoting
+    // documentation). Now only Bash gets the fallback; non-Bash tools rely
+    // solely on the raw is_error flag.
+    const readMap = new Map([["toolu_1", "Read"]]);
+    const result = parseTranscriptLine(
+      toolResultLine("doc says: run with exit code 1 to enable verbose mode"),
+      new Set(),
+      readMap,
+    );
+    expect(result.kind).toBe("tool-result-bytes");
+    if (result.kind !== "tool-result-bytes") throw new Error("expected tool-result-bytes");
+    expect(result.record.isError).toBe(false);
+  });
+
+  it("returns isError: false for a normal tool result with no error indicators (Bash)", () => {
     const result = parseTranscriptLine(
       toolResultLine("Here are the files: package.json, README.md"),
       new Set(),
+      bashToolUseMap(),
     );
     expect(result.kind).toBe("tool-result-bytes");
     if (result.kind !== "tool-result-bytes") throw new Error("expected tool-result-bytes");
@@ -368,6 +447,49 @@ describe("parseTranscriptLines — batch aggregation resilience", () => {
     expect(result.malformedCount).toBe(1);
     expect(result.calls).toHaveLength(2);
     expect(result.calls.map((c) => c.messageId)).toEqual(["msg_a", "msg_b"]);
+  });
+
+  it("propagates toolUseId → toolName across an assistant→user batch boundary (review #11)", () => {
+    // The Bash-only exit-code fallback requires that an assistant `tool_use`
+    // block (line 1) declare the tool name, then a user `tool_result` block
+    // (line 2) reference that id and trigger the fallback classification.
+    // This test proves the parser threads the map across lines within a
+    // single batch — without that propagation the second line below would
+    // default to isError: false on a genuine Bash failure.
+    const assistantBashCall = assistantLine({
+      message: {
+        id: "msg_a",
+        model: "claude-sonnet-5",
+        usage: { input_tokens: 1, output_tokens: 1 },
+        content: [{ type: "tool_use", id: "toolu_bash_1", name: "Bash", input: { command: "ls" } }],
+      },
+    });
+    const bashResult = userLine({
+      message: {
+        role: "user",
+        content: [{ type: "tool_result", tool_use_id: "toolu_bash_1", content: "exit code 1" }],
+      },
+    });
+
+    const result = parseTranscriptLines([assistantBashCall, bashResult], new Set());
+    expect(result.toolResultBytes).toHaveLength(1);
+    expect(result.toolResultBytes[0]?.isError).toBe(true);
+  });
+
+  it("warm-cache reconstruction accepts a pre-populated toolUseId map (review #11)", () => {
+    // Warm-cache loads parse results for files previously parsed in earlier
+    // batches. When batches span multiple `parseTranscriptLines` calls, the
+    // caller can pass a pre-populated toolNameByToolUseId map so tool_result
+    // records referring to tools declared in earlier batches still resolve.
+    const toolNameByToolUseId = new Map([["toolu_warm", "Bash"]]);
+    const bashResult = userLine({
+      message: {
+        role: "user",
+        content: [{ type: "tool_result", tool_use_id: "toolu_warm", content: "exit code 1" }],
+      },
+    });
+    const result = parseTranscriptLines([bashResult], new Set(), toolNameByToolUseId);
+    expect(result.toolResultBytes[0]?.isError).toBe(true);
   });
 });
 

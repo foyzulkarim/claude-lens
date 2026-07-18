@@ -315,10 +315,36 @@ describe("GET /api/sessions — filtering and sorting", () => {
     expect(branchIds).toEqual(["s-b", "s-f"]);
   });
 
-  it("range filter respects the session-start convention ([from, to) on firstAt)", async () => {
-    // Range covers s-a (Jul 10), s-b (Jul 12), s-c (Jul 11) but excludes
-    // s-d (Jul 14), s-e (Jul 13), s-f (Jul 9). Half-open: from inclusive,
-    // to exclusive — s-b at exactly `to` must be excluded.
+  it("host filter matches the synthetic 'default' host (review #13)", async () => {
+    // Every session in this fixture is synthesized with host "default"
+    // (mirroring the metrics engine). The pre-fix code accepted `host` but
+    // never projected or filtered it, so a non-matching chip silently
+    // returned every session while `/api/metrics` returned none for the
+    // same chip. Post-fix both routes agree on the same synthetic host.
+
+    // Match: include "default" in the chip → every session returns.
+    const matching = await app.inject({
+      method: "GET",
+      url: "/api/sessions?host=default",
+    });
+    expect(matching.statusCode).toBe(200);
+    expect(matching.json().items).toHaveLength(6);
+
+    // Miss: any chip value that doesn't include "default" returns nothing.
+    const nonMatching = await app.inject({
+      method: "GET",
+      url: "/api/sessions?host=other-host",
+    });
+    expect(nonMatching.statusCode).toBe(200);
+    expect(nonMatching.json().items).toEqual([]);
+    expect(nonMatching.json().total).toBe(0);
+  });
+
+  it("range filter is inclusive on both bounds and compares by epoch ms (review #14)", async () => {
+    // Range covers s-a (Jul 10), s-b (Jul 12), s-c (Jul 11). Inclusive on
+    // both bounds now (review #14): s-b at exactly `to` MUST be included
+    // (pre-fix was half-open on `to` and silently excluded it — that broke
+    // ChartCard's daily point-drill which emits `from === to === dayStart`).
     const response = await app.inject({
       method: "GET",
       url: `/api/sessions?from=${iso(2026, 6, 10)}&to=${iso(2026, 6, 12, 10, 0, 0)}`,
@@ -328,7 +354,42 @@ describe("GET /api/sessions — filtering and sorting", () => {
       .json()
       .items.map((i: { sessionId: string }) => i.sessionId)
       .sort();
-    expect(ids).toEqual(["s-a", "s-c"]);
+    expect(ids).toEqual(["s-a", "s-b", "s-c"]);
+  });
+
+  it("range filter accepts equivalent ISO representations (epoch ms comparison, review #14)", async () => {
+    // Same instant in two equivalent ISO forms — pre-fix compared strings,
+    // which would have ordered "...Z" vs "+00:00" differently. Post-fix
+    // parses both to epoch ms, so equivalent representations agree.
+    const withZ = await app.inject({
+      method: "GET",
+      url: `/api/sessions?from=${iso(2026, 6, 10)}&to=${iso(2026, 6, 13)}`,
+    });
+    // URL-encoded "+00:00" so the route receives the offset form rather than
+    // a literal `+` (URL semantics turn `+` into space).
+    const withOffset = await app.inject({
+      method: "GET",
+      url: `/api/sessions?from=${iso(2026, 6, 10)}&to=${encodeURIComponent(
+        iso(2026, 6, 13).replace("Z", "+00:00"),
+      )}`,
+    });
+    expect(withOffset.statusCode).toBe(200);
+    expect(withZ.json().total).toBe(withOffset.json().total);
+  });
+
+  it("daily drill point (from === to) returns sessions at that exact instant (review #14)", async () => {
+    // The fix specifically enables ChartCard's daily drill: the canvas click
+    // builds `/sessions?from=dayStart&to=dayStart`. Pre-fix the half-open
+    // upper bound excluded every session, so the drill landed on an empty
+    // Sessions page. Post-fix both bounds inclusive → s-c (Jul 11 10:00)
+    // lands.
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/sessions?from=${iso(2026, 6, 11, 10, 0, 0)}&to=${iso(2026, 6, 11, 10, 0, 0)}`,
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().total).toBe(1);
+    expect(response.json().items[0].sessionId).toBe("s-c");
   });
 
   it("rejects an empty CSV filter as 400 (no silent 'no-filter' fallback)", async () => {

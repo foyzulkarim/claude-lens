@@ -11,6 +11,7 @@ describe("Session — additive optional fields", () => {
       models: ["gpt-4o"],
       gitBranch: "main",
       version: "0.0.0",
+      host: "default",
       tier: {
         hasCostSamples: true,
         hasTurnBoundaries: true,
@@ -37,6 +38,7 @@ describe("Session — additive optional fields", () => {
       models: ["gpt-4o"],
       gitBranch: "main",
       version: "0.0.0",
+      host: "default",
       tier: {
         hasCostSamples: true,
         hasTurnBoundaries: true,
@@ -63,6 +65,7 @@ describe("Session — additive optional fields", () => {
       models: ["gpt-4o"],
       gitBranch: "main",
       version: "0.0.0",
+      host: "default",
       tier: {
         hasCostSamples: true,
         hasTurnBoundaries: true,
@@ -90,6 +93,7 @@ describe("Session — additive optional fields", () => {
       models: ["gpt-4o"],
       gitBranch: "main",
       version: "0.0.0",
+      host: "default",
       tier: {
         hasCostSamples: true,
         hasTurnBoundaries: true,

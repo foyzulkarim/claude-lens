@@ -6,9 +6,9 @@ import type {
   SessionListResponse,
   TracePoint,
 } from "../../shared/sessions-contract.js";
+import type { Session } from "../../shared/types.js";
 import type { PricingTable } from "../metrics/measures.js";
 import type { Pricer } from "../store/derive-session.js";
-import type { Session } from "../../shared/types.js";
 import type { Store } from "../store/store.js";
 
 // GET /api/sessions — general paginated sessions list (ARCH T6 / #P4-2).
@@ -170,16 +170,42 @@ function parsePositiveInt(value: unknown): number | string {
 /**
  * True iff the session matches the query filters. `from`/`to` use the
  * session-start convention (`session.firstAt`, matching how the metrics
- * engine buckets sessions in `scopeFor`), half-open `[from, to)`.
+ * engine buckets sessions in `scopeFor`), inclusive on BOTH bounds.
  *
- * `host` is accepted by the contract but the Session type doesn't carry a
- * host field (the metrics engine synthesizes `"default"` — see
- * server/metrics/dimensions.ts). Treat the host filter as a no-op for now
- * so a query doesn't silently drop everything.
+ * Review #14 / CQ7: pre-fix the route compared raw ISO strings (which sort
+ * correctly today but is fragile — ISO with vs without sub-second precision
+ * or trailing `Z` could order incorrectly) and used a half-open upper bound
+ * that conflicted with the metrics engine's inclusive convention. Post-fix:
+ *   - Parse both `from`/`to` and `session.firstAt` to epoch ms once, then
+ *     compare numerically (matches `Date.parse` semantics, immune to ISO
+ *     formatting variations).
+ *   - Both bounds inclusive: `from <= firstAt <= to`. The previous
+ *     `firstAt >= to` half-open upper excluded a session whose `firstAt`
+ *     landed exactly on the drill point — `ChartCard`'s daily point-drill
+ *     emits `from === to === dayStart`, so a half-open upper silently
+ *     returned an empty sessions interval.
+ *
+ * `host` parity (review #13): the metrics engine synthesizes a constant
+ * `"default"` host for every scope (see `server/metrics/dimensions.ts`),
+ * and the Dashboard callers pass the active `host` chip straight through
+ * to both `/api/sessions` and `/api/metrics`. Pre-fix the route accepted
+ * `host` but never projected or filtered it, so a non-matching host chip
+ * silently returned every session while `/api/metrics` returned nothing.
+ * Now `host` filters the same synthetic `"default"` the engine synthesizes,
+ * so a chip value that includes `"default"` matches every session, and any
+ * other chip value matches none (the engine and the route agree). When
+ * per-host Session fields land, this becomes a real field lookup without
+ * changing the contract.
  */
 function sessionMatchesFilters(session: Session, params: SessionListParams): boolean {
-  if (params.from !== undefined && session.firstAt < params.from) return false;
-  if (params.to !== undefined && session.firstAt >= params.to) return false;
+  if (params.from !== undefined) {
+    const fromMs = Date.parse(params.from);
+    if (Number.isFinite(fromMs) && Date.parse(session.firstAt) < fromMs) return false;
+  }
+  if (params.to !== undefined) {
+    const toMs = Date.parse(params.to);
+    if (Number.isFinite(toMs) && Date.parse(session.firstAt) > toMs) return false;
+  }
 
   if (params.project !== undefined && !params.project.includes(session.project)) {
     return false;
@@ -190,8 +216,9 @@ function sessionMatchesFilters(session: Session, params: SessionListParams): boo
   if (params.model !== undefined && !session.models.some((m) => (params.model ?? []).includes(m))) {
     return false;
   }
-  // params.host: no Session field today — filter is accepted but a no-op
-  // (documented gap, not silently applied).
+  if (params.host !== undefined && !params.host.includes(session.host)) {
+    return false;
+  }
   return true;
 }
 
@@ -209,6 +236,14 @@ function sortValue(session: Session, key: SortKey): number | string {
       return session.cacheSavingsComputed ?? 0;
     case "maxTurnCostComputed":
       return session.maxTurnCostComputed ?? 0;
+    default: {
+      // Review #18: the cast `av as number` below was correct only because
+      // the union narrowed by exclusion; a future SortKey addition would
+      // silently fall through. Throw to make the exhaustiveness load-bearing
+      // rather than implicit.
+      const unhandled: never = key;
+      throw new Error(`unhandled sort key: ${unhandled}`);
+    }
   }
 }
 

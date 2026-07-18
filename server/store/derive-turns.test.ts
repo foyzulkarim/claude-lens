@@ -232,4 +232,49 @@ describe("deriveTurns — errorToolResults aggregation", () => {
     const turns = deriveTurns(calls, prompts, toolResults);
     expect(turns[0].errorToolResults).toBe(0);
   });
+
+  it("does not leak sidechain tool_result bytes/errors into the main thread turn (review #3)", () => {
+    // Regression for review finding #3: a sub-agent's tool_result records
+    // share the parent's `promptId` (Agent-tool convention), so bucketing by
+    // promptId alone would silently fold sub-agent bytes/errors into the
+    // main turn's toolResultBytes/errorToolResults. The fix keys by
+    // `${promptId}::${main|side}` so each side gets its own bucket.
+    const calls = [
+      { ...makeCall("m1"), isSidechain: false, timestamp: "2026-07-13T00:00:01.000Z" },
+      { ...makeCall("m2"), isSidechain: true, timestamp: "2026-07-13T00:00:02.000Z" },
+    ];
+    const prompts = [makePrompt("p1")];
+    const toolResults = [
+      { ...makeToolResult("p1", "t-main", true), isSidechain: false, bytes: 100 }, // main: 1 error, 100 bytes
+      { ...makeToolResult("p1", "t-side", true), isSidechain: true, bytes: 999 }, // sidechain: 1 error, 999 bytes
+    ];
+
+    const turns = deriveTurns(calls, prompts, toolResults);
+    expect(turns).toHaveLength(2);
+    const mainTurn = turns.find((t) => !t.isSidechain);
+    const sideTurn = turns.find((t) => t.isSidechain);
+    // Pre-fix: both bytes/errors were attributed to the main turn via
+    // `acc.isSidechain ? 0 : map.get(promptId)`. Post-fix: each turn reads
+    // its own bucket.
+    expect(mainTurn?.toolResultBytes).toBe(100);
+    expect(mainTurn?.errorToolResults).toBe(1);
+    expect(sideTurn?.toolResultBytes).toBe(999);
+    expect(sideTurn?.errorToolResults).toBe(1);
+  });
+
+  it("treats a tool_result record without isSidechain as a main-thread record (default)", () => {
+    // Backwards-compat guard for any existing fixture or pre-fix data that
+    // produced records without the new field — bucketing must default to
+    // "main" so existing test fixtures (and live data ingested before the
+    // field was populated) don't suddenly read as 0 bytes.
+    const calls = [makeCall("m1")];
+    const prompts = [makePrompt("p1")];
+    const toolResults = [{ ...makeToolResult("p1", "t1", false) }];
+    // Deliberately omit isSidechain to mimic a pre-fix record shape.
+    delete (toolResults[0] as { isSidechain?: boolean }).isSidechain;
+
+    const turns = deriveTurns(calls, prompts, toolResults);
+    expect(turns[0].toolResultBytes).toBe(100);
+    expect(turns[0].errorToolResults).toBe(0);
+  });
 });

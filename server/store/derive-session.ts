@@ -84,21 +84,29 @@ export function deriveSession(
     }
   }
 
-  // contextPctEstimated: total tokens of the last turn's last call divided by
-  // that model's context window. Unknown model → undefined (not 0).
+  // contextPctEstimated: that of the LAST CALL (by timestamp) over its own
+  // model's context window. Review #12 / CQ5: pre-fix used the last turn's
+  // aggregate `usage` (summed across every call in that turn), which in a
+  // tool-loop turn double-counts overlapping token usage and clamps healthy
+  // contexts at 100%. Using that single call's own usage against its own
+  // model window is the documented intent. We pick the latest by timestamp
+  // (not array position) so an out-of-order derive input — e.g. one from a
+  // warm-cache reconstruction or a partial tail — still resolves to the
+  // correct most-recent call.
   let contextPctEstimated: number | undefined;
-  const lastTurn = turns[turns.length - 1];
-  if (lastTurn && lastTurn.calls.length > 0) {
-    const lastCall = lastTurn.calls[lastTurn.calls.length - 1];
+  let latestCall: ApiCall | undefined;
+  for (const call of calls) {
+    if (!latestCall || call.timestamp > latestCall.timestamp) {
+      latestCall = call;
+    }
+  }
+  if (latestCall) {
     const ctxWindow = contextResolver
-      ? contextResolver(lastCall.model)
-      : resolveContextWindow(lastCall.model);
+      ? contextResolver(latestCall.model)
+      : resolveContextWindow(latestCall.model);
     if (ctxWindow !== null) {
-      const total =
-        lastTurn.usage.inputTokens +
-        lastTurn.usage.outputTokens +
-        lastTurn.usage.cacheReadTokens +
-        lastTurn.usage.cacheCreateTokens;
+      const { inputTokens, outputTokens, cacheReadTokens, cacheCreateTokens } = latestCall.usage;
+      const total = inputTokens + outputTokens + cacheReadTokens + cacheCreateTokens;
       contextPctEstimated = Math.min(1, Math.max(0, total / ctxWindow));
     }
   }
@@ -127,15 +135,29 @@ export function deriveSession(
     tier,
     firstAt,
     lastAt,
+    // Synthetic host (review #13): the metrics engine synthesizes "default"
+    // for every scope today (server/metrics/dimensions.ts). Mirror that
+    // constant here so `/api/sessions?host=foo` agrees with `/api/metrics`
+    // — pre-fix the route accepted `host` but never projected it, so the
+    // same chip returned every session from sessions and none from metrics.
+    // Replace with the real `call.host` field once per-host capture lands.
+    host: "default",
     usage,
     turnCount: turns.length,
     callCount: calls.length,
     costComputed,
     cacheHitPct,
     durationMs,
-    // Only include optional fields when they have a meaningful non-zero value
-    cacheSavingsComputed: cacheSavingsComputed > 0 ? cacheSavingsComputed : undefined,
-    maxTurnCostComputed: maxTurnCostComputed > 0 ? maxTurnCostComputed : undefined,
+    // Optional fields: key the "unavailable" sentinel off pricing/pricer
+    // presence, NOT off whether the value happens to be > 0 (review #2). A
+    // fully-priced session with genuinely zero cache savings is a real
+    // measured fact and must round-trip as `0`, not be silently rewritten
+    // to "unavailable" — the project invariant is "0 means measured zero,
+    // undefined means unavailable", and conflating the two would make a
+    // priced session indistinguishable from one where pricing was never
+    // wired up.
+    cacheSavingsComputed: pricing ? cacheSavingsComputed : undefined,
+    maxTurnCostComputed: pricer ? maxTurnCostComputed : undefined,
     contextPctEstimated,
   };
 }

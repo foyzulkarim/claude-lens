@@ -31,11 +31,16 @@ describe("resolveContextWindow — resolver semantics", () => {
 });
 
 describe("DEFAULT_CONTEXT_WINDOWS — catalog stability", () => {
-  it("lists the four known models", () => {
+  it("lists the four known models with keys matching DEFAULT_PRICING_TABLE", () => {
+    // Review #7 regression: the catalog key for Haiku used to be
+    // `claude-haiku-4-5-20251001` (spec reference) while the pricing table
+    // used `claude-haiku-4-5`. The mismatch silently dropped
+    // contextPctEstimated for every Haiku session. Pin the parity here so a
+    // future drift is caught at test time.
     const keys = Object.keys(DEFAULT_CONTEXT_WINDOWS).sort();
     expect(keys).toEqual([
       "claude-fable-5",
-      "claude-haiku-4-5-20251001",
+      "claude-haiku-4-5",
       "claude-opus-4-8",
       "claude-sonnet-5",
     ]);

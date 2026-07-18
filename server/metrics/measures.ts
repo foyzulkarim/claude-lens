@@ -1,5 +1,5 @@
 import type { Measure } from "../../shared/metrics-contract.js";
-import type { ApiCall, Session, Turn } from "../../shared/types.js";
+import type { ApiCall, Session, TokenUsage, Turn } from "../../shared/types.js";
 
 export interface ModelRate {
   /** $ per 1,000,000 input tokens */
@@ -29,6 +29,14 @@ export const DEFAULT_PRICING_TABLE: PricingTable = {
   "claude-haiku-4-5": PLACEHOLDER_RATE,
 };
 
+/**
+ * The Opus model key — used both as the pricing-table entry and as the
+ * counterfactual assumption in `routingSavingsComputed`. Kept as a single
+ * named constant so a future rename (or a second reference model) can't
+ * silently diverge between the two lookup sites.
+ */
+export const OPUS_MODEL_KEY = "claude-opus-4-8";
+
 /** An already-filtered/grouped/bucketed slice of data for one (measure x group x bucket) cell. */
 export interface MeasureScope {
   calls: ApiCall[];
@@ -37,9 +45,20 @@ export interface MeasureScope {
 }
 
 export function priceCall(call: ApiCall, pricing: PricingTable): number {
-  const rate = pricing[call.model];
+  return priceUsage(call.usage, call.model, pricing);
+}
+
+/**
+ * Pure (usage, model, pricing) → $ primitive. The single source of truth for
+ * "how much does this token usage cost at these rates?". `priceCall` and the
+ * runtime `pricer` both delegate here so a future pricing change (rounding,
+ * new token category) only needs to land once. Unpriced models return 0
+ * — the established convention for "no price available" (review finding #8).
+ */
+export function priceUsage(usage: TokenUsage, model: string, pricing: PricingTable): number {
+  const rate = pricing[model];
   if (!rate) return 0;
-  const { inputTokens, outputTokens, cacheReadTokens, cacheCreateTokens } = call.usage;
+  const { inputTokens, outputTokens, cacheReadTokens, cacheCreateTokens } = usage;
   return (
     (inputTokens * rate.input +
       outputTokens * rate.output +
@@ -154,22 +173,28 @@ export function computeMeasure(
       return savings;
     }
     case "routingSavingsComputed": {
-      // Routing savings = (all-Opus uncached cost) - (actual cost).
-      // Non-overlapping with cache savings: cacheSavings + routingSavings =
-      //   (uncached - actual) + (opusUncached - actual)
-      //   = opusUncached - actual  ← single counterfactual, no double-count
-      // Opus is assumed to be in the pricing table (default entry always present).
-      // Any unpriced call makes the whole bucket's result null.
-      const opusRate = pricing["claude-opus-4-8"];
+      // Routing savings = (all-Opus uncached cost) - (current-model uncached cost).
+      // This is the "model mix" savings — what you'd save by routing every
+      // call through its cheapest viable model with no cache benefit. It is
+      // strictly non-overlapping with `cacheSavingsComputed` (which subtracts
+      // actual cost): the two measures together sum exactly to the all-Opus
+      // counterfactual minus actual cost, i.e.
+      //   cache + routing = (currentUncached - actual) + (opusUncached - currentUncached)
+      //                   = opusUncached - actual
+      // (architecture decision A8, review finding #1 — the previous formula
+      // subtracted `actual` from both terms and double-counted by the entire
+      // cache-savings segment on any cache-using session.)
+      //
+      // Opus is assumed to be in the pricing table (default entry always
+      // present). An unpriced call's "current-model uncached" counterfactual
+      // is meaningless — poison the bucket to null rather than fabricate.
+      const opusRate = pricing[OPUS_MODEL_KEY];
       if (!opusRate || scope.calls.length === 0) return null;
       let savings = 0;
       for (const call of scope.calls) {
-        // opusUncachedPrice always succeeds (opusRate confirmed above).
-        // But if the call's model is unpriced, actual cost is $0 and the
-        // counterfactual savings claim is meaningless — poison the bucket.
-        if (!(call.model in pricing)) return null;
-        const actual = priceCall(call, pricing);
-        savings += opusUncachedPrice(call, opusRate) - actual;
+        const uncached = uncachedPrice(call, pricing);
+        if (uncached === null) return null;
+        savings += opusUncachedPrice(call, opusRate) - uncached;
       }
       return savings;
     }
