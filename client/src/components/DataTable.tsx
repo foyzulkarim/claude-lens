@@ -44,10 +44,32 @@ type DataTableRowActionProps<T> =
       getRowActionLabel: (row: T) => string;
     };
 
+/**
+ * Opt-in controlled/manual sorting (ARCH A8 — Sessions page server-side
+ * sort + pagination). The default path keeps the existing internal
+ * `useState<SortingState>` behavior — callers that opt into `manualSorting`
+ * own the sort state and receive change notifications via
+ * `onSortingChange`. This is the additive prop pattern (discriminated
+ * union) so existing callers stay type-compatible.
+ */
+type DataTableSortingProps =
+  | {
+      manualSorting?: false;
+      sorting?: never;
+      onSortingChange?: never;
+    }
+  | {
+      /** Server-controlled sort — caller owns the state. */
+      manualSorting: true;
+      sorting: SortingState;
+      onSortingChange: (next: SortingState | ((prev: SortingState) => SortingState)) => void;
+    };
+
 // `height` is required whenever `virtualized` is true (ARCH R3/A5) — the
 // virtualizer needs a bounded scroll viewport to know which rows are visible.
 export type DataTableProps<T> = DataTableBaseProps<T> &
   DataTableRowActionProps<T> &
+  DataTableSortingProps &
   ({ virtualized: true; height: number } | { virtualized?: false; height?: never });
 
 const ESTIMATED_ROW_HEIGHT = 36;
@@ -135,8 +157,18 @@ export function DataTable<T>({
   initialSorting,
   getRowId,
   label,
+  manualSorting,
+  sorting: controlledSorting,
+  onSortingChange,
 }: DataTableProps<T>) {
-  const [sorting, setSorting] = useState<SortingState>(initialSorting ?? []);
+  // Controlled path: caller owns `sorting` + `onSortingChange`; we just
+  // pass them through. Default path: internal `useState` for the
+  // uncontrolled consumers (preserves pre-controlled behavior — review
+  // #18 pattern: any caller passing `manualSorting` controls sort,
+  // everyone else gets the existing internal behavior).
+  const [internalSorting, setInternalSorting] = useState<SortingState>(initialSorting ?? []);
+  const sorting = manualSorting ? controlledSorting : internalSorting;
+  const handleSortingChange = manualSorting ? onSortingChange : setInternalSorting;
   const [showAllRows, setShowAllRows] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -144,9 +176,15 @@ export function DataTable<T>({
     data,
     columns,
     state: { sorting },
-    onSortingChange: setSorting,
+    onSortingChange: handleSortingChange,
     getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
+    // Server-controlled sorting path: TanStack still calls its own sort
+    // model unless `manualSorting` is set on the table config. Without
+    // this, a caller who passes `sorting={[...]}` would see TanStack
+    // re-sort `data` locally too, breaking the "caller owns the order"
+    // contract.
+    manualSorting,
+    getSortedRowModel: manualSorting ? undefined : getSortedRowModel(),
     getRowId,
   });
 

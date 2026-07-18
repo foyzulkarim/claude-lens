@@ -5,6 +5,7 @@ import type {
   Grain,
   MetricsQuery,
   Series,
+  SeriesMetricsQuery,
   SeriesPoint,
 } from "../../shared/metrics-contract.js";
 import type { ApiCall, Session, Turn } from "../../shared/types.js";
@@ -18,6 +19,7 @@ import {
 import { alignPreviousPeriod, computeDistribution, movingAverage7 } from "./distributions.js";
 import { bucketStart, enumerateBuckets } from "./grain.js";
 import { computeMeasure, type MeasureScope, type PricingTable } from "./measures.js";
+import { indexSessionsByScope, type SessionScope } from "./session-population.js";
 
 // engine.ts is the only file in metrics/ that composes grain.ts/dimensions.ts/
 // measures.ts/distributions.ts. It takes plain arrays, never a live Store
@@ -249,7 +251,7 @@ function filterAndGroup(
 /** The `mode: "series"` pipeline, parameterized on `range` so it can also serve compare's shifted previous-period run (decision A7) — everything else (measures/dimensions/grain/filters) comes from `query`. */
 function computeSeriesForRange(
   input: MetricsInput,
-  query: MetricsQuery,
+  query: SeriesMetricsQuery | DistributionMetricsQuery,
   range: { from: string; to: string },
 ): Series[] {
   const { groups, rangeFromMs, rangeToMs } = filterAndGroup(input, query, range);
@@ -308,15 +310,74 @@ function entityScopesFor(entity: DistributionEntity, scope: MeasureScope): Measu
   }
 }
 
+/**
+ * Indexed-per-session variant of `entityScopesFor("session", …)` (ARCH T1
+ * session-scope optimization): pre-indexes `calls`/`turns` by sessionId
+ * once, then yields the same per-session `MeasureScope` array without the
+ * O(S × (C+T)) per-session re-filter. Used by the distribution +
+ * scatter pipelines when `distributionEntity === "session"`, which is the
+ * Sessions page's default — keeps the engine's existing semantics
+ * (one MeasureScope per session, single-session record set) while making
+ * the per-query cost linear instead of quadratic.
+ */
+function sessionEntityScopesFromIndex(scopes: Map<string, SessionScope>): MeasureScope[] {
+  const result: MeasureScope[] = [];
+  for (const scope of scopes.values()) {
+    result.push({
+      calls: scope.calls,
+      turns: scope.turns,
+      sessions: [scope.session],
+    });
+  }
+  return result;
+}
+
+/**
+ * Build the per-session indexed scopes for the matched range-filtered
+ * sessions in `input` (ARCH T1). Reused by both the session-distribution
+ * and the scatter pipelines — building it once per metrics request
+ * replaces the O(S × (C+T)) per-session re-filter that the legacy
+ * `entityScopesFor("session", …)` did on every measure × group iteration.
+ */
+function buildSessionScopeIndex(
+  input: MetricsInput,
+  rangeFromMs: number,
+  rangeToMs: number,
+): Map<string, SessionScope> {
+  const matched = input.sessions.filter((session) => {
+    const firstMs = Date.parse(session.firstAt);
+    return Number.isFinite(firstMs) && firstMs >= rangeFromMs && firstMs <= rangeToMs;
+  });
+  return indexSessionsByScope(matched, input.calls, input.turns);
+}
+
 /** The `mode: "distribution"` pipeline (decision A9: `"time"` in `dimensions` is ignored — always one population per breakdown-dim group across the whole range). Entities where `computeMeasure` returns null are excluded from the population, which is what lets an all-premium-gated measure cascade to `computeDistribution([])`'s honest-null result with no special-casing here. */
 function computeDistributionSeries(input: MetricsInput, query: DistributionMetricsQuery): Series[] {
   const { groups, rangeFromMs, rangeToMs } = filterAndGroup(input, query, query.range);
 
+  // Session-distribution path uses the indexed scopes (ARCH T1) — one
+  // index per request, reused across every measure × group pair. The
+  // path takes the same MeasureScope shape downstream callers already
+  // see, so distribution semantics (entity → null exclusion, etc.) are
+  // unchanged from the legacy per-session filter.
+  const sessionIndex =
+    query.distributionEntity === "session"
+      ? buildSessionScopeIndex(input, rangeFromMs, rangeToMs)
+      : null;
+
   const series: Series[] = [];
   for (const measure of query.measures) {
     for (const group of groups) {
-      const scope = scopeFor(group, null, query.grain, input, rangeFromMs, rangeToMs);
-      const values = entityScopesFor(query.distributionEntity, scope)
+      let entityScopes: MeasureScope[];
+      if (query.distributionEntity === "session" && sessionIndex !== null) {
+        // Same scope shape as `entityScopesFor("session", …)`; the
+        // indexed path is functionally identical but linear in C+T+S.
+        entityScopes = sessionEntityScopesFromIndex(sessionIndex);
+      } else {
+        const scope = scopeFor(group, null, query.grain, input, rangeFromMs, rangeToMs);
+        entityScopes = entityScopesFor(query.distributionEntity, scope);
+      }
+      const values = entityScopes
         .map((entityScope) => computeMeasure(measure, entityScope, input.pricing))
         .filter((value): value is number => value !== null);
       series.push({
@@ -362,14 +423,32 @@ export function metrics(input: MetricsInput, query: MetricsQuery): Series[] {
     return computeDistributionSeries(input, query);
   }
 
-  let series = computeSeriesForRange(input, query, query.range);
+  // Scatter mode returns a different shape (`ScatterMetricsResult`), so the
+  // dispatch above (returning `Series[]`) cannot host it. The scatter
+  // pipeline lives in `server/metrics/scatter.ts` and is reached through
+  // a sibling helper (`metricsScatter`) called by `server/routes/metrics.ts`.
+  // This branch is intentionally a non-`scatter` guard so future variants
+  // fail to compile here rather than silently falling through.
+  if (query.mode === "scatter") {
+    throw new Error("metrics() does not handle mode='scatter' — call metricsScatter()");
+  }
 
-  if (query.compare === "previous-period") {
-    const previousSeries = computeSeriesForRange(input, query, previousPeriodRange(query.range));
+  // Narrowed at this point: distribution + scatter were both handled above,
+  // so `query` is `SeriesMetricsQuery`. The `as` cast keeps `tsc --strict`
+  // honest without changing `MetricsQuery`'s shape.
+  let series = computeSeriesForRange(input, query, query.range);
+  const seriesQuery: SeriesMetricsQuery = query;
+
+  if (seriesQuery.compare === "previous-period") {
+    const previousSeries = computeSeriesForRange(
+      input,
+      seriesQuery,
+      previousPeriodRange(seriesQuery.range),
+    );
     series = mergeCompareGhost(series, previousSeries);
   }
 
-  if (query.smoothing === "ma7") {
+  if (seriesQuery.smoothing === "ma7") {
     series = series.map((s) => ({ ...s, points: movingAverage7(s.points) }));
   }
 

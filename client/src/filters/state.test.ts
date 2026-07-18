@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   type FilterState,
   filtersToQuery,
+  mergeGlobalFilters,
   parseFilters,
   resolveRange,
   serializeFilters,
@@ -198,5 +199,113 @@ describe("filtersToQuery — shaping for MetricsQuery", () => {
       model: ["claude-sonnet-5"],
       host: ["default"],
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// mergeGlobalFilters — ARCH A7 / R10 (preserve page-owned URL keys)
+// ---------------------------------------------------------------------------
+
+describe("mergeGlobalFilters — patches only the owned global keys", () => {
+  it("preserves every Sessions-owned URL key when patching global filters", () => {
+    // ARCH R10 / A7 — Dashboard drill-in lands on /sessions with full
+    // Sessions state, then the user clicks a chip; the global update must
+    // not silently drop Sessions-owned params.
+    const search =
+      "?view=page&sort=totalTokens&order=desc&offset=25&limit=25&distView=percentiles&scatter=tokens-vs-turns&compare=a,b,c";
+    const next: FilterState = {
+      range: { preset: "7d" },
+      project: ["alpha"],
+      model: [],
+      branch: [],
+      host: [],
+    };
+    expect(mergeGlobalFilters(search, next)).toBe(
+      "view=page&sort=totalTokens&order=desc&offset=25&limit=25&distView=percentiles&scatter=tokens-vs-turns&compare=a%2Cb%2Cc&project=alpha",
+    );
+  });
+
+  it("replaces existing global keys with the next FilterState values", () => {
+    expect(
+      mergeGlobalFilters("?range=30d&project=old", {
+        range: { preset: "7d" },
+        project: ["alpha"],
+        model: [],
+        branch: [],
+        host: [],
+      }),
+    ).toBe("project=alpha");
+  });
+
+  it("drops global keys when cleared (empty chips)", () => {
+    expect(
+      mergeGlobalFilters("?project=old&model=opus&view=page", {
+        range: { preset: "7d" },
+        project: [],
+        model: [],
+        branch: [],
+        host: [],
+      }),
+    ).toBe("view=page");
+  });
+
+  it("replaces from/to when the next range is custom", () => {
+    // URLSearchParams preserves existing key positions (no reorder), so
+    // page-owned `view=page` keeps its slot while the global range keys
+    // are dropped and rewritten at the end of the string. Assert the
+    // semantically-equal query string the merge actually produces.
+    expect(
+      mergeGlobalFilters("?range=7d&view=page", {
+        range: { from: "2026-07-01", to: "2026-07-10" },
+        project: [],
+        model: [],
+        branch: [],
+        host: [],
+      }),
+    ).toBe("view=page&from=2026-07-01&to=2026-07-10");
+  });
+
+  it("omits the default range preset", () => {
+    expect(
+      mergeGlobalFilters("?view=page", {
+        range: { preset: "7d" },
+        project: [],
+        model: [],
+        branch: [],
+        host: [],
+      }),
+    ).toBe("view=page");
+  });
+
+  it("keeps page-owned keys unknown to the merge (forward-compatible)", () => {
+    // A future page adds `foo=bar` to its state. mergeGlobalFilters
+    // shouldn't strip it.
+    expect(
+      mergeGlobalFilters("?view=page&foo=bar", {
+        range: { preset: "7d" },
+        project: ["alpha"],
+        model: [],
+        branch: [],
+        host: [],
+      }),
+    ).toBe("view=page&foo=bar&project=alpha");
+  });
+
+  it("handles a leading-? input as well as a bare input", () => {
+    const withQ = mergeGlobalFilters("?range=30d", {
+      range: { preset: "7d" },
+      project: [],
+      model: [],
+      branch: [],
+      host: [],
+    });
+    const withoutQ = mergeGlobalFilters("range=30d", {
+      range: { preset: "7d" },
+      project: [],
+      model: [],
+      branch: [],
+      host: [],
+    });
+    expect(withQ).toBe(withoutQ);
   });
 });

@@ -19,6 +19,26 @@ file below, added to as new fixtures land.
 | `33333333-3333-4333-8333-333333333333.jsonl` | **Partial trailing line.** Two complete, valid `assistant` lines followed by a third line that was cut mid-write (no trailing newline, incomplete JSON) — simulates polling a file while Claude Code is still writing to it. Reused by the tailer's (#P2-4) partial-line-withholding tests. |
 | `44444444-4444-4444-8444-444444444444.jsonl` | **Dashboard anomaly + failed tool result (#P4-2, T15).** Three turns, timestamped after the other three fixture files' sessions so this session sorts as most-recent (`sort: "lastAt"`, feeding `RecentSessionCard`). Turn 2 uses a ~50x-scaled `input_tokens`/`output_tokens` usage block (50,000 in / 3,000 out vs. the ~1,000/50 pattern elsewhere in this tree) so its computed cost clears the anomaly detector's 5×-median threshold (`shared/anomaly.ts` `detectTurnCostAnomalies`, consumed by `AnomalyFeed`'s pooled turn-cost-delta sampling) against the combined population of all four fixture sessions. Turn 3 includes a `tool_result` block with `"is_error": true` (a simulated failed `npm test` run) to exercise the `toolErrors` measure that feeds `FailedWorkStat`. |
 
+## Sessions page coverage (#P4-4 / ARCH-sessions-page.md T9)
+
+The Sessions page (`cypress/e2e/sessions.cy.ts`) reuses this same four-session
+fixture set — no task-specific fixture rewrite was needed:
+
+- All four sessions fall inside the July 2026 fixture range and populate the
+  Sessions table, timeline, cost distribution, and efficiency scatter with
+  real (not zero-valued) rows.
+- The `11111111-…` (clean multi-turn, model switch, both cache buckets) and
+  `44444444-…` (anomaly + failed tool result) sessions are used by the
+  compare-mode smoke test — both have distinct, well-formed cost/token/turn
+  totals that render clearly in a side-by-side table.
+- `22222222-…` (malformed lines) and `33333333-…` (partial trailing line)
+  exercise the honest-partial-data path: their session-level totals reflect
+  only the successfully parsed lines, which the Sessions table/timeline must
+  render without crashing or fabricating missing values.
+- The Dashboard → Sessions drill-link test (`cypress/e2e/dashboard.cy.ts`)
+  asserts the destination renders the live composed page (not the pre-#36
+  `PageStub` placeholder) with fixture-matching rows.
+
 ## Scope
 
 Out of scope for this tree (added later by their own tasks, under this same
