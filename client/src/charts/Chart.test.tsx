@@ -16,7 +16,11 @@ vi.mock("echarts/core", () => ({
   init: vi.fn(() => chartInstance),
   use: vi.fn(),
 }));
-vi.mock("echarts/charts", () => ({ LineChart: {}, BarChart: {} }));
+vi.mock("echarts/charts", () => ({
+  LineChart: {},
+  BarChart: {},
+  ScatterChart: {},
+}));
 vi.mock("echarts/components", () => ({ GridComponent: {}, TooltipComponent: {} }));
 vi.mock("echarts/renderers", () => ({ CanvasRenderer: {} }));
 

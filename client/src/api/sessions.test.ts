@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { SessionListResponse } from "../../../shared/sessions-contract.js";
-import { listSessions, SessionsApiError } from "./sessions.js";
+import type {
+  SessionListResponse,
+  SessionPageResponse,
+} from "../../../shared/sessions-contract.js";
+import { listSessions, listSessionsPage, SessionsApiError } from "./sessions.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -408,5 +411,222 @@ describe("listSessions — AbortSignal threading", () => {
     // resolves the response normally and the wrapper decodes it.
     installFetch(async () => makeResponse(EMPTY_RESPONSE));
     await expect(listSessions()).resolves.toEqual(EMPTY_RESPONSE);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// listSessionsPage — page-projection wrapper (#P4-4)
+// ---------------------------------------------------------------------------
+
+function pageResponseFixture(): SessionPageResponse {
+  return {
+    items: [
+      {
+        sessionId: "s1",
+        startedAt: "2026-07-01T00:00:00Z",
+        lastAt: "2026-07-01T00:05:00Z",
+        project: "demo",
+        models: ["claude-sonnet-5"],
+        host: "default",
+        entrypoint: "cli",
+        version: "1.2.3",
+        durationMs: 300_000,
+        turnCount: 4,
+        totalTokens: 12_345,
+        cacheHitPct: 0.42,
+        costComputed: 1.25,
+        hasDrilldown: true,
+        tier: {
+          hasCostSamples: false,
+          hasTurnBoundaries: false,
+          hasCostLog: false,
+          costBasis: "computed",
+        },
+      },
+    ],
+    total: 1,
+    meta: {
+      matched: 1,
+      matchedExtent: { from: "2026-07-01T00:00:00Z", to: "2026-07-01T00:05:00Z" },
+      globalCapture: {
+        hasCostSamples: false,
+        hasTurnBoundaries: false,
+        hasCostLog: false,
+        costBasis: "computed",
+      },
+    },
+  };
+}
+
+describe("listSessionsPage — URL encoding", () => {
+  it("always sends view=page first", async () => {
+    let capturedUrl = "";
+    installFetch(async (url) => {
+      capturedUrl = url;
+      return makeResponse(pageResponseFixture());
+    });
+    await listSessionsPage({});
+    expect(capturedUrl.startsWith("/api/sessions?view=page")).toBe(true);
+  });
+
+  it("encodes the wider page filter set in insertion order", async () => {
+    let capturedUrl = "";
+    installFetch(async (url) => {
+      capturedUrl = url;
+      return makeResponse(pageResponseFixture());
+    });
+    await listSessionsPage({
+      sort: "totalTokens",
+      order: "desc",
+      offset: 0,
+      limit: 25,
+      from: "2026-07-01",
+      to: "2026-07-10",
+      project: ["alpha", "beta"],
+      entrypoint: ["cli"],
+      minCostComputed: 0,
+      maxCostComputed: 5,
+      hasDrilldown: true,
+      sessionId: ["a", "b"],
+      include: "timeline",
+    });
+    expect(capturedUrl).toBe(
+      "/api/sessions?view=page&sort=totalTokens&order=desc&offset=0&limit=25&from=2026-07-01&to=2026-07-10&project=alpha%2Cbeta&entrypoint=cli&minCostComputed=0&maxCostComputed=5&hasDrilldown=true&sessionId=a%2Cb&include=timeline",
+    );
+  });
+
+  it("serializes hasDrilldown=false as the literal 'false' string", async () => {
+    let capturedUrl = "";
+    installFetch(async (url) => {
+      capturedUrl = url;
+      return makeResponse(pageResponseFixture());
+    });
+    await listSessionsPage({ hasDrilldown: false });
+    expect(capturedUrl).toContain("hasDrilldown=false");
+  });
+
+  it("drops empty arrays, undefined, and zero cost bounds from the URL", async () => {
+    let capturedUrl = "";
+    installFetch(async (url) => {
+      capturedUrl = url;
+      return makeResponse(pageResponseFixture());
+    });
+    await listSessionsPage({
+      project: [],
+      entrypoint: [""],
+      minCostComputed: 0,
+      maxCostComputed: 0,
+      hasDrilldown: undefined,
+      sessionId: [],
+    });
+    expect(capturedUrl).toBe("/api/sessions?view=page&minCostComputed=0&maxCostComputed=0");
+  });
+});
+
+describe("listSessionsPage — success & error path", () => {
+  it("returns the typed SessionPageResponse", async () => {
+    installFetch(async () => makeResponse(pageResponseFixture()));
+    const result = await listSessionsPage({});
+    expect(result.items[0]?.models).toEqual(["claude-sonnet-5"]);
+    expect(result.items[0]?.totalTokens).toBe(12_345);
+    expect(result.meta.matched).toBe(1);
+  });
+
+  it("decodes a 400 with a typed SessionsApiError carrying the validation message", async () => {
+    installFetch(async () =>
+      makeResponse(
+        {
+          error: "minCostComputed must be <= maxCostComputed",
+        },
+        { status: 400 },
+      ),
+    );
+    let caught: unknown;
+    try {
+      await listSessionsPage({ minCostComputed: 10, maxCostComputed: 1 });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(SessionsApiError);
+    const err = caught as SessionsApiError;
+    expect(err.status).toBe(400);
+    expect(err.validation).toBe("minCostComputed must be <= maxCostComputed");
+  });
+});
+
+describe("listSessionsPage — response shape guard", () => {
+  it("throws SessionsResponseShapeError when an item is missing required page fields", async () => {
+    installFetch(async () =>
+      makeResponse({
+        items: [{ sessionId: "s1" /* missing models, host, tier, etc. */ }],
+        total: 1,
+        meta: {
+          matched: 1,
+          matchedExtent: null,
+          globalCapture: {
+            hasCostSamples: false,
+            hasTurnBoundaries: false,
+            hasCostLog: false,
+            costBasis: "computed",
+          },
+        },
+      }),
+    );
+    await expect(listSessionsPage({})).rejects.toMatchObject({
+      name: "SessionsResponseShapeError",
+    });
+  });
+
+  it("throws when timeline exceeds the 500-point cap", async () => {
+    const items = Array.from({ length: 501 }, (_, i) => ({
+      sessionId: `s${i}`,
+      project: "demo",
+      startedAt: "2026-07-01T00:00:00Z",
+      lastAt: "2026-07-01T00:05:00Z",
+      costComputed: 1,
+    }));
+    installFetch(async () =>
+      makeResponse({
+        ...pageResponseFixture(),
+        timeline: {
+          items,
+          matched: 501,
+          eligible: 501,
+          returned: 501,
+          sampled: false,
+          excludedInvalidTime: 0,
+        },
+      }),
+    );
+    await expect(listSessionsPage({ include: "timeline" })).rejects.toMatchObject({
+      name: "SessionsResponseShapeError",
+    });
+  });
+
+  it("accepts a timeline projection with metadata fields", async () => {
+    installFetch(async () =>
+      makeResponse({
+        ...pageResponseFixture(),
+        timeline: {
+          items: [
+            {
+              sessionId: "s1",
+              project: "demo",
+              startedAt: "2026-07-01T00:00:00Z",
+              lastAt: "2026-07-01T00:05:00Z",
+              costComputed: 1.25,
+            },
+          ],
+          matched: 1,
+          eligible: 1,
+          returned: 1,
+          sampled: false,
+          excludedInvalidTime: 0,
+        },
+      }),
+    );
+    const result = await listSessionsPage({ include: "timeline" });
+    expect(result.timeline?.items).toHaveLength(1);
+    expect(result.timeline?.sampled).toBe(false);
   });
 });

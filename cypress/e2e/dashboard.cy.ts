@@ -7,6 +7,13 @@ const FIXTURE_RANGE = "?from=2026-07-01T00%3A00%3A00.000Z&to=2026-08-01T00%3A00%
 const COMMAND_TIMEOUT_MS = 10_000;
 Cypress.config("defaultCommandTimeout", COMMAND_TIMEOUT_MS);
 
+// See steel-thread.cy.ts for why this is here: a benign ECharts/
+// ResizeObserver browser warning, not a real error. The Sessions drill
+// test below now navigates into the live, chart-heavy Sessions page.
+Cypress.on("uncaught:exception", (err) => {
+  if (err.message.includes("ResizeObserver loop completed")) return false;
+});
+
 /**
  * Dashboard smoke spec (ARCH-dashboard-page.md T15): loads the Dashboard
  * route over the fixture range, asserts every section renders with real
@@ -157,5 +164,18 @@ describe("dashboard smoke", () => {
       expect(search).to.include("from=");
       expect(search).to.include("to=");
     });
+
+    // #P4-4 / ARCH-sessions-page.md R12: the live Sessions page must
+    // actually render the population described by the incoming URL
+    // filters, not just navigate to the right pathname/search. Pre-#36
+    // this landed on the `PageStub` placeholder — assert the real
+    // composed page renders with fixture-matching rows.
+    cy.contains("h1", "Sessions").should("be.visible");
+    cy.get('[data-testid="session-browser"]')
+      .should("be.visible")
+      .within(() => {
+        cy.get("table").should("exist");
+        cy.get("tbody tr").should("have.length.at.least", 1);
+      });
   });
 });

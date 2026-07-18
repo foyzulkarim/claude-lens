@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import type { MetricsQuery } from "../../shared/metrics-contract.js";
 import { buildApp } from "../app.js";
+import { parseMetricsQuery } from "./metrics.js";
 import { DEFAULT_PRICING_TABLE } from "../metrics/measures.js";
 import { Store } from "../store/store.js";
 import type { ApiCall } from "../../shared/types.js";
@@ -207,5 +208,52 @@ describe("POST /api/metrics", () => {
       payload: { ...baseQuery(), filters: { model: ["claude-sonnet-5"] } },
     });
     expect(response.statusCode).toBe(200);
+  });
+
+  it("accepts the totalTokens × turns scatter preset and returns its discriminated response", async () => {
+    store.applyRecords("s1", {
+      calls: [call({ uuid: "scatter-call" })],
+      prompts: [],
+      toolResultBytes: [],
+      duplicateCount: 0,
+      malformedCount: 0,
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/metrics",
+      payload: {
+        measures: ["totalTokens", "turns"],
+        dimensions: [],
+        grain: "day",
+        range: { from: iso(2026, 6, 13), to: iso(2026, 6, 15) },
+        mode: "scatter",
+        entity: "session",
+        xMeasure: "totalTokens",
+        yMeasure: "turns",
+        sessionPopulation: {},
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      mode: "scatter",
+      xMeasure: "totalTokens",
+      yMeasure: "turns",
+    });
+  });
+
+  it("rejects malformed scatter fields before engine dispatch", () => {
+    expect(
+      parseMetricsQuery({
+        measures: ["totalTokens", "turns"],
+        dimensions: [],
+        grain: "day",
+        range: { from: iso(2026, 6, 13), to: iso(2026, 6, 15) },
+        mode: "scatter",
+        entity: "session",
+        xMeasure: "not-a-measure",
+        yMeasure: "turns",
+        sessionPopulation: {},
+      }),
+    ).toEqual(expect.any(String));
   });
 });

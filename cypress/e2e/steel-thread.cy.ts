@@ -5,6 +5,17 @@ const TRANSCRIPT_PATH =
 const EXPECTED_APPEND_COST = 5;
 const DISPLAY_ROUNDING_TOLERANCE = 0.005;
 
+// "ResizeObserver loop completed with undelivered notifications" is a
+// benign browser warning (not a real error) that fires when multiple
+// ECharts instances resize in the same frame — increasingly likely now
+// that both Dashboard and the Sessions page (#P4-4) render live charts
+// this journey navigates between. Cypress fails the test on any uncaught
+// window error by default; this is the standard suppression for that
+// specific, harmless message.
+Cypress.on("uncaught:exception", (err) => {
+  if (err.message.includes("ResizeObserver loop completed")) return false;
+});
+
 function totalFromLabel(label: string | undefined): number {
   if (typeof label !== "string") throw new Error("Cost chart lost its accessible label");
   const match = /total \$([\d,.]+)/.exec(label);

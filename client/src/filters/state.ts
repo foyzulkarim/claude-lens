@@ -104,6 +104,66 @@ export function serializeFilters(state: FilterState): string {
   return params.toString();
 }
 
+/** Global-owned URL keys that `mergeGlobalFilters` knows how to patch
+ * (ARCH A7, R10). Single source of truth — the merge function below and
+ * any future "what is global?" question both read this constant. Sessions
+ * state (`sort`, `order`, `offset`, `limit`, `view`, `entrypoint`,
+ * `minCostComputed`, `maxCostComputed`, `hasDrilldown`, `gateStatus`,
+ * `sessionId`, `include`) is NOT globally owned and the merge preserves
+ * it verbatim. */
+export const GLOBAL_FILTER_KEYS = [
+  "range",
+  "from",
+  "to",
+  "project",
+  "model",
+  "branch",
+  "host",
+] as const;
+export type GlobalFilterKey = (typeof GLOBAL_FILTER_KEYS)[number];
+
+/**
+ * Patches only the global-owned URL keys (`range`/`from`/`to`/`project`/
+ * `model`/`branch`/`host`) onto the existing search string while preserving
+ * every other key (ARCH A7, decision R10).
+ *
+ * Pre-fix: `useFilters.commit` called `navigate("?" + serializeFilters(next))`,
+ * which DROPPED every Sessions-owned URL key on every FilterBar change —
+ * a Dashboard drill-in to `/sessions?from=...&to=...&view=page` would
+ * silently lose `view=page` the moment the user clicked a chip. Post-fix:
+ * callers pass the existing search string in, this function replaces only
+ * the owned keys, and Sessions state survives (the `#P4-4` Sessions page
+ * already parses both layers out of `useSearch()`).
+ *
+ * Pure: never mutates the input. Returns a canonical query string ready for
+ * `navigate("?" + merged)`. Empty after patch → `""` (the empty search,
+ * not a `"?"`).
+ */
+export function mergeGlobalFilters(search: string, next: FilterState): string {
+  const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+
+  // Replace owned global keys. Drop empty chip values (canonical URL form).
+  for (const key of GLOBAL_FILTER_KEYS) {
+    params.delete(key);
+  }
+
+  if ("preset" in next.range) {
+    if (next.range.preset !== DEFAULT_RANGE.preset) {
+      params.set("range", next.range.preset);
+    }
+  } else {
+    params.set("from", next.range.from);
+    params.set("to", next.range.to);
+  }
+
+  for (const key of ["project", "model", "branch", "host"] as const) {
+    const values = next[key];
+    if (values.length > 0) params.set(key, [...values].sort().join(","));
+  }
+
+  return params.toString();
+}
+
 const PRESET_DAYS: Record<RangePreset, number> = { "1d": 1, "7d": 7, "30d": 30, "90d": 90 };
 
 /** Resolves a preset to concrete ISO instants relative to `now`; a custom range passes through unchanged. Presets are resolved client-side per architecture §8. */

@@ -1,6 +1,9 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
+import type { ScatterPoint } from "../../../shared/metrics-contract.js";
 import { Chart } from "./Chart.js";
+import { buildScatterOption } from "./scatterOption.js";
+import type { ChartProps } from "./Chart.js";
 import type { TimeseriesOption } from "./timeseries.js";
 
 // Real ECharts, no mocks — human-verified per ARCH-chart-layer-live-chart.md
@@ -28,6 +31,22 @@ const barOption: TimeseriesOption = {
   series: [{ type: "bar", name: "Cost", data: points.map(([, v]) => v) }],
 };
 
+function scatterStoryOption(): ChartProps["option"] {
+  const scatterPoints: ScatterPoint[] = Array.from({ length: 60 }, (_, i) => ({
+    sessionId: `s${i}`,
+    x: i * 0.5 + Math.sin(i) * 2,
+    y: i * 0.4 + Math.cos(i) * 3 + 5,
+  }));
+  return buildScatterOption(
+    scatterPoints,
+    { slope: 0.8, intercept: 0.5, rSquared: 0.82 },
+    {
+      xLabel: "Cost ($)",
+      yLabel: "Duration (min)",
+    },
+  );
+}
+
 const meta: Meta<typeof Chart> = {
   title: "Charts/Chart",
   component: Chart,
@@ -46,4 +65,11 @@ export const Area: Story = {
 
 export const Bars: Story = {
   args: { option: barOption },
+};
+
+export const ScatterFamily: Story = {
+  args: {
+    option: scatterStoryOption(),
+    ariaLabel: "Scatter chart; 60 sessions; cost × duration",
+  },
 };

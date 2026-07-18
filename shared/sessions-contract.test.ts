@@ -4,6 +4,12 @@ import type {
   SessionListItem,
   SessionListResponse,
   TracePoint,
+  SessionPageParams,
+  SessionPageItem,
+  SessionPageResponse,
+  SessionTimelineSet,
+  SessionPopulationFilter,
+  SessionPopulationCriteria,
 } from "./sessions-contract.js";
 
 describe("SessionListParams", () => {
@@ -144,5 +150,195 @@ describe("SessionListResponse", () => {
     };
     expect(response.meta.matchedExtent?.from).toBe("2024-01-01");
     expect(response.meta.matchedExtent?.to).toBe("2024-12-31");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Page projection (#P4-4 / ARCH-sessions-page T1) — keeps the existing
+// compact contract compatible while adding the strict page vocabulary.
+// ---------------------------------------------------------------------------
+
+describe("SessionPopulationFilter — canonical server model", () => {
+  it("accepts every documented field", () => {
+    const filter: SessionPopulationFilter = {
+      range: { from: "2026-07-01T00:00:00Z", to: "2026-08-01T00:00:00Z" },
+      project: ["alpha"],
+      model: ["claude-sonnet-5"],
+      branch: ["main"],
+      host: ["default"],
+      entrypoint: ["cli"],
+      minCostComputed: 0,
+      maxCostComputed: 10,
+      gateStatus: ["pass"],
+      hasDrilldown: true,
+      sessionId: ["s-1", "s-2"],
+    };
+    expect(filter.range.from).toBe("2026-07-01T00:00:00Z");
+    expect(filter.sessionId).toHaveLength(2);
+  });
+
+  it("SessionPopulationCriteria omits the range", () => {
+    // Compile-time check: SessionPopulationCriteria is `Omit<…, "range">`.
+    // The assertion below assigns `criteria.range = ...` from a literal
+    // `undefined`, which TypeScript rejects unless `range` truly is not a
+    // key — exactly what `Omit<…, "range">` gives us.
+    const criteria: SessionPopulationCriteria = {
+      project: ["alpha"],
+      hasDrilldown: true,
+    };
+    expect(criteria.project).toEqual(["alpha"]);
+    expect((criteria as { range?: unknown }).range).toBeUndefined();
+  });
+});
+
+describe("SessionPageParams — wider sort union", () => {
+  it("accepts every documented sort key", () => {
+    const sorts: NonNullable<SessionPageParams["sort"]>[] = [
+      "lastAt",
+      "costComputed",
+      "costObserved",
+      "durationMs",
+      "totalTokens",
+      "turnCount",
+      "cacheHitPct",
+      "cacheSavingsComputed",
+      "maxTurnCostComputed",
+      "gateScore",
+      "branch",
+      "version",
+    ];
+    expect(sorts).toHaveLength(12);
+    for (const s of sorts) {
+      expect(s).toBeTypeOf("string");
+    }
+  });
+
+  it("requires view=page and supports page-only filters", () => {
+    const params: SessionPageParams = {
+      view: "page",
+      sort: "totalTokens",
+      order: "desc",
+      offset: 0,
+      limit: 25,
+      from: "2026-07-01",
+      to: "2026-08-01",
+      project: ["alpha"],
+      model: ["claude-sonnet-5"],
+      branch: ["main"],
+      host: ["default"],
+      entrypoint: ["cli"],
+      minCostComputed: 0,
+      maxCostComputed: 5,
+      hasDrilldown: true,
+      include: "timeline",
+      sessionId: ["s-1"],
+    };
+    expect(params.view).toBe("page");
+    expect(params.include).toBe("timeline");
+  });
+});
+
+describe("SessionPageItem — strict page-row projection", () => {
+  it("required transcript-tier fields are mandatory", () => {
+    const item: SessionPageItem = {
+      sessionId: "s1",
+      startedAt: "2026-07-01T00:00:00Z",
+      lastAt: "2026-07-01T00:05:00Z",
+      project: "alpha",
+      models: ["claude-sonnet-5", "claude-fable-5"],
+      host: "default",
+      entrypoint: "cli",
+      version: "1.2.3",
+      durationMs: 300_000,
+      turnCount: 4,
+      totalTokens: 12_345,
+      cacheHitPct: 0.42,
+      costComputed: 1.25,
+      hasDrilldown: true,
+      tier: {
+        hasCostSamples: false,
+        hasTurnBoundaries: false,
+        hasCostLog: false,
+        costBasis: "computed",
+      },
+    };
+    expect(item.models).toHaveLength(2);
+    expect(item.hasDrilldown).toBe(true);
+  });
+
+  it("optional premium/gate/tag fields default to undefined", () => {
+    const item: SessionPageItem = {
+      sessionId: "s1",
+      startedAt: "2026-07-01T00:00:00Z",
+      lastAt: "2026-07-01T00:05:00Z",
+      project: "alpha",
+      models: ["claude-sonnet-5"],
+      host: "default",
+      entrypoint: "cli",
+      version: "1.2.3",
+      durationMs: 0,
+      turnCount: 0,
+      totalTokens: 0,
+      cacheHitPct: 0,
+      costComputed: 0,
+      hasDrilldown: false,
+      tier: {
+        hasCostSamples: false,
+        hasTurnBoundaries: false,
+        hasCostLog: false,
+        costBasis: "computed",
+      },
+    };
+    expect(item.costObserved).toBeUndefined();
+    expect(item.linesAdded).toBeUndefined();
+    expect(item.linesRemoved).toBeUndefined();
+    expect(item.contextPctEstimated).toBeUndefined();
+    expect(item.contextPctObserved).toBeUndefined();
+    expect(item.gateScore).toBeUndefined();
+    expect(item.gateStatus).toBeUndefined();
+    expect(item.tags).toBeUndefined();
+  });
+});
+
+describe("SessionTimelineSet — bounded visual points", () => {
+  it("carries matched/eligible/returned/sampled metadata", () => {
+    const set: SessionTimelineSet = {
+      items: [
+        {
+          sessionId: "s1",
+          project: "alpha",
+          startedAt: "2026-07-01T00:00:00Z",
+          lastAt: "2026-07-01T00:05:00Z",
+          costComputed: 1.25,
+        },
+      ],
+      matched: 50,
+      eligible: 48,
+      returned: 48,
+      sampled: false,
+      excludedInvalidTime: 2,
+    };
+    expect(set.sampled).toBe(false);
+    expect(set.excludedInvalidTime).toBe(2);
+  });
+});
+
+describe("SessionPageResponse — page projection root", () => {
+  it("items + total + meta are required; timeline is optional", () => {
+    const response: SessionPageResponse = {
+      items: [],
+      total: 0,
+      meta: {
+        matched: 0,
+        matchedExtent: null,
+        globalCapture: {
+          hasCostSamples: false,
+          hasTurnBoundaries: false,
+          hasCostLog: false,
+          costBasis: "computed",
+        },
+      },
+    };
+    expect(response.timeline).toBeUndefined();
   });
 });
