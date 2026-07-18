@@ -1,3 +1,4 @@
+import type { CacheLabQuery } from "../../../shared/cache-lab-contract.js";
 import type { MetricsQuery } from "../../../shared/metrics-contract.js";
 import type { SessionListParams } from "../../../shared/sessions-contract.js";
 
@@ -29,6 +30,17 @@ export const qk = {
    * mounted detail query at once.
    */
   session: (id: string) => ["session", id] as const,
+
+  /**
+   * Cache Lab key. Lives under the existing `metrics` prefix on purpose
+   * (ARCH §A9 / decision A9): the existing WebSocket invalidation bus
+   * already targets `qk.prefixes.metrics`, so Cache Lab refreshes on
+   * session/scan invalidations without adding a WS message type or
+   * prefix. The literal "cache-lab" segment is the second key entry —
+   * `qk.metrics(q)` keys do not collide because their first literal
+   * segment after the prefix is a MetricsQuery object, not a string.
+   */
+  cacheLab: (query: CacheLabQuery) => ["metrics", "cache-lab", query] as const,
 
   prefixes: {
     metrics: ["metrics"] as const,

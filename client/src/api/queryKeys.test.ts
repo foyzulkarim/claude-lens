@@ -1,6 +1,34 @@
 import { describe, expect, it } from "vitest";
 import { qk } from "./queryKeys.js";
 
+describe("qk.cacheLab", () => {
+  const query = {
+    range: { from: "2026-07-01T00:00:00.000Z", to: "2026-07-31T23:59:59.000Z" },
+    grain: "day" as const,
+  };
+
+  it("lives under qk.prefixes.metrics with the 'cache-lab' segment", () => {
+    const key = qk.cacheLab(query);
+    expect(key[0]).toBe("metrics");
+    expect(key[0]).toBe(qk.prefixes.metrics[0]);
+    expect(key[1]).toBe("cache-lab");
+  });
+
+  it("is distinct from qk.metrics (different segment shape)", () => {
+    // The literal "cache-lab" segment after the prefix ensures Cache
+    // Lab never collides with a plain metrics query (whose second
+    // entry is a MetricsQuery object, not a string).
+    expect(qk.cacheLab(query)[0]).toBe(qk.metrics({} as never)[0]);
+    expect(qk.cacheLab(query)[1]).not.toEqual(qk.metrics({} as never)[1]);
+  });
+
+  it("matches the metrics prefix for QueryClient invalidation", () => {
+    // The whole point of the prefix choice (ARCH §A9): invalidating
+    // the metrics prefix refreshes Cache Lab too, no ws.ts change.
+    expect(qk.cacheLab(query)[0]).toBe(qk.prefixes.metrics[0]);
+  });
+});
+
 describe("qk.metrics", () => {
   it("returns the metrics-prefixed key", () => {
     expect(qk.metrics({} as never)).toEqual(["metrics", {}]);

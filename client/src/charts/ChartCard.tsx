@@ -1,7 +1,6 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { type ColumnDef, createColumnHelper } from "@tanstack/react-table";
 import clsx from "clsx";
-import { addDays, addHours, addMonths, addWeeks } from "date-fns";
 import type { ECElementEvent } from "echarts/core";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -9,16 +8,12 @@ import type { Grain, Series, SeriesMetricsQuery } from "../../../shared/metrics-
 import { postMetrics } from "../api/metrics.js";
 import { qk } from "../api/queryKeys.js";
 import { DataTable } from "../components/DataTable.js";
-import {
-  type ChipDimension,
-  type FilterState,
-  filtersToQuery,
-  serializeFilters,
-} from "../filters/state.js";
+import { type FilterState, filtersToQuery, serializeFilters } from "../filters/state.js";
 import { useFilters } from "../filters/useFilters.js";
 import { useStableNow } from "../pages/dashboard/useStableNow.js";
 import { TOGGLE_ACTIVE_CLASS, TOGGLE_CLASS } from "../ui/toggleStyles.js";
 import { Chart } from "./Chart.js";
+import { sessionsHrefForBucket } from "./drilldown.js";
 import { buildTimeseriesOption } from "./timeseries.js";
 import { formatUnitValue, UNIT_MEASURES, type Unit } from "./units.js";
 
@@ -65,52 +60,10 @@ function ToggleGroup<T extends string>({ options, value, onChange }: ToggleGroup
   );
 }
 
-function bucketEnd(timestamp: string, grain: Grain): string {
-  const start = new Date(timestamp);
-  switch (grain) {
-    case "hour":
-      return addHours(start, 1).toISOString();
-    case "day":
-      return addDays(start, 1).toISOString();
-    case "week":
-      return addWeeks(start, 1).toISOString();
-    case "month":
-      return addMonths(start, 1).toISOString();
-    default: {
-      const unhandled: never = grain;
-      throw new Error(`unhandled grain: ${unhandled}`);
-    }
-  }
-}
-
-/** Shared by the canvas click handler and the data table's row action so
- * both interaction paths land on the identical filtered Sessions URL.
- * Preserves active categorical filters (project/model/branch/host chips)
- * and replaces the global date range with the clicked bucket's [from, to].
- * Single-day buckets drill to from = to = dayStart. */
-function sessionsHrefForBucket(timestamp: string, grain: Grain, filters: FilterState): string {
-  const params = new URLSearchParams();
-
-  // Preserve categorical chip filters
-  const chipDimensions: ChipDimension[] = ["project", "model", "branch", "host"];
-  for (const chip of chipDimensions) {
-    if (filters[chip].length > 0) {
-      params.set(chip, [...filters[chip]].sort().join(","));
-    }
-  }
-
-  // Replace date range with the bucket's boundaries
-  const from = timestamp;
-  // Single-day buckets drill to from = to = dayStart (drill to a point, not
-  // a range). For other grains the bucket spans [from, to) where to is the
-  // next bucket's start.
-  const to = grain === "day" ? from : bucketEnd(timestamp, grain);
-
-  params.set("from", from);
-  params.set("to", to);
-
-  return `/sessions?${params.toString()}`;
-}
+// `sessionsHrefForBucket` moved to ./drilldown.ts (T5) so Cache Lab's
+// hit-rate panel and any future chart card share identical drill
+// semantics without copy-paste. Import above; the local definition
+// is removed.
 
 function sumSeriesValues(series: Series[]): number {
   return series.reduce(
