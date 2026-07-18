@@ -170,7 +170,7 @@ Pages are cheap by design: filter state + preset `MetricsQuery`s + layout. The H
 - [x] **#P4-4 — Sessions page** *(§2)*
   Includes the `GET /api/sessions` list route (architecture §9 — the sortable, tier-dependent list payload). Table (sortable, tier-dependent columns), timeline/gantt toggle, efficiency scatter with regression, cost histogram with percentile markers, compare mode. The full-text-search slot is a stable placeholder until #P4-3 mounts the search UI, so this page can land independently. Tags column stubs until #P4-15; gate-score column stubs until #P4-12. Tier-dependent columns (lines ±, observed $, ctx %) light up when C/L files are present — pages spec §2 row 3.
   *Acceptance:* matches `sessions.html`; drill-in from Dashboard lands filtered.
-- [ ] **#P4-5 — Session Detail page** *(§3)*
+- [x] **#P4-5 — Session Detail page** *(§3)*
   All sections except Report Card (lands in #P4-12): header, cumulative timeline, per-turn bars, turn table, turn-vs-history distribution, cache strip, tool mix, prompt list, workflow funnel, token funnel, context composition. Needs `GET /api/sessions/:id`.
   *Acceptance:* matches `session-detail.html`; live-updates during an active session.
 - [ ] **#P4-6 — Turn Inspector page** *(§4)*
