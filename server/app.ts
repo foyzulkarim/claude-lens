@@ -5,6 +5,7 @@ import fastifyStatic from "@fastify/static";
 import fastifyWebsocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from "fastify";
 import { registerMetricsRoute } from "./routes/metrics.js";
+import { registerSessionsRoute } from "./routes/sessions.js";
 import type { RuntimeMetadata } from "./runtime.js";
 import type { Store } from "./store/store.js";
 import { type Broadcaster, createBroadcaster } from "./ws/broadcaster.js";
@@ -85,6 +86,12 @@ export function buildApp({
   app.get("/api/ping", async () => ({ ok: true }));
 
   registerMetricsRoute(app, store, metadata?.pricing ? { pricing: metadata.pricing } : undefined);
+
+  registerSessionsRoute(
+    app,
+    store,
+    metadata ? { pricing: metadata.pricing, pricer: metadata.pricer } : undefined,
+  );
 
   app.register(async (instance) => {
     instance.get(
