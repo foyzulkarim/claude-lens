@@ -182,7 +182,7 @@ Pages are cheap by design: filter state + preset `MetricsQuery`s + layout. The H
 - [ ] **#P4-8 — Models page** *(§6)*
   Token/$ split, model mix over time, efficiency ratios, CC-version dimension, entrypoint breakdown; latency/throughput sections render 🟡 fallback (timestamp deltas) until premium (#P4-13) upgrades them.
   *Acceptance:* matches `models.html`.
-- [ ] **#P4-9 — Cache Lab page** *(§7)*
+- [x] **#P4-9 — Cache Lab page** *(§7)*
   Fleet totals + hit-rate histogram/trend, input composition, busts net panel, **miss-attribution classifier (K2 base + TTL-lapse heuristic)**, TTL bucket mix, baseline weight trend, $ saved + counterfactual, invalidation gallery + cost-by-cause trend. The classifier built here is reused by gate K2.
   *Acceptance:* matches `cache-lab.html`; classifier has unit tests on fixtures.
 - [ ] **#P4-10 — Trends, Calendar & Budget page** *(§8)*
