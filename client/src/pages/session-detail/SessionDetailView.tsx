@@ -3,8 +3,10 @@ import type { SessionDetailResponse } from "../../../../shared/session-detail-co
 import { CacheStrip } from "./CacheStrip.js";
 import { CostTimeline } from "./CostTimeline.js";
 import { Header } from "./Header.js";
+import { PromptList } from "./PromptList.js";
 import { ToolMix } from "./ToolMix.js";
 import { TurnsSection } from "./TurnsSection.js";
+import { WorkflowFunnel } from "./WorkflowFunnel.js";
 
 export interface SessionDetailViewProps {
   data: SessionDetailResponse;
@@ -28,19 +30,8 @@ export function SessionDetailView({ data }: SessionDetailViewProps): ReactNode {
       <TurnsSection turns={data.turns} distribution={data.turnDistribution} />
       <CacheStrip cache={data.cache} />
       <ToolMix toolMix={data.toolMix} toolTimeline={data.toolTimeline} />
-
-      <section aria-labelledby="session-detail-prompts">
-        <h2 id="session-detail-prompts" className="text-base font-semibold">
-          Prompts
-        </h2>
-        {/* T9 fills this in. */}
-        <div
-          data-region="prompts"
-          className="rounded border border-dashed border-slate-300 p-4 text-sm"
-        >
-          {data.prompts.length} prompt(s).
-        </div>
-      </section>
+      <PromptList prompts={data.prompts} />
+      <WorkflowFunnel workflow={data.workflow} />
 
       <section aria-labelledby="session-detail-tokens">
         <h2 id="session-detail-tokens" className="text-base font-semibold">

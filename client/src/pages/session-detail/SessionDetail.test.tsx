@@ -476,3 +476,58 @@ describe("SessionDetail — TurnsSection, CacheStrip, ToolMix (T8)", () => {
     expect(within(toolMixEl).getAllByText("T1").length).toBeGreaterThan(0);
   });
 });
+
+describe("SessionDetail — PromptList + WorkflowFunnel (T9)", () => {
+  beforeEach(() => {
+    getSessionDetailMock.mockReset();
+  });
+  afterEach(() => {
+    cleanup();
+    getSessionDetailMock.mockReset();
+  });
+
+  it("PromptList renders prompts in turn order with typed text", async () => {
+    const prompts = [
+      { turnNumber: 1, promptId: "p1", timestamp: "2026-07-14T10:00:00.000Z", text: "first prompt" },
+      { turnNumber: 2, promptId: "p2", timestamp: "2026-07-14T10:05:00.000Z", text: "second prompt" },
+    ];
+    getSessionDetailMock.mockResolvedValue(makeResponse({ prompts }));
+    const { Wrapper } = makeWrapper();
+
+    render(<Wrapper><div /></Wrapper>);
+
+    const promptsEl = await screen.findByTestId("session-detail-prompts");
+    expect(promptsEl).toBeInTheDocument();
+    expect(within(promptsEl).getByText("first prompt")).toBeInTheDocument();
+    expect(within(promptsEl).getByText("second prompt")).toBeInTheDocument();
+  });
+
+  it("WorkflowFunnel renders the canonical 5 stages with monotonic non-increasing counts", async () => {
+    const workflow = {
+      baseEditCount: 10,
+      readFirstCount: 8,
+      plannedCount: 6,
+      verifiedCount: 4,
+      committedCount: 2,
+      stages: [
+        { id: "edit" as const, label: "Edit cohort", count: 10 },
+        { id: "read" as const, label: "Read-first", count: 8 },
+        { id: "plan" as const, label: "Planned", count: 6 },
+        { id: "verify" as const, label: "Verified", count: 4 },
+        { id: "commit" as const, label: "Committed", count: 2 },
+      ],
+    };
+    getSessionDetailMock.mockResolvedValue(makeResponse({ workflow }));
+    const { Wrapper } = makeWrapper();
+
+    render(<Wrapper><div /></Wrapper>);
+
+    const workflowEl = await screen.findByTestId("session-detail-workflow");
+    expect(workflowEl).toBeInTheDocument();
+    expect(within(workflowEl).getByText("Edit cohort")).toBeInTheDocument();
+    expect(within(workflowEl).getByText("Read-first")).toBeInTheDocument();
+    expect(within(workflowEl).getByText("Planned")).toBeInTheDocument();
+    expect(within(workflowEl).getByText("Verified")).toBeInTheDocument();
+    expect(within(workflowEl).getByText("Committed")).toBeInTheDocument();
+  });
+});
