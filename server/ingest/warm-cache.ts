@@ -57,8 +57,8 @@ function isWarmCacheKey(value: unknown): value is WarmCacheKey {
 function isCacheHeader(value: unknown): value is CacheHeader {
   return (
     isWarmCacheKey(value) &&
-    typeof (value as Record<string, unknown>).version === "number" &&
-    (value as Record<string, unknown>).version === WARM_CACHE_SCHEMA_VERSION
+    typeof (value as unknown as Record<string, unknown>).version === "number" &&
+    (value as unknown as Record<string, unknown>).version === WARM_CACHE_SCHEMA_VERSION
   );
 }
 
