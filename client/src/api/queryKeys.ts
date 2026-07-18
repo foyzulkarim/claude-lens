@@ -1,15 +1,11 @@
 import type { MetricsQuery } from "../../../shared/metrics-contract.js";
+import type { SessionDetailResponse } from "../../../shared/session-detail-contract.js";
 import type { SessionListParams } from "../../../shared/sessions-contract.js";
 
 /**
  * Single source of truth for TanStack Query keys (architecture §11: "keys
  * from one factory"). ws.ts imports the same prefixes so invalidation can
  * never drift from the keys it targets.
- *
- * Lean by design (ARCH-react-shell.md A3): `metrics` and `sessions` back
- * live endpoints today; `session` is forward-looking for the per-session
- * detail endpoint (#P4-5) and currently invalidates harmlessly since
- * nothing is keyed under it yet beyond the WS router's own invalidation.
  *
  * TanStack's default `hashKey` sorts object keys, so identical values
  * across `metrics(...)` and `sessions(...)` calls dedupe regardless of
@@ -26,10 +22,26 @@ export const qk = {
    * having to remember the empty-object dance.
    */
   sessions: (params: SessionListParams = {}) => ["sessions", params] as const,
+  /**
+   * Canonical key for one Session Detail resource (#P4-5, T5). Returns
+   * `["session", id]` so `queryClient.invalidateQueries({ queryKey: ["session", id] })`
+   * matches exactly that detail page, while a wider prefix invalidation
+   * (e.g. on socket reconnect) uses `qk.prefixes.session` for every
+   * mounted detail query at once.
+   */
+  session: (id: string) => ["session", id] as const,
 
   prefixes: {
     metrics: ["metrics"] as const,
-    session: (id: string) => ["session", id] as const,
+    session: ["session"] as const,
     sessions: ["sessions"] as const,
   },
 };
+
+/**
+ * Helper to keep `useSessionDetail(id)` typed against the contract without
+ * importing `SessionDetailResponse` from a separate path. Re-exported here
+ * so the api barrel stays the single import for callers.
+ */
+export type { SessionDetailResponse };
+
