@@ -39,18 +39,30 @@ const ATTRIBUTION_VARIANT: Record<CacheMissAttribution, BadgeVariant> = {
  * Turn Inspector route); items without turn attribution render a clear
  * non-link fallback rather than fabricating a destination.
  */
-export function InvalidationGallery({ data }: { data: CacheLabAnalysis | undefined }) {
+export function InvalidationGallery({
+  data,
+  error,
+}: {
+  data: CacheLabAnalysis | undefined;
+  error?: Error | null;
+}) {
   if (!data) {
     return (
       <section
         data-testid="invalidation-gallery"
         className="rounded-md border border-slate-200 bg-white p-4 dark:border-[#232B36] dark:bg-[#151A21]"
       >
-        <h2 className="text-sm font-semibold text-slate-900 dark:text-[#E8EDF2]">
+        <h2
+          id="invalidation-gallery-heading"
+          className="text-sm font-semibold text-slate-900 dark:text-[#E8EDF2]"
+        >
           Invalidation gallery
         </h2>
-        <p role="status" className="mt-3 text-sm text-slate-500 dark:text-[#8B98A9]">
-          Loading…
+        <p
+          role={error ? "alert" : "status"}
+          className="mt-3 text-sm text-slate-500 dark:text-[#8B98A9]"
+        >
+          {error ? `Cache Lab analysis failed: ${error.message}` : "Loading…"}
         </p>
       </section>
     );
@@ -64,10 +76,14 @@ export function InvalidationGallery({ data }: { data: CacheLabAnalysis | undefin
   return (
     <section
       data-testid="invalidation-gallery"
+      aria-labelledby="invalidation-gallery-heading"
       className="rounded-md border border-slate-200 bg-white p-4 dark:border-[#232B36] dark:bg-[#151A21]"
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-sm font-semibold text-slate-900 dark:text-[#E8EDF2]">
+        <h2
+          id="invalidation-gallery-heading"
+          className="text-sm font-semibold text-slate-900 dark:text-[#E8EDF2]"
+        >
           Invalidation gallery
         </h2>
         <p className="font-mono text-xs text-slate-600 dark:text-[#8A96A5]">{truncatedText}</p>

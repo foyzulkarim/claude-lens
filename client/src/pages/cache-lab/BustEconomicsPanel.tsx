@@ -11,7 +11,13 @@ import { useCacheLabAnalysis } from "./useCacheLabAnalysis.js";
  * — the headline financial claim, so it owns an isolated error state
  * even if the rest of the page has data.
  */
-export function BustEconomicsPanel({ data }: { data: CacheLabAnalysis | undefined }) {
+export function BustEconomicsPanel({
+  data,
+  error,
+}: {
+  data: CacheLabAnalysis | undefined;
+  error?: Error | null;
+}) {
   if (!data) {
     return (
       <section
@@ -25,8 +31,11 @@ export function BustEconomicsPanel({ data }: { data: CacheLabAnalysis | undefine
         >
           Cache busts vs savings
         </h2>
-        <p role="status" className="mt-3 text-sm text-slate-500 dark:text-[#8B98A9]">
-          Loading…
+        <p
+          role={error ? "alert" : "status"}
+          className="mt-3 text-sm text-slate-500 dark:text-[#8B98A9]"
+        >
+          {error ? `Cache Lab analysis failed: ${error.message}` : "Loading…"}
         </p>
       </section>
     );
@@ -111,5 +120,5 @@ export function BustEconomicsPanel({ data }: { data: CacheLabAnalysis | undefine
 export function BustEconomicsPanelWithHook() {
   const { filters } = useFilters();
   const query = useCacheLabAnalysis(filters, "day");
-  return <BustEconomicsPanel data={query.data} />;
+  return <BustEconomicsPanel data={query.data} error={query.error} />;
 }

@@ -218,6 +218,32 @@ describe("analyzeCacheLab — economics + nullability", () => {
     expect(result.attribution.unknownCount).toBeGreaterThanOrEqual(0);
     expect(result.ttlMix.ephemeral5mTokens).toBe(100 + 12_000);
   });
+
+  it("ignores an unpriced model outside the requested scope", () => {
+    const calls: ApiCall[] = [
+      call({
+        uuid: "priced",
+        sessionId: "s1",
+        messageId: "priced",
+        timestamp: "2026-06-10T10:00:00.000Z",
+      }),
+      call({
+        uuid: "out-of-range-unpriced",
+        sessionId: "s2",
+        messageId: "out-of-range-unpriced",
+        model: "claude-mystery-future-model",
+        timestamp: "2025-01-01T10:00:00.000Z",
+      }),
+    ];
+
+    const result = analyzeCacheLab(
+      { calls, turns: [], sessions: [], pricing: DEFAULT_PRICING_TABLE },
+      baseQuery(),
+    );
+
+    expect(result.economics.pricingComplete).toBe(true);
+    expect(result.economics.actualCost).not.toBeNull();
+  });
 });
 
 describe("analyzeCacheLab — TTL mix reconciliation", () => {

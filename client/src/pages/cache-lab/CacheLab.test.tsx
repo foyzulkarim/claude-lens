@@ -466,7 +466,7 @@ describe("T8 — CacheLab page shell composition", () => {
     expect(screen.getAllByText("—").length).toBeGreaterThan(0);
   });
 
-  it("renders a top-level alert when the Cache Lab endpoint fails (failure isolation)", async () => {
+  it("renders page and section alerts when the Cache Lab endpoint fails (failure isolation)", async () => {
     postCacheLabMock.mockRejectedValue(new Error("boom"));
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const { hook, searchHook } = memoryLocation({ path: "/cache", static: true });
@@ -478,8 +478,7 @@ describe("T8 — CacheLab page shell composition", () => {
       </QueryClientProvider>
     ) as ReactElement;
     render(tree);
-    await waitFor(() =>
-      expect(screen.getByRole("alert")).toHaveTextContent(/cache lab analysis failed/i),
-    );
+    await waitFor(() => expect(screen.getAllByRole("alert")).toHaveLength(8));
+    expect(screen.getAllByRole("alert")[0]).toHaveTextContent(/cache lab analysis failed/i);
   });
 });

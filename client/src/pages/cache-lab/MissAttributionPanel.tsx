@@ -53,18 +53,30 @@ const COLOR_CLASS: Record<"ok" | "warn" | "neutral", string> = {
  * the dominant cause — a user looking at the page wants a one-sentence
  * answer, not three independent percentages.
  */
-export function MissAttributionPanel({ data }: { data: CacheLabAnalysis | undefined }) {
+export function MissAttributionPanel({
+  data,
+  error,
+}: {
+  data: CacheLabAnalysis | undefined;
+  error?: Error | null;
+}) {
   if (!data) {
     return (
       <section
         data-testid="miss-attribution"
         className="rounded-md border border-slate-200 bg-white p-4 dark:border-[#232B36] dark:bg-[#151A21]"
       >
-        <h2 className="text-sm font-semibold text-slate-900 dark:text-[#E8EDF2]">
+        <h2
+          id="miss-attribution-heading"
+          className="text-sm font-semibold text-slate-900 dark:text-[#E8EDF2]"
+        >
           Miss attribution
         </h2>
-        <p role="status" className="mt-3 text-sm text-slate-500 dark:text-[#8B98A9]">
-          Loading…
+        <p
+          role={error ? "alert" : "status"}
+          className="mt-3 text-sm text-slate-500 dark:text-[#8B98A9]"
+        >
+          {error ? `Cache Lab analysis failed: ${error.message}` : "Loading…"}
         </p>
       </section>
     );
@@ -74,9 +86,15 @@ export function MissAttributionPanel({ data }: { data: CacheLabAnalysis | undefi
   return (
     <section
       data-testid="miss-attribution"
+      aria-labelledby="miss-attribution-heading"
       className="rounded-md border border-slate-200 bg-white p-4 dark:border-[#232B36] dark:bg-[#151A21]"
     >
-      <h2 className="text-sm font-semibold text-slate-900 dark:text-[#E8EDF2]">Miss attribution</h2>
+      <h2
+        id="miss-attribution-heading"
+        className="text-sm font-semibold text-slate-900 dark:text-[#E8EDF2]"
+      >
+        Miss attribution
+      </h2>
 
       <p
         className={

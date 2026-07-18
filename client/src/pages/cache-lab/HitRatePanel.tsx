@@ -18,7 +18,7 @@ import {
   buildHitRateOption,
   classifySpanSummary,
 } from "./chart-options.js";
-import type { Series } from "../../../../shared/metrics-contract.js";
+import type { Grain, Series } from "../../../../shared/metrics-contract.js";
 
 type Family = "line" | "histogram";
 
@@ -69,13 +69,17 @@ export function HitRatePanel({ series }: { series: Series[] | undefined }) {
     return result;
   }, [series]);
 
-  const linePoints = lineRows.map((row) => ({
-    t: row.t,
-    hitRate:
-      row.values["Hit rate"] !== undefined
-        ? (row.values["Hit rate"] ?? null)
-        : (Object.values(row.values).find((v): v is number => typeof v === "number") ?? null),
-  }));
+  const linePoints = useMemo(
+    () =>
+      lineRows.map((row) => ({
+        t: row.t,
+        hitRate:
+          row.values["Hit rate"] !== undefined
+            ? (row.values["Hit rate"] ?? null)
+            : (Object.values(row.values).find((v): v is number => typeof v === "number") ?? null),
+      })),
+    [lineRows],
+  );
 
   const lineOption = useMemo(() => buildHitRateOption(linePoints), [linePoints]);
   const histogramOption = useMemo(
@@ -90,20 +94,23 @@ export function HitRatePanel({ series }: { series: Series[] | undefined }) {
   const rangeSummary = useMemo(() => chartRangeSummary(series), [series]);
   const trendSummary = useMemo(() => chartTrendSummary(series), [series]);
 
-  const handlePointClick = (
-    timestamp: string,
-    grain: import("../../../../shared/metrics-contract.js").Grain,
-  ) => {
+  const handlePointClick = (timestamp: string, grain: Grain) => {
     navigate(sessionsHrefForBucket(timestamp, grain, filters));
   };
 
   return (
     <section
       data-testid="hit-rate-panel"
+      aria-labelledby="hit-rate-heading"
       className="rounded-md border border-slate-200 bg-white p-4 dark:border-[#232B36] dark:bg-[#151A21]"
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-sm font-semibold text-slate-900 dark:text-[#E8EDF2]">Hit rate</h2>
+        <h2
+          id="hit-rate-heading"
+          className="text-sm font-semibold text-slate-900 dark:text-[#E8EDF2]"
+        >
+          Hit rate
+        </h2>
         <div className="flex gap-1">
           {FAMILIES.map((option) => (
             <button
@@ -160,6 +167,67 @@ export function HitRatePanel({ series }: { series: Series[] | undefined }) {
       <p className="mt-2 font-mono text-xs text-slate-600 dark:text-[#8A96A5]">
         {formatUnitValue(summary.total, "tokens")} hit-rate sum · {summary.finiteBuckets} buckets
       </p>
+      <p role="status" aria-live="polite" className="sr-only">
+        {family === "line" ? "Hit-rate trend" : "Hit-rate distribution"} updated. {rangeSummary}
+      </p>
+      {family === "line" && linePoints.length > 0 && (
+        <details className="mt-3 text-sm">
+          <summary className="cursor-pointer font-medium text-[#96631E] dark:text-[#E8A33D]">
+            View hit-rate data table
+          </summary>
+          <table className="mt-2 w-full text-left text-xs">
+            <thead>
+              <tr>
+                <th>Bucket</th>
+                <th>Hit rate</th>
+                <th>Drill-down</th>
+              </tr>
+            </thead>
+            <tbody>
+              {linePoints.map((point) => (
+                <tr key={point.t}>
+                  <td>{point.t}</td>
+                  <td>{point.hitRate ?? "—"}</td>
+                  <td>
+                    <button
+                      type="button"
+                      className="underline"
+                      onClick={() => handlePointClick(point.t, "day")}
+                    >
+                      View sessions
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </details>
+      )}
+      {family === "histogram" && histogramBins.length > 0 && (
+        <details className="mt-3 text-sm">
+          <summary className="cursor-pointer font-medium text-[#96631E] dark:text-[#E8A33D]">
+            View hit-rate distribution table
+          </summary>
+          <table className="mt-2 w-full text-left text-xs">
+            <thead>
+              <tr>
+                <th>Range</th>
+                <th>Sessions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {histogramBins.map((bin) => (
+                <tr key={`${bin.rangeStart}-${bin.rangeEnd}`}>
+                  <td>
+                    {bin.rangeStart}–{bin.rangeEnd}
+                  </td>
+                  <td>{bin.count}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </details>
+      )}
     </section>
   );
 }

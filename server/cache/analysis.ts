@@ -22,7 +22,6 @@ import type {
   BaselinePoint,
   CacheLabAnalysis,
   CacheLabQuery,
-  CacheMissAttribution,
   CacheWriteCause,
   ClassifiedCacheWrite,
   ContextGrowthCurve,
@@ -37,10 +36,9 @@ import type {
 import { CACHE_LAB_LIMITS } from "../../shared/cache-lab-contract.js";
 import type { Dimension, Grain } from "../../shared/metrics-contract.js";
 import type { ApiCall, Session, Turn } from "../../shared/types.js";
-import { partitionCacheStreams } from "./classifier.js";
-import { attributeCacheMiss, classifyCacheWrite } from "./classifier.js";
+import { attributeCacheMiss, classifyCacheWrite, partitionCacheStreams } from "./classifier.js";
 import { bucketStart, enumerateBuckets } from "../metrics/grain.js";
-import { type PricingTable } from "../metrics/measures.js";
+import type { PricingTable } from "../metrics/measures.js";
 
 // ---------------------------------------------------------------------------
 // Inputs
@@ -640,6 +638,14 @@ export function analyzeCacheLab(input: AnalysisInput, query: CacheLabQuery): Cac
     allEvents.push(...classifyStream(stream));
   }
 
+  const callsById = new Map<string, ApiCall>();
+  for (const call of input.calls) {
+    callsById.set(`${call.sessionId}::${call.uuid}`, call);
+  }
+  const scopedCalls = input.calls.filter(
+    (call) => callInRange(call, fromMs, toMs) && callMatchesFilters(call, query.filters),
+  );
+
   // 3. Apply range + categorical filters to events for INCLUSION in
   //    the response. (Classification already happened; this is purely
   //    "which events the user asked to see".)
@@ -647,7 +653,7 @@ export function analyzeCacheLab(input: AnalysisInput, query: CacheLabQuery): Cac
     const ts = parseTimestampMs(event.timestamp);
     if (ts === null) return false;
     if (ts < fromMs || ts > toMs) return false;
-    const call = findCall(input.calls, event);
+    const call = callsById.get(`${event.sessionId}::${event.callId}`);
     if (!call) return false;
     return callMatchesFilters(call, query.filters);
   });
@@ -664,7 +670,7 @@ export function analyzeCacheLab(input: AnalysisInput, query: CacheLabQuery): Cac
   //    Pricing completeness is bucketed: any unpriced model in the
   //    scoped set collapses dollar fields to null while token panels
   //    stay populated.
-  const pricingComplete = computePricingComplete(input.calls, input.pricing);
+  const pricingComplete = computePricingComplete(scopedCalls, input.pricing);
   for (const event of filteredEvents) {
     event.bustLossComputed = bustLossFor(event, input.pricing);
   }
@@ -672,7 +678,7 @@ export function analyzeCacheLab(input: AnalysisInput, query: CacheLabQuery): Cac
   // of bust loss for sessions in scope). Computed per session below,
   // then projected back onto each event.
   const sessionNet = computeSessionNets(
-    input.calls,
+    scopedCalls,
     filteredEvents,
     input.pricing,
     rangeMs,
@@ -692,12 +698,8 @@ export function analyzeCacheLab(input: AnalysisInput, query: CacheLabQuery): Cac
   // callToTurn map is keyed by ApiCall reference; we look up via
   // sessionId + uuid since filteredEvents holds only denormalized
   // primitives.
-  const callIndexByUuid = new Map<string, ApiCall>();
-  for (const call of input.calls) {
-    callIndexByUuid.set(`${call.sessionId}::${call.uuid}`, call);
-  }
   for (const event of filteredEvents) {
-    const call = callIndexByUuid.get(`${event.sessionId}::${event.callId}`);
+    const call = callsById.get(`${event.sessionId}::${event.callId}`);
     if (!call) continue;
     const turn = callToTurn.get(call);
     if (turn) event.turnIndex = turn.calls.indexOf(call);
@@ -705,13 +707,9 @@ export function analyzeCacheLab(input: AnalysisInput, query: CacheLabQuery): Cac
 
   // 6. Roll-ups.
   const attribution = rollupAttribution(filteredEvents);
-  const ttlMix = computeTtlMix(
-    input.calls.filter((c) => callInRange(c, fromMs, toMs) && callMatchesFilters(c, query.filters)),
-  );
+  const ttlMix = computeTtlMix(scopedCalls);
   const baseline = computeBaselineTrend({
-    calls: input.calls.filter(
-      (c) => callInRange(c, fromMs, toMs) && callMatchesFilters(c, query.filters),
-    ),
+    calls: scopedCalls,
     turns: input.turns,
     grain: query.grain,
     rangeMs,
@@ -724,7 +722,7 @@ export function analyzeCacheLab(input: AnalysisInput, query: CacheLabQuery): Cac
 
   // 7. Economics — totals over the filtered set.
   const economics = computeEconomics(
-    input.calls.filter((c) => callInRange(c, fromMs, toMs) && callMatchesFilters(c, query.filters)),
+    scopedCalls,
     filteredEvents,
     sessionNet,
     sessionNetNegative,
@@ -742,9 +740,7 @@ export function analyzeCacheLab(input: AnalysisInput, query: CacheLabQuery): Cac
   // 9. Context growth — token-estimated, main-chain per-turn max.
   const contextGrowth = computeContextGrowth({
     turns: input.turns,
-    calls: input.calls.filter(
-      (c) => callInRange(c, fromMs, toMs) && callMatchesFilters(c, query.filters),
-    ),
+    calls: scopedCalls,
     rangeMs,
   });
 
@@ -787,13 +783,6 @@ function emptyAnalysis(grain: Grain): CacheLabAnalysis {
     gallery: { items: [], total: 0, truncated: false },
     contextGrowth: { curves: [], total: 0, truncated: false, basis: "token-estimated" },
   };
-}
-
-function findCall(calls: ApiCall[], event: ClassifiedCacheWrite): ApiCall | undefined {
-  for (const call of calls) {
-    if (call.sessionId === event.sessionId && call.uuid === event.callId) return call;
-  }
-  return undefined;
 }
 
 function computePricingComplete(calls: ApiCall[], pricing: PricingTable): boolean {
@@ -955,7 +944,3 @@ function rollupAttribution(events: ClassifiedCacheWrite[]): MissAttributionSumma
     }),
   };
 }
-
-// Suppress the unused-import lint for CacheMissAttribution (kept as a
-// type-level reference for the contract vocabulary).
-type _AttributionRef = CacheMissAttribution;

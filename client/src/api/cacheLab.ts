@@ -49,26 +49,6 @@ const TRIMMED_KEYS = [
   "contextGrowth",
 ] as const;
 
-function isFiniteOrNull(value: unknown): value is number | null {
-  return value === null || (typeof value === "number" && Number.isFinite(value));
-}
-
-function isFiniteNumberOrNull(value: unknown): value is number | null {
-  return value === null || (typeof value === "number" && Number.isFinite(value));
-}
-
-function isNonNegativeNumber(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0;
-}
-
-function isStringOrUndefined(value: unknown): value is string | undefined {
-  return value === undefined || typeof value === "string";
-}
-
-function isStringArrayOrUndefined(value: unknown): value is string[] | undefined {
-  return value === undefined || !Array.isArray(value) || value.every((v) => typeof v === "string");
-}
-
 function assertCacheLabAnalysis(value: unknown): asserts value is CacheLabAnalysis {
   if (typeof value !== "object" || value === null) {
     throw new CacheLabResponseShapeError("expected object at the response root");
@@ -79,7 +59,7 @@ function assertCacheLabAnalysis(value: unknown): asserts value is CacheLabAnalys
       throw new CacheLabResponseShapeError(`missing required field '${key}'`);
     }
   }
-  // Loose per-field validation — the server already types-checked and
+  // Deliberately validate only the stable response boundary — the server already types-checked and
   // re-validates on every request, and a too-strict client guard would
   // break the page every time a new optional field lands. The point
   // here is just to ensure the response root is an object with the
@@ -121,12 +101,5 @@ export async function postCacheLab(
 
   const body: unknown = await response.json();
   assertCacheLabAnalysis(body);
-  // Drop the unused-import warning for the helpers if the
-  // shape guard is later tightened.
-  void isFiniteOrNull;
-  void isFiniteNumberOrNull;
-  void isNonNegativeNumber;
-  void isStringOrUndefined;
-  void isStringArrayOrUndefined;
   return body;
 }

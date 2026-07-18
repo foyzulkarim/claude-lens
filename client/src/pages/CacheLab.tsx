@@ -72,21 +72,24 @@ export function CacheLab() {
 
       <FleetOverview hitRateSeries={hitRateQuery.data} cacheLab={analysis} />
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <BustEconomicsPanel data={analysis} />
-        <MissAttributionPanel data={analysis} />
-        <TtlMixPanel data={analysis} />
-      </div>
-
       <HitRatePanel series={hitRateQuery.data} />
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <BaselineWeightPanel points={analysis?.baseline.points ?? []} />
-        <InvalidationCostPanel points={analysis?.invalidationCost.points ?? []} />
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <BustEconomicsPanel data={analysis} error={cacheLabQuery.error} />
+        <MissAttributionPanel data={analysis} error={cacheLabQuery.error} />
+        <TtlMixPanel data={analysis} error={cacheLabQuery.error} />
       </div>
 
-      <InvalidationGallery data={analysis} />
-      <ContextGrowthPanel data={analysis?.contextGrowth} />
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <BaselineWeightPanel points={analysis?.baseline.points} error={cacheLabQuery.error} />
+      </div>
+
+      <InvalidationGallery data={analysis} error={cacheLabQuery.error} />
+      <InvalidationCostPanel
+        points={analysis?.invalidationCost.points}
+        error={cacheLabQuery.error}
+      />
+      <ContextGrowthPanel data={analysis?.contextGrowth} error={cacheLabQuery.error} />
     </div>
   );
 }

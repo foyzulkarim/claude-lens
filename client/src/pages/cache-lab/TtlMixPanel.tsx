@@ -8,16 +8,30 @@ import type { CacheLabAnalysis } from "../../../../shared/cache-lab-contract.js"
  * answer in a glance. Always reconciliation-safe:
  *   5m + 1h + unknown === total cache creation tokens.
  */
-export function TtlMixPanel({ data }: { data: CacheLabAnalysis | undefined }) {
+export function TtlMixPanel({
+  data,
+  error,
+}: {
+  data: CacheLabAnalysis | undefined;
+  error?: Error | null;
+}) {
   if (!data) {
     return (
       <section
         data-testid="ttl-mix"
         className="rounded-md border border-slate-200 bg-white p-4 dark:border-[#232B36] dark:bg-[#151A21]"
       >
-        <h2 className="text-sm font-semibold text-slate-900 dark:text-[#E8EDF2]">TTL mix</h2>
-        <p role="status" className="mt-3 text-sm text-slate-500 dark:text-[#8B98A9]">
-          Loading…
+        <h2
+          id="ttl-mix-heading"
+          className="text-sm font-semibold text-slate-900 dark:text-[#E8EDF2]"
+        >
+          TTL mix
+        </h2>
+        <p
+          role={error ? "alert" : "status"}
+          className="mt-3 text-sm text-slate-500 dark:text-[#8B98A9]"
+        >
+          {error ? `Cache Lab analysis failed: ${error.message}` : "Loading…"}
         </p>
       </section>
     );
@@ -29,9 +43,12 @@ export function TtlMixPanel({ data }: { data: CacheLabAnalysis | undefined }) {
   return (
     <section
       data-testid="ttl-mix"
+      aria-labelledby="ttl-mix-heading"
       className="rounded-md border border-slate-200 bg-white p-4 dark:border-[#232B36] dark:bg-[#151A21]"
     >
-      <h2 className="text-sm font-semibold text-slate-900 dark:text-[#E8EDF2]">TTL mix</h2>
+      <h2 id="ttl-mix-heading" className="text-sm font-semibold text-slate-900 dark:text-[#E8EDF2]">
+        TTL mix
+      </h2>
       <p className="mt-1 text-xs text-slate-600 dark:text-[#8A96A5]">
         cache_creation.ephemeral_5m_input_tokens vs ephemeral_1h_input_tokens
       </p>

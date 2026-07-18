@@ -19,48 +19,65 @@ const FAMILIES: Family[] = ["trend", "totals"];
  * alternative. First-call spikes are excluded server-side; the page
  * only ever renders model-switch / compaction / unexplained.
  */
-export function InvalidationCostPanel({ points }: { points: InvalidationCostPoint[] }) {
+export function InvalidationCostPanel({
+  points,
+  error,
+}: {
+  points: InvalidationCostPoint[] | undefined;
+  error?: Error | null;
+}) {
+  const resolvedPoints = points ?? [];
   const [family, setFamily] = useState<Family>("trend");
-  const trendOption = useMemo(() => buildInvalidationCostOption(points), [points]);
-  const totalsOption = useMemo(() => buildInvalidationCostTotalsOption(points), [points]);
+  const trendOption = useMemo(() => buildInvalidationCostOption(resolvedPoints), [resolvedPoints]);
+  const totalsOption = useMemo(
+    () => buildInvalidationCostTotalsOption(resolvedPoints),
+    [resolvedPoints],
+  );
 
   const summary = useMemo(() => {
-    const totalModelSwitch = points.reduce(
+    const totalModelSwitch = resolvedPoints.reduce(
       (sum, p) =>
         sum +
         (typeof p.modelSwitch === "number" && Number.isFinite(p.modelSwitch) ? p.modelSwitch : 0),
       0,
     );
-    const totalCompaction = points.reduce(
+    const totalCompaction = resolvedPoints.reduce(
       (sum, p) =>
         sum +
         (typeof p.compaction === "number" && Number.isFinite(p.compaction) ? p.compaction : 0),
       0,
     );
-    const totalUnexplained = points.reduce(
+    const totalUnexplained = resolvedPoints.reduce(
       (sum, p) =>
         sum +
         (typeof p.unexplained === "number" && Number.isFinite(p.unexplained) ? p.unexplained : 0),
       0,
     );
     return { totalModelSwitch, totalCompaction, totalUnexplained };
-  }, [points]);
+  }, [resolvedPoints]);
 
   const trendSummary = useMemo(
     () =>
       classifySpanSummary(
-        points.map((p) => ({ t: p.t, value: p.modelSwitch ?? p.compaction ?? p.unexplained })),
+        resolvedPoints.map((p) => ({
+          t: p.t,
+          value: p.modelSwitch ?? p.compaction ?? p.unexplained,
+        })),
       ),
-    [points],
+    [resolvedPoints],
   );
 
   return (
     <section
       data-testid="invalidation-cost-panel"
+      aria-labelledby="invalidation-cost-heading"
       className="rounded-md border border-slate-200 bg-white p-4 dark:border-[#232B36] dark:bg-[#151A21]"
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-sm font-semibold text-slate-900 dark:text-[#E8EDF2]">
+        <h2
+          id="invalidation-cost-heading"
+          className="text-sm font-semibold text-slate-900 dark:text-[#E8EDF2]"
+        >
           Invalidation cost by cause
         </h2>
         <div className="flex gap-1">
@@ -83,8 +100,15 @@ export function InvalidationCostPanel({ points }: { points: InvalidationCostPoin
       </p>
 
       {trendSummary.finiteBuckets === 0 ? (
-        <p role="status" className="mt-4 text-sm text-slate-500 dark:text-[#8B98A9]">
-          No invalidations in range.
+        <p
+          role={error ? "alert" : "status"}
+          className="mt-4 text-sm text-slate-500 dark:text-[#8B98A9]"
+        >
+          {error
+            ? `Cache Lab analysis failed: ${error.message}`
+            : points
+              ? "No invalidations in range."
+              : "Loading…"}
         </p>
       ) : family === "trend" ? (
         <Chart
@@ -120,6 +144,36 @@ export function InvalidationCostPanel({ points }: { points: InvalidationCostPoin
           </dd>
         </div>
       </dl>
+      {trendSummary.finiteBuckets > 0 && (
+        <details className="mt-3 text-sm">
+          <summary className="cursor-pointer font-medium text-[#96631E] dark:text-[#E8A33D]">
+            View invalidation-cost data table
+          </summary>
+          <table className="mt-2 w-full text-left text-xs">
+            <thead>
+              <tr>
+                <th>Bucket</th>
+                <th>Model switch</th>
+                <th>Compaction</th>
+                <th>Unexplained</th>
+              </tr>
+            </thead>
+            <tbody>
+              {resolvedPoints.map((point) => (
+                <tr key={point.t}>
+                  <td>{point.t}</td>
+                  <td>{point.modelSwitch ?? "—"}</td>
+                  <td>{point.compaction ?? "—"}</td>
+                  <td>{point.unexplained ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </details>
+      )}
+      <p role="status" aria-live="polite" className="sr-only">
+        Invalidation cost {family} updated.
+      </p>
     </section>
   );
 }

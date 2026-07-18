@@ -1,6 +1,6 @@
 import { addDays, addHours, addMonths, addWeeks } from "date-fns";
 import type { Grain } from "../../../shared/metrics-contract.js";
-import { type ChipDimension, type FilterState } from "../filters/state.js";
+import type { ChipDimension, FilterState } from "../filters/state.js";
 
 // The single source of truth for time-bucket → Sessions drill URLs.
 // Originally a private helper inside `ChartCard.tsx`; extracted here so

@@ -4,7 +4,7 @@ import type { CacheLabQuery } from "../../../../shared/cache-lab-contract.js";
 import type { Grain } from "../../../../shared/metrics-contract.js";
 import { postCacheLab } from "../../api/cacheLab.js";
 import { qk } from "../../api/queryKeys.js";
-import { type FilterState, filtersToQuery } from "../../filters/state.js";
+import { type FilterState, filtersToQuery, serializeFilters } from "../../filters/state.js";
 
 const DEFAULT_REFRESH_MS = 60_000;
 
@@ -46,17 +46,16 @@ function useStableNow(injectedNow?: Date, refreshMs = DEFAULT_REFRESH_MS): Date 
  */
 export function useCacheLabAnalysis(filters: FilterState, grain: Grain, injectedNow?: Date) {
   const now = useStableNow(injectedNow);
+  const filtersKey = serializeFilters(filters);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: filters is covered by stable filtersKey serialization
   const query = useMemo<CacheLabQuery>(() => {
-    const { range, filters: chipFilters } = filtersToQuery(filters, now) as {
-      range: { from: string; to: string };
-      filters?: CacheLabQuery["filters"];
-    };
+    const { range, filters: chipFilters } = filtersToQuery(filters, now);
     return {
       range,
       grain,
-      ...(chipFilters !== undefined ? { filters: chipFilters as CacheLabQuery["filters"] } : {}),
-    } as CacheLabQuery;
-  }, [filters, grain, now]);
+      ...(chipFilters && Object.keys(chipFilters).length > 0 ? { filters: chipFilters } : {}),
+    };
+  }, [filtersKey, grain, now]);
 
   return useQuery({
     queryKey: qk.cacheLab(query),

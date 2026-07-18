@@ -13,7 +13,7 @@ import type { Store } from "../store/store.js";
 // disagrees with the Store's derivation.
 
 const DIMENSION_SET = new Set<Dimension>(DIMENSIONS);
-const GRAIN_SET = new Set<Grain>(GRAINS as Grain[]);
+const GRAIN_SET = new Set<Grain>(GRAINS);
 
 function isParseableDate(value: string): boolean {
   return Number.isFinite(Date.parse(value));
@@ -107,23 +107,26 @@ export function registerCacheLabRoute(
 ): void {
   const pricing = options.pricing ?? DEFAULT_PRICING_TABLE;
 
-  app.post("/api/cache-lab", async (request, reply): Promise<CacheLabAnalysis> => {
-    const parsed = parseCacheLabQuery(request.body);
-    if (typeof parsed === "string") {
-      reply.code(400);
-      return { error: parsed } as unknown as CacheLabAnalysis;
-    }
+  app.post(
+    "/api/cache-lab",
+    async (request, reply): Promise<CacheLabAnalysis | { error: string }> => {
+      const parsed = parseCacheLabQuery(request.body);
+      if (typeof parsed === "string") {
+        reply.code(400);
+        return { error: parsed };
+      }
 
-    // Single Store snapshot per request — no lazy per-event reads.
-    // The analyst walks arrays in-memory; this captures the exact
-    // fleet state the analysis corresponds to so concurrent ingest
-    // can't interleave mid-analysis.
-    const input = {
-      calls: store.listCalls(),
-      turns: store.listTurns(),
-      sessions: store.listSessions(),
-      pricing,
-    };
-    return analyzeCacheLab(input, parsed);
-  });
+      // Single Store snapshot per request — no lazy per-event reads.
+      // The analyst walks arrays in-memory; this captures the exact
+      // fleet state the analysis corresponds to so concurrent ingest
+      // can't interleave mid-analysis.
+      const input = {
+        calls: store.listCalls(),
+        turns: store.listTurns(),
+        sessions: store.listSessions(),
+        pricing,
+      };
+      return analyzeCacheLab(input, parsed);
+    },
+  );
 }
