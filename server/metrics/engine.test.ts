@@ -208,6 +208,65 @@ describe("metrics — dimensions array semantics", () => {
   });
 });
 
+describe("metrics — SeriesPoint.t is a machine-readable ISO-8601 instant, not a display label", () => {
+  // Regression: `t` used to come from `bucketLabel()`, a locale-formatted
+  // display string (e.g. "11 July 2026"). The client's ECharts `xAxis: {
+  // type: "time" }` parser requires an ISO-shaped string and silently drops
+  // any point it can't parse — it does NOT fall back to the browser's
+  // lenient `new Date(str)` parsing the way other client call sites do. The
+  // symptom was every Dashboard timeseries chart (area AND bars) rendering a
+  // completely empty canvas while the accompanying data table — which
+  // re-parses `t` via `new Date()` — showed correct values. `t` must
+  // round-trip through `Date.parse` losslessly for every grain.
+  const calls = [
+    call({ uuid: "a1", timestamp: iso(2026, 6, 13, 10, 0) }),
+    call({ uuid: "b1", timestamp: iso(2026, 6, 14, 11, 0) }),
+  ];
+  const input: MetricsInput = { calls, turns: [], sessions: [], pricing: PRICING };
+
+  it.each([
+    "hour",
+    "day",
+    "week",
+    "month",
+  ] as const)("grain=%s: every bucketed point's t is ISO-8601 and Date.parse-able", (grain) => {
+    const query = baseQuery({ measures: ["apiCalls"], dimensions: ["time"], grain });
+    const result = metrics(input, query);
+    const points = result[0]?.points ?? [];
+    expect(points.length).toBeGreaterThan(0);
+    for (const point of points) {
+      // ISO-8601 with a 4-digit leading year — the exact shape ECharts'
+      // own `parseDate` regex requires (a bare `new Date(str)` round-trip
+      // is not sufficient: several non-ISO formats parse fine via the
+      // browser's lenient Date constructor but fail ECharts' stricter
+      // regex-based parser).
+      expect(point.t).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/);
+      expect(Number.isFinite(Date.parse(point.t))).toBe(true);
+    }
+  });
+
+  it("aggregate (non-time-bucketed) points still emit range.from verbatim, unaffected", () => {
+    const query = baseQuery({ measures: ["apiCalls"], dimensions: [], grain: "day" });
+    const result = metrics(input, query);
+    expect(result[0]?.points[0]?.t).toBe(query.range.from);
+  });
+
+  it("compareGhost points are also ISO-8601 (same code path, shifted range)", () => {
+    const query = baseQuery({
+      measures: ["apiCalls"],
+      dimensions: ["time"],
+      grain: "day",
+      compare: "previous-period",
+    });
+    const result = metrics(input, query);
+    const ghost = result[0]?.compareGhost ?? [];
+    expect(ghost.length).toBeGreaterThan(0);
+    for (const point of ghost) {
+      expect(point.t).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/);
+    }
+  });
+});
+
 describe("metrics — filtering", () => {
   it("filters narrow which calls participate", () => {
     const calls = [

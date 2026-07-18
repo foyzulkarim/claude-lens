@@ -16,7 +16,7 @@ import {
   UNKNOWN,
 } from "./dimensions.js";
 import { alignPreviousPeriod, computeDistribution, movingAverage7 } from "./distributions.js";
-import { bucketLabel, bucketStart, enumerateBuckets } from "./grain.js";
+import { bucketStart, enumerateBuckets } from "./grain.js";
 import { computeMeasure, type MeasureScope, type PricingTable } from "./measures.js";
 
 // engine.ts is the only file in metrics/ that composes grain.ts/dimensions.ts/
@@ -262,7 +262,22 @@ function computeSeriesForRange(
       const points: SeriesPoint[] = buckets.map((bucketStartMs) => {
         const scope = scopeFor(group, bucketStartMs, query.grain, input, rangeFromMs, rangeToMs);
         const value = computeMeasure(measure, scope, input.pricing);
-        const t = bucketStartMs === null ? range.from : bucketLabel(bucketStartMs, query.grain);
+        // `t` must be a machine-readable ISO-8601 instant, not a display
+        // label: ECharts' `xAxis: { type: "time" }` parser requires an
+        // ISO-shaped string (or a Date/number) and silently drops any point
+        // it can't parse via its own regex-based `parseDate` — it does NOT
+        // fall back to the browser's lenient `new Date(str)` parsing. The
+        // previous `bucketLabel(...)` call emitted a locale-formatted
+        // display string (e.g. "11 July 2026"), which ECharts couldn't
+        // parse, so every point in every timeseries chart was silently
+        // dropped (empty canvas) even though the underlying data was
+        // correct — confirmed via the Dashboard's "Cost over time" chart
+        // rendering nothing while its data table showed real values. Every
+        // client consumer already re-derives its own human-readable label
+        // from this timestamp (ChartCard.tsx's `formatBucketLabel`), so
+        // switching to ISO here is a pure correctness fix with no display
+        // regression.
+        const t = bucketStartMs === null ? range.from : new Date(bucketStartMs).toISOString();
         return { t, value };
       });
       series.push({
