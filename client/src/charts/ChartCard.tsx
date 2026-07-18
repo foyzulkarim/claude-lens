@@ -9,7 +9,12 @@ import type { Grain, Series, SeriesMetricsQuery } from "../../../shared/metrics-
 import { postMetrics } from "../api/metrics.js";
 import { qk } from "../api/queryKeys.js";
 import { DataTable } from "../components/DataTable.js";
-import { type ChipDimension, type FilterState, filtersToQuery, serializeFilters } from "../filters/state.js";
+import {
+  type ChipDimension,
+  type FilterState,
+  filtersToQuery,
+  serializeFilters,
+} from "../filters/state.js";
 import { useFilters } from "../filters/useFilters.js";
 import { TOGGLE_ACTIVE_CLASS, TOGGLE_CLASS } from "../ui/toggleStyles.js";
 import { Chart } from "./Chart.js";
@@ -82,11 +87,7 @@ function bucketEnd(timestamp: string, grain: Grain): string {
  * Preserves active categorical filters (project/model/branch/host chips)
  * and replaces the global date range with the clicked bucket's [from, to].
  * Single-day buckets drill to from = to = dayStart. */
-function sessionsHrefForBucket(
-  timestamp: string,
-  grain: Grain,
-  filters: FilterState,
-): string {
+function sessionsHrefForBucket(timestamp: string, grain: Grain, filters: FilterState): string {
   const params = new URLSearchParams();
 
   // Preserve categorical chip filters

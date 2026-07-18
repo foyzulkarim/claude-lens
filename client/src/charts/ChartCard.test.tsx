@@ -547,6 +547,7 @@ describe("ChartCard — time-dimension query", () => {
   });
 
   it("still sends dimensions: [] for bars family (no time dimension = aggregate)", async () => {
+    // biome-ignore lint/correctness/noUnusedVariables: kept available for symmetry with the controls block below; bars-toggle does not exercise rerender.
     const { rerenderUnchanged } = renderCard();
     await waitFor(() => expect(postMetricsMock).toHaveBeenCalledTimes(1));
 
@@ -562,6 +563,7 @@ describe("ChartCard — time-dimension query", () => {
   it("still sends dimensions: [] in aggregate mode (no regression)", async () => {
     // The bars family sends dimensions: [] — this is the same observable
     // contract; this test documents the intent explicitly.
+    // biome-ignore lint/correctness/noUnusedVariables: kept available for symmetry with the controls block above; bars-toggle does not exercise rerender.
     const { rerenderUnchanged } = renderCard();
     await waitFor(() => expect(postMetricsMock).toHaveBeenCalledTimes(1));
 
