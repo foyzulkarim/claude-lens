@@ -216,6 +216,7 @@ describe("POST /api/metrics", () => {
       calls: [call({ uuid: "scatter-call" })],
       prompts: [],
       toolResultBytes: [],
+      compactions: [],
       duplicateCount: 0,
       malformedCount: 0,
     });
