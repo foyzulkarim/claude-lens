@@ -347,7 +347,7 @@ describe("ChartCard — controls", () => {
     expect(lastQuery.measures).toEqual(["inputTokens", "outputTokens"]);
   });
 
-  it("family toggle requeries (dimensions change) and re-renders the chart as a bar series", async () => {
+  it("family toggle re-renders the chart as a bar series without requerying", async () => {
     const user = userEvent.setup();
     renderCard();
     await waitFor(() => expect(postMetricsMock).toHaveBeenCalledTimes(1));
@@ -358,12 +358,11 @@ describe("ChartCard — controls", () => {
       const [entry] = lastCall.option.series as { type: string }[];
       expect(entry.type).toBe("bar");
     });
-    // T8 makes `family` query-affecting: area sends dimensions: ["time"],
-    // bars sends dimensions: []. The toggle therefore refetches — the
-    // chart re-render is on top of the new query result, not a no-fetch
-    // local re-render.
-    expect(postMetricsMock).toHaveBeenCalledTimes(2);
-    expect(latestQuery<{ dimensions: string[] }>().dimensions).toEqual([]);
+    // `family` (area/bars) is display-only and doesn't affect `dimensions` —
+    // both need one point per time bucket, so the toggle re-renders the
+    // existing data locally rather than triggering a refetch.
+    expect(postMetricsMock).toHaveBeenCalledTimes(1);
+    expect(latestQuery<{ dimensions: string[] }>().dimensions).toEqual(["time"]);
   });
 
   it("grain toggle requeries with the updated grain", async () => {
@@ -546,33 +545,24 @@ describe("ChartCard — time-dimension query", () => {
     expect(sentQuery.dimensions).toEqual(["time"]);
   });
 
-  it("still sends dimensions: [] for bars family (no time dimension = aggregate)", async () => {
-    // biome-ignore lint/correctness/noUnusedVariables: kept available for symmetry with the controls block below; bars-toggle does not exercise rerender.
-    const { rerenderUnchanged } = renderCard();
+  it("also requests dimensions: ['time'] for bars family (one bar per bucket, not one aggregate bar)", async () => {
+    renderCard();
     await waitFor(() => expect(postMetricsMock).toHaveBeenCalledTimes(1));
 
     // Switch to bars family (second control on the toolbar)
     const barsButton = screen.getByRole("button", { name: "bars" });
     await userEvent.click(barsButton);
-    await waitFor(() => expect(postMetricsMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => {
+      const lastCall = chartSpy.mock.calls.at(-1)?.[0] as ChartProps;
+      const [entry] = lastCall.option.series as { type: string }[];
+      expect(entry.type).toBe("bar");
+    });
 
+    // The toggle doesn't requery (dimensions is unaffected by family), so
+    // the sent query is still the one fetch from initial render.
+    expect(postMetricsMock).toHaveBeenCalledTimes(1);
     const sentQuery = latestQuery<{ dimensions: string[] }>();
-    expect(sentQuery.dimensions).toEqual([]);
-  });
-
-  it("still sends dimensions: [] in aggregate mode (no regression)", async () => {
-    // The bars family sends dimensions: [] — this is the same observable
-    // contract; this test documents the intent explicitly.
-    // biome-ignore lint/correctness/noUnusedVariables: kept available for symmetry with the controls block above; bars-toggle does not exercise rerender.
-    const { rerenderUnchanged } = renderCard();
-    await waitFor(() => expect(postMetricsMock).toHaveBeenCalledTimes(1));
-
-    const barsButton = screen.getByRole("button", { name: "bars" });
-    await userEvent.click(barsButton);
-    await waitFor(() => expect(postMetricsMock).toHaveBeenCalledTimes(2));
-
-    const sentQuery = latestQuery<{ dimensions: string[] }>();
-    expect(sentQuery.dimensions).toEqual([]);
+    expect(sentQuery.dimensions).toEqual(["time"]);
   });
 
   it("grain matches the selected grain control", async () => {
