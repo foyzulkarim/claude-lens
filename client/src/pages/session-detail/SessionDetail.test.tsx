@@ -3,7 +3,7 @@ import "@testing-library/jest-dom/vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { SessionDetailResponse } from "../../../../../shared/session-detail-contract.js";
+import type { SessionDetailResponse } from "../../../../shared/session-detail-contract.js";
 import { Route, Router, Switch } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
 import { SessionDetail } from "../SessionDetail.js";
@@ -168,7 +168,7 @@ describe("SessionDetail — query lifecycle (T6)", () => {
     render(<Wrapper><div /></Wrapper>);
 
     expect(await screen.findByTestId("session-detail-view")).toBeInTheDocument();
-    expect(screen.getByText(/Session Detail — s1/i)).toBeInTheDocument();
+    expect(screen.getByTestId("session-detail-header")).toBeInTheDocument();
   });
 
   it("uses qk.session(id) as the query key (single-page-owned resource)", async () => {
@@ -219,5 +219,120 @@ describe("SessionDetail — query lifecycle (T6)", () => {
     await screen.findByTestId("session-detail-view");
 
     expect(getSessionDetailMock).toHaveBeenCalledWith("s1", expect.anything());
+  });
+});
+
+describe("SessionDetail — Header + CostTimeline (T7)", () => {
+  beforeEach(() => {
+    getSessionDetailMock.mockReset();
+  });
+  afterEach(() => {
+    cleanup();
+    getSessionDetailMock.mockReset();
+  });
+
+  it("Header surfaces tier, computed cost, drift absence, and the vs-median delta", async () => {
+    const response = makeResponse({
+      header: {
+        ...makeResponse().header,
+        sessionId: "11111111-2222-4333-8444-555555555555",
+        costComputed: 10,
+        fleetCostMedian: 8,
+        fleetCostRankPct: 25,
+        logicalTurnCount: 3,
+        callCount: 12,
+      },
+    });
+    getSessionDetailMock.mockResolvedValue(response);
+    const { Wrapper } = makeWrapper();
+
+    render(<Wrapper><div /></Wrapper>);
+
+    expect(await screen.findByTestId("session-detail-header")).toBeInTheDocument();
+    expect(screen.getByText("$10.00")).toBeInTheDocument();
+    expect(screen.getByText("+25% vs median")).toBeInTheDocument();
+    expect(screen.getByText("3")).toBeInTheDocument(); // logicalTurnCount
+    expect(screen.getByText("12")).toBeInTheDocument(); // callCount
+    // drift absent → premium banner explains what's missing, never a fabricated 0
+    expect(screen.getByTestId("premium-unavailable")).toBeInTheDocument();
+  });
+
+  it("CostTimeline renders bars + turn rules + the cumulative/per-turn toggle", async () => {
+    const timeline = [
+      {
+        callIndex: 0,
+        timestamp: "2026-07-14T10:00:00.000Z",
+        cumulativeCost: 0.1,
+        cumulativeTokens: 100,
+        cost: 0.1,
+        tokens: 100,
+        contextPct: 0.5,
+        turnNumber: 1,
+        isTurnBoundary: true,
+        isCompaction: false,
+      },
+      {
+        callIndex: 1,
+        timestamp: "2026-07-14T10:01:00.000Z",
+        cumulativeCost: 0.3,
+        cumulativeTokens: 300,
+        cost: 0.2,
+        tokens: 200,
+        contextPct: 0.6,
+        turnNumber: 1,
+        isTurnBoundary: false,
+        isCompaction: false,
+      },
+      {
+        callIndex: 2,
+        timestamp: "2026-07-14T10:02:00.000Z",
+        cumulativeCost: 0.4,
+        cumulativeTokens: 500,
+        cost: 0.1,
+        tokens: 200,
+        contextPct: 0.6,
+        turnNumber: 2,
+        isTurnBoundary: true,
+        isCompaction: true,
+      },
+    ];
+    getSessionDetailMock.mockResolvedValue(makeResponse({ timeline }));
+    const { Wrapper } = makeWrapper();
+
+    render(<Wrapper><div /></Wrapper>);
+
+    const timelineEl = await screen.findByTestId("session-detail-timeline");
+    expect(timelineEl).toBeInTheDocument();
+    // Two turn boundaries → exactly two dashed lines
+    expect(timelineEl.querySelectorAll("line")).toHaveLength(2);
+    // Compaction call rendered in the rose color so the panel visually
+    // distinguishes it from ordinary calls.
+    expect(timelineEl.querySelector("rect.fill-rose-500")).not.toBeNull();
+  });
+
+  it("CostTimeline toggle groups are keyboard-operable and aria-pressed reflects state", async () => {
+    const timeline = [
+      {
+        callIndex: 0,
+        timestamp: "2026-07-14T10:00:00.000Z",
+        cumulativeCost: 0.1,
+        cumulativeTokens: 100,
+        cost: 0.1,
+        tokens: 100,
+        contextPct: 0.5,
+        turnNumber: 1,
+        isTurnBoundary: true,
+        isCompaction: false,
+      },
+    ];
+    getSessionDetailMock.mockResolvedValue(makeResponse({ timeline }));
+    const { Wrapper } = makeWrapper();
+
+    render(<Wrapper><div /></Wrapper>);
+
+    await screen.findByTestId("session-detail-timeline");
+    const displayGroup = screen.getByRole("group", { name: "Display" });
+    const activeBtn = displayGroup.querySelector('button[aria-pressed="true"]');
+    expect(activeBtn).toHaveTextContent("cumulative");
   });
 });
