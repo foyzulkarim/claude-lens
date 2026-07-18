@@ -7,6 +7,9 @@
   "bin": {
     "claude-lens": "dist/cli.js"
   },
+  "files": [
+    "dist"
+  ],
   "engines": {
     "node": ">=22"
   },
@@ -27,7 +30,7 @@
     "storybook": "tsx scripts/storybook.ts",
     "build-storybook": "storybook build -c client/.storybook -o client/storybook-static",
     "bench:ingest": "tsx server/ingest/benchmark.ts",
-    "prepare": "husky"
+    "prepare": "node scripts/prepare.mjs"
   },
   "dependencies": {
     "@fastify/static": "^9.3.0",
