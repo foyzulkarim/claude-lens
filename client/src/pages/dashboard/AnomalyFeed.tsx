@@ -8,6 +8,7 @@ import { listSessions } from "../../api/sessions.js";
 import { formatUnitValue } from "../../charts/units.js";
 import { filtersToQuery } from "../../filters/state.js";
 import { useFilters } from "../../filters/useFilters.js";
+import { useStableNow } from "./useStableNow.js";
 
 /** `include=trace` is capped at 25 by the sessions route (SESSIONS_TRACE_MAX_LIMIT) —
  * pulling that many of the highest-cost sessions gives the detector a
@@ -94,6 +95,8 @@ export interface AnomalyFeedProps {
    * itself and runs the T3b anomaly detector over them.
    */
   items?: AnomalyFeedItem[];
+  /** Injection seam for stories/tests; defaults to the real current time. */
+  now?: Date;
 }
 
 const KIND_LABEL: Record<AnomalyItemKind, string> = {
@@ -109,6 +112,10 @@ const SEVERITY_CLASS: Record<AnomalySeverity, string> = {
 };
 
 function AnomalyFeedRow({ item }: { item: AnomalyFeedItem }) {
+  // Review #16/#19: per-row `aria-label` on the drill link so screen readers
+  // announce which session/turn the link opens (the visible "View →" text is
+  // identical across every row and useless as a row distinguisher).
+  const drillLabel = `View session ${item.sessionId}${item.turnId ? `, ${item.turnId}` : ""}`;
   return (
     <li className="flex items-start justify-between gap-3 border-b border-slate-100 py-2 last:border-b-0 dark:border-[#232B36]">
       <div className="min-w-0">
@@ -120,6 +127,7 @@ function AnomalyFeedRow({ item }: { item: AnomalyFeedItem }) {
       </div>
       <Link
         href={item.drill}
+        aria-label={drillLabel}
         className="shrink-0 text-xs font-medium text-[#96631E] dark:text-[#E8A33D]"
       >
         View →
@@ -136,9 +144,13 @@ function AnomalyFeedRow({ item }: { item: AnomalyFeedItem }) {
  * (no `items` override, no detected anomalies) state is an explicit
  * "gate data not available yet" notice rather than a bare empty list.
  */
-export function AnomalyFeed({ items }: AnomalyFeedProps) {
+export function AnomalyFeed({ items, now: injectedNow }: AnomalyFeedProps) {
   const { filters } = useFilters();
-  const now = useMemo(() => new Date(), []);
+  // Review #4: same stale-closure bug class as the live-window cards fixed
+  // in PR #89's two follow-up commits. `useMemo(() => new Date(), [])`
+  // froze `now` at mount forever — anomaly detection stopped including
+  // newer sessions.
+  const now = useStableNow(injectedNow);
   const { range } = filtersToQuery(filters, now);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: range/filters covered via their JSON identity below
@@ -196,7 +208,12 @@ export function AnomalyFeed({ items }: AnomalyFeedProps) {
       {!isLoading && !isError && (
         <>
           {detectedItems.length > 0 && (
-            <ul role="feed" aria-label="Anomaly items" className="mt-3">
+            // Review #16: drop `role="feed"` — it carries a full ARIA APG
+            // contract (owned `article` children + position/setsize attrs)
+            // that a bounded static list of 5 items doesn't earn. Plain
+            // `<ul>` gives screen readers the same role semantics without
+            // the broken contract.
+            <ul aria-label="Anomaly items" className="mt-3">
               {detectedItems.map((item) => (
                 <AnomalyFeedRow
                   key={`${item.kind}-${item.sessionId}-${item.turnId ?? ""}`}

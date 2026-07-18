@@ -4,8 +4,10 @@ import type { Series, SeriesMetricsQuery } from "../../../../shared/metrics-cont
 import { postMetrics } from "../../api/metrics.js";
 import { qk } from "../../api/queryKeys.js";
 import { StatCard } from "../../components/StatCard.js";
+import { pointValueOrNull } from "../../charts/series-math.js";
 import { filtersToQuery, serializeFilters } from "../../filters/state.js";
 import { useFilters } from "../../filters/useFilters.js";
+import { useStableNow } from "./useStableNow.js";
 
 const RATIO_FORMAT = new Intl.NumberFormat("en-US", {
   minimumFractionDigits: 1,
@@ -15,10 +17,11 @@ const RATIO_FORMAT = new Intl.NumberFormat("en-US", {
 /** Reads a single-point aggregate measure out of the metrics response
  * (`dimensions: []` queries collapse to one point per measure — engine.ts's
  * `computeSeriesForRange`). `null`/non-finite points (measure unavailable,
- * e.g. an empty scope) are treated as "no value", never coerced to 0. */
+ * e.g. an empty scope) are treated as "no value", never coerced to 0.
+ * Review #6: null-safe extraction now comes from the shared
+ * `pointValueOrNull` helper rather than a hand-rolled guard. */
 function aggregateValue(series: Series[] | undefined, measure: string): number | null {
-  const point = series?.find((s) => s.measure === measure)?.points[0];
-  return typeof point?.value === "number" && Number.isFinite(point.value) ? point.value : null;
+  return pointValueOrNull(series?.find((s) => s.measure === measure)?.points[0]);
 }
 
 /**
@@ -53,19 +56,29 @@ export function formatLeverageRatio(ratio: number | null): string {
  * filter-aware sections (`filtersToQuery`), unlike `RecordsStrip` which
  * overrides the date range per A7.
  */
-export function LeverageRatio() {
+export interface LeverageRatioProps {
+  /** Injection seam for stories/tests; defaults to the real current time. */
+  now?: Date;
+}
+
+export function LeverageRatio({ now: injectedNow }: LeverageRatioProps = {}) {
   const { filters } = useFilters();
   const filtersKey = serializeFilters(filters);
+  // Review #4: same stale-closure bug class as the live-window cards fixed
+  // in PR #89's two follow-up commits. `new Date()` here froze the leverage
+  // ratio's range to mount time — the headline stat stopped reflecting new
+  // activity.
+  const now = useStableNow(injectedNow);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: filters is covered by its stable serialized identity (filtersKey)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: filters is covered by its stable serialized identity (filtersKey); now ticks on its own via useStableNow
   const query = useMemo<SeriesMetricsQuery>(
     () => ({
       measures: ["cacheReadTokens", "inputTokens", "cacheCreateTokens"],
       dimensions: [],
       grain: "day",
-      ...filtersToQuery(filters, new Date()),
+      ...filtersToQuery(filters, now),
     }),
-    [filtersKey],
+    [filtersKey, now],
   );
 
   const { data, isPending, isError, error } = useQuery({

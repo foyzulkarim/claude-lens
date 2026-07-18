@@ -14,6 +14,7 @@ import { EmptyState } from "../../components/EmptyState.js";
 import { filtersToQuery } from "../../filters/state.js";
 import { useFilters } from "../../filters/useFilters.js";
 import { TOGGLE_ACTIVE_CLASS, TOGGLE_CLASS } from "../../ui/toggleStyles.js";
+import { useStableNow } from "./useStableNow.js";
 
 const LEADERBOARD_LIMIT = 5;
 
@@ -111,6 +112,8 @@ export interface LeaderboardsCardProps {
    * own tab state after mount (uncontrolled), matching `ChartCard`'s local
    * per-widget display-state convention (decision A4). */
   initialTab?: Tab;
+  /** Injection seam for stories/tests; defaults to the real current time. */
+  now?: Date;
 }
 
 /**
@@ -119,12 +122,18 @@ export interface LeaderboardsCardProps {
  * (Sessions → §3 `/sessions/:id`, Projects → §5 `/projects`, Models → §6
  * `/models`). Global filters (`useFilters`) apply to every tab's query.
  */
-export function LeaderboardsCard({ initialTab = "sessions" }: LeaderboardsCardProps) {
+export function LeaderboardsCard({
+  initialTab = "sessions",
+  now: injectedNow,
+}: LeaderboardsCardProps) {
   const { filters } = useFilters();
   const [, navigate] = useLocation();
   const [activeTab, setActiveTab] = useState<Tab>(initialTab);
   const tabPanelId = useId();
-  const now = useMemo(() => new Date(), []);
+  // Review #4: same stale-closure bug class as the live-window cards fixed
+  // in PR #89's two follow-up commits. `useMemo(() => new Date(), [])` froze
+  // `now` at mount forever — leaderboards stopped reflecting newer sessions.
+  const now = useStableNow(injectedNow);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: filters covered via its JSON identity
   const sessionsQueryParams = useMemo(
@@ -180,12 +189,41 @@ export function LeaderboardsCard({ initialTab = "sessions" }: LeaderboardsCardPr
     [modelsQuery.data],
   );
 
+  /**
+   * Roving-tabindex keyboard navigation for the tablist (WCAG 1.4.13 +
+   * ARIA Tabs pattern, review #19). Tab moves focus into/out of the widget
+   * as one stop; arrow keys cycle the active tab within. Selected tab gets
+   * `tabIndex={0}`, others `{−1}` so the roving index is correct without
+   * a per-button ref juggling.
+   */
+  const onTabKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const currentIndex = TABS.findIndex((t) => t.value === activeTab);
+    if (currentIndex < 0) return;
+    let nextIndex = currentIndex;
+    if (event.key === "ArrowRight") nextIndex = (currentIndex + 1) % TABS.length;
+    else if (event.key === "ArrowLeft") nextIndex = (currentIndex - 1 + TABS.length) % TABS.length;
+    else if (event.key === "Home") nextIndex = 0;
+    else if (event.key === "End") nextIndex = TABS.length - 1;
+    else return;
+    event.preventDefault();
+    const next = TABS[nextIndex];
+    if (!next) return;
+    setActiveTab(next.value);
+    const btn = document.getElementById(`${tabPanelId}-tab-${next.value}`);
+    btn?.focus();
+  };
+
   return (
     <div
       data-testid="leaderboards-card"
       className="rounded-md border border-slate-200 bg-white p-4 dark:border-[#232B36] dark:bg-[#151A21]"
     >
-      <div role="tablist" aria-label="Leaderboards" className="flex items-center gap-1">
+      <div
+        role="tablist"
+        aria-label="Leaderboards"
+        className="flex items-center gap-1"
+        onKeyDown={onTabKeyDown}
+      >
         {TABS.map((tab) => (
           <button
             key={tab.value}
@@ -194,6 +232,7 @@ export function LeaderboardsCard({ initialTab = "sessions" }: LeaderboardsCardPr
             id={`${tabPanelId}-tab-${tab.value}`}
             aria-selected={activeTab === tab.value}
             aria-controls={`${tabPanelId}-panel`}
+            tabIndex={activeTab === tab.value ? 0 : -1}
             onClick={() => setActiveTab(tab.value)}
             className={clsx(TOGGLE_CLASS, activeTab === tab.value && TOGGLE_ACTIVE_CLASS)}
           >

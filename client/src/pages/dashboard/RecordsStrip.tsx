@@ -5,6 +5,7 @@ import type { SessionListItem, SessionListParams } from "../../../../shared/sess
 import { postMetrics } from "../../api/metrics.js";
 import { qk } from "../../api/queryKeys.js";
 import { listSessions } from "../../api/sessions.js";
+import { formatUnitValueOrDash } from "../../charts/units.js";
 import { CHIP_DIMENSION, type FilterState, serializeFilters } from "../../filters/state.js";
 import { useFilters } from "../../filters/useFilters.js";
 
@@ -35,12 +36,19 @@ function categoricalMetricsFilters(state: FilterState): Partial<Record<Dimension
   return filters;
 }
 
-const MONEY_FORMAT = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
-
-function formatMoney(value: number | null | undefined): string | null {
-  return typeof value === "number" && Number.isFinite(value) ? MONEY_FORMAT.format(value) : null;
+/** Format an $/value cell for the Records strip. Review #6: routes through
+ * the shared `formatUnitValueOrDash` helper so the unavailable placeholder
+ * ("—") matches every other dashboard cell instead of an ad-hoc `null`
+ * that `sessionRecordRow` had to translate. */
+function formatMoney(value: number | null | undefined): string {
+  return formatUnitValueOrDash(value, "$");
 }
 
+/** Format a session duration as `Xh YYm` or `Nm`. Returns `null` for
+ * invalid inputs — the record-row helper treats `null` as "show —". This
+ * keeps a distinct format (compound hours/minutes) that doesn't fit the
+ * `Unit`/`formatUnitValue` shape, so it stays local rather than going
+ * through the shared helper. */
 function formatDuration(ms: number | null | undefined): string | null {
   if (typeof ms !== "number" || !Number.isFinite(ms) || ms < 0) return null;
   const totalMinutes = Math.round(ms / 60_000);
@@ -72,7 +80,10 @@ export interface RecordRow {
 
 /** Builds one record row from a top-ranked session (or its absence).
  * Exported for direct unit testing of the "—" degradation without a full
- * component render. */
+ * component render. Accepts either a string-returning extractor (the new
+ * `formatUnitValueOrDash`/`formatMoney` shape — always returns "—" for
+ * unavailable) or a string-or-null extractor (the older `formatDuration`
+ * shape — `null` means unavailable). */
 export function sessionRecordRow(
   label: string,
   session: SessionListItem | undefined,
@@ -87,7 +98,9 @@ export function sessionRecordRow(
 /** Builds the "most expensive day" record from a `costComputed` day-grain
  * `Series[]` over the matched history extent — the one record sourced from
  * `/api/metrics` rather than `/api/sessions` (architecture §"Records": day
- * through `/api/metrics`, the other four through `/api/sessions`). */
+ * through `/api/metrics`, the other four through `/api/sessions`). Review
+ * #6: formatMoney is now a passthrough to `formatUnitValueOrDash`, so the
+ * unreachable null-coalesce in this function is gone. */
 export function dayRecordRow(data: Series[] | undefined): RecordRow {
   const label = "Most expensive day";
   const points = data?.find((s) => s.measure === "costComputed")?.points ?? [];
@@ -97,9 +110,11 @@ export function dayRecordRow(data: Series[] | undefined): RecordRow {
     if (!best || point.value > best.value) best = { t: point.t, value: point.value };
   }
   if (!best) return { label, value: "—" };
-  const value = formatMoney(best.value);
-  if (value === null) return { label, value: "—" };
-  return { label, value, detail: DAY_FORMAT.format(new Date(best.t)) };
+  return {
+    label,
+    value: formatMoney(best.value),
+    detail: DAY_FORMAT.format(new Date(best.t)),
+  };
 }
 
 function useTopSession(params: SessionListParams) {

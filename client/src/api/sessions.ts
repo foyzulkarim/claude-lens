@@ -1,4 +1,10 @@
-import type { SessionListParams, SessionListResponse } from "../../../shared/sessions-contract.js";
+import type {
+  SessionListItem,
+  SessionListMeta,
+  SessionListParams,
+  SessionListResponse,
+  TracePoint,
+} from "../../../shared/sessions-contract.js";
 
 // ---------------------------------------------------------------------------
 // Typed error
@@ -21,6 +27,105 @@ export class SessionsApiError extends Error {
     this.name = "SessionsApiError";
     this.status = status;
     this.validation = validation;
+  }
+}
+
+/**
+ * Thrown when a 2xx response fails the response-shape guard. Distinct from
+ * `SessionsApiError` so callers (TanStack Query) can separate "server
+ * rejected our request" from "server returned something we can't render".
+ * Review #15 / TS1: pre-fix the wrapper asserted `body as SessionListResponse`
+ * directly from `unknown`, so five Dashboard consumers dereferencing
+ * `items[].meta.globalCapture` would crash on a malformed or version-skewed
+ * payload. Now the type guard runs first and any structural failure surfaces
+ * as a typed throw so the affected section renders its `isError` boundary
+ * rather than throwing during render.
+ */
+export class SessionsResponseShapeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SessionsResponseShapeError";
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Response shape guard
+// ---------------------------------------------------------------------------
+
+function isStringOrUndefined(value: unknown): value is string | undefined {
+  return value === undefined || typeof value === "string";
+}
+
+function isTracePoint(value: unknown): value is TracePoint {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { turnIndex?: unknown }).turnIndex === "number" &&
+    typeof (value as { cost?: unknown }).cost === "number" &&
+    typeof (value as { timestamp?: unknown }).timestamp === "string"
+  );
+}
+
+function isSessionListItem(value: unknown): value is SessionListItem {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v.sessionId === "string" &&
+    typeof v.startedAt === "string" &&
+    typeof v.lastAt === "string" &&
+    typeof v.project === "string" &&
+    typeof v.model === "string" &&
+    typeof v.durationMs === "number" &&
+    typeof v.turnCount === "number" &&
+    typeof v.costComputed === "number" &&
+    // Optional numeric/TracePoint fields: either missing or of the right shape.
+    (v.trace === undefined || (Array.isArray(v.trace) && v.trace.every(isTracePoint)))
+  );
+}
+
+function isSessionListMeta(value: unknown): value is SessionListMeta {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  if (typeof v.globalCapture !== "object" || v.globalCapture === null) {
+    return false;
+  }
+  const capture = v.globalCapture as Record<string, unknown>;
+  if (
+    typeof capture.hasCostSamples !== "boolean" ||
+    typeof capture.hasTurnBoundaries !== "boolean" ||
+    typeof capture.hasCostLog !== "boolean" ||
+    (capture.costBasis !== "computed" && capture.costBasis !== "observed")
+  ) {
+    return false;
+  }
+  // matchedExtent is {from, to} | null — both bounds string-or-undefined OK.
+  if (v.matchedExtent !== null && typeof v.matchedExtent === "object") {
+    const e = v.matchedExtent as Record<string, unknown>;
+    if (!isStringOrUndefined(e.from) || !isStringOrUndefined(e.to)) return false;
+  } else if (v.matchedExtent !== null) {
+    return false;
+  }
+  return true;
+}
+
+function assertSessionListResponse(value: unknown): asserts value is SessionListResponse {
+  if (typeof value !== "object" || value === null) {
+    throw new SessionsResponseShapeError("expected object at the response root");
+  }
+  const v = value as Record<string, unknown>;
+  if (!Array.isArray(v.items)) {
+    throw new SessionsResponseShapeError("expected items to be an array");
+  }
+  if (typeof v.total !== "number" || !Number.isFinite(v.total)) {
+    throw new SessionsResponseShapeError("expected total to be a finite number");
+  }
+  if (!isSessionListMeta(v.meta)) {
+    throw new SessionsResponseShapeError("expected meta to match the contract shape");
+  }
+  for (const [i, item] of v.items.entries()) {
+    if (!isSessionListItem(item)) {
+      throw new SessionsResponseShapeError(`items[${i}] does not match the contract shape`);
+    }
   }
 }
 
@@ -60,7 +165,8 @@ export async function listSessions(
   }
 
   const body: unknown = await response.json();
-  return body as SessionListResponse;
+  assertSessionListResponse(body);
+  return body;
 }
 
 // ---------------------------------------------------------------------------

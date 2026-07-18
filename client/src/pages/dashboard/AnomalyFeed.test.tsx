@@ -92,7 +92,7 @@ describe("AnomalyFeed — item-kind rendering branches", () => {
     expect(screen.getByText("Cost anomaly")).toBeInTheDocument();
     expect(screen.getByText("high")).toBeInTheDocument();
     expect(screen.getByText(/12\.0x the session median/)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "View →" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "View session session-1, turn-3" })).toHaveAttribute(
       "href",
       "/sessions/session-1",
     );
@@ -160,8 +160,11 @@ describe("AnomalyFeed — item-kind rendering branches", () => {
       },
     ];
     renderFeed({ items });
-    expect(screen.getByRole("feed")).toBeInTheDocument();
-    expect(screen.getAllByRole("link", { name: "View →" })).toHaveLength(3);
+    // Review #16: the container is now a plain `<ul>` (no role="feed") so
+    // a 5-item static list doesn't carry an ARIA APG contract it can't fulfill.
+    // Match by the descriptive aria-label instead.
+    expect(screen.getByRole("list", { name: "Anomaly items" })).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: /^View session / })).toHaveLength(3);
   });
 });
 

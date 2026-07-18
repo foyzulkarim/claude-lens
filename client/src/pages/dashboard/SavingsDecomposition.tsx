@@ -6,6 +6,7 @@ import { qk } from "../../api/queryKeys.js";
 import { formatUnitValue } from "../../charts/units.js";
 import { filtersToQuery, serializeFilters } from "../../filters/state.js";
 import { useFilters } from "../../filters/useFilters.js";
+import { useStableNow } from "./useStableNow.js";
 
 /**
  * The two Dashboard "savings" measures landed in T3a. Breaking down by
@@ -96,12 +97,21 @@ function Segment({ label, value, maxValue }: SegmentProps) {
  * the savings algebra, which is exactly the double-counting failure mode
  * the spec calls out as high-risk.
  */
-export function SavingsDecomposition() {
+export interface SavingsDecompositionProps {
+  /** Injection seam for stories/tests; defaults to the real current time. */
+  now?: Date;
+}
+
+export function SavingsDecomposition({ now: injectedNow }: SavingsDecompositionProps = {}) {
   const { filters } = useFilters();
   const filtersKey = serializeFilters(filters);
+  // Review #4: same stale-closure bug class as the live-window cards fixed
+  // in PR #89's two follow-up commits. `new Date()` here froze the savings
+  // range to mount time — savings totals stopped advancing with time.
+  const now = useStableNow(injectedNow);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: filters is covered by its stable serialized identity (filtersKey)
-  const query = useMemo<SeriesMetricsQuery>(() => buildQuery(filters, new Date()), [filtersKey]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: filters is covered by its stable serialized identity (filtersKey) — same pattern as ChartCard.tsx; now ticks on its own via useStableNow
+  const query = useMemo<SeriesMetricsQuery>(() => buildQuery(filters, now), [filtersKey, now]);
 
   const { data, isPending, isError, error } = useQuery({
     queryKey: qk.metrics(query),
@@ -136,9 +146,16 @@ export function SavingsDecomposition() {
           <div className="flex flex-col gap-2">
             <Segment label="cache discount" value={totals.cache} maxValue={maxSegment} />
             <Segment label="cheap-model routing" value={totals.routing} maxValue={maxSegment} />
+            {/* Review #16: secondary/footer text. Pre-fix used
+                `text-slate-500` / `dark:text-[#5A6675]` which gave ~2.56:1 in
+                light mode and ~2.99:1 in dark mode — both below WCAG AA's
+                4.5:1 for normal text. The token pair below (slate-600 /
+                #8A96A5) clears AA in both themes — it's the same token pair
+                `SubscriptionWindow` and `BurnRateCard` use for comparable
+                secondary copy. */}
             <p
               data-testid="savings-total"
-              className="mt-1 font-mono text-xs text-slate-500 dark:text-[#5A6675]"
+              className="mt-1 font-mono text-xs text-slate-600 dark:text-[#8A96A5]"
             >
               {formatUnitValue(totals.total, "$")} total
             </p>
@@ -146,7 +163,7 @@ export function SavingsDecomposition() {
         )}
       </div>
 
-      <p className="mt-2 font-mono text-xs text-slate-400 dark:text-[#5A6675]">
+      <p className="mt-2 font-mono text-xs text-slate-600 dark:text-[#8A96A5]">
         vs all-Opus, uncached counterfactual
       </p>
     </div>

@@ -9,6 +9,7 @@ import type {
 } from "../../../../shared/metrics-contract.js";
 import { postMetrics } from "../../api/metrics.js";
 import { qk } from "../../api/queryKeys.js";
+import { pointValue as sharedPointValue } from "../../charts/series-math.js";
 import { formatUnitValue } from "../../charts/units.js";
 import {
   StatCard,
@@ -18,6 +19,7 @@ import {
 } from "../../components/StatCard.js";
 import { filtersToQuery, serializeFilters } from "../../filters/state.js";
 import { useFilters } from "../../filters/useFilters.js";
+import { useStableNow } from "./useStableNow.js";
 
 // Day grain keeps the sparkline readable across the common 7d/30d filter
 // presets without an extra control — StatCard's toolbar-free contract
@@ -29,9 +31,13 @@ const GRAIN: Grain = "day";
 // of these touch React or fetch).
 // ---------------------------------------------------------------------------
 
-function pointValue(point: SeriesPoint | undefined): number {
-  return typeof point?.value === "number" && Number.isFinite(point.value) ? point.value : 0;
-}
+/**
+ * Reads a SeriesPoint's numeric value, treating non-finite or absent points
+ * as 0. Re-exported here from `charts/series-math.ts` for backwards compat
+ * with this file's existing tests and external imports — the canonical
+ * implementation lives in the shared module now.
+ */
+export const pointValue = sharedPointValue;
 
 export function sumPoints(points: SeriesPoint[] | undefined): number {
   return (points ?? []).reduce((sum, p) => sum + pointValue(p), 0);
@@ -253,32 +259,43 @@ function DrillStatCard({
  * from the raw components rather than firing a third query for the ratio
  * measure). Two `/api/metrics` calls power all 5 cards.
  */
-export function StatCardsRow() {
+export interface StatCardsRowProps {
+  /** Injection seam for stories/tests; defaults to the real current time. */
+  now?: Date;
+}
+
+export function StatCardsRow({ now: injectedNow }: StatCardsRowProps = {}) {
   const { filters } = useFilters();
   const filtersKey = serializeFilters(filters);
+  // Review #4: same stale-closure bug class that the PR's two follow-up
+  // commits already fixed in BurnRateCard/SubscriptionWindow via
+  // useStableNow. A bare `new Date()` here freezes `now` at mount time
+  // (serializeFilters omits the default preset, so filtersKey doesn't tick
+  // forward either) and the sparklines stop reflecting the live window.
+  const now = useStableNow(injectedNow);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: filters is covered by its stable serialized identity (filtersKey) — same pattern as ChartCard.tsx
+  // biome-ignore lint/correctness/useExhaustiveDependencies: filters is covered by its stable serialized identity (filtersKey); now ticks on its own via useStableNow
   const coreQuery = useMemo<SeriesMetricsQuery>(
     () => ({
       measures: ["costComputed", "sessions"],
       dimensions: ["time"],
       grain: GRAIN,
       compare: "previous-period",
-      ...filtersToQuery(filters, new Date()),
+      ...filtersToQuery(filters, now),
     }),
-    [filtersKey],
+    [filtersKey, now],
   );
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: filters is covered by its stable serialized identity (filtersKey) — same pattern as ChartCard.tsx
+  // biome-ignore lint/correctness/useExhaustiveDependencies: filters is covered by its stable serialized identity (filtersKey); now ticks on its own via useStableNow
   const tokensQuery = useMemo<SeriesMetricsQuery>(
     () => ({
       measures: ["inputTokens", "outputTokens", "cacheReadTokens", "cacheCreateTokens"],
       dimensions: ["time"],
       grain: GRAIN,
       compare: "previous-period",
-      ...filtersToQuery(filters, new Date()),
+      ...filtersToQuery(filters, now),
     }),
-    [filtersKey],
+    [filtersKey, now],
   );
 
   const coreQ = useQuery({

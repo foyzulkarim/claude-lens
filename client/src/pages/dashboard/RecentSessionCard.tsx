@@ -7,18 +7,19 @@ import { listSessions } from "../../api/sessions.js";
 import { Badge } from "../../components/Badge.js";
 import { EmptyState } from "../../components/EmptyState.js";
 import { costTierLevel, TierBadge } from "../../components/TierBadge.js";
+import { formatUnitValue } from "../../charts/units.js";
 import { type FilterState, resolveRange, serializeFilters } from "../../filters/state.js";
 import { useFilters } from "../../filters/useFilters.js";
+import { useStableNow } from "./useStableNow.js";
 
-const CURRENCY_FORMAT = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 const TIME_FORMAT = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" });
 
 /** Maps the global filter bar's `FilterState` to the `SessionListParams` for
  * "most recent session matching the active filters" — mirrors
  * `filtersToQuery` (`filters/state.ts`) but targets the sessions-list wire
  * contract instead of the metrics one. */
-function sessionParamsFromFilters(filters: FilterState): SessionListParams {
-  const { from, to } = resolveRange(filters.range, new Date());
+function sessionParamsFromFilters(filters: FilterState, now: Date): SessionListParams {
+  const { from, to } = resolveRange(filters.range, now);
   const params: SessionListParams = {
     sort: "lastAt",
     order: "desc",
@@ -56,20 +57,49 @@ interface TraceThumbnailProps {
   trace: TracePoint[];
 }
 
+/**
+ * Diff each consecutive `TracePoint` into its per-turn cost. The server
+ * (server/routes/sessions.ts `buildTrace`) emits cumulative priced-turn
+ * costs — turning `[1, 11, 12]` into per-turn `[1, 10, 1]` so the bar
+ * chart, peak calculation, and aria label all describe actual turn costs
+ * rather than "running total". Review #10 / CQ3.
+ */
+export function perTurnCosts(trace: TracePoint[]): number[] {
+  const deltas: number[] = [];
+  let previous = 0;
+  for (const point of trace) {
+    // Clamp negative deltas to 0 — float noise / zero-cost turns should
+    // never read as a negative bar (mirrors `AnomalyFeed.turnSamplesFromSessions`).
+    deltas.push(Math.max(0, point.cost - previous));
+    previous = point.cost;
+  }
+  return deltas;
+}
+
 /** Bar-per-turn cost trace, scaled to the session's own peak turn — the
  * "trace thumbnail" from the mockup's sparkline-in-a-panel treatment,
- * rendered as bars (not a polyline) since `TracePoint.cost` is a discrete
- * per-turn value, not a continuous series. */
+ * rendered as bars (not a polyline) since each `TracePoint` represents a
+ * discrete turn. Review #10: converts cumulative server-side values to
+ * per-turn deltas first so the bars represent turn cost, not running total
+ * (the cumulative-vs-per-turn bug CQ3 was flagging). */
 function TraceThumbnail({ trace }: TraceThumbnailProps) {
-  if (trace.length === 0) return null;
+  const deltas = perTurnCosts(trace);
+  if (deltas.length === 0) return null;
 
   const width = 100;
   const height = 32;
-  const maxCost = Math.max(...trace.map((p) => p.cost), 0);
-  const barWidth = width / trace.length;
-  const peak = trace.reduce((best, p) => (p.cost > best.cost ? p : best), trace[0] as TracePoint);
+  const maxDelta = Math.max(...deltas, 0);
+  const barWidth = width / deltas.length;
+  // Find the peak delta's index (not the trace point with highest cumulative
+  // cost, which is almost always the last point — the bug review #10 was
+  // flagging).
+  let peakIndex = 0;
+  for (let i = 1; i < deltas.length; i++) {
+    if ((deltas[i] ?? 0) > (deltas[peakIndex] ?? 0)) peakIndex = i;
+  }
+  const peakDelta = deltas[peakIndex] ?? 0;
 
-  const ariaLabel = `Cost trace across ${trace.length} turn${trace.length === 1 ? "" : "s"}, peaking at ${CURRENCY_FORMAT.format(peak.cost)} on turn ${peak.turnIndex + 1}`;
+  const ariaLabel = `Cost trace across ${deltas.length} turn${deltas.length === 1 ? "" : "s"}, peaking at ${formatUnitValue(peakDelta, "$")} on turn ${peakIndex + 1}`;
 
   return (
     <>
@@ -82,8 +112,8 @@ function TraceThumbnail({ trace }: TraceThumbnailProps) {
         preserveAspectRatio="none"
         className="mt-2 h-8 w-full"
       >
-        {trace.map((point, i) => {
-          const barHeight = maxCost > 0 ? (point.cost / maxCost) * height : 0;
+        {deltas.map((delta, i) => {
+          const barHeight = maxDelta > 0 ? (delta / maxDelta) * height : 0;
           return (
             <rect
               // biome-ignore lint/suspicious/noArrayIndexKey: trace points are a fixed, ordered snapshot from the server — turnIndex isn't guaranteed unique across sessions but is stable within this one render
@@ -109,12 +139,25 @@ function TraceThumbnail({ trace }: TraceThumbnailProps) {
  * `StatCardsRow` (its own `useQuery`), so a slow/erroring
  * `GET /api/sessions` never blocks the stat cards from rendering.
  */
-export function RecentSessionCard() {
+export interface RecentSessionCardProps {
+  /** Injection seam for stories/tests; defaults to the real current time. */
+  now?: Date;
+}
+
+export function RecentSessionCard({ now: injectedNow }: RecentSessionCardProps = {}) {
   const { filters } = useFilters();
   const filtersKey = serializeFilters(filters);
+  // Review #4: same stale-closure bug class as the live-window cards fixed
+  // in PR #89's two follow-up commits. `new Date()` here froze the from/to
+  // range to mount time — a dashboard left open silently stopped including
+  // newer sessions in "most recent".
+  const now = useStableNow(injectedNow);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: filters is covered by its stable serialized identity (filtersKey) — same pattern as ChartCard.tsx
-  const params = useMemo<SessionListParams>(() => sessionParamsFromFilters(filters), [filtersKey]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: filters is covered by its stable serialized identity (filtersKey); now ticks on its own via useStableNow
+  const params = useMemo<SessionListParams>(
+    () => sessionParamsFromFilters(filters, now),
+    [filtersKey, now],
+  );
 
   const { data, isPending, isError, error } = useQuery({
     queryKey: qk.sessions(params),
@@ -172,7 +215,7 @@ export function RecentSessionCard() {
         <>
           <div className="mt-2 flex flex-wrap items-baseline gap-3">
             <span className="font-mono text-[26px] font-medium text-[#96631E] dark:text-[#E8A33D]">
-              {CURRENCY_FORMAT.format(session.costComputed)}
+              {formatUnitValue(session.costComputed, "$")}
             </span>
             <span className="font-mono text-xs text-slate-500 dark:text-[#8A96A5]">
               {shortId(session.sessionId)} · {session.project} ·{" "}

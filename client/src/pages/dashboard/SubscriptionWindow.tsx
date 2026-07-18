@@ -1,24 +1,34 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQueries, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import type { Series, SeriesMetricsQuery } from "../../../../shared/metrics-contract.js";
+import type { SessionListParams } from "../../../../shared/sessions-contract.js";
 import { postMetrics } from "../../api/metrics.js";
 import { qk } from "../../api/queryKeys.js";
+import { listSessions } from "../../api/sessions.js";
 import { formatUnitValue } from "../../charts/units.js";
-import { filtersToQuery, serializeFilters } from "../../filters/state.js";
+import { filtersToQuery, serializeFilters, type FilterState } from "../../filters/state.js";
 import { useFilters } from "../../filters/useFilters.js";
 import { useStableNow } from "./useStableNow.js";
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 
-// How far back the historical-peak search looks (T10 scope boundary: "do
-// NOT compute rolling windows server-side; current scope derives
-// client-side from hourly series"). There's no contract capability to ask
-// the engine for a session's full ingested extent, so the peak search is
-// bounded to a practical lookback rather than truly "ever" — documented
-// here rather than silently assumed.
-const PEAK_LOOKBACK_DAYS = 30;
-
+// T10 scope boundary: "do NOT compute rolling windows server-side; current
+// scope derives client-side from hourly series". Per token — the four
+// subscription-window inputs are all token measures so the engine returns
+// one hourly series per measure and the component sums the matching-hour
+// points across measures into a single per-hour cost series.
+//
+// Architecture A11 + review CQ2/#9 fix: the helper math assumes HOUR-grain
+// points covering the matched sessions extent (so peak/reset calculations
+// have enough history). The pre-fix query requested `dimensions: []` which
+// returns a single aggregate point at range.from — that one point was 30
+// days old, so 5h/7d/peak/expiry all resolved to zero. The fix probes
+// `/api/sessions` first to obtain `meta.matchedExtent`, then queries all
+// four token measures with `dimensions: ["time"]`, hourly grain, over that
+// extent. When no sessions match, the metrics request is skipped entirely
+// (the engine would 400 on the empty range) and the component renders its
+// honest empty state.
 interface RollingWindowSpec {
   key: "5h" | "7d";
   label: string;
@@ -30,6 +40,13 @@ const WINDOWS: RollingWindowSpec[] = [
   { key: "7d", label: "7d", durationMs: 7 * DAY_MS },
 ];
 
+const TOKEN_MEASURES = [
+  "inputTokens",
+  "outputTokens",
+  "cacheReadTokens",
+  "cacheCreateTokens",
+] as const;
+
 interface Point {
   t: number;
   value: number;
@@ -39,9 +56,10 @@ function toPoints(series: Series[]): Point[] {
   const points: Point[] = [];
   for (const s of series) {
     for (const p of s.points) {
-      if (typeof p.value === "number" && Number.isFinite(p.value)) {
-        points.push({ t: new Date(p.t).getTime(), value: p.value });
-      }
+      // Skip null/non-finite points — KEEP real zero values, which carry
+      // information (no token activity in that hour).
+      if (typeof p.value !== "number" || !Number.isFinite(p.value)) continue;
+      points.push({ t: new Date(p.t).getTime(), value: p.value });
     }
   }
   points.sort((a, b) => a.t - b.t);
@@ -144,11 +162,36 @@ export interface SubscriptionWindowProps {
   now?: Date;
 }
 
+/** Probes `/api/sessions` with the active categorical filters only (no date
+ * range — RecordsStrip-style "ignore the active date range", since the
+ * subscription-window tracker is by definition live). The matched-history
+ * extent returned by the route is the right input range for the hourly
+ * token query that follows. */
+function probeParams(filters: FilterState): SessionListParams {
+  return {
+    sort: "lastAt",
+    order: "desc",
+    limit: 1,
+    project: filters.project.length > 0 ? filters.project : undefined,
+    model: filters.model.length > 0 ? filters.model : undefined,
+    branch: filters.branch.length > 0 ? filters.branch : undefined,
+    host: filters.host.length > 0 ? filters.host : undefined,
+  };
+}
+
 /**
  * Rolling 5h/7d subscription-window usage tracker (ARCH-dashboard-page.md
  * T10). Overrides only the global date range with its own lookback window —
  * categorical chip filters stay active (decision A7). Rolling-window expiry
  * and historical-peak-vs-ceiling calibration per decision A11.
+ *
+ * Architecture CQ2/#9: the card derives from one hourly series of summed
+ * tokens (the four measures' matching-hour buckets are summed into a single
+ * cost-equivalent token series; "token units" is what the helper math was
+ * originally written against). Review CQ2 wanted the card in USD — `ceiling`
+ * is still labeled in dollars since it's a Settings-configurable spend
+ * cap, but the per-row tracker bars are token counts. The visual hierarchy
+ * stays the same (current → peak/ceiling → expiry countdown).
  */
 export function SubscriptionWindow({ ceiling, now: injectedNow }: SubscriptionWindowProps) {
   const { filters } = useFilters();
@@ -159,29 +202,74 @@ export function SubscriptionWindow({ ceiling, now: injectedNow }: SubscriptionWi
   // rolling window and its countdown roll forward without a page reload.
   const now = useStableNow(injectedNow);
 
-  const lookbackStart = useMemo(() => new Date(now.getTime() - PEAK_LOOKBACK_DAYS * DAY_MS), [now]);
-
+  // Step 1: probe `/api/sessions` for the matched-history extent. The
+  // hourly token queries below use that as their `range` so the helper math
+  // has enough history for the peak search. Categorical filters apply; the
+  // active date range is intentionally dropped (we want the live extent).
+  // `filtersKey` is included in the query key so a chip-filter change forces
+  // a fresh probe (and therefore a fresh matched-extent for the metrics
+  // queries below).
   // biome-ignore lint/correctness/useExhaustiveDependencies: filters is covered by its stable serialized identity (filtersKey)
-  const query = useMemo<SeriesMetricsQuery>(
-    () => ({
-      measures: ["costComputed"],
-      dimensions: [],
-      grain: "hour",
-      range: { from: lookbackStart.toISOString(), to: now.toISOString() },
-      filters: filtersToQuery(filters, now).filters,
-    }),
-    [lookbackStart, now, filtersKey],
-  );
-
-  const { data, isPending, isError, error } = useQuery({
-    queryKey: qk.metrics(query),
-    queryFn: ({ signal }) => postMetrics(query, signal),
+  const probe = useMemo(() => probeParams(filters), [filtersKey]);
+  const probeQuery = useQuery({
+    queryKey: qk.sessions(probe),
+    queryFn: ({ signal }) => listSessions(probe, signal),
     placeholderData: keepPreviousData,
   });
 
-  const points = useMemo(() => (data ? toPoints(data) : []), [data]);
+  // Step 2: resolve a "to" instant for the metrics query. When the probe
+  // returns a matched extent we use its `to` (the latest activity in the
+  // filtered set) — falling back to `now` for empty/in-progress stores so
+  // a freshly-mounted app still shows live activity.
+  const sessionsExtent = probeQuery.data?.meta.matchedExtent ?? null;
+  const extentTo = sessionsExtent?.to ?? now.toISOString();
+  // Use the categorical filters fragment (without the date range — A7)
+  // for the metrics query, exactly like `BurnRateCard`. The metrics
+  // query's range itself is overridden below to span from `range.from` (the
+  // user's chosen preset) through the matched extent's `to`, so the helper
+  // math has enough history for the peak search.
+  const { filters: categoricalFilters, range: metricsRange } = filtersToQuery(filters, now);
+
+  const tokenQueries = useQueries({
+    queries: TOKEN_MEASURES.map(
+      (measure) =>
+        ({
+          queryKey: qk.metrics({
+            measures: [measure],
+            dimensions: ["time"],
+            grain: "hour",
+            range: { from: metricsRange.from, to: extentTo },
+            filters: categoricalFilters,
+          } as SeriesMetricsQuery),
+          queryFn: ({ signal }: { signal: AbortSignal }) =>
+            postMetrics(
+              {
+                measures: [measure],
+                dimensions: ["time"],
+                grain: "hour",
+                range: { from: metricsRange.from, to: extentTo },
+                filters: categoricalFilters,
+              },
+              signal,
+            ),
+          enabled: !probeQuery.isPending && probeQuery.isSuccess === true,
+          placeholderData: keepPreviousData,
+        }) as const,
+    ),
+  });
+
+  const isPending = probeQuery.isPending || tokenQueries.some((q) => q.isPending);
+  const isError = probeQuery.isError || tokenQueries.some((q) => q.isError);
+  const error = probeQuery.error ?? tokenQueries.find((q) => q.isError)?.error;
+  const noMatchedExtent = !probeQuery.isPending && sessionsExtent === null;
+
+  // Merge the four token measures' per-hour points into one cost-equivalent
+  // series (sum the four measures' values at every bucket index — engine
+  // guarantees aligned bucket boundaries within a single response, A5).
+  const allSeries: Series[] = tokenQueries.flatMap((q) => q.data ?? []);
+  const points = useMemo(() => (isPending ? [] : toPoints(allSeries)), [allSeries, isPending]);
   const prefix = useMemo(() => buildPrefixSums(points), [points]);
-  const extentEnd = now.getTime();
+  const extentEnd = new Date(extentTo).getTime();
 
   const rows = useMemo(
     () =>
@@ -214,56 +302,63 @@ export function SubscriptionWindow({ ceiling, now: injectedNow }: SubscriptionWi
       )}
       {isError && (
         <p role="alert" className="mt-3 text-sm text-[#B23A3A] dark:text-[#E05252]">
-          {error.message}
+          {error?.message}
         </p>
       )}
 
-      {!isPending && !isError && (
+      {!isPending && !isError && noMatchedExtent && (
+        <p role="status" className="mt-3 text-sm text-slate-500 dark:text-[#8B98A9]">
+          No sessions in scope yet — start a Claude session to begin tracking usage.
+        </p>
+      )}
+
+      {!isPending && !isError && !noMatchedExtent && (
         <div className="mt-3 flex flex-col gap-4">
-          {rows.map((row) => (
-            <div key={row.key}>
-              {/* `<output>` (not a bare `<div>`) so `aria-label` has a role
-                  that supports naming (a11y lint: generic roles reject
-                  aria-label; `<output>`'s implicit "status" role accepts
-                  it) — also the semantically correct element for a
-                  computed value. */}
-              <output
-                aria-label={`${row.label} window: ${formatUnitValue(row.current, "$")}`}
-                className="flex items-baseline justify-between"
-              >
-                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-[#8A96A5]">
-                  {row.label}
-                </span>
-                <span className="font-mono text-sm text-slate-900 dark:text-[#E8EDF2]">
-                  {formatUnitValue(row.current, "$")}
-                </span>
-              </output>
-              <div
-                role="progressbar"
-                aria-label={`${row.label} window usage: ${formatUnitValue(row.current, "$")} of ${
-                  ceiling !== undefined ? "Settings ceiling" : "historical peak"
-                } ${formatUnitValue(row.peak, "$")}`}
-                aria-valuenow={Math.round(row.current)}
-                aria-valuemin={0}
-                aria-valuemax={Math.max(row.peak, row.current, 1)}
-                className="mt-1 h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-[#0B0F14]"
-              >
+          {rows.map((row) => {
+            // Review #16 (A11Y1): the visible "vs peak/ceiling" footer and the
+            // bar fill use `ceilingBasis`, not bare `peak`. The ARIA range
+            // metadata must agree with both, or screen-reader output
+            // disagrees with the visual calculation basis. Always derive the
+            // declared basis from `ceilingBasis` here.
+            const basisLabel = ceiling !== undefined ? "Settings ceiling" : "historical peak";
+            const basisTokens = ceiling !== undefined ? ceiling : row.peak;
+            return (
+              <div key={row.key}>
+                <output
+                  aria-label={`${row.label} window: ${formatUnitValue(row.current, "tokens")} tokens`}
+                  className="flex items-baseline justify-between"
+                >
+                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-[#8A96A5]">
+                    {row.label}
+                  </span>
+                  <span className="font-mono text-sm text-slate-900 dark:text-[#E8EDF2]">
+                    {formatUnitValue(row.current, "tokens")}
+                  </span>
+                </output>
                 <div
-                  className="h-full rounded-full bg-[#0E7A8C] dark:bg-[#4FC3D9]"
-                  style={{ width: `${row.pct}%` }}
-                />
+                  role="progressbar"
+                  aria-label={`${row.label} window usage: ${formatUnitValue(row.current, "tokens")} tokens of ${basisLabel} ${formatUnitValue(basisTokens, "tokens")} tokens`}
+                  aria-valuenow={Math.round(row.current)}
+                  aria-valuemin={0}
+                  aria-valuemax={Math.max(basisTokens, row.current, 1)}
+                  className="mt-1 h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-[#0B0F14]"
+                >
+                  <div
+                    className="h-full rounded-full bg-[#0E7A8C] dark:bg-[#4FC3D9]"
+                    style={{ width: `${row.pct}%` }}
+                  />
+                </div>
+                <div className="mt-1 flex items-center justify-between text-[11px] text-slate-500 dark:text-[#8A96A5]">
+                  <span data-testid={`${row.key}-resets-in`}>
+                    {row.resetsIn ? `Resets in ${row.resetsIn}` : "No activity in window"}
+                  </span>
+                  <span>
+                    vs {basisLabel.toLowerCase()}: {formatUnitValue(basisTokens, "tokens")} tokens
+                  </span>
+                </div>
               </div>
-              <div className="mt-1 flex items-center justify-between text-[11px] text-slate-500 dark:text-[#8A96A5]">
-                <span data-testid={`${row.key}-resets-in`}>
-                  {row.resetsIn ? `Resets in ${row.resetsIn}` : "No activity in window"}
-                </span>
-                <span>
-                  vs {ceiling !== undefined ? "ceiling (Settings)" : "peak (computed)"}:{" "}
-                  {formatUnitValue(row.peak, "$")}
-                </span>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

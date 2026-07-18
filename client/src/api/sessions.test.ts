@@ -219,6 +219,99 @@ describe("listSessions — success path", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Shape guard (review #15 / TS1)
+// ---------------------------------------------------------------------------
+
+describe("listSessions — response shape guard", () => {
+  // Five mounted Dashboard consumers immediately dereference `items` and the
+  // nested `meta.globalCapture` — pre-fix the wrapper cast `unknown` straight
+  // to `SessionListResponse`, so a malformed or version-skewed 2xx could
+  // crash during render rather than surface at the API boundary. The
+  // shape guard now runs first and any structural failure throws
+  // `SessionsResponseShapeError`, so TanStack Query's `isError` boundary
+  // engages instead.
+
+  it("throws SessionsResponseShapeError when `items` is not an array", async () => {
+    installFetch(async () =>
+      makeResponse({
+        items: "not an array",
+        total: 0,
+        meta: {
+          matchedExtent: null,
+          globalCapture: {
+            hasCostSamples: false,
+            hasTurnBoundaries: false,
+            hasCostLog: false,
+            costBasis: "computed",
+          },
+        },
+      }),
+    );
+    await expect(listSessions()).rejects.toMatchObject({
+      name: "SessionsResponseShapeError",
+    });
+  });
+
+  it("throws SessionsResponseShapeError when an item is missing required fields", async () => {
+    installFetch(async () =>
+      makeResponse({
+        items: [{ sessionId: "s1" /* missing startedAt, lastAt, etc. */ }],
+        total: 1,
+        meta: {
+          matchedExtent: null,
+          globalCapture: {
+            hasCostSamples: false,
+            hasTurnBoundaries: false,
+            hasCostLog: false,
+            costBasis: "computed",
+          },
+        },
+      }),
+    );
+    await expect(listSessions()).rejects.toMatchObject({
+      name: "SessionsResponseShapeError",
+    });
+  });
+
+  it("throws SessionsResponseShapeError when meta.globalCapture is malformed", async () => {
+    installFetch(async () =>
+      makeResponse({
+        items: [],
+        total: 0,
+        meta: {
+          matchedExtent: null,
+          globalCapture: { hasCostSamples: "yes" /* should be boolean */ },
+        },
+      }),
+    );
+    await expect(listSessions()).rejects.toMatchObject({
+      name: "SessionsResponseShapeError",
+    });
+  });
+
+  it("throws SessionsResponseShapeError when `total` is not a finite number", async () => {
+    installFetch(async () =>
+      makeResponse({
+        items: [],
+        total: "lots" /* should be number */,
+        meta: {
+          matchedExtent: null,
+          globalCapture: {
+            hasCostSamples: false,
+            hasTurnBoundaries: false,
+            hasCostLog: false,
+            costBasis: "computed",
+          },
+        },
+      }),
+    );
+    await expect(listSessions()).rejects.toMatchObject({
+      name: "SessionsResponseShapeError",
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // AbortSignal
 // ---------------------------------------------------------------------------
 

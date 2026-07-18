@@ -40,11 +40,16 @@ afterEach(() => {
 // Hand-priced fixture: two model groups, each pricing out to a known
 // (cache, routing) pair. Per the T3a algebra (measures.ts):
 //   cacheSavings   = uncachedAtCurrentModel - actual
-//   routingSavings = opusUncached - actual
+//   routingSavings = opusUncached - currentUncached   (the "model mix" savings)
 //   cacheSavings + routingSavings = opusUncached - actual  (single, shared
 //     counterfactual — no double counting, decision A8)
+//
 // So the hand-computed "opus-uncached minus actual" total below is exactly
-// what cache+routing must sum to, independent of how the split fell.
+// what cache+routing must sum to, independent of how the split fell. The
+// individual `cache` and `routing` values below are picked to satisfy this
+// invariant (cache + routing = opusUncachedMinusActual per group); the
+// component-level "uncached vs actual" split is irrelevant — only the sum
+// is observable in the UI, and the test asserts only the sum.
 const modelA = { cache: 300, routing: 30, opusUncachedMinusActual: 330 };
 const modelB = { cache: 112, routing: 19, opusUncachedMinusActual: 131 };
 

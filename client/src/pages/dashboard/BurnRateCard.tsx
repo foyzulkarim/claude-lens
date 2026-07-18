@@ -4,6 +4,7 @@ import { Link } from "wouter";
 import type { Series, SeriesMetricsQuery } from "../../../../shared/metrics-contract.js";
 import { postMetrics } from "../../api/metrics.js";
 import { qk } from "../../api/queryKeys.js";
+import { pointValue } from "../../charts/series-math.js";
 import { formatUnitValue } from "../../charts/units.js";
 import { filtersToQuery, serializeFilters } from "../../filters/state.js";
 import { useFilters } from "../../filters/useFilters.js";
@@ -36,14 +37,7 @@ function elapsedUtcDays(now: Date): number {
 function sumSeriesValues(series: Series[]): number {
   return series.reduce(
     (total, s) =>
-      total +
-      s.points.reduce(
-        (seriesTotal, point) =>
-          typeof point.value === "number" && Number.isFinite(point.value)
-            ? seriesTotal + point.value
-            : seriesTotal,
-        0,
-      ),
+      total + s.points.reduce((seriesTotal, point) => seriesTotal + pointValue(point), 0),
     0,
   );
 }

@@ -36,3 +36,14 @@ export function formatUnitValue(value: number, unit: Unit): string {
     }
   }
 }
+
+/**
+ * Null-safe variant of `formatUnitValue`: a non-finite or absent value
+ * renders as the em-dash "—" rather than "$NaN" or "NaN tokens". Review #6
+ * converged the multiple `formatMoney`/`COUNT_FORMAT`/etc. helpers that
+ * used to be independently defined in 4 dashboard components onto this one
+ * function so every "unavailable" cell renders the same placeholder.
+ */
+export function formatUnitValueOrDash(value: number | null | undefined, unit: Unit): string {
+  return typeof value === "number" && Number.isFinite(value) ? formatUnitValue(value, unit) : "—";
+}
