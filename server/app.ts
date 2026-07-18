@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import fastifyStatic from "@fastify/static";
 import fastifyWebsocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from "fastify";
+import { registerCacheLabRoute } from "./routes/cache-lab.js";
 import { registerMetricsRoute } from "./routes/metrics.js";
 import { registerSessionsRoute } from "./routes/sessions.js";
 import type { RuntimeMetadata } from "./runtime.js";
@@ -92,6 +93,8 @@ export function buildApp({
     store,
     metadata ? { pricing: metadata.pricing, pricer: metadata.pricer } : undefined,
   );
+
+  registerCacheLabRoute(app, store, metadata?.pricing ? { pricing: metadata.pricing } : undefined);
 
   app.register(async (instance) => {
     instance.get(
