@@ -40,6 +40,37 @@ import { attributeCacheMiss, classifyCacheWrite, partitionCacheStreams } from ".
 import { bucketStart, enumerateBuckets } from "../metrics/grain.js";
 import type { PricingTable } from "../metrics/measures.js";
 
+/**
+ * Bounded top-K selection: keeps only the best `k` items by `compare`
+ * (ascending comparator; smallest-first survives) via sorted-insertion
+ * into a capped buffer, instead of sorting the entire population. For
+ * fleet-scale inputs with a small fixed cap (gallery: 50, context
+ * curves: 24) this is O(n·k) with a small constant instead of
+ * O(n log n) over the whole set.
+ */
+function topK<T>(items: T[], k: number, compare: (a: T, b: T) => number): T[] {
+  if (items.length <= k) {
+    return [...items].sort(compare);
+  }
+  const result: T[] = [];
+  for (const item of items) {
+    if (result.length === k && compare(item, result[result.length - 1]) >= 0) continue;
+    let lo = 0;
+    let hi = result.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (compare(result[mid], item) > 0) {
+        hi = mid;
+      } else {
+        lo = mid + 1;
+      }
+    }
+    result.splice(lo, 0, item);
+    if (result.length > k) result.pop();
+  }
+  return result;
+}
+
 // ---------------------------------------------------------------------------
 // Inputs
 // ---------------------------------------------------------------------------
@@ -465,8 +496,10 @@ function buildGallery(
   total: number;
   truncated: boolean;
 } {
-  const sorted = [...events].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-  const items = sorted.slice(0, CACHE_LAB_LIMITS.GALLERY_MAX_ITEMS).map(toGalleryItem);
+  const newestFirst = topK(events, CACHE_LAB_LIMITS.GALLERY_MAX_ITEMS, (a, b) =>
+    b.timestamp.localeCompare(a.timestamp),
+  );
+  const items = newestFirst.map(toGalleryItem);
   return {
     items,
     total: totalUnfiltered,
@@ -590,16 +623,20 @@ function computeContextGrowth({
     candidates.push({ sessionId: turn.sessionId, points });
   }
 
-  // Sort by peak descending so the page's "biggest context" sessions
-  // surface even when the fleet has more than 24 sessions in range.
-  candidates.sort((a, b) => {
-    const peakA = Math.max(...a.points.map((p) => p.inputTokens));
-    const peakB = Math.max(...b.points.map((p) => p.inputTokens));
-    return peakB - peakA;
-  });
-
+  // Keep only the top CONTEXT_MAX_CURVES by peak input tokens so the
+  // page's "biggest context" sessions surface even when the fleet has
+  // more sessions in range than the cap. Peaks are precomputed once
+  // per candidate rather than recomputed on every comparison.
   const total = candidates.length;
-  const trimmed = candidates.slice(0, CACHE_LAB_LIMITS.CONTEXT_MAX_CURVES);
+  const peaks = new Map<ContextGrowthCurve, number>();
+  for (const candidate of candidates) {
+    peaks.set(candidate, Math.max(...candidate.points.map((p) => p.inputTokens)));
+  }
+  const trimmed = topK(
+    candidates,
+    CACHE_LAB_LIMITS.CONTEXT_MAX_CURVES,
+    (a, b) => (peaks.get(b) ?? 0) - (peaks.get(a) ?? 0),
+  );
   return {
     curves: trimmed,
     total,

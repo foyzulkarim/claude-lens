@@ -1,8 +1,6 @@
-import { useFilters } from "../../filters/useFilters.js";
 import { formatUnitValue } from "../../charts/units.js";
 import { EmptyState } from "../../components/EmptyState.js";
 import type { CacheLabAnalysis } from "../../../../shared/cache-lab-contract.js";
-import { useCacheLabAnalysis } from "./useCacheLabAnalysis.js";
 
 /**
  * Net cache-benefit panel (ARCH §T6 R3): "saved by cache vs. lost to
@@ -112,13 +110,4 @@ export function BustEconomicsPanel({
       )}
     </section>
   );
-}
-
-/** Section wrapper that owns its own analysis hook — convenient for
- * the page composition shell, but tests prefer to inject `data` and
- * assert section-local behavior. */
-export function BustEconomicsPanelWithHook() {
-  const { filters } = useFilters();
-  const query = useCacheLabAnalysis(filters, "day");
-  return <BustEconomicsPanel data={query.data} error={query.error} />;
 }

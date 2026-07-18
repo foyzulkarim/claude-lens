@@ -7,6 +7,7 @@ import {
   buildInvalidationCostOption,
   buildInvalidationCostTotalsOption,
   classifySpanSummary,
+  sumInvalidationCause,
 } from "./chart-options.js";
 import type { InvalidationCostPoint } from "../../../../shared/cache-lab-contract.js";
 
@@ -34,27 +35,14 @@ export function InvalidationCostPanel({
     [resolvedPoints],
   );
 
-  const summary = useMemo(() => {
-    const totalModelSwitch = resolvedPoints.reduce(
-      (sum, p) =>
-        sum +
-        (typeof p.modelSwitch === "number" && Number.isFinite(p.modelSwitch) ? p.modelSwitch : 0),
-      0,
-    );
-    const totalCompaction = resolvedPoints.reduce(
-      (sum, p) =>
-        sum +
-        (typeof p.compaction === "number" && Number.isFinite(p.compaction) ? p.compaction : 0),
-      0,
-    );
-    const totalUnexplained = resolvedPoints.reduce(
-      (sum, p) =>
-        sum +
-        (typeof p.unexplained === "number" && Number.isFinite(p.unexplained) ? p.unexplained : 0),
-      0,
-    );
-    return { totalModelSwitch, totalCompaction, totalUnexplained };
-  }, [resolvedPoints]);
+  const summary = useMemo(
+    () => ({
+      totalModelSwitch: sumInvalidationCause(resolvedPoints, "modelSwitch"),
+      totalCompaction: sumInvalidationCause(resolvedPoints, "compaction"),
+      totalUnexplained: sumInvalidationCause(resolvedPoints, "unexplained"),
+    }),
+    [resolvedPoints],
+  );
 
   const trendSummary = useMemo(
     () =>

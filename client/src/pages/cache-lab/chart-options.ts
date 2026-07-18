@@ -3,7 +3,6 @@ import type { GridComponentOption, TooltipComponentOption } from "echarts/compon
 import type { ComposeOption } from "echarts/core";
 import type {
   BaselinePoint,
-  ClassifiedCacheWrite,
   InvalidationCostPoint,
 } from "../../../../shared/cache-lab-contract.js";
 import { formatUnitValue } from "../../charts/units.js";
@@ -66,7 +65,8 @@ export function buildHitRateHistogramOption(
   return {
     tooltip: {
       trigger: "axis",
-      valueFormatter: (value) => (typeof value === "number" ? String(value) : String(value)),
+      valueFormatter: (value) =>
+        typeof value === "number" ? `${value} session${value === 1 ? "" : "s"}` : String(value),
     },
     xAxis: { type: "value", name: "Hit %" },
     yAxis: { type: "value", name: "Sessions" },
@@ -153,6 +153,19 @@ export function buildInvalidationCostOption(points: InvalidationCostPoint[]): Ca
   };
 }
 
+type InvalidationCause = "modelSwitch" | "compaction" | "unexplained";
+
+/** Sums one invalidation-cause column across trend points, ignoring non-finite values. */
+export function sumInvalidationCause(
+  points: InvalidationCostPoint[],
+  key: InvalidationCause,
+): number {
+  return points.reduce((total, p) => {
+    const v = p[key];
+    return total + (typeof v === "number" && Number.isFinite(v) ? v : 0);
+  }, 0);
+}
+
 /**
  * Total invalidation cost by cause — the "which K2 cause costs the
  * most over the period" summary. Reads the trend points and collapses
@@ -161,11 +174,7 @@ export function buildInvalidationCostOption(points: InvalidationCostPoint[]): Ca
 export function buildInvalidationCostTotalsOption(
   points: InvalidationCostPoint[],
 ): CacheLabChartOption {
-  const sum = (key: "modelSwitch" | "compaction" | "unexplained"): number =>
-    points.reduce((total, p) => {
-      const v = p[key];
-      return total + (typeof v === "number" && Number.isFinite(v) ? v : 0);
-    }, 0);
+  const sum = (key: InvalidationCause): number => sumInvalidationCause(points, key);
   return {
     tooltip: {
       trigger: "axis",
@@ -243,14 +252,4 @@ export function classifySpanSummary(points: { t: string; value: number | null }[
     }
   }
   return { total, finiteBuckets, firstT, lastT };
-}
-
-/**
- * Defensive helper used by panels to confirm a `ClassifiedCacheWrite[]`
- * is the page's actual response shape (not a payload from an older
- * server). Cheap O(n) check; panel tests use it to pin "T2 contract
- * honored" without spinning up the analyzer.
- */
-export function eventCount(events: ClassifiedCacheWrite[] | undefined): number {
-  return events?.length ?? 0;
 }
