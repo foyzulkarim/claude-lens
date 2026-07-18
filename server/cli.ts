@@ -5,6 +5,7 @@ import open from "open";
 import { buildApp } from "./app.js";
 import { resolveScanConfig } from "./ingest/discovery.js";
 import { startIngest } from "./ingest/pipeline.js";
+import { buildRuntimeMetadata } from "./runtime.js";
 import { createBroadcaster } from "./ws/broadcaster.js";
 
 const DEFAULT_PORT = 4128;
@@ -101,6 +102,15 @@ async function main() {
   const options = parseArgs(process.argv.slice(2));
   const candidatePort = await findAvailablePort(options.port ?? DEFAULT_PORT);
 
+  // Runtime metadata (ARCH T5): one PricingTable + one Pricer + one
+  // ContextResolver, built once here and threaded into both the ingest
+  // Store and the Fastify metrics route. Without this, the Store derived
+  // costComputed = 0 (no pricer injected) and the metrics route fell back
+  // to its own module-level default — the two halves could drift apart.
+  // #P4-15's Settings UI will call `buildRuntimeMetadata(overrides)` here
+  // and pass the user's overrides through unchanged.
+  const metadata = buildRuntimeMetadata();
+
   // The live wiring (#P3-1): the broadcaster is the fan-out seam shared by both
   // sides — ingest sends invalidations into it via `onInvalidate`, and the
   // `/ws` route (inside buildApp) registers connected sockets into it. It must
@@ -108,8 +118,8 @@ async function main() {
   // Store-construction time, before buildApp and any socket exists.
   const config = resolveScanConfig({ roots: options.roots });
   const broadcaster = createBroadcaster();
-  const ingest = startIngest(config, { onInvalidate: broadcaster.broadcast });
-  const app = buildApp({ store: ingest.store, broadcaster });
+  const ingest = startIngest(config, { onInvalidate: broadcaster.broadcast, metadata });
+  const app = buildApp({ store: ingest.store, broadcaster, metadata });
 
   // Ingest now holds real poller/tailer timers and open file handles; tear it
   // down on signals so Ctrl-C doesn't leak them. stop() is a hard boundary

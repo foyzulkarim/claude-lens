@@ -8,12 +8,25 @@ import {
   type MetricsQuery,
 } from "../../shared/metrics-contract.js";
 import { metrics } from "../metrics/engine.js";
-import { DEFAULT_PRICING_TABLE } from "../metrics/measures.js";
+import { DEFAULT_PRICING_TABLE, type PricingTable } from "../metrics/measures.js";
 import type { Store } from "../store/store.js";
 
 // routes/ may only import store/ for data (architecture §3) — the metrics/
 // engine is computation, not a data source, so it's fine to call directly.
 // This route never touches ingest/ or the filesystem.
+
+export interface RegisterMetricsRouteOptions {
+  /**
+   * Runtime pricing table (ARCH T5). The CLI builds one
+   * `RuntimeMetadata` and threads its `pricing` here so every
+   * `/api/metrics` request prices its calls identically to the way the
+   * ingest Store priced them on derivation — preventing the
+   * "store says $0, route says $0 from defaults, real catalog disagrees"
+   * drift that motivated T5. Optional: when omitted (e.g. legacy
+   * tests), falls back to `DEFAULT_PRICING_TABLE`.
+   */
+  pricing?: PricingTable;
+}
 
 const MEASURE_SET = new Set<Measure>(MEASURES);
 const DIMENSION_SET = new Set<Dimension>(DIMENSIONS);
@@ -92,7 +105,19 @@ export function parseMetricsQuery(body: unknown): MetricsQuery | string {
   return q as unknown as MetricsQuery;
 }
 
-export function registerMetricsRoute(app: FastifyInstance, store: Store): void {
+export function registerMetricsRoute(
+  app: FastifyInstance,
+  store: Store,
+  options: RegisterMetricsRouteOptions = {},
+): void {
+  // Resolve the runtime pricing once at registration time and close over it
+  // for every request — the H-risk seam from T5's spec. Importing
+  // `DEFAULT_PRICING_TABLE` here at request time would let a future
+  // Settings-driven override silently disagree with the table the Store
+  // used to derive `costComputed`, exactly the regression T5 is here to
+  // prevent.
+  const pricing = options.pricing ?? DEFAULT_PRICING_TABLE;
+
   app.post("/api/metrics", async (request, reply) => {
     const parsed = parseMetricsQuery(request.body);
     if (typeof parsed === "string") {
@@ -104,7 +129,7 @@ export function registerMetricsRoute(app: FastifyInstance, store: Store): void {
       calls: store.listCalls(),
       turns: store.listTurns(),
       sessions: store.listSessions(),
-      pricing: DEFAULT_PRICING_TABLE,
+      pricing,
     };
     return metrics(input, parsed);
   });
