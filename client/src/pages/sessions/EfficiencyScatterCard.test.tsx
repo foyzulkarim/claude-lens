@@ -97,6 +97,8 @@ describe("EfficiencyScatterCard — presets and interaction", () => {
     renderCard();
     await waitFor(() => expect(screen.getByText(/2 eligible of 2 matched/i)).toBeInTheDocument());
     expect(screen.getByText(/R² 0.900/i)).toBeInTheDocument();
+    expect(screen.getByText(/slope 1.000/i)).toBeInTheDocument();
+    expect(screen.getByRole("table", { name: /scatter points/i })).toBeInTheDocument();
   });
 
   it("discloses sampling when the population was capped", async () => {

@@ -137,10 +137,8 @@ export function indexSessionsByScope(
   calls: ApiCall[],
   turns: Turn[],
 ): Map<string, SessionScope> {
-  // Group calls by sessionId once. The session-derived turns array
-  // already carries its owning sessionId, so we filter that list per
-  // session — turn→call mapping is already maintained by
-  // `engine.ts`'s `buildCallToTurn`, and turns are far smaller than calls.
+  // Group both record collections by sessionId once. This keeps session
+  // analytics linear in the input size even for transcript-heavy stores.
   const callsBySession = new Map<string, ApiCall[]>();
   for (const call of calls) {
     const bucket = callsBySession.get(call.sessionId);
@@ -151,12 +149,22 @@ export function indexSessionsByScope(
     }
   }
 
+  const turnsBySession = new Map<string, Turn[]>();
+  for (const turn of turns) {
+    const bucket = turnsBySession.get(turn.sessionId);
+    if (bucket) {
+      bucket.push(turn);
+    } else {
+      turnsBySession.set(turn.sessionId, [turn]);
+    }
+  }
+
   const scopes = new Map<string, SessionScope>();
   for (const session of matched) {
     scopes.set(session.sessionId, {
       session,
       calls: callsBySession.get(session.sessionId) ?? [],
-      turns: turns.filter((turn) => turn.sessionId === session.sessionId),
+      turns: turnsBySession.get(session.sessionId) ?? [],
     });
   }
   return scopes;

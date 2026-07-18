@@ -183,11 +183,10 @@ export function parseMetricsQuery(body: unknown): MetricsQuery | string {
   }
   const q = body as Record<string, unknown>;
 
-  if (
-    !Array.isArray(q.measures) ||
-    q.measures.length === 0 ||
-    !q.measures.every((m) => MEASURE_SET.has(m as Measure))
-  ) {
+  if (!Array.isArray(q.measures) || q.measures.length === 0) {
+    return "measures must be a non-empty array of known Measure values";
+  }
+  if (q.mode !== "scatter" && !q.measures.every((m) => MEASURE_SET.has(m as Measure))) {
     return "measures must be a non-empty array of known Measure values";
   }
   if (
@@ -240,7 +239,30 @@ export function parseMetricsQuery(body: unknown): MetricsQuery | string {
     return parseScatterQueryFields(q);
   }
 
-  return q as unknown as MetricsQuery;
+  const filters = q.filters as MetricsQuery["filters"];
+  const base = {
+    measures: q.measures as Measure[],
+    dimensions: q.dimensions as Dimension[],
+    grain: q.grain as MetricsQuery["grain"],
+    range: q.range as MetricsQuery["range"],
+    ...(filters !== undefined ? { filters } : {}),
+  };
+  if (q.mode === "distribution") {
+    const sessionPopulation = parseSessionPopulationCriteria(q.sessionPopulation);
+    if (typeof sessionPopulation === "string") return sessionPopulation;
+    return {
+      ...base,
+      mode: "distribution",
+      distributionEntity: q.distributionEntity as "session" | "turn" | "call",
+      ...(q.sessionPopulation !== undefined ? { sessionPopulation } : {}),
+    };
+  }
+  return {
+    ...base,
+    mode: "series",
+    ...(q.compare === "previous-period" ? { compare: q.compare } : {}),
+    ...(q.smoothing === "ma7" || q.smoothing === "none" ? { smoothing: q.smoothing } : {}),
+  };
 }
 
 export function registerMetricsRoute(

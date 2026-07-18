@@ -77,6 +77,8 @@ describe("CostDistributionCard — histogram/percentile toggle over one result",
   it("renders the histogram view by default", async () => {
     renderCard();
     await waitFor(() => expect(screen.getByTestId("chart-stub")).toBeInTheDocument());
+    expect(screen.getByRole("table", { name: /cost histogram buckets/i })).toBeInTheDocument();
+    expect(screen.getByText("$0.00–$1.00")).toBeInTheDocument();
     // Only one postMetrics call regardless of the default view.
     expect(postMetricsMock).toHaveBeenCalledTimes(1);
   });

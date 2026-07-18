@@ -1,6 +1,6 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import clsx from "clsx";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { qk } from "../../api/queryKeys.js";
 import { postScatterMetrics } from "../../api/metrics.js";
 import { Chart } from "../../charts/Chart.js";
@@ -67,6 +67,7 @@ export function EfficiencyScatterCard({
     queryFn: ({ signal }) => postScatterMetrics(query, signal),
     placeholderData: keepPreviousData,
   });
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
 
   const option = useMemo(() => {
     if (!data) return null;
@@ -114,6 +115,12 @@ export function EfficiencyScatterCard({
           <Chart
             option={option}
             className="h-72 w-full"
+            onPointClick={(params) => {
+              const value = params.value;
+              if (Array.isArray(value) && typeof value[2] === "string") {
+                setSelectedSessionId(value[2]);
+              }
+            }}
             ariaLabel={
               data
                 ? `Scatter chart; ${data.population.eligible} eligible points; ${
@@ -131,7 +138,43 @@ export function EfficiencyScatterCard({
               {data.population.sampled
                 ? ` · sampled to ${data.population.returned} visual points`
                 : ""}
-              {data.regression ? ` · R² ${data.regression.rSquared.toFixed(3)}` : ""}
+              {data.regression
+                ? ` · slope ${data.regression.slope.toFixed(3)} · intercept ${data.regression.intercept.toFixed(3)} · R² ${data.regression.rSquared.toFixed(3)}`
+                : ""}
+            </p>
+          )}
+          {data && (
+            <table className="sr-only">
+              <caption>Scatter points. Activate a session to select its point.</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Session</th>
+                  <th scope="col">{MEASURE_LABEL[data.xMeasure]}</th>
+                  <th scope="col">{MEASURE_LABEL[data.yMeasure]}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.points.map((point) => (
+                  <tr key={point.sessionId}>
+                    <td>
+                      <button
+                        type="button"
+                        aria-pressed={selectedSessionId === point.sessionId}
+                        onClick={() => setSelectedSessionId(point.sessionId)}
+                      >
+                        {point.sessionId}
+                      </button>
+                    </td>
+                    <td>{point.x}</td>
+                    <td>{point.y}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {selectedSessionId && (
+            <p className="sr-only" aria-live="polite">
+              Selected point: {selectedSessionId}
             </p>
           )}
         </div>

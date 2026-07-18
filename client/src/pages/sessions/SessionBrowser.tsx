@@ -12,7 +12,7 @@ import { listSessionsPage } from "../../api/sessions.js";
 import { qk } from "../../api/queryKeys.js";
 import { DataTable } from "../../components/DataTable.js";
 import { EmptyState } from "../../components/EmptyState.js";
-import { formatUnitValue } from "../../charts/units.js";
+import { formatDuration, formatUnitValue } from "../../charts/units.js";
 import { useFilters } from "../../filters/useFilters.js";
 import { useStableNow } from "../dashboard/useStableNow.js";
 import { TOGGLE_ACTIVE_CLASS, TOGGLE_CLASS } from "../../ui/toggleStyles.js";
@@ -74,14 +74,6 @@ const pageColumns: ColumnDef<SessionPageItem, any>[] = [
     cell: (info) => (info.getValue() ? "Yes" : "—"),
   }),
 ];
-
-function formatDuration(ms: number): string {
-  if (!Number.isFinite(ms) || ms < 0) return "—";
-  const totalMinutes = Math.round(ms / 60_000);
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  return hours > 0 ? `${hours}h ${String(minutes).padStart(2, "0")}m` : `${minutes}m`;
-}
 
 /**
  * Sessions identity-oriented view (ARCH R3/R4/R8/R9/R11). Owns the

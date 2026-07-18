@@ -816,7 +816,7 @@ function handleSummaryRequest(
   parsed: SessionListParams,
   reply: import("fastify").FastifyReply,
   pricer: Pricer | undefined,
-): SessionListResponse {
+): SessionListResponse | { error: string } {
   const sort = parsed.sort ?? "lastAt";
   const order = parsed.order ?? "desc";
   const offset = parsed.offset ?? 0;
@@ -831,9 +831,7 @@ function handleSummaryRequest(
 
   if (parsed.include === "trace" && effectiveLimit > SESSIONS_TRACE_MAX_LIMIT) {
     reply.code(400);
-    return {
-      error: `include=trace requires limit <= ${SESSIONS_TRACE_MAX_LIMIT}`,
-    } as unknown as SessionListResponse;
+    return { error: `include=trace requires limit <= ${SESSIONS_TRACE_MAX_LIMIT}` };
   }
   if (limitCapped) {
     reply.header("x-sessions-limit-capped", String(SESSIONS_MAX_LIMIT));

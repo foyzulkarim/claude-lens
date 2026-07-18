@@ -148,10 +148,34 @@ export function CostDistributionCard({
       {/* Always render the semantic summary so screen-reader users hear
           the same numbers sighted users see in either view (ARCH R6). */}
       {dist && !isPending && (
-        <p className="sr-only" aria-live="polite">
-          p50 {formatUnitValue(dist.p50 ?? 0, "$")}, p90 {formatUnitValue(dist.p90 ?? 0, "$")}, p99{" "}
-          {formatUnitValue(dist.p99 ?? 0, "$")}, {points.length} sessions included.
-        </p>
+        <>
+          <p className="sr-only" aria-live="polite">
+            p50 {formatUnitValue(dist.p50 ?? 0, "$")}, p90 {formatUnitValue(dist.p90 ?? 0, "$")},
+            p99 {formatUnitValue(dist.p99 ?? 0, "$")}, {points.length} sessions included.
+          </p>
+          {state.distributionView === "histogram" && (
+            <table className="sr-only">
+              <caption>Cost histogram buckets</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Cost range</th>
+                  <th scope="col">Sessions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dist.histogram.map((bucket) => (
+                  <tr key={`${bucket.rangeStart}-${bucket.rangeEnd}`}>
+                    <td>
+                      {formatUnitValue(bucket.rangeStart, "$")}–
+                      {formatUnitValue(bucket.rangeEnd, "$")}
+                    </td>
+                    <td>{bucket.count}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </>
       )}
     </section>
   );

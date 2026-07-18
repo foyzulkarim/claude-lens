@@ -3,7 +3,7 @@ import type { SessionPageItem } from "../../../../shared/sessions-contract.js";
 import { listSessionsPage } from "../../api/sessions.js";
 import { qk } from "../../api/queryKeys.js";
 import { EmptyState } from "../../components/EmptyState.js";
-import { formatUnitValue } from "../../charts/units.js";
+import { formatDuration, formatUnitValue } from "../../charts/units.js";
 import { useFilters } from "../../filters/useFilters.js";
 import { useStableNow } from "../dashboard/useStableNow.js";
 import { type SessionsPageState, buildListQuery } from "./state.js";
@@ -41,14 +41,6 @@ const COMPARE_FIELDS: CompareField[] = [
     resolve: (i) => (i.costObserved === undefined ? "—" : formatUnitValue(i.costObserved, "$")),
   },
 ];
-
-function formatDuration(ms: number): string {
-  if (!Number.isFinite(ms) || ms < 0) return "—";
-  const totalMinutes = Math.round(ms / 60_000);
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  return hours > 0 ? `${hours}h ${String(minutes).padStart(2, "0")}m` : `${minutes}m`;
-}
 
 /**
  * Compare panel for the Sessions page (ARCH R7 / R10). Hydrates up to

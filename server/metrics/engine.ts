@@ -19,7 +19,7 @@ import {
 import { alignPreviousPeriod, computeDistribution, movingAverage7 } from "./distributions.js";
 import { bucketStart, enumerateBuckets } from "./grain.js";
 import { computeMeasure, type MeasureScope, type PricingTable } from "./measures.js";
-import { indexSessionsByScope, type SessionScope } from "./session-population.js";
+import { indexSessionsByScope, matchSession, type SessionScope } from "./session-population.js";
 
 // engine.ts is the only file in metrics/ that composes grain.ts/dimensions.ts/
 // measures.ts/distributions.ts. It takes plain arrays, never a live Store
@@ -343,10 +343,16 @@ function buildSessionScopeIndex(
   input: MetricsInput,
   rangeFromMs: number,
   rangeToMs: number,
+  criteria?: DistributionMetricsQuery["sessionPopulation"],
 ): Map<string, SessionScope> {
   const matched = input.sessions.filter((session) => {
     const firstMs = Date.parse(session.firstAt);
-    return Number.isFinite(firstMs) && firstMs >= rangeFromMs && firstMs <= rangeToMs;
+    return (
+      Number.isFinite(firstMs) &&
+      firstMs >= rangeFromMs &&
+      firstMs <= rangeToMs &&
+      (criteria === undefined || matchSession(session, criteria))
+    );
   });
   return indexSessionsByScope(matched, input.calls, input.turns);
 }
@@ -362,7 +368,7 @@ function computeDistributionSeries(input: MetricsInput, query: DistributionMetri
   // unchanged from the legacy per-session filter.
   const sessionIndex =
     query.distributionEntity === "session"
-      ? buildSessionScopeIndex(input, rangeFromMs, rangeToMs)
+      ? buildSessionScopeIndex(input, rangeFromMs, rangeToMs, query.sessionPopulation)
       : null;
 
   const series: Series[] = [];
