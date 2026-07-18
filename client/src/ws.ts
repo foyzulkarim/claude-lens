@@ -51,11 +51,17 @@ export function invalidateForMessage(queryClient: QueryClient, message: WsServer
       queryClient.invalidateQueries();
       return;
     case "session-added":
+      // Aggregate metrics shift (a new session contributes to the spend /
+      // turn-count series) and the session list itself is stale by
+      // definition — invalidate both prefixes so every card refetches
+      // without the page needing to thread its own subscriptions.
       queryClient.invalidateQueries({ queryKey: qk.prefixes.metrics });
+      queryClient.invalidateQueries({ queryKey: qk.prefixes.sessions });
       return;
     case "session-updated":
       queryClient.invalidateQueries({ queryKey: qk.prefixes.metrics });
       queryClient.invalidateQueries({ queryKey: qk.prefixes.session(message.sessionId) });
+      queryClient.invalidateQueries({ queryKey: qk.prefixes.sessions });
       return;
     default: {
       // Exhaustive check: a future 4th WsServerMessage variant fails
