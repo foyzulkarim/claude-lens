@@ -5,6 +5,8 @@ import fastifyStatic from "@fastify/static";
 import fastifyWebsocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from "fastify";
 import { registerMetricsRoute } from "./routes/metrics.js";
+import { registerSessionsRoute } from "./routes/sessions.js";
+import type { RuntimeMetadata } from "./runtime.js";
 import type { Store } from "./store/store.js";
 import { type Broadcaster, createBroadcaster } from "./ws/broadcaster.js";
 
@@ -42,6 +44,16 @@ export interface BuildAppOptions {
    */
   broadcaster?: Broadcaster;
   /**
+   * Runtime pricing + context metadata (ARCH T5). When provided, the
+   * metrics route uses this `pricing` table instead of importing the
+   * module-level default at request time — so derived sessions and
+   * `/api/metrics` aggregations can never disagree about prices. Optional
+   * for backward compatibility: existing `buildApp({ store })` callers
+   * (route tests that don't care about pricing) keep their default
+   * behavior.
+   */
+  metadata?: RuntimeMetadata;
+  /**
    * Override the server logger. Defaults to a pino-pretty transport for the
    * CLI; pass `false` in tests to skip it — each pretty transport spawns a
    * worker thread and registers a persistent `process` exit listener, which
@@ -53,6 +65,7 @@ export interface BuildAppOptions {
 export function buildApp({
   store,
   broadcaster = createBroadcaster(),
+  metadata,
   logger,
 }: BuildAppOptions): FastifyInstance {
   const app = Fastify({
@@ -72,7 +85,13 @@ export function buildApp({
 
   app.get("/api/ping", async () => ({ ok: true }));
 
-  registerMetricsRoute(app, store);
+  registerMetricsRoute(app, store, metadata?.pricing ? { pricing: metadata.pricing } : undefined);
+
+  registerSessionsRoute(
+    app,
+    store,
+    metadata ? { pricing: metadata.pricing, pricer: metadata.pricer } : undefined,
+  );
 
   app.register(async (instance) => {
     instance.get(

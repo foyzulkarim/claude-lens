@@ -9,8 +9,14 @@ import type { Grain, Series, SeriesMetricsQuery } from "../../../shared/metrics-
 import { postMetrics } from "../api/metrics.js";
 import { qk } from "../api/queryKeys.js";
 import { DataTable } from "../components/DataTable.js";
-import { filtersToQuery, serializeFilters } from "../filters/state.js";
+import {
+  type ChipDimension,
+  type FilterState,
+  filtersToQuery,
+  serializeFilters,
+} from "../filters/state.js";
 import { useFilters } from "../filters/useFilters.js";
+import { useStableNow } from "../pages/dashboard/useStableNow.js";
 import { TOGGLE_ACTIVE_CLASS, TOGGLE_CLASS } from "../ui/toggleStyles.js";
 import { Chart } from "./Chart.js";
 import { buildTimeseriesOption } from "./timeseries.js";
@@ -78,11 +84,32 @@ function bucketEnd(timestamp: string, grain: Grain): string {
 }
 
 /** Shared by the canvas click handler and the data table's row action so
- * both interaction paths land on the identical filtered Sessions URL. */
-function sessionsHrefForBucket(timestamp: string, grain: Grain): string {
+ * both interaction paths land on the identical filtered Sessions URL.
+ * Preserves active categorical filters (project/model/branch/host chips)
+ * and replaces the global date range with the clicked bucket's [from, to].
+ * Single-day buckets drill to from = to = dayStart. */
+function sessionsHrefForBucket(timestamp: string, grain: Grain, filters: FilterState): string {
+  const params = new URLSearchParams();
+
+  // Preserve categorical chip filters
+  const chipDimensions: ChipDimension[] = ["project", "model", "branch", "host"];
+  for (const chip of chipDimensions) {
+    if (filters[chip].length > 0) {
+      params.set(chip, [...filters[chip]].sort().join(","));
+    }
+  }
+
+  // Replace date range with the bucket's boundaries
   const from = timestamp;
-  const to = bucketEnd(timestamp, grain);
-  return `/sessions?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+  // Single-day buckets drill to from = to = dayStart (drill to a point, not
+  // a range). For other grains the bucket spans [from, to) where to is the
+  // next bucket's start.
+  const to = grain === "day" ? from : bucketEnd(timestamp, grain);
+
+  params.set("from", from);
+  params.set("to", to);
+
+  return `/sessions?${params.toString()}`;
 }
 
 function sumSeriesValues(series: Series[]): number {
@@ -233,6 +260,8 @@ function buildBucketColumns(
 export interface ChartCardProps {
   title: string;
   defaultUnit: Unit;
+  /** Injection seam for stories/tests; defaults to the real current time. */
+  now?: Date;
 }
 
 /**
@@ -243,10 +272,15 @@ export interface ChartCardProps {
  * toolbar + `<Chart>`. Controls are local `useState`, not URL state
  * (decision A4) — per-widget display prefs, not shareable filter state.
  */
-export function ChartCard({ title, defaultUnit }: ChartCardProps) {
+export function ChartCard({ title, defaultUnit, now: injectedNow }: ChartCardProps) {
   const { filters } = useFilters();
   const [, navigate] = useLocation();
   const filtersKey = serializeFilters(filters);
+  // Keep `now` stable across query-driven renders (a fresh Date in the
+  // memo below would churn the query key on every render and create a
+  // continuous POST /api/metrics loop) while still ticking on its own
+  // cadence — same fix as BurnRateCard/SubscriptionWindow (review #4).
+  const now = useStableNow(injectedNow);
 
   const [unit, setUnit] = useState<Unit>(defaultUnit);
   const [family, setFamily] = useState<Family>("area");
@@ -259,22 +293,23 @@ export function ChartCard({ title, defaultUnit }: ChartCardProps) {
   const dataTableId = useId();
 
   // Memoized on filtersKey + the query-affecting control primitives — never
-  // on a fresh object — so unrelated re-renders (e.g. `family`, which only
-  // changes the rendered option, not the fetched data) don't change the
-  // query's identity and trigger a spurious refetch (same pitfall
-  // Dashboard.tsx's previous inline logic documented; ARCH-react-shell.md
-  // Open Question).
+  // on a fresh object — so unrelated re-renders (e.g. opening the data
+  // table) don't change the query's identity and trigger a spurious
+  // refetch (same pitfall Dashboard.tsx's previous inline logic
+  // documented; ARCH-react-shell.md Open Question). `family` (area/bars)
+  // is a display-only toggle and must not affect `dimensions` — both need
+  // one point per time bucket from the engine, so both request ["time"].
   // biome-ignore lint/correctness/useExhaustiveDependencies: filters is covered by its stable serialized identity (filtersKey)
   const query = useMemo<SeriesMetricsQuery>(
     () => ({
       measures: UNIT_MEASURES[unit],
-      dimensions: [],
+      dimensions: ["time"],
       grain,
-      ...filtersToQuery(filters, new Date()),
+      ...filtersToQuery(filters, now),
       ...(compare ? { compare: "previous-period" as const } : {}),
       ...(smoothing ? { smoothing: "ma7" as const } : {}),
     }),
-    [filtersKey, unit, grain, compare, smoothing],
+    [filtersKey, unit, grain, compare, smoothing, now],
   );
 
   const { data, isPending, isError, error } = useQuery({
@@ -325,9 +360,9 @@ export function ChartCard({ title, defaultUnit }: ChartCardProps) {
       const value = params.value;
       const timestamp = Array.isArray(value) ? value[0] : undefined;
       if (typeof timestamp !== "string") return;
-      navigate(sessionsHrefForBucket(timestamp, grain));
+      navigate(sessionsHrefForBucket(timestamp, grain, filters));
     },
-    [grain, navigate],
+    [grain, navigate, filters],
   );
 
   // Keyboard-operable twin of `handlePointClick` — reuses the exact same
@@ -335,9 +370,9 @@ export function ChartCard({ title, defaultUnit }: ChartCardProps) {
   // canvas point always resolve to the same filtered Sessions URL (#84 A11Y-2).
   const handleRowClick = useCallback(
     (row: BucketRow): void => {
-      navigate(sessionsHrefForBucket(row.t, grain));
+      navigate(sessionsHrefForBucket(row.t, grain, filters));
     },
-    [grain, navigate],
+    [grain, navigate, filters],
   );
 
   return (

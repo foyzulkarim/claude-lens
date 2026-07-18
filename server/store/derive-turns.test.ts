@@ -140,3 +140,141 @@ describe("deriveTurns — fixture-driven", () => {
     expect(turn2?.calls.map((c) => c.messageId)).toEqual(["m2"]);
   });
 });
+describe("deriveTurns — errorToolResults aggregation", () => {
+  function makeCall(messageId: string, sessionId = "s1"): import("../../shared/types.js").ApiCall {
+    return {
+      uuid: `u-${messageId}`,
+      sessionId,
+      messageId,
+      timestamp: "2026-07-13T00:00:00.000Z",
+      model: "claude-sonnet-5",
+      usage: { inputTokens: 100, outputTokens: 50, cacheReadTokens: 0, cacheCreateTokens: 0 },
+      isSidechain: false,
+      tools: [],
+      cwd: "/repo",
+      gitBranch: "main",
+      version: "1.0.0",
+      entrypoint: "cli",
+    };
+  }
+
+  function makePrompt(promptId: string, sessionId = "s1") {
+    return {
+      sessionId,
+      promptId,
+      text: `prompt ${promptId}`,
+      timestamp: "2026-07-13T00:00:00.000Z",
+    };
+  }
+
+  function makeToolResult(promptId: string, toolUseId: string, isError: boolean) {
+    return {
+      sessionId: "s1",
+      promptId,
+      toolUseId,
+      bytes: 100,
+      isError,
+    };
+  }
+
+  it("aggregates failed tool results per Turn", () => {
+    const calls = [makeCall("m1")];
+    const prompts = [makePrompt("p1")];
+    const toolResults = [
+      makeToolResult("p1", "t1", false),
+      makeToolResult("p1", "t2", true),
+      makeToolResult("p1", "t3", true),
+    ];
+
+    const turns = deriveTurns(calls, prompts, toolResults);
+    expect(turns).toHaveLength(1);
+    expect(turns[0].errorToolResults).toBe(2);
+  });
+
+  it("returns 0 errorToolResults when no tool results are errored", () => {
+    const calls = [makeCall("m1")];
+    const prompts = [makePrompt("p1")];
+    const toolResults = [makeToolResult("p1", "t1", false), makeToolResult("p1", "t2", false)];
+
+    const turns = deriveTurns(calls, prompts, toolResults);
+    expect(turns[0].errorToolResults).toBe(0);
+  });
+
+  it("returns 0 errorToolResults for a turn with no tool results at all", () => {
+    const calls = [makeCall("m1")];
+    const prompts = [makePrompt("p1")];
+
+    const turns = deriveTurns(calls, prompts, []);
+    expect(turns[0].errorToolResults).toBe(0);
+  });
+
+  it("missing isError field defaults to false", () => {
+    const calls = [makeCall("m1")];
+    const prompts = [makePrompt("p1")];
+    const toolResults = [
+      {
+        sessionId: "s1",
+        promptId: "p1",
+        toolUseId: "t1",
+        bytes: 50,
+      } as import("../ingest/parse-transcript.js").ToolResultBytesRecord,
+    ];
+
+    const turns = deriveTurns(calls, prompts, toolResults);
+    expect(turns[0].errorToolResults).toBe(0);
+  });
+
+  it("does not count errored tool results from other prompts", () => {
+    const calls = [makeCall("m1")];
+    const prompts = [makePrompt("p1")];
+    const toolResults = [makeToolResult("p2", "t1", true), makeToolResult("p1", "t2", false)];
+
+    const turns = deriveTurns(calls, prompts, toolResults);
+    expect(turns[0].errorToolResults).toBe(0);
+  });
+
+  it("does not leak sidechain tool_result bytes/errors into the main thread turn (review #3)", () => {
+    // Regression for review finding #3: a sub-agent's tool_result records
+    // share the parent's `promptId` (Agent-tool convention), so bucketing by
+    // promptId alone would silently fold sub-agent bytes/errors into the
+    // main turn's toolResultBytes/errorToolResults. The fix keys by
+    // `${promptId}::${main|side}` so each side gets its own bucket.
+    const calls = [
+      { ...makeCall("m1"), isSidechain: false, timestamp: "2026-07-13T00:00:01.000Z" },
+      { ...makeCall("m2"), isSidechain: true, timestamp: "2026-07-13T00:00:02.000Z" },
+    ];
+    const prompts = [makePrompt("p1")];
+    const toolResults = [
+      { ...makeToolResult("p1", "t-main", true), isSidechain: false, bytes: 100 }, // main: 1 error, 100 bytes
+      { ...makeToolResult("p1", "t-side", true), isSidechain: true, bytes: 999 }, // sidechain: 1 error, 999 bytes
+    ];
+
+    const turns = deriveTurns(calls, prompts, toolResults);
+    expect(turns).toHaveLength(2);
+    const mainTurn = turns.find((t) => !t.isSidechain);
+    const sideTurn = turns.find((t) => t.isSidechain);
+    // Pre-fix: both bytes/errors were attributed to the main turn via
+    // `acc.isSidechain ? 0 : map.get(promptId)`. Post-fix: each turn reads
+    // its own bucket.
+    expect(mainTurn?.toolResultBytes).toBe(100);
+    expect(mainTurn?.errorToolResults).toBe(1);
+    expect(sideTurn?.toolResultBytes).toBe(999);
+    expect(sideTurn?.errorToolResults).toBe(1);
+  });
+
+  it("treats a tool_result record without isSidechain as a main-thread record (default)", () => {
+    // Backwards-compat guard for any existing fixture or pre-fix data that
+    // produced records without the new field — bucketing must default to
+    // "main" so existing test fixtures (and live data ingested before the
+    // field was populated) don't suddenly read as 0 bytes.
+    const calls = [makeCall("m1")];
+    const prompts = [makePrompt("p1")];
+    const toolResults = [{ ...makeToolResult("p1", "t1", false) }];
+    // Deliberately omit isSidechain to mimic a pre-fix record shape.
+    delete (toolResults[0] as { isSidechain?: boolean }).isSidechain;
+
+    const turns = deriveTurns(calls, prompts, toolResults);
+    expect(turns[0].toolResultBytes).toBe(100);
+    expect(turns[0].errorToolResults).toBe(0);
+  });
+});

@@ -7,6 +7,13 @@ export default defineConfig({
     baseUrl: process.env.CLAUDE_LENS_E2E_BASE_URL,
     specPattern: "cypress/e2e/**/*.cy.ts",
     supportFile: false,
+    // Review #17: 10s default command timeout. The previous 4s default
+    // timed out `cy.injectAxe()` reading `node_modules/axe-core/axe.min.js`
+    // (a ~250KB file) on cold disk-cache runs. Bumping to 10s leaves headroom
+    // for axe injection while keeping the suite responsive on the happy
+    // path — individual `should(...)` calls override this when they need
+    // longer (e.g. polling for an async render).
+    defaultCommandTimeout: 10_000,
     setupNodeEvents(on) {
       on("task", { appendJsonl });
       // Cypress's built-in webpack preprocessor currently relies on

@@ -36,3 +36,6 @@ client/storybook-static/
 
 # Cypress failure artifacts
 cypress/screenshots/
+
+# Playwright MCP session artifacts (local debugging only)
+.playwright-mcp/

@@ -29,7 +29,10 @@ export type Measure =
   | "apiMs"
   | "linesAdded"
   | "linesRemoved"
-  | "gatePassRate";
+  | "gatePassRate"
+  | "toolErrors"
+  | "cacheSavingsComputed"
+  | "routingSavingsComputed";
 
 export const MEASURES = exhaustiveArray<Measure>()([
   "costComputed",
@@ -48,6 +51,9 @@ export const MEASURES = exhaustiveArray<Measure>()([
   "linesAdded",
   "linesRemoved",
   "gatePassRate",
+  "toolErrors",
+  "cacheSavingsComputed",
+  "routingSavingsComputed",
 ]);
 
 export type Dimension =

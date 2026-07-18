@@ -1,4 +1,7 @@
 import type { ApiCall, Session, TierFlags, TokenUsage, Turn } from "../../shared/types.js";
+import type { PricingTable } from "../metrics/measures.js";
+import { priceCall, uncachedPrice } from "../metrics/measures.js";
+import { resolveContextWindow } from "../metrics/model-metadata.js";
 import { addUsage, emptyUsage } from "./token-usage.js";
 
 // Per-session tier detection (architecture §4): which sidecar files exist for
@@ -11,10 +14,13 @@ export interface SessionSidecarFlags {
   hasCostLog: boolean;
 }
 
-// Pricing ships in #P2-8 (decisions log, 2026-07-06). Until it's injected,
-// costComputed is 0 rather than fabricated — a session with real usage and
-// $0 cost is a visible, honest "not priced yet" state, not silently wrong.
+// Pricing ships in #P2-8. Until it's injected, costComputed is 0 rather than
+// fabricated — a session with real usage and $0 cost is a visible, honest
+// "not priced yet" state, not silently wrong.
 export type Pricer = (usage: TokenUsage, model: string) => number;
+
+/** Resolves the context window (in tokens) for a model, or null if unknown. */
+export type ContextResolver = (model: string) => number | null;
 
 export function deriveSession(
   sessionId: string,
@@ -22,6 +28,8 @@ export function deriveSession(
   turns: Turn[],
   sidecars: SessionSidecarFlags,
   pricer?: Pricer,
+  pricing?: PricingTable,
+  contextResolver?: ContextResolver,
 ): Session {
   const usage = emptyUsage();
   const models = new Set<string>();
@@ -38,14 +46,69 @@ export function deriveSession(
     if (call.model) models.add(call.model);
     if (firstAt === "" || call.timestamp < firstAt) firstAt = call.timestamp;
     if (lastAt === "" || call.timestamp > lastAt) lastAt = call.timestamp;
-    // Host/machine is not in any file (architecture §4) — cwd/gitBranch/version/
-    // entrypoint come from calls, last-write-wins across a session is fine since
-    // they rarely change mid-session and this is a fallback when they don't.
     if (call.cwd) project = call.cwd;
     if (call.entrypoint) entrypoint = call.entrypoint;
     if (call.gitBranch) gitBranch = call.gitBranch;
     if (call.version) version = call.version;
     if (pricer) costComputed += pricer(call.usage, call.model);
+  }
+
+  // cacheSavingsComputed = sum over calls of (uncached cost - actual cost).
+  // Unpriced model → treat as $0 savings (honest unknown).
+  let cacheSavingsComputed = 0;
+  let hasUnpricedModel = false;
+  if (pricing) {
+    for (const call of calls) {
+      const uncached = uncachedPrice(call, pricing);
+      if (uncached === null) {
+        hasUnpricedModel = true;
+        break;
+      }
+      const actual = priceCall(call, pricing);
+      cacheSavingsComputed += uncached - actual;
+    }
+    if (hasUnpricedModel) cacheSavingsComputed = 0;
+  }
+
+  // maxTurnCostComputed: max per-turn cost across all turns.
+  let maxTurnCostComputed = 0;
+  if (pricer) {
+    for (const turn of turns) {
+      let turnCost = 0;
+      for (const call of turn.calls) {
+        turnCost += pricer(call.usage, call.model);
+      }
+      if (turnCost > maxTurnCostComputed) {
+        maxTurnCostComputed = turnCost;
+      }
+    }
+  }
+
+  // contextPctEstimated: that of the LAST CALL (by timestamp) over its own
+  // model's context window. Review #12 / CQ5: pre-fix used the last turn's
+  // aggregate `usage` (summed across every call in that turn), which in a
+  // tool-loop turn double-counts overlapping token usage and clamps healthy
+  // contexts at 100%. Using that single call's own usage against its own
+  // model window is the documented intent. We pick the latest by timestamp
+  // (not array position) so an out-of-order derive input — e.g. one from a
+  // warm-cache reconstruction or a partial tail — still resolves to the
+  // correct most-recent call.
+  let contextPctEstimated: number | undefined;
+  let latestCall: ApiCall | undefined;
+  for (const call of calls) {
+    if (!latestCall || call.timestamp > latestCall.timestamp) {
+      latestCall = call;
+    }
+  }
+  if (latestCall) {
+    const ctxWindow = contextResolver
+      ? contextResolver(latestCall.model)
+      : resolveContextWindow(latestCall.model);
+    if (ctxWindow !== null) {
+      const { inputTokens, outputTokens, cacheReadTokens, cacheCreateTokens } = latestCall.usage;
+      const total = inputTokens + outputTokens + cacheReadTokens + cacheCreateTokens;
+      contextPctEstimated = Math.min(1, Math.max(0, total / ctxWindow));
+    }
   }
 
   const cacheEligible = usage.inputTokens + usage.cacheReadTokens + usage.cacheCreateTokens;
@@ -72,11 +135,29 @@ export function deriveSession(
     tier,
     firstAt,
     lastAt,
+    // Synthetic host (review #13): the metrics engine synthesizes "default"
+    // for every scope today (server/metrics/dimensions.ts). Mirror that
+    // constant here so `/api/sessions?host=foo` agrees with `/api/metrics`
+    // — pre-fix the route accepted `host` but never projected it, so the
+    // same chip returned every session from sessions and none from metrics.
+    // Replace with the real `call.host` field once per-host capture lands.
+    host: "default",
     usage,
     turnCount: turns.length,
     callCount: calls.length,
     costComputed,
     cacheHitPct,
     durationMs,
+    // Optional fields: key the "unavailable" sentinel off pricing/pricer
+    // presence, NOT off whether the value happens to be > 0 (review #2). A
+    // fully-priced session with genuinely zero cache savings is a real
+    // measured fact and must round-trip as `0`, not be silently rewritten
+    // to "unavailable" — the project invariant is "0 means measured zero,
+    // undefined means unavailable", and conflating the two would make a
+    // priced session indistinguishable from one where pricing was never
+    // wired up.
+    cacheSavingsComputed: pricing ? cacheSavingsComputed : undefined,
+    maxTurnCostComputed: pricer ? maxTurnCostComputed : undefined,
+    contextPctEstimated,
   };
 }

@@ -37,16 +37,56 @@ describe("invalidateForMessage", () => {
     const queryClient = new QueryClient();
     const spy = vi.spyOn(queryClient, "invalidateQueries");
     invalidateForMessage(queryClient, { type: "session-added", sessionId: "s1" });
-    expect(spy).toHaveBeenCalledExactlyOnceWith({ queryKey: ["metrics"] });
+    // Aggregate metrics shift + the sessions list itself is stale — both
+    // prefixes invalidated in one go (ARCH T7, A12).
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["metrics"] });
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["sessions"] });
+    expect(spy).toHaveBeenCalledTimes(2);
   });
 
-  it("invalidates metrics and the session prefix on session-updated", () => {
+  it("invalidates the sessions prefix on session-added", () => {
+    const queryClient = new QueryClient();
+    const spy = vi.spyOn(queryClient, "invalidateQueries");
+    invalidateForMessage(queryClient, { type: "session-added", sessionId: "s1" });
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["sessions"] });
+  });
+
+  it("invalidates metrics, the session prefix, AND the sessions prefix on session-updated", () => {
     const queryClient = new QueryClient();
     const spy = vi.spyOn(queryClient, "invalidateQueries");
     invalidateForMessage(queryClient, { type: "session-updated", sessionId: "s1" });
     expect(spy).toHaveBeenNthCalledWith(1, { queryKey: ["metrics"] });
     expect(spy).toHaveBeenNthCalledWith(2, { queryKey: ["session", "s1"] });
-    expect(spy).toHaveBeenCalledTimes(2);
+    expect(spy).toHaveBeenNthCalledWith(3, { queryKey: ["sessions"] });
+    expect(spy).toHaveBeenCalledTimes(3);
+  });
+
+  it("invalidates the sessions prefix on session-updated", () => {
+    const queryClient = new QueryClient();
+    const spy = vi.spyOn(queryClient, "invalidateQueries");
+    invalidateForMessage(queryClient, { type: "session-updated", sessionId: "s1" });
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["sessions"] });
+  });
+
+  it("does not invalidate the sessions prefix for non-session messages", () => {
+    // Separation of concerns — only session-added / session-updated touch
+    // the sessions prefix; scan-updated takes the all-queries path (no
+    // prefix filter). A hypothetical future message that falls through the
+    // exhaustive switch must NOT silently widen its scope to sessions.
+    const queryClient = new QueryClient();
+    const spy = vi.spyOn(queryClient, "invalidateQueries");
+
+    // scan-updated: invalidateQueries() with no args (matches everything,
+    // including sessions), but it's NOT a prefix-targeted invalidation.
+    invalidateForMessage(queryClient, { type: "scan-updated" });
+    expect(spy).toHaveBeenCalledExactlyOnceWith();
+
+    // Unrecognized future message: switch's default branch logs and drops.
+    spy.mockClear();
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    invalidateForMessage(queryClient, { type: "future-message" } as unknown as WsServerMessage);
+    expect(spy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
   });
 
   it("warns and does nothing for an unrecognized message type", () => {
@@ -93,7 +133,13 @@ describe("connectWs", () => {
     connectWs(queryClient, { url: "ws://test/ws", createSocket });
     sockets[0].onmessage?.({ data: JSON.stringify({ type: "session-added", sessionId: "s1" }) });
 
-    expect(spy).toHaveBeenCalledExactlyOnceWith({ queryKey: ["metrics"] });
+    // A single inbound `session-added` message triggers both metrics- and
+    // sessions-prefix invalidations (aggregate metrics + the list itself
+    // are stale). The router passes both through; this test guards the
+    // connectWs→onmessage→invalidateForMessage wiring, not the prefix set.
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["metrics"] });
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["sessions"] });
+    expect(spy).toHaveBeenCalledTimes(2);
   });
 
   it("ignores malformed frames without throwing", () => {

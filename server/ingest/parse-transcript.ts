@@ -16,6 +16,16 @@ export interface ToolResultBytesRecord {
   promptId: string;
   toolUseId: string;
   bytes: number;
+  /** True when the tool reported a failure (is_error flag or non-zero exit code in Bash output). */
+  isError: boolean;
+  /**
+   * Whether this tool_result belongs to a sidechain (sub-agent) turn.
+   * Sub-agent tool_result lines share the parent's `promptId` (per the
+   * `derive-turns` convention) so without this field bytes/errors would
+   * silently fold into the main thread's toolResultBytes/errorToolResults
+   * (review finding #3). Defaults to `false` for fixture compatibility.
+   */
+  isSidechain?: boolean;
 }
 
 export type ParsedLine =
@@ -77,6 +87,12 @@ interface RawUserLine {
   sessionId?: unknown;
   promptId?: unknown;
   timestamp?: unknown;
+  /** Present on tool_result lines from sub-agent (Agent tool) turns —
+   * mirrors RawAssistantLine's `isSidechain` field and lets the downstream
+   * turn derivation split main-thread vs sidechain tool_result attribution
+   * (review #3: otherwise sidechain bytes/errors silently inflate the
+   * parent's FailedWork/Records numbers). */
+  isSidechain?: unknown;
   message?: { content?: unknown };
 }
 
@@ -100,7 +116,35 @@ function toOptionalNum(value: unknown): number | undefined {
   return typeof value === "number" ? value : undefined;
 }
 
-function parseAssistantLine(line: RawAssistantLine): ParsedLine {
+// Detects non-zero exit codes in Bash tool-result text. The pre-fix regex
+// was greedy and matched "exit code 0; copied 1 file" as a failure (the [1-9]
+// exclusion didn't help because the regex engine backtracks). The new regex
+// is anchored to the *adjacent* signed integer — there can be at most a
+// `"`/`'` separator (for JSON-style `{"exit_code": 5}` payloads), then
+// optional whitespace, an optional `:`/`=` separator, then the number
+// immediately. Specifically:
+//   "exit code 1" / "exit_code: -2" / "exit code = 0; copied 1 file"
+//                                                ^^^^^ rejects trailing digits
+// Review #11 / CQ4.
+const FAILED_EXIT_RE =
+  /["']?(?:exit[ _]code|exit_code|returned\s+exit\s+code)["']?\s*[:=]?\s*-?\d+/i;
+
+/** Returns the integer the regex matched, or null if no exit code is
+ * present. Review #11: this lets us compare with zero rather than treating
+ * the mere presence of a digit as failure. */
+function extractExitCode(text: string): number | null {
+  const match = text.match(FAILED_EXIT_RE);
+  if (!match) return null;
+  const numeric = match[0].match(/-?\d+/);
+  if (!numeric) return null;
+  const n = Number(numeric[0]);
+  return Number.isFinite(n) ? n : null;
+}
+
+function parseAssistantLine(
+  line: RawAssistantLine,
+  toolNameByToolUseId: Map<string, string>,
+): ParsedLine {
   const message = line.message;
   const messageId = message?.id;
   if (!message || typeof messageId !== "string") {
@@ -116,8 +160,18 @@ function parseAssistantLine(line: RawAssistantLine): ParsedLine {
   if (Array.isArray(content)) {
     for (const block of content) {
       if (isRecord(block) && block.type === "tool_use") {
+        const id = toStr(block.id);
+        const name = toStr(block.name);
+        if (id !== "") {
+          // Record toolUseId → tool name so subsequent tool_result blocks
+          // (which arrive in user-type lines, not assistant) can look up
+          // the originating tool and apply tool-specific error rules
+          // (review #11 / CQ4).
+          toolNameByToolUseId.set(id, name);
+        }
         tools.push({
-          name: toStr(block.name),
+          name,
+          id: id !== "" ? id : undefined,
           inputBytes: Buffer.byteLength(JSON.stringify(block.input ?? {}), "utf8"),
         });
       }
@@ -156,7 +210,7 @@ function parseAssistantLine(line: RawAssistantLine): ParsedLine {
   return { kind: "call", call };
 }
 
-function parseUserLine(line: RawUserLine): ParsedLine {
+function parseUserLine(line: RawUserLine, toolNameByToolUseId: Map<string, string>): ParsedLine {
   const sessionId = toStr(line.sessionId);
   const promptId = toOptionalStr(line.promptId);
   const timestamp = toStr(line.timestamp);
@@ -174,13 +228,37 @@ function parseUserLine(line: RawUserLine): ParsedLine {
     // tool calls landing multiple tool_result blocks on a single line.
     for (const block of content) {
       if (isRecord(block) && block.type === "tool_result" && typeof block.content === "string") {
+        const rawContent = block.content;
+        const toolUseId = toStr(block.tool_use_id);
+        // Review #11 / CQ4: exit-code fallback is Bash-only. Look up the
+        // originating tool_use block's name (recorded from earlier assistant
+        // tool_use entries in the same batch via toolNameByToolUseId); when
+        // it's "Bash" AND `is_error` isn't explicitly set, fall back to a
+        // parsed exit-code comparison. Non-Bash tools' raw `is_error: true`
+        // flag stays authoritative — we never synthesize an error for them.
+        const originatingToolName = toolNameByToolUseId.get(toolUseId);
+        let isError: boolean;
+        if (block.is_error === true) {
+          isError = true;
+        } else if (originatingToolName === "Bash") {
+          const exitCode = extractExitCode(rawContent);
+          // Exit code present and non-zero → failure. Exit code 0 (or
+          // missing/unparseable) → not a failure on this axis. The pre-fix
+          // regex flagged "exit code 0; copied 1 file" as failed because the
+          // trailing digit matched the unbounded grep — fixed here.
+          isError = exitCode !== null && exitCode !== 0;
+        } else {
+          isError = false;
+        }
         return {
           kind: "tool-result-bytes",
           record: {
             sessionId,
             promptId,
-            toolUseId: toStr(block.tool_use_id),
-            bytes: Buffer.byteLength(block.content, "utf8"),
+            toolUseId,
+            bytes: Buffer.byteLength(rawContent, "utf8"),
+            isError,
+            isSidechain: line.isSidechain === true,
           },
         };
       }
@@ -190,7 +268,11 @@ function parseUserLine(line: RawUserLine): ParsedLine {
   return { kind: "skipped" };
 }
 
-export function parseTranscriptLine(rawLine: string, seenMessageIds: Set<string>): ParsedLine {
+export function parseTranscriptLine(
+  rawLine: string,
+  seenMessageIds: Set<string>,
+  toolNameByToolUseId: Map<string, string> = new Map(),
+): ParsedLine {
   const trimmed = rawLine.trim();
   if (trimmed === "") {
     return { kind: "skipped" };
@@ -208,14 +290,14 @@ export function parseTranscriptLine(rawLine: string, seenMessageIds: Set<string>
   }
 
   if (parsed.type === "user") {
-    return parseUserLine(parsed as unknown as RawUserLine);
+    return parseUserLine(parsed as unknown as RawUserLine, toolNameByToolUseId);
   }
 
   if (parsed.type !== "assistant") {
     return { kind: "skipped" };
   }
 
-  const result = parseAssistantLine(parsed as unknown as RawAssistantLine);
+  const result = parseAssistantLine(parsed as unknown as RawAssistantLine, toolNameByToolUseId);
   if (result.kind !== "call") {
     return result;
   }
@@ -230,6 +312,11 @@ export function parseTranscriptLine(rawLine: string, seenMessageIds: Set<string>
 export function parseTranscriptLines(
   rawLines: string[],
   seenMessageIds: Set<string>,
+  /** Optional starting state for the toolUseId → tool-name map. Callers
+   * parsing across multiple files/batches (warm-cache reconstruction) can
+   * pass a map they've pre-populated from earlier batches; otherwise the
+   * parser builds one fresh for this batch. */
+  initialToolNameMap?: Map<string, string>,
 ): ParseTranscriptResult {
   const result: ParseTranscriptResult = {
     calls: [],
@@ -239,8 +326,14 @@ export function parseTranscriptLines(
     malformedCount: 0,
   };
 
+  // Single-source toolUseId → tool-name state for this batch. Maintained
+  // across lines so a tool_result (which arrives in a user line, not the
+  // assistant line that declared the tool) can resolve the originating tool
+  // (review #11 / CQ4 — Bash-specific exit-code fallback).
+  const toolNameByToolUseId = initialToolNameMap ?? new Map<string, string>();
+
   for (const rawLine of rawLines) {
-    const parsed = parseTranscriptLine(rawLine, seenMessageIds);
+    const parsed = parseTranscriptLine(rawLine, seenMessageIds, toolNameByToolUseId);
     switch (parsed.kind) {
       case "call":
         result.calls.push(parsed.call);

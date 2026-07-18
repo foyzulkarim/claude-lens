@@ -17,6 +17,15 @@ export interface TokenUsage {
 export interface ToolUseRef {
   name: string;
   inputBytes: number;
+  /**
+   * The `tool_use` block's own id (Anthropic API's `content[].id`), when
+   * present. Lets warm-cache reconstruction rebuild the toolUseId → name
+   * map (server/ingest/parse-transcript.ts's Bash exit-code attribution)
+   * from a cached ApiCall's tools without re-parsing the raw transcript
+   * line. Optional so pre-existing test fixtures and cache entries that
+   * predate this field remain valid.
+   */
+  id?: string;
 }
 
 export interface ApiCall {
@@ -53,6 +62,7 @@ export interface Turn {
   toolResultBytes: number;
   wallMs?: number;
   gateStatus?: string;
+  errorToolResults?: number;
 }
 
 export interface TierFlags {
@@ -74,6 +84,14 @@ export interface Session {
   tier: TierFlags;
   firstAt: string;
   lastAt: string;
+  /**
+   * Synthesized host for cross-route parity with the metrics engine (which
+   * uses a constant `"default"` — server/metrics/dimensions.ts). Review #13:
+   * the route now filters on this field rather than silently accepting the
+   * `host` chip and returning the unfiltered set. Replace with a real per-
+   * call host field once capture lands.
+   */
+  host: string;
   usage: TokenUsage;
   turnCount: number;
   callCount: number;
@@ -84,4 +102,16 @@ export interface Session {
   linesAdded?: number;
   linesRemoved?: number;
   gateScore?: number;
+  cacheSavingsComputed?: number;
+  maxTurnCostComputed?: number;
+  contextPctEstimated?: number;
+}
+/**
+ * A pre-priced turn sample used by the anomaly detector.
+ * costComputed is expected to be a finite, non-negative number.
+ */
+export interface TurnCostSample {
+  sessionId: string;
+  turnId: string;
+  costComputed: number;
 }

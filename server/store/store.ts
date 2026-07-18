@@ -5,10 +5,15 @@ import type {
   PromptTextRecord,
   ToolResultBytesRecord,
 } from "../ingest/parse-transcript.js";
-import { deriveSession, type Pricer, type SessionSidecarFlags } from "./derive-session.js";
+import type { PricingTable } from "../metrics/measures.js";
+import {
+  deriveSession,
+  type ContextResolver,
+  type Pricer,
+  type SessionSidecarFlags,
+} from "./derive-session.js";
 import { deriveTurns } from "./derive-turns.js";
 import { createInvalidator, type Invalidator } from "./invalidation.js";
-
 // The in-memory columnar store (architecture §5.5, §6). Per-session raw
 // arrays plus cached derived Turn[]/Session. `ingest/` is the only writer
 // (applyRecords/resetSession/markSidecarPresent); everything else reads.
@@ -35,15 +40,23 @@ export interface StoreOptions {
   onInvalidate(message: WsServerMessage): void;
   /** Optional — ships in #P2-8. Without one, costComputed stays 0 (honest "not priced yet", not fabricated). */
   pricer?: Pricer;
+  /** Pricing table used to compute cacheSavingsComputed. Without one, cacheSavingsComputed stays undefined. */
+  pricing?: PricingTable;
+  /** Resolves context window for a model; used to compute contextPctEstimated. */
+  contextResolver?: ContextResolver;
 }
 
 export class Store {
   private readonly sessions = new Map<string, SessionState>();
   private readonly invalidator: Invalidator;
-  private readonly pricer: Pricer | undefined;
+  private pricer: Pricer | undefined;
+  private pricing: PricingTable | undefined;
+  private contextResolver: ContextResolver | undefined;
 
   constructor(options: StoreOptions) {
     this.pricer = options.pricer;
+    this.pricing = options.pricing;
+    this.contextResolver = options.contextResolver;
     this.invalidator = createInvalidator({
       debounceMs: options.debounceMs,
       onFlush: (message) => {
@@ -53,6 +66,23 @@ export class Store {
         options.onInvalidate(message);
       },
     });
+  }
+  /**
+   * Swap the pricer/pricing/contextResolver and recompute all dirty sessions.
+   * Enables tests to change pricing mid-session and verify recompute propagates.
+   */
+  updatePricing(options: {
+    pricer?: Pricer;
+    pricing?: PricingTable;
+    contextResolver?: ContextResolver;
+  }): void {
+    this.pricer = options.pricer;
+    this.pricing = options.pricing;
+    this.contextResolver = options.contextResolver;
+    // Mark all sessions dirty so next read/flush recomputes with new inputs.
+    for (const sessionId of this.sessions.keys()) {
+      this.invalidator.markDirty(sessionId);
+    }
   }
 
   private stateFor(sessionId: string): SessionState {
@@ -122,7 +152,15 @@ export class Store {
     const state = this.sessions.get(sessionId);
     if (!state) return;
     state.turns = deriveTurns(state.calls, state.prompts, state.toolResultBytes);
-    state.session = deriveSession(sessionId, state.calls, state.turns, state.sidecars, this.pricer);
+    state.session = deriveSession(
+      sessionId,
+      state.calls,
+      state.turns,
+      state.sidecars,
+      this.pricer,
+      this.pricing,
+      this.contextResolver,
+    );
   }
 
   getSession(sessionId: string): Session | undefined {

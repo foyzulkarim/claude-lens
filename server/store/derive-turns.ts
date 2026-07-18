@@ -56,7 +56,11 @@ function assignPromptIds(calls: ApiCall[], prompts: PromptTextRecord[]): Map<Api
   return assignment;
 }
 
-function buildTurn(acc: TurnAccumulator, toolResultBytesByPromptId: Map<string, number>): Turn {
+function buildTurn(
+  acc: TurnAccumulator,
+  toolResultBytesByKey: Map<string, number>,
+  errorToolResultCountByKey: Map<string, number>,
+): Turn {
   // acc.calls is never empty: an accumulator is only created in the same
   // iteration as its first `calls.push(call)` (see the loop in deriveTurns),
   // and nothing ever removes from it afterward. Indexing directly here (not
@@ -74,6 +78,14 @@ function buildTurn(acc: TurnAccumulator, toolResultBytesByPromptId: Map<string, 
     if (endedAt === "" || call.timestamp > endedAt) endedAt = call.timestamp;
   }
 
+  // Composite key `${promptId}::${main|side}` — review #3: a sub-agent's
+  // tool_result records share the parent's promptId, so bucketing by
+  // promptId alone would silently fold sub-agent bytes/errors into the
+  // main thread's toolResultBytes/errorToolResults (inflating FailedWork
+  // and RecordsStrip numbers). Mirrors the accumulators map convention
+  // already used below.
+  const key = `${acc.promptId}::${acc.isSidechain ? "side" : "main"}`;
+
   return {
     promptId: acc.promptId,
     sessionId: firstCall.sessionId,
@@ -84,7 +96,8 @@ function buildTurn(acc: TurnAccumulator, toolResultBytesByPromptId: Map<string, 
     endedAt,
     calls: acc.calls,
     usage,
-    toolResultBytes: acc.isSidechain ? 0 : (toolResultBytesByPromptId.get(acc.promptId) ?? 0),
+    toolResultBytes: toolResultBytesByKey.get(key) ?? 0,
+    errorToolResults: errorToolResultCountByKey.get(key) ?? 0,
   };
 }
 
@@ -95,12 +108,18 @@ export function deriveTurns(
 ): Turn[] {
   const promptIdByCall = assignPromptIds(calls, prompts);
   const promptTextById = new Map(prompts.map((p) => [p.promptId, p.text]));
-  const toolResultBytesByPromptId = new Map<string, number>();
+
+  // Bucket tool-result bytes/errors by `${promptId}::${main|side}` so a
+  // sub-agent's tool_result records (which share the parent's promptId)
+  // don't silently fold into the main thread's FailedWork counts (review #3).
+  const toolResultBytesByKey = new Map<string, number>();
+  const errorToolResultCountByKey = new Map<string, number>();
   for (const record of toolResultBytes) {
-    toolResultBytesByPromptId.set(
-      record.promptId,
-      (toolResultBytesByPromptId.get(record.promptId) ?? 0) + record.bytes,
-    );
+    const key = `${record.promptId}::${record.isSidechain === true ? "side" : "main"}`;
+    toolResultBytesByKey.set(key, (toolResultBytesByKey.get(key) ?? 0) + record.bytes);
+    if (record.isError) {
+      errorToolResultCountByKey.set(key, (errorToolResultCountByKey.get(key) ?? 0) + 1);
+    }
   }
 
   const accumulators = new Map<string, TurnAccumulator>();
@@ -130,6 +149,6 @@ export function deriveTurns(
   return order.map((key) => {
     const acc = accumulators.get(key);
     if (!acc) throw new Error(`unreachable: missing turn accumulator for key ${key}`);
-    return buildTurn(acc, toolResultBytesByPromptId);
+    return buildTurn(acc, toolResultBytesByKey, errorToolResultCountByKey);
   });
 }

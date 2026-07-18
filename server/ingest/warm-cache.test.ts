@@ -47,7 +47,9 @@ function sampleEntry(overrides: Partial<WarmCacheEntry> = {}): WarmCacheEntry {
     prompts: [
       { sessionId: "s1", promptId: "p1", text: "hello", timestamp: "2026-07-13T00:00:00.000Z" },
     ],
-    toolResultBytes: [{ sessionId: "s1", promptId: "p1", toolUseId: "t1", bytes: 42 }],
+    toolResultBytes: [
+      { sessionId: "s1", promptId: "p1", toolUseId: "t1", bytes: 42, isError: false },
+    ],
     duplicateCount: 0,
     malformedCount: 0,
     ...overrides,

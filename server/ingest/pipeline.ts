@@ -1,5 +1,5 @@
 import type { WsServerMessage } from "../../shared/ws-protocol.js";
-import type { Pricer } from "../store/derive-session.js";
+import type { RuntimeMetadata } from "../runtime.js";
 import { Store } from "../store/store.js";
 import type { ScanConfig } from "./discovery.js";
 import { Poller } from "./poller.js";
@@ -15,7 +15,15 @@ import type { WarmCache } from "./warm-cache.js";
 export interface IngestPipelineOptions {
   onInvalidate(message: WsServerMessage): void;
   warmCache?: WarmCache;
-  pricer?: Pricer;
+  /**
+   * Runtime pricing + context-window metadata (ARCH T5). When provided,
+   * all three fields are forwarded to the Store so derived sessions are
+   * priced consistently with the Fastify metrics route. Optional for
+   * backward compatibility — tests that don't care about pricing can
+   * omit it and get unpriced sessions (costComputed = 0, the honest
+   * "not priced yet" state).
+   */
+  metadata?: RuntimeMetadata;
   debounceMs?: number;
 }
 
@@ -29,7 +37,9 @@ export interface IngestPipeline {
 export function startIngest(config: ScanConfig, options: IngestPipelineOptions): IngestPipeline {
   const store = new Store({
     onInvalidate: options.onInvalidate,
-    pricer: options.pricer,
+    pricer: options.metadata?.pricer,
+    pricing: options.metadata?.pricing,
+    contextResolver: options.metadata?.contextResolver,
     debounceMs: options.debounceMs,
   });
 
