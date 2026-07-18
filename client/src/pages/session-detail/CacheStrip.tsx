@@ -89,7 +89,9 @@ function CacheRow({
   totalReadWrite: number;
 }): React.JSX.Element {
   const eligible =
-    point.cacheReadTokens + point.cacheCreateTokens + (totalReadWrite - point.cacheReadTokens - point.cacheCreateTokens);
+    point.cacheReadTokens +
+    point.cacheCreateTokens +
+    (totalReadWrite - point.cacheReadTokens - point.cacheCreateTokens);
   // Render a stacked bar with read and write portions at the call's own
   // share of the strip's total tokens. This keeps the visual proportion
   // across calls stable.

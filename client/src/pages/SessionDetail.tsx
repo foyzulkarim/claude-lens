@@ -76,9 +76,7 @@ export function SessionDetail() {
         className="p-6 text-sm text-red-700 dark:text-red-300"
       >
         <h1 className="mb-1 text-base font-semibold">Failed to load session</h1>
-        <p>
-          {err instanceof Error ? err.message : "Unknown error fetching session detail."}
-        </p>
+        <p>{err instanceof Error ? err.message : "Unknown error fetching session detail."}</p>
       </div>
     );
   }

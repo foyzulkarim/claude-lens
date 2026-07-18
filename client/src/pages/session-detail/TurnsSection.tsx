@@ -8,6 +8,7 @@ import type {
 import { formatCost, formatPercent, formatTokens } from "./format.js";
 
 export interface TurnsSectionProps {
+  sessionId: string;
   turns: SessionDetailTurn[];
   distribution: SessionDetailDistribution;
 }
@@ -20,8 +21,8 @@ export interface TurnsSectionProps {
  *     to total). Anomalies render in a distinct rose color.
  *  2. Virtualized-feel turn table (we render every row, but the table
  *     has explicit row boundaries and keyboard drill). Clicking a row
- *     drills into `/session/:id/turn/:n` (one-based) — the canonical
- *     evidence-link shape established in gates.md.
+ *     drills into `/session/:sessionId/turn/:n` (one-based) — the
+ *     canonical evidence-link shape established in gates.md (A11).
  *  3. History distribution: per-turn percentile (vs the fleet's
  *     logical-turn cost baseline), the population size, p50/p90/p99, and
  *     a histogram.
@@ -29,11 +30,12 @@ export interface TurnsSectionProps {
  * Pure: never re-groups sidechains or recomputes ranks — every value comes
  * straight from the server's projected `turnDistribution` and `turns`.
  */
-export function TurnsSection({ turns, distribution }: TurnsSectionProps): React.JSX.Element {
-  const peak = useMemo(
-    () => turns.reduce((m, t) => (t.cost > m ? t.cost : m), 0),
-    [turns],
-  );
+export function TurnsSection({
+  sessionId,
+  turns,
+  distribution,
+}: TurnsSectionProps): React.JSX.Element {
+  const peak = useMemo(() => turns.reduce((m, t) => (t.cost > m ? t.cost : m), 0), [turns]);
 
   return (
     <section
@@ -41,29 +43,25 @@ export function TurnsSection({ turns, distribution }: TurnsSectionProps): React.
       data-testid="session-detail-turns"
       className="rounded-md border border-slate-200 bg-white p-4 dark:border-[#232B36] dark:bg-[#151A21]"
     >
-      <h2 id="session-detail-turns" className="text-sm font-semibold text-slate-900 dark:text-[#E8EDF2]">
+      <h2
+        id="session-detail-turns"
+        className="text-sm font-semibold text-slate-900 dark:text-[#E8EDF2]"
+      >
         Turns
       </h2>
 
-      <div className="mt-3" aria-labelledby="turns-bars-heading">
-        <h3 id="turns-bars-heading" className="text-xs font-medium text-slate-500 dark:text-[#8A96A5]">
-          Per-turn cost
-        </h3>
+      <div className="mt-3">
+        <h3 className="text-xs font-medium text-slate-500 dark:text-[#8A96A5]">Per-turn cost</h3>
         <TurnBars turns={turns} peak={peak} />
       </div>
 
-      <div className="mt-6" aria-labelledby="turns-table-heading">
-        <h3 id="turns-table-heading" className="text-xs font-medium text-slate-500 dark:text-[#8A96A5]">
-          Turn table
-        </h3>
-        <TurnTable turns={turns} />
+      <div className="mt-6">
+        <h3 className="text-xs font-medium text-slate-500 dark:text-[#8A96A5]">Turn table</h3>
+        <TurnTable sessionId={sessionId} turns={turns} />
       </div>
 
-      <div className="mt-6" aria-labelledby="turns-distribution-heading">
-        <h3
-          id="turns-distribution-heading"
-          className="text-xs font-medium text-slate-500 dark:text-[#8A96A5]"
-        >
+      <div className="mt-6">
+        <h3 className="text-xs font-medium text-slate-500 dark:text-[#8A96A5]">
           Turn cost vs your history
         </h3>
         <HistoryDistribution distribution={distribution} turns={turns} />
@@ -72,13 +70,15 @@ export function TurnsSection({ turns, distribution }: TurnsSectionProps): React.
   );
 }
 
-function TurnBars({ turns, peak }: { turns: SessionDetailTurn[]; peak: number }): React.JSX.Element {
+function TurnBars({
+  turns,
+  peak,
+}: {
+  turns: SessionDetailTurn[];
+  peak: number;
+}): React.JSX.Element {
   if (turns.length === 0) {
-    return (
-      <p className="mt-2 text-xs text-slate-500 dark:text-[#8A96A5]">
-        No turns yet.
-      </p>
-    );
+    return <p className="mt-2 text-xs text-slate-500 dark:text-[#8A96A5]">No turns yet.</p>;
   }
   return (
     <ul aria-label="Per-turn cost bars" className="mt-2 space-y-1">
@@ -124,13 +124,15 @@ function TurnBars({ turns, peak }: { turns: SessionDetailTurn[]; peak: number })
   );
 }
 
-function TurnTable({ turns }: { turns: SessionDetailTurn[] }): React.JSX.Element {
+function TurnTable({
+  sessionId,
+  turns,
+}: {
+  sessionId: string;
+  turns: SessionDetailTurn[];
+}): React.JSX.Element {
   if (turns.length === 0) {
-    return (
-      <p className="mt-2 text-xs text-slate-500 dark:text-[#8A96A5]">
-        No turns yet.
-      </p>
-    );
+    return <p className="mt-2 text-xs text-slate-500 dark:text-[#8A96A5]">No turns yet.</p>;
   }
   return (
     <div className="mt-2 overflow-x-auto">
@@ -149,13 +151,10 @@ function TurnTable({ turns }: { turns: SessionDetailTurn[] }): React.JSX.Element
         </thead>
         <tbody>
           {turns.map((turn) => (
-            <tr
-              key={turn.turnNumber}
-              className="border-b border-slate-100 dark:border-[#232B36]"
-            >
+            <tr key={turn.turnNumber} className="border-b border-slate-100 dark:border-[#232B36]">
               <td className="py-1 pr-2 font-mono">
                 <Link
-                  href={`/session/${turn.promptId}/turn/${turn.turnNumber}`}
+                  href={`/session/${sessionId}/turn/${turn.turnNumber}`}
                   className="text-slate-900 underline-offset-2 hover:underline dark:text-[#E8EDF2]"
                   data-testid={`turn-drill-${turn.turnNumber}`}
                 >
@@ -248,15 +247,12 @@ function HistoryDistribution({
         <p className="text-[10px] uppercase tracking-wide text-slate-500 dark:text-[#8A96A5]">
           Histogram ({distribution.histogram.length} buckets)
         </p>
-        <ul
-          aria-label="Cost distribution histogram"
-          className="mt-2 flex h-24 items-end gap-px"
-        >
+        <ul aria-label="Cost distribution histogram" className="mt-2 flex h-24 items-end gap-px">
           {distribution.histogram.map((bucket, i) => {
             const height = peakHistogram > 0 ? (bucket.count / peakHistogram) * 100 : 0;
             return (
               <li
-                key={i}
+                key={`${bucket.rangeStart}-${bucket.rangeEnd}`}
                 className="flex-1"
                 aria-label={`${formatCost(bucket.rangeStart)}–${formatCost(bucket.rangeEnd)}: ${bucket.count}`}
               >

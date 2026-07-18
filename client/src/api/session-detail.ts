@@ -66,12 +66,7 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((v) => typeof v === "string");
 }
 
-const CAUSE_LABELS = new Set([
-  "first-call",
-  "model-switch",
-  "compaction",
-  "unexplained",
-]);
+const CAUSE_LABELS = new Set(["first-call", "model-switch", "compaction", "unexplained"]);
 
 function isTimelinePoint(value: unknown): boolean {
   if (!isObject(value)) return false;
@@ -214,8 +209,8 @@ function assertSessionDetailResponse(value: unknown): asserts value is SessionDe
     !isFiniteOrNull(h.fleetCostRankPct) ||
     !isObject(h.tier) ||
     typeof (h.tier as Record<string, unknown>).costBasis !== "string" ||
-    (h.tier as Record<string, unknown>).costBasis !== "computed" &&
-      (h.tier as Record<string, unknown>).costBasis !== "observed"
+    ((h.tier as Record<string, unknown>).costBasis !== "computed" &&
+      (h.tier as Record<string, unknown>).costBasis !== "observed")
   ) {
     throw new SessionDetailResponseShapeError("header does not match the contract shape");
   }
@@ -234,10 +229,7 @@ function assertSessionDetailResponse(value: unknown): asserts value is SessionDe
   if (!Array.isArray(value.toolMix) || !value.toolMix.every(isToolMixItem)) {
     throw new SessionDetailResponseShapeError("toolMix does not match the contract shape");
   }
-  if (
-    !Array.isArray(value.toolTimeline) ||
-    !value.toolTimeline.every(isToolTimelineEvent)
-  ) {
+  if (!Array.isArray(value.toolTimeline) || !value.toolTimeline.every(isToolTimelineEvent)) {
     throw new SessionDetailResponseShapeError("toolTimeline does not match the contract shape");
   }
   if (!Array.isArray(value.prompts) || !value.prompts.every(isPrompt)) {
@@ -270,10 +262,7 @@ function assertSessionDetailResponse(value: unknown): asserts value is SessionDe
   ) {
     throw new SessionDetailResponseShapeError("tokenFunnel does not match the contract shape");
   }
-  if (
-    !Array.isArray(value.contextComposition) ||
-    !value.contextComposition.every(isContextItem)
-  ) {
+  if (!Array.isArray(value.contextComposition) || !value.contextComposition.every(isContextItem)) {
     throw new SessionDetailResponseShapeError(
       "contextComposition does not match the contract shape",
     );

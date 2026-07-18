@@ -22,20 +22,24 @@ export interface SessionDetailViewProps {
  */
 export function SessionDetailView({ data }: SessionDetailViewProps): ReactNode {
   return (
-    <div
+    <section
       data-testid="session-detail-view"
       className="flex flex-col gap-6 p-6"
       aria-label={`Session ${data.header.sessionId}`}
     >
       <Header header={data.header} />
       <CostTimeline timeline={data.timeline} />
-      <TurnsSection turns={data.turns} distribution={data.turnDistribution} />
+      <TurnsSection
+        sessionId={data.header.sessionId}
+        turns={data.turns}
+        distribution={data.turnDistribution}
+      />
       <CacheStrip cache={data.cache} />
       <ToolMix toolMix={data.toolMix} toolTimeline={data.toolTimeline} />
       <PromptList prompts={data.prompts} />
       <WorkflowFunnel workflow={data.workflow} />
       <TokenFunnel funnel={data.tokenFunnel} />
       <ContextComposition items={data.contextComposition} />
-    </div>
+    </section>
   );
 }

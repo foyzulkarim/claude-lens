@@ -60,13 +60,16 @@ export function Header({ header }: HeaderProps): React.JSX.Element {
         <Stat label="vs median" value={formatMedianDelta(header)} />
         <Stat label="Logical turns" value={String(header.logicalTurnCount)} />
         <Stat label="Calls" value={String(header.callCount)} />
-        <Stat
-          label="Context (est.)"
-          value={formatPercent(header.contextPctEstimated ?? null)}
-        />
+        <Stat label="Context (est.)" value={formatPercent(header.contextPctEstimated ?? null)} />
         <Stat label="Drift (computed vs observed)" value={formatCost(header.drift?.delta)} />
-        <Stat label="Started" value={header.firstAt ? header.firstAt.slice(0, 16).replace("T", " ") : "—"} />
-        <Stat label="Last activity" value={header.lastAt ? header.lastAt.slice(0, 16).replace("T", " ") : "—"} />
+        <Stat
+          label="Started"
+          value={header.firstAt ? header.firstAt.slice(0, 16).replace("T", " ") : "—"}
+        />
+        <Stat
+          label="Last activity"
+          value={header.lastAt ? header.lastAt.slice(0, 16).replace("T", " ") : "—"}
+        />
       </div>
 
       {isPremiumUnavailable(header) ? (
@@ -75,9 +78,8 @@ export function Header({ header }: HeaderProps): React.JSX.Element {
           data-testid="premium-unavailable"
           className="mt-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-700/50 dark:bg-amber-900/20 dark:text-amber-200"
         >
-          Cost observed, drift, and context samples require premium capture
-          (<code>cost.jsonl</code>, <code>turn-boundaries.jsonl</code>,
-          <code>cost-log.jsonl</code>) — landing in #P4-13.
+          Cost observed, drift, and context samples require premium capture (<code>cost.jsonl</code>
+          , <code>turn-boundaries.jsonl</code>,<code>cost-log.jsonl</code>) — landing in #P4-13.
         </p>
       ) : null}
     </section>

@@ -44,4 +44,3 @@ export const qk = {
  * so the api barrel stays the single import for callers.
  */
 export type { SessionDetailResponse };
-

@@ -12,11 +12,7 @@ function usage(overrides: Partial<TokenUsage> = {}): TokenUsage {
   };
 }
 
-function call(
-  messageId: string,
-  timestamp: string,
-  overrides: Partial<ApiCall> = {},
-): ApiCall {
+function call(messageId: string, timestamp: string, overrides: Partial<ApiCall> = {}): ApiCall {
   return {
     uuid: `uuid-${messageId}`,
     sessionId: "s1",
@@ -155,11 +151,17 @@ describe("aggregateLogicalTurnCost", () => {
 
   it("matches the per-turn sum across every segment", () => {
     const main = turn("p1", false, [
-      call("m1", "2026-07-03T10:00:00.000Z", { usage: usage({ inputTokens: 10, outputTokens: 5 }) }),
-      call("m2", "2026-07-03T10:00:01.000Z", { usage: usage({ inputTokens: 20, outputTokens: 5 }) }),
+      call("m1", "2026-07-03T10:00:00.000Z", {
+        usage: usage({ inputTokens: 10, outputTokens: 5 }),
+      }),
+      call("m2", "2026-07-03T10:00:01.000Z", {
+        usage: usage({ inputTokens: 20, outputTokens: 5 }),
+      }),
     ]);
     const side = turn("p1", true, [
-      call("m_s1", "2026-07-03T10:00:02.000Z", { usage: usage({ inputTokens: 30, outputTokens: 0 }) }),
+      call("m_s1", "2026-07-03T10:00:02.000Z", {
+        usage: usage({ inputTokens: 30, outputTokens: 0 }),
+      }),
     ]);
     const result = groupLogicalTurns([main, side]);
     // 15 + 25 + 30 = 70

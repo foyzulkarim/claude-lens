@@ -30,13 +30,7 @@ import type {
   SessionDetailTurn,
   SessionDetailWorkflow,
 } from "../../shared/session-detail-contract.js";
-import type {
-  ApiCall,
-  CompactionRecord,
-  Session,
-  TokenUsage,
-  Turn,
-} from "../../shared/types.js";
+import type { ApiCall, CompactionRecord, Session, TokenUsage } from "../../shared/types.js";
 import type { PromptTextRecord, ToolResultBytesRecord } from "../ingest/parse-transcript.js";
 import {
   aggregateLogicalTurnCost,
@@ -101,12 +95,7 @@ function roundCost(value: number): number {
 }
 
 function totalTokens(usage: TokenUsage): number {
-  return (
-    usage.inputTokens +
-    usage.outputTokens +
-    usage.cacheReadTokens +
-    usage.cacheCreateTokens
-  );
+  return usage.inputTokens + usage.outputTokens + usage.cacheReadTokens + usage.cacheCreateTokens;
 }
 
 function percentileRank(sortedAsc: number[], value: number): number | null {
@@ -133,7 +122,10 @@ function median(values: number[]): number | null {
   return sorted[index - 1] ?? null;
 }
 
-function histogramBuckets(sortedAsc: number[], bucketCount = 10): SessionDetailDistribution["histogram"] {
+function histogramBuckets(
+  sortedAsc: number[],
+  bucketCount = 10,
+): SessionDetailDistribution["histogram"] {
   if (sortedAsc.length === 0) return [];
   const min = sortedAsc[0] ?? 0;
   const max = sortedAsc[sortedAsc.length - 1] ?? 0;
@@ -161,7 +153,7 @@ function histogramBuckets(sortedAsc: number[], bucketCount = 10): SessionDetailD
 
 function buildHeader(
   session: Session,
-  runtime: RuntimeMetadata,
+  _runtime: RuntimeMetadata,
   fleetCostsSortedAsc: number[],
 ): SessionDetailHeader {
   const header: SessionDetailHeader = {
@@ -205,7 +197,11 @@ function buildTimeline(
   logicalTurns: LogicalTurn[],
   orderedCompactions: CompactionRecord[],
   runtime: RuntimeMetadata,
-): { timeline: SessionDetailTimelinePoint[]; modelForCall: string[]; compactionsAfterCall: boolean[] } {
+): {
+  timeline: SessionDetailTimelinePoint[];
+  modelForCall: string[];
+  compactionsAfterCall: boolean[];
+} {
   const timeline: SessionDetailTimelinePoint[] = [];
   const modelForCall: string[] = [];
   const compactionsAfterCall: boolean[] = [];
@@ -243,7 +239,7 @@ function buildTimeline(
     // every call sees isCompaction: false (cheap path).
     while (compactionIndex < orderedCompactions.length) {
       const marker = orderedCompactions[compactionIndex];
-      if (!marker || !marker.timestamp) break;
+      if (!marker?.timestamp) break;
       if (Date.parse(marker.timestamp) <= Date.parse(call.timestamp)) {
         compactionIndex++;
       } else {
@@ -260,9 +256,7 @@ function buildTimeline(
       const window = runtime.contextResolver(call.model);
       if (window && window > 0) {
         const tokensForCtx =
-          call.usage.inputTokens +
-          call.usage.cacheReadTokens +
-          call.usage.cacheCreateTokens;
+          call.usage.inputTokens + call.usage.cacheReadTokens + call.usage.cacheCreateTokens;
         contextPct = Math.min(1, Math.max(0, tokensForCtx / window));
       }
     }
@@ -272,9 +266,10 @@ function buildTimeline(
     // Boundary = first call of its logical turn. Without the lookup map
     // (a degenerate call list), every call is a boundary; that mirrors the
     // honest empty case the page must surface.
-    const firstOfTurn = turnNumber > 0
-      ? orderedCalls.findIndex((c) => turnNumberByCall.get(c) === turnNumber) === i
-      : i === 0;
+    const firstOfTurn =
+      turnNumber > 0
+        ? orderedCalls.findIndex((c) => turnNumberByCall.get(c) === turnNumber) === i
+        : i === 0;
 
     timeline.push({
       callIndex: i,
@@ -299,10 +294,7 @@ function buildTimeline(
 // Cache strip + K2-compatible cause classification
 // ---------------------------------------------------------------------------
 
-function classifyCacheCause(
-  ctx: CallTimelineContext,
-  call: ApiCall,
-): SessionDetailCacheCause {
+function classifyCacheCause(ctx: CallTimelineContext, call: ApiCall): SessionDetailCacheCause {
   if (ctx.seenCompaction) return "compaction";
   if (ctx.previousModel === undefined) return "first-call";
   if (ctx.previousModel !== call.model) return "model-switch";
@@ -327,7 +319,7 @@ function buildCacheStrip(
     // rule the timeline uses, so the two panels agree.
     while (compactionIndex < orderedCompactions.length) {
       const marker = orderedCompactions[compactionIndex];
-      if (!marker || !marker.timestamp) break;
+      if (!marker?.timestamp) break;
       if (Date.parse(marker.timestamp) <= Date.parse(call.timestamp)) {
         compactionIndex++;
         seenCompaction = true;
@@ -375,7 +367,6 @@ function buildCacheStrip(
 
 function buildTurns(
   logicalTurns: LogicalTurn[],
-  orderedCalls: ApiCall[],
   fleetTurnCostsSortedAsc: number[],
   runtime: RuntimeMetadata,
 ): SessionDetailTurn[] {
@@ -383,7 +374,7 @@ function buildTurns(
   const fleetMedian =
     fleetTurnCostsSortedAsc.length === 0
       ? null
-      : fleetTurnCostsSortedAsc[Math.floor(fleetTurnCostsSortedAsc.length / 2)] ?? null;
+      : (fleetTurnCostsSortedAsc[Math.floor(fleetTurnCostsSortedAsc.length / 2)] ?? null);
 
   return logicalTurns.map((group) => {
     const usage = emptyUsage();
@@ -433,13 +424,11 @@ function buildTurns(
       if (!models.includes(call.model)) models.push(call.model);
     }
 
-    const cacheEligible =
-      usage.inputTokens + usage.cacheReadTokens + usage.cacheCreateTokens;
+    const cacheEligible = usage.inputTokens + usage.cacheReadTokens + usage.cacheCreateTokens;
     const cacheHitPct = cacheEligible > 0 ? usage.cacheReadTokens / cacheEligible : 0;
 
     const percentile = percentileRank(fleetTurnCostsSortedAsc, cost);
-    const isAnomaly =
-      fleetMedian !== null && fleetMedian > 0 && cost > fleetMedian * anomalyFactor;
+    const isAnomaly = fleetMedian !== null && fleetMedian > 0 && cost > fleetMedian * anomalyFactor;
 
     const turn: SessionDetailTurn = {
       turnNumber: group.turnNumber,
@@ -473,7 +462,6 @@ function buildTurns(
     }
     return turn;
   });
-  void orderedCalls; // currently unused; reserved for future premium enrichment
 }
 
 // ---------------------------------------------------------------------------
@@ -486,7 +474,10 @@ function buildToolMixAndTimeline(
   callToToolUseIds: Map<ApiCall, string[]>,
   logicalTurns: LogicalTurn[],
 ): { toolMix: SessionDetailToolMixItem[]; toolTimeline: SessionDetailToolTimelineEvent[] } {
-  const toolStats = new Map<string, { callCount: number; inputBytes: number; resultBytes: number }>();
+  const toolStats = new Map<
+    string,
+    { callCount: number; inputBytes: number; resultBytes: number }
+  >();
   const timeline: SessionDetailToolTimelineEvent[] = [];
 
   const turnNumberByCall = new Map<ApiCall, number>();
@@ -546,9 +537,7 @@ function buildToolMixAndTimeline(
     }))
     .sort(
       (a, b) =>
-        b.callCount - a.callCount ||
-        b.inputBytes - a.inputBytes ||
-        a.name.localeCompare(b.name),
+        b.callCount - a.callCount || b.inputBytes - a.inputBytes || a.name.localeCompare(b.name),
     );
 
   timeline.sort((a, b) => a.callIndex - b.callIndex);
@@ -598,7 +587,7 @@ function buildWorkflow(logicalTurns: LogicalTurn[]): SessionDetailWorkflow {
     for (const side of group.sidechains) allCalls.push(...side.calls);
 
     const toolNames = new Set<string>();
-    let hasCommit = false;
+    let _hasCommit = false;
     let hasRead = false;
     let hasEdit = false;
     let hasVerify = false;
@@ -615,7 +604,7 @@ function buildWorkflow(logicalTurns: LogicalTurn[]): SessionDetailWorkflow {
           // per-turn loop.
         }
         if (tool.name === "Bash" && tool.bashKind === GIT_COMMIT_KIND) {
-          hasCommit = true;
+          _hasCommit = true;
         }
       }
     }
@@ -643,7 +632,13 @@ function buildWorkflow(logicalTurns: LogicalTurn[]): SessionDetailWorkflow {
   let plannedAt = 0;
   let verifiedAt = 0;
   let committedAt = 0;
-  const editTurns: { hasEdit: boolean; hasRead: boolean; hasPlan: boolean; hasVerify: boolean; hasCommit: boolean }[] = [];
+  const editTurns: {
+    hasEdit: boolean;
+    hasRead: boolean;
+    hasPlan: boolean;
+    hasVerify: boolean;
+    hasCommit: boolean;
+  }[] = [];
   for (const group of logicalTurns) {
     const allCalls: ApiCall[] = [];
     if (group.main) allCalls.push(...group.main.calls);
@@ -752,7 +747,9 @@ function buildMeta(
   return {
     costBasis: snapshot.session.tier.costBasis,
     isEmpty: logicalTurns.length === 0,
-    isLive: logicalTurns.some((t) => (t.main?.calls.length ?? 0) > 0 || t.sidechains.some((s) => s.calls.length > 0)),
+    isLive: logicalTurns.some(
+      (t) => (t.main?.calls.length ?? 0) > 0 || t.sidechains.some((s) => s.calls.length > 0),
+    ),
     availability,
     fleetBaselineSize,
   };
@@ -810,12 +807,7 @@ export function projectSessionDetail(
 
   const cache = buildCacheStrip(snapshot.calls, orderedCompactions, compactionsAfterCall);
 
-  const turns = buildTurns(
-    logicalTurns,
-    snapshot.calls,
-    fleetTurnCostsSortedAsc,
-    runtime,
-  );
+  const turns = buildTurns(logicalTurns, fleetTurnCostsSortedAsc, runtime);
 
   const { toolMix, toolTimeline } = buildToolMixAndTimeline(
     snapshot.calls,
@@ -857,9 +849,6 @@ export function projectSessionDetail(
 
 function percentile(sortedAsc: number[], p: number): number | null {
   if (sortedAsc.length === 0) return null;
-  const index = Math.min(
-    Math.max(Math.ceil((p / 100) * sortedAsc.length), 1),
-    sortedAsc.length,
-  );
+  const index = Math.min(Math.max(Math.ceil((p / 100) * sortedAsc.length), 1), sortedAsc.length);
   return sortedAsc[index - 1] ?? null;
 }

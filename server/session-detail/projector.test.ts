@@ -21,11 +21,7 @@ function usage(overrides: Partial<TokenUsage> = {}): TokenUsage {
   };
 }
 
-function call(
-  messageId: string,
-  timestamp: string,
-  overrides: Partial<ApiCall> = {},
-): ApiCall {
+function call(messageId: string, timestamp: string, overrides: Partial<ApiCall> = {}): ApiCall {
   return {
     uuid: `uuid-${messageId}`,
     sessionId: "s1",
@@ -65,7 +61,7 @@ function turn(
 }
 
 const flatPricer = (u: TokenUsage) => u.inputTokens * 0.001;
-const noContextResolver = () => 200_000;
+const _noContextResolver = () => 200_000;
 
 function sessionWithTier(overrides: Partial<Session> = {}): Session {
   const tier: TierFlags = {
@@ -150,7 +146,11 @@ describe("projectSessionDetail — empty / minimal inputs", () => {
     const snap = snapshotWith(
       sessionWithTier(),
       [call("m1", "2026-07-14T10:00:00.000Z", { usage: usage({ inputTokens: 100 }) })],
-      [turn("p1", false, [call("m1", "2026-07-14T10:00:00.000Z", { usage: usage({ inputTokens: 100 }) })])],
+      [
+        turn("p1", false, [
+          call("m1", "2026-07-14T10:00:00.000Z", { usage: usage({ inputTokens: 100 }) }),
+        ]),
+      ],
       [{ sessionId: "s1", promptId: "p1", text: "hi", timestamp: "2026-07-14T09:59:00.000Z" }],
     );
 
@@ -207,10 +207,7 @@ describe("projectSessionDetail — timeline", () => {
       call("m2", "2026-07-14T10:01:00.000Z", { usage: usage({ inputTokens: 200 }) }),
       call("m3", "2026-07-14T10:02:00.000Z", { usage: usage({ inputTokens: 50 }) }),
     ];
-    const turns = [
-      turn("p1", false, [calls[0]!, calls[1]!]),
-      turn("p2", false, [calls[2]!]),
-    ];
+    const turns = [turn("p1", false, [calls[0]!, calls[1]!]), turn("p2", false, [calls[2]!])];
     const snap = snapshotWith(sessionWithTier(), calls, turns, [
       { sessionId: "s1", promptId: "p1", text: "first", timestamp: "2026-07-14T09:59:00.000Z" },
       { sessionId: "s1", promptId: "p2", text: "second", timestamp: "2026-07-14T10:01:30.000Z" },
@@ -274,12 +271,7 @@ describe("projectSessionDetail — cache strip causes", () => {
       call("m3", "2026-07-14T10:02:00.000Z", { model: "claude-fable-5" }),
       call("m4", "2026-07-14T10:03:00.000Z", { model: "claude-fable-5" }),
     ];
-    const snap = snapshotWith(
-      sessionWithTier(),
-      calls,
-      [turn("p1", false, calls)],
-      [],
-    );
+    const snap = snapshotWith(sessionWithTier(), calls, [turn("p1", false, calls)], []);
 
     const result = projectSessionDetail(snap, [], [], {});
 
@@ -319,10 +311,7 @@ describe("projectSessionDetail — turns", () => {
       isSidechain: true,
       usage: usage({ inputTokens: 50 }),
     });
-    const turns = [
-      turn("p1", false, [mainCall]),
-      turn("p1", true, [sideCall]),
-    ];
+    const turns = [turn("p1", false, [mainCall]), turn("p1", true, [sideCall])];
     const snap = snapshotWith(sessionWithTier(), [mainCall, sideCall], turns, [
       { sessionId: "s1", promptId: "p1", text: "do thing", timestamp: "2026-07-14T09:59:00.000Z" },
     ]);
@@ -345,9 +334,7 @@ describe("projectSessionDetail — turns", () => {
   });
 
   it("reports fleetPercentile + isAnomaly from the baseline", () => {
-    const calls = [
-      call("m1", "2026-07-14T10:00:00.000Z", { usage: usage({ inputTokens: 100 }) }),
-    ];
+    const calls = [call("m1", "2026-07-14T10:00:00.000Z", { usage: usage({ inputTokens: 100 }) })];
     const turns = [turn("p1", false, calls)];
     const snap = snapshotWith(sessionWithTier(), calls, turns, []);
     // Fleet turn costs all at 0.01; this session's 0.1 is strictly greater
@@ -561,10 +548,7 @@ describe("projectSessionDetail — distribution", () => {
 
 describe("projectSessionDetail — prompts", () => {
   it("emits prompts in logical-turn order with text + timestamp", () => {
-    const calls = [
-      call("m1", "2026-07-14T10:00:00.000Z"),
-      call("m2", "2026-07-14T10:01:00.000Z"),
-    ];
+    const calls = [call("m1", "2026-07-14T10:00:00.000Z"), call("m2", "2026-07-14T10:01:00.000Z")];
     const turns = [
       turn("p1", false, [calls[0]!], { promptText: "first" }),
       turn("p2", false, [calls[1]!], { promptText: "second" }),

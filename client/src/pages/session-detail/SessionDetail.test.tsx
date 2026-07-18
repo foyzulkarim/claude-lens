@@ -105,9 +105,14 @@ function makeWrapper(initialPath = "/sessions/s1") {
         <Router hook={hook} searchHook={searchHook}>
           <Switch>
             <Route path="/sessions/:id" component={SessionDetail} />
-            <Route path="/sessions/:id/turn/:turnNumber" component={() => <div data-testid="turn-page-stub" />} />
+            <Route
+              path="/session/:sessionId/turn/:turnNumber"
+              component={() => <div data-testid="turn-page-stub" />}
+            />
             <Route path="/">
-              <button data-testid="back-to-sessions">Back</button>
+              <button type="button" data-testid="back-to-sessions">
+                Back
+              </button>
               {children}
             </Route>
           </Switch>
@@ -133,7 +138,11 @@ describe("SessionDetail — query lifecycle (T6)", () => {
     getSessionDetailMock.mockReturnValue(new Promise(() => {}));
     const { Wrapper } = makeWrapper();
 
-    render(<Wrapper><div /></Wrapper>);
+    render(
+      <Wrapper>
+        <div />
+      </Wrapper>,
+    );
 
     expect(screen.getByTestId("session-detail-loading")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveAttribute("aria-live", "polite");
@@ -141,10 +150,16 @@ describe("SessionDetail — query lifecycle (T6)", () => {
 
   it("renders a 404 panel inside the AppShell for unknown sessions", async () => {
     const { SessionDetailApiError } = await import("../../api/session-detail.js");
-    getSessionDetailMock.mockRejectedValue(new SessionDetailApiError(404, "session not found", "404"));
+    getSessionDetailMock.mockRejectedValue(
+      new SessionDetailApiError(404, "session not found", "404"),
+    );
     const { Wrapper } = makeWrapper();
 
-    render(<Wrapper><div /></Wrapper>);
+    render(
+      <Wrapper>
+        <div />
+      </Wrapper>,
+    );
 
     expect(await screen.findByTestId("session-detail-not-found")).toBeInTheDocument();
     expect(screen.getByRole("alert")).toHaveTextContent(/session not found/i);
@@ -154,7 +169,11 @@ describe("SessionDetail — query lifecycle (T6)", () => {
     getSessionDetailMock.mockRejectedValue(new Error("network down"));
     const { Wrapper } = makeWrapper();
 
-    render(<Wrapper><div /></Wrapper>);
+    render(
+      <Wrapper>
+        <div />
+      </Wrapper>,
+    );
 
     expect(await screen.findByTestId("session-detail-error")).toBeInTheDocument();
     expect(screen.getByRole("alert")).toHaveTextContent(/network down/i);
@@ -165,7 +184,11 @@ describe("SessionDetail — query lifecycle (T6)", () => {
     getSessionDetailMock.mockResolvedValue(response);
     const { Wrapper } = makeWrapper();
 
-    render(<Wrapper><div /></Wrapper>);
+    render(
+      <Wrapper>
+        <div />
+      </Wrapper>,
+    );
 
     expect(await screen.findByTestId("session-detail-view")).toBeInTheDocument();
     expect(screen.getByTestId("session-detail-header")).toBeInTheDocument();
@@ -175,7 +198,11 @@ describe("SessionDetail — query lifecycle (T6)", () => {
     getSessionDetailMock.mockResolvedValue(makeResponse());
     const { Wrapper } = makeWrapper("/sessions/s2");
 
-    render(<Wrapper><div /></Wrapper>);
+    render(
+      <Wrapper>
+        <div />
+      </Wrapper>,
+    );
     await screen.findByTestId("session-detail-view");
     expect(getSessionDetailMock).toHaveBeenCalledWith("s2", expect.anything());
   });
@@ -184,7 +211,11 @@ describe("SessionDetail — query lifecycle (T6)", () => {
     getSessionDetailMock.mockResolvedValue(makeResponse());
     const { Wrapper } = makeWrapper();
 
-    render(<Wrapper><div /></Wrapper>);
+    render(
+      <Wrapper>
+        <div />
+      </Wrapper>,
+    );
     await screen.findByTestId("session-detail-view");
 
     expect(getSessionDetailMock).toHaveBeenCalledTimes(1);
@@ -200,7 +231,11 @@ describe("SessionDetail — query lifecycle (T6)", () => {
     );
     const { Wrapper } = makeWrapper();
 
-    const { unmount } = render(<Wrapper><div /></Wrapper>);
+    const { unmount } = render(
+      <Wrapper>
+        <div />
+      </Wrapper>,
+    );
     unmount();
     // Resolving after unmount must not raise into the React tree — the
     // TestClient garbage-collects the observer, so we just assert the
@@ -215,7 +250,11 @@ describe("SessionDetail — query lifecycle (T6)", () => {
     // filter chips in the URL (A12 — detail URL names a resource).
     const { Wrapper } = makeWrapper("/sessions/s1");
 
-    render(<Wrapper><div /></Wrapper>);
+    render(
+      <Wrapper>
+        <div />
+      </Wrapper>,
+    );
     await screen.findByTestId("session-detail-view");
 
     expect(getSessionDetailMock).toHaveBeenCalledWith("s1", expect.anything());
@@ -246,7 +285,11 @@ describe("SessionDetail — Header + CostTimeline (T7)", () => {
     getSessionDetailMock.mockResolvedValue(response);
     const { Wrapper } = makeWrapper();
 
-    render(<Wrapper><div /></Wrapper>);
+    render(
+      <Wrapper>
+        <div />
+      </Wrapper>,
+    );
 
     expect(await screen.findByTestId("session-detail-header")).toBeInTheDocument();
     expect(screen.getByText("$10.00")).toBeInTheDocument();
@@ -299,7 +342,11 @@ describe("SessionDetail — Header + CostTimeline (T7)", () => {
     getSessionDetailMock.mockResolvedValue(makeResponse({ timeline }));
     const { Wrapper } = makeWrapper();
 
-    render(<Wrapper><div /></Wrapper>);
+    render(
+      <Wrapper>
+        <div />
+      </Wrapper>,
+    );
 
     const timelineEl = await screen.findByTestId("session-detail-timeline");
     expect(timelineEl).toBeInTheDocument();
@@ -328,7 +375,11 @@ describe("SessionDetail — Header + CostTimeline (T7)", () => {
     getSessionDetailMock.mockResolvedValue(makeResponse({ timeline }));
     const { Wrapper } = makeWrapper();
 
-    render(<Wrapper><div /></Wrapper>);
+    render(
+      <Wrapper>
+        <div />
+      </Wrapper>,
+    );
 
     await screen.findByTestId("session-detail-timeline");
     const displayGroup = screen.getByRole("group", { name: "Display" });
@@ -407,14 +458,18 @@ describe("SessionDetail — TurnsSection, CacheStrip, ToolMix (T8)", () => {
     getSessionDetailMock.mockResolvedValue(makeResponse({ turns, turnDistribution: distribution }));
     const { Wrapper } = makeWrapper();
 
-    render(<Wrapper><div /></Wrapper>);
+    render(
+      <Wrapper>
+        <div />
+      </Wrapper>,
+    );
 
     expect(await screen.findByTestId("session-detail-turns")).toBeInTheDocument();
-    // Drill link uses the canonical /session/:sessionId/turn/:turnNumber shape
-    // (A11). Today `promptId` is used as the session id surrogate in the link
-    // until the Turn Inspector route (#P4-6) wires real session ids.
+    // Drill link uses the canonical /session/:sessionId/turn/:turnNumber
+    // shape (A11), with the addressed session's real id (header.sessionId
+    // is "s1" in the default fixture response).
     const drillLink = screen.getByTestId("turn-drill-2");
-    expect(drillLink).toHaveAttribute("href", "/session/p2/turn/2");
+    expect(drillLink).toHaveAttribute("href", "/session/s1/turn/2");
     // Anomaly badge present
     expect(screen.getByText("flag")).toBeInTheDocument();
   });
@@ -443,7 +498,11 @@ describe("SessionDetail — TurnsSection, CacheStrip, ToolMix (T8)", () => {
     getSessionDetailMock.mockResolvedValue(makeResponse({ cache }));
     const { Wrapper } = makeWrapper();
 
-    render(<Wrapper><div /></Wrapper>);
+    render(
+      <Wrapper>
+        <div />
+      </Wrapper>,
+    );
 
     const cacheEl = await screen.findByTestId("session-detail-cache");
     expect(cacheEl).toBeInTheDocument();
@@ -465,7 +524,11 @@ describe("SessionDetail — TurnsSection, CacheStrip, ToolMix (T8)", () => {
     getSessionDetailMock.mockResolvedValue(makeResponse({ toolMix, toolTimeline }));
     const { Wrapper } = makeWrapper();
 
-    render(<Wrapper><div /></Wrapper>);
+    render(
+      <Wrapper>
+        <div />
+      </Wrapper>,
+    );
 
     const toolMixEl = await screen.findByTestId("session-detail-tool-mix");
     expect(toolMixEl).toBeInTheDocument();
@@ -488,13 +551,27 @@ describe("SessionDetail — PromptList + WorkflowFunnel (T9)", () => {
 
   it("PromptList renders prompts in turn order with typed text", async () => {
     const prompts = [
-      { turnNumber: 1, promptId: "p1", timestamp: "2026-07-14T10:00:00.000Z", text: "first prompt" },
-      { turnNumber: 2, promptId: "p2", timestamp: "2026-07-14T10:05:00.000Z", text: "second prompt" },
+      {
+        turnNumber: 1,
+        promptId: "p1",
+        timestamp: "2026-07-14T10:00:00.000Z",
+        text: "first prompt",
+      },
+      {
+        turnNumber: 2,
+        promptId: "p2",
+        timestamp: "2026-07-14T10:05:00.000Z",
+        text: "second prompt",
+      },
     ];
     getSessionDetailMock.mockResolvedValue(makeResponse({ prompts }));
     const { Wrapper } = makeWrapper();
 
-    render(<Wrapper><div /></Wrapper>);
+    render(
+      <Wrapper>
+        <div />
+      </Wrapper>,
+    );
 
     const promptsEl = await screen.findByTestId("session-detail-prompts");
     expect(promptsEl).toBeInTheDocument();
@@ -520,7 +597,11 @@ describe("SessionDetail — PromptList + WorkflowFunnel (T9)", () => {
     getSessionDetailMock.mockResolvedValue(makeResponse({ workflow }));
     const { Wrapper } = makeWrapper();
 
-    render(<Wrapper><div /></Wrapper>);
+    render(
+      <Wrapper>
+        <div />
+      </Wrapper>,
+    );
 
     const workflowEl = await screen.findByTestId("session-detail-workflow");
     expect(workflowEl).toBeInTheDocument();
@@ -551,7 +632,11 @@ describe("SessionDetail — TokenFunnel + ContextComposition (T10)", () => {
     getSessionDetailMock.mockResolvedValue(makeResponse({ tokenFunnel }));
     const { Wrapper } = makeWrapper();
 
-    render(<Wrapper><div /></Wrapper>);
+    render(
+      <Wrapper>
+        <div />
+      </Wrapper>,
+    );
 
     const tokenEl = await screen.findByTestId("session-detail-token-funnel");
     expect(tokenEl).toBeInTheDocument();
@@ -571,7 +656,11 @@ describe("SessionDetail — TokenFunnel + ContextComposition (T10)", () => {
     getSessionDetailMock.mockResolvedValue(makeResponse({ contextComposition }));
     const { Wrapper } = makeWrapper();
 
-    render(<Wrapper><div /></Wrapper>);
+    render(
+      <Wrapper>
+        <div />
+      </Wrapper>,
+    );
 
     const ctxEl = await screen.findByTestId("session-detail-context-composition");
     expect(ctxEl).toBeInTheDocument();
@@ -588,7 +677,11 @@ describe("SessionDetail — TokenFunnel + ContextComposition (T10)", () => {
     getSessionDetailMock.mockResolvedValue(makeResponse({ contextComposition }));
     const { Wrapper } = makeWrapper();
 
-    render(<Wrapper><div /></Wrapper>);
+    render(
+      <Wrapper>
+        <div />
+      </Wrapper>,
+    );
 
     const ctxEl = await screen.findByTestId("session-detail-context-composition");
     expect(ctxEl.textContent).not.toContain("/secret");

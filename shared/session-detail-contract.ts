@@ -181,11 +181,7 @@ export interface SessionDetailDistribution {
 // Cache strip
 // ---------------------------------------------------------------------------
 
-export type SessionDetailCacheCause =
-  | "first-call"
-  | "model-switch"
-  | "compaction"
-  | "unexplained";
+export type SessionDetailCacheCause = "first-call" | "model-switch" | "compaction" | "unexplained";
 
 export interface SessionDetailCachePoint {
   callIndex: number;

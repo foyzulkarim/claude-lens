@@ -56,8 +56,6 @@ export function shortId(id: string): string {
 /** True if the Session Detail page has an honest "premium data missing"
  * state to surface — at minimum the cost-observed fields aren't available.
  * The page renders a single tier banner explaining what's absent. */
-export function isPremiumUnavailable(
-  header: Pick<SessionDetailHeader, "tier" | "drift">,
-): boolean {
+export function isPremiumUnavailable(header: Pick<SessionDetailHeader, "tier" | "drift">): boolean {
   return header.drift === undefined;
 }

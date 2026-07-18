@@ -1,5 +1,8 @@
 import type { FastifyInstance } from "fastify";
-import type { SessionDetailError, SessionDetailResponse } from "../../shared/session-detail-contract.js";
+import type {
+  SessionDetailError,
+  SessionDetailResponse,
+} from "../../shared/session-detail-contract.js";
 import type { TokenUsage } from "../../shared/types.js";
 import { projectSessionDetail, type RuntimeMetadata } from "../session-detail/projector.js";
 import type { Store } from "../store/store.js";

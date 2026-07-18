@@ -248,11 +248,7 @@ describe("parseTranscriptLine — compact workflow metadata (#P4-5)", () => {
   });
 
   it("classifies Bash git commit as bashKind=git-commit (leading whitespace tolerated)", () => {
-    const variants = [
-      'git commit -m "msg"',
-      "  GIT COMMIT --amend",
-      "\tgit commit",
-    ];
+    const variants = ['git commit -m "msg"', "  GIT COMMIT --amend", "\tgit commit"];
     for (const command of variants) {
       const line = toolUseLine("Bash", { command }, "toolu_bash_gc");
       const call = expectCall(parseTranscriptLine(line, new Set()));

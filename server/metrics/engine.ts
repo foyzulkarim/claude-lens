@@ -8,10 +8,7 @@ import type {
   SeriesPoint,
 } from "../../shared/metrics-contract.js";
 import type { ApiCall, Session, Turn } from "../../shared/types.js";
-import {
-  groupLogicalTurns,
-  type LogicalTurn,
-} from "../store/logical-turns.js";
+import { groupLogicalTurns, type LogicalTurn } from "../store/logical-turns.js";
 import {
   type CallDimension,
   callDimensionValue,
@@ -318,10 +315,7 @@ function logicalTurnToSyntheticTurn(group: LogicalTurn): Turn {
     // invariant fails loudly instead of silently producing $0 buckets.
     throw new Error(`unreachable: logical turn for prompt ${group.promptId} has no segments`);
   }
-  const calls = [
-    ...(group.main?.calls ?? []),
-    ...group.sidechains.flatMap((side) => side.calls),
-  ];
+  const calls = [...(group.main?.calls ?? []), ...group.sidechains.flatMap((side) => side.calls)];
   return {
     ...template,
     calls,
@@ -341,10 +335,7 @@ function entityScopesFor(entity: DistributionEntity, scope: MeasureScope): Measu
       // bucket reflects one logical user prompt, with main + sidechain
       // costs summed and the window's full timestamp range.
       return groupLogicalTurns(scope.turns).map((group) => ({
-        calls: [
-          ...(group.main?.calls ?? []),
-          ...group.sidechains.flatMap((side) => side.calls),
-        ],
+        calls: [...(group.main?.calls ?? []), ...group.sidechains.flatMap((side) => side.calls)],
         turns: [logicalTurnToSyntheticTurn(group)],
         sessions: [],
       }));

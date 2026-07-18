@@ -194,10 +194,12 @@ describe("createWarmCache — cache miss conditions", () => {
     await cache.save(key, sampleEntry());
     const files = await readdir(dir);
     const cacheFile = join(dir, files[0] ?? "");
-    const raw = `${JSON.stringify({ ...key, version: WARM_CACHE_SCHEMA_VERSION })}\n${JSON.stringify({
-      kind: "prompt",
-      prompt: { sessionId: "s1", promptId: "p1", text: "hello" },
-    })}\n`;
+    const raw = `${JSON.stringify({ ...key, version: WARM_CACHE_SCHEMA_VERSION })}\n${JSON.stringify(
+      {
+        kind: "prompt",
+        prompt: { sessionId: "s1", promptId: "p1", text: "hello" },
+      },
+    )}\n`;
     await writeFile(cacheFile, raw, "utf8");
 
     const loaded = await cache.load(key);

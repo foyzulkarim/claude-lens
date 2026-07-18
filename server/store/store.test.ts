@@ -31,7 +31,14 @@ function call(overrides: Partial<ApiCall> = {}): ApiCall {
 }
 
 function batch(calls: ApiCall[]): ParseTranscriptResult {
-  return { calls, prompts: [], toolResultBytes: [], compactions: [], duplicateCount: 0, malformedCount: 0 };
+  return {
+    calls,
+    prompts: [],
+    toolResultBytes: [],
+    compactions: [],
+    duplicateCount: 0,
+    malformedCount: 0,
+  };
 }
 
 function makeStore(debounceMs = 300, opts: Partial<import("./store.js").StoreOptions> = {}) {
@@ -405,12 +412,28 @@ describe("Store — getSessionSnapshot (#P4-5 T2)", () => {
     store.updatePricing({ pricer: flatPricer });
     store.applyRecords("s1", {
       calls: [
-        call({ sessionId: "s1", messageId: "m1", promptId: "p1", usage: { inputTokens: 100, outputTokens: 0, cacheReadTokens: 0, cacheCreateTokens: 0 } }),
+        call({
+          sessionId: "s1",
+          messageId: "m1",
+          promptId: "p1",
+          usage: { inputTokens: 100, outputTokens: 0, cacheReadTokens: 0, cacheCreateTokens: 0 },
+        }),
         // sidechain on the same promptId — must roll into p1's logical turn
-        call({ sessionId: "s1", messageId: "m2", promptId: "p1", isSidechain: true, usage: { inputTokens: 50, outputTokens: 0, cacheReadTokens: 0, cacheCreateTokens: 0 } }),
+        call({
+          sessionId: "s1",
+          messageId: "m2",
+          promptId: "p1",
+          isSidechain: true,
+          usage: { inputTokens: 50, outputTokens: 0, cacheReadTokens: 0, cacheCreateTokens: 0 },
+        }),
       ],
       prompts: [
-        { sessionId: "s1", promptId: "p1", text: "do thing", timestamp: "2026-07-13T00:00:00.000Z" },
+        {
+          sessionId: "s1",
+          promptId: "p1",
+          text: "do thing",
+          timestamp: "2026-07-13T00:00:00.000Z",
+        },
       ],
       toolResultBytes: [],
       compactions: [],

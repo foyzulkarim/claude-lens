@@ -25,14 +25,10 @@ export function ToolMix({ toolMix, toolTimeline }: ToolMixProps): React.JSX.Elem
       data-testid="session-detail-tool-mix"
       className="rounded-md border border-slate-200 bg-white p-4 dark:border-[#232B36] dark:bg-[#151A21]"
     >
-      <h2 className="text-sm font-semibold text-slate-900 dark:text-[#E8EDF2]">
-        Tool mix
-      </h2>
+      <h2 className="text-sm font-semibold text-slate-900 dark:text-[#E8EDF2]">Tool mix</h2>
 
       {toolMix.length === 0 ? (
-        <p className="mt-3 text-xs text-slate-500 dark:text-[#8A96A5]">
-          No tool calls recorded.
-        </p>
+        <p className="mt-3 text-xs text-slate-500 dark:text-[#8A96A5]">No tool calls recorded.</p>
       ) : (
         <ul aria-label="Tool counts" className="mt-3 space-y-1">
           {toolMix.map((tool) => (
@@ -41,9 +37,7 @@ export function ToolMix({ toolMix, toolTimeline }: ToolMixProps): React.JSX.Elem
               className="flex items-center gap-2 text-[11px]"
               aria-label={`${tool.name} — ${tool.callCount} calls, ${tool.inputBytes} bytes input`}
             >
-              <span className="w-20 font-mono text-slate-700 dark:text-[#E8EDF2]">
-                {tool.name}
-              </span>
+              <span className="w-20 font-mono text-slate-700 dark:text-[#E8EDF2]">{tool.name}</span>
               <div className="relative h-2 flex-1 rounded bg-slate-100 dark:bg-[#232B36]">
                 <div
                   className="absolute inset-y-0 left-0 rounded bg-indigo-500"
@@ -61,21 +55,17 @@ export function ToolMix({ toolMix, toolTimeline }: ToolMixProps): React.JSX.Elem
       )}
 
       <div className="mt-6">
-        <h3 className="text-xs font-medium text-slate-500 dark:text-[#8A96A5]">
-          Tool timeline
-        </h3>
+        <h3 className="text-xs font-medium text-slate-500 dark:text-[#8A96A5]">Tool timeline</h3>
         {toolTimeline.length === 0 ? (
-          <p className="mt-2 text-xs text-slate-500 dark:text-[#8A96A5]">
-            No tool events.
-          </p>
+          <p className="mt-2 text-xs text-slate-500 dark:text-[#8A96A5]">No tool events.</p>
         ) : (
           <ol
             aria-label="Tool timeline events"
             className="mt-2 max-h-48 overflow-y-auto text-[11px]"
           >
-            {toolTimeline.map((event, idx) => (
+            {toolTimeline.map((event) => (
               <li
-                key={`${event.callIndex}-${event.toolName}-${idx}`}
+                key={`${event.callIndex}-${event.toolName}-${event.timestamp}`}
                 className="flex items-center gap-2 border-b border-slate-100 py-1 dark:border-[#232B36]"
               >
                 <span className="w-10 text-right font-mono text-slate-500 dark:text-[#8A96A5]">

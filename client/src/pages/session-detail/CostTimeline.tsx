@@ -1,9 +1,7 @@
 import { useMemo, useState } from "react";
 import type React from "react";
 import clsx from "clsx";
-import type {
-  SessionDetailTimelinePoint,
-} from "../../../../shared/session-detail-contract.js";
+import type { SessionDetailTimelinePoint } from "../../../../shared/session-detail-contract.js";
 import { formatCost, formatPercent, formatTokens } from "./format.js";
 import { TOGGLE_ACTIVE_CLASS, TOGGLE_CLASS } from "../../ui/toggleStyles.js";
 
@@ -32,14 +30,14 @@ export function CostTimeline({ timeline }: CostTimelineProps): React.JSX.Element
   const [display, setDisplay] = useState<Display>("cumulative");
   const [metric, setMetric] = useState<Metric>("cost");
 
-  const values = useMemo(() => projectValues(timeline, display, metric), [timeline, display, metric]);
+  const values = useMemo(
+    () => projectValues(timeline, display, metric),
+    [timeline, display, metric],
+  );
 
   const total = useMemo(() => values.reduce((sum, v) => sum + v, 0), [values]);
   const peak = useMemo(() => values.reduce((m, v) => (v > m ? v : m), 0), [values]);
-  const compactionFlags = useMemo(
-    () => timeline.filter((p) => p.isCompaction).length,
-    [timeline],
-  );
+  const compactionFlags = useMemo(() => timeline.filter((p) => p.isCompaction).length, [timeline]);
   const turnCount = useMemo(
     () => new Set(timeline.filter((p) => p.isTurnBoundary).map((p) => p.turnNumber)).size,
     [timeline],
@@ -54,12 +52,7 @@ export function CostTimeline({ timeline }: CostTimelineProps): React.JSX.Element
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-sm font-semibold text-slate-900 dark:text-[#E8EDF2]">Cost timeline</h2>
         <div className="flex flex-wrap items-center gap-1">
-          <ToggleGroup
-            options={DISPLAYS}
-            value={display}
-            onChange={setDisplay}
-            label="Display"
-          />
+          <ToggleGroup options={DISPLAYS} value={display} onChange={setDisplay} label="Display" />
           <ToggleGroup options={METRICS} value={metric} onChange={setMetric} label="Metric" />
         </div>
       </div>
@@ -89,11 +82,10 @@ interface ToggleGroupProps<T extends string> {
 
 function ToggleGroup<T extends string>({ options, value, onChange, label }: ToggleGroupProps<T>) {
   return (
-    <div
-      role="group"
+    <fieldset
       aria-label={label}
       data-testid={`timeline-toggle-${label.toLowerCase()}`}
-      className="inline-flex rounded border border-slate-200 dark:border-[#232B36]"
+      className="m-0 inline-flex rounded border border-slate-200 p-0 dark:border-[#232B36]"
     >
       {options.map((option) => (
         <button
@@ -109,7 +101,7 @@ function ToggleGroup<T extends string>({ options, value, onChange, label }: Togg
           {option}
         </button>
       ))}
-    </div>
+    </fieldset>
   );
 }
 
@@ -131,7 +123,12 @@ interface TimelineChartProps {
   metric: Metric;
 }
 
-function TimelineChart({ timeline, values, display, metric }: TimelineChartProps): React.JSX.Element {
+function TimelineChart({
+  timeline,
+  values,
+  display,
+  metric,
+}: TimelineChartProps): React.JSX.Element {
   const width = 800;
   const height = 120;
   const padding = { top: 8, right: 8, bottom: 8, left: 8 };
@@ -140,9 +137,7 @@ function TimelineChart({ timeline, values, display, metric }: TimelineChartProps
   const peak = values.reduce((m, v) => (v > m ? v : m), 0);
 
   if (timeline.length === 0) {
-    return (
-      <p className="mt-3 text-sm text-slate-500 dark:text-[#8A96A5]">No calls yet.</p>
-    );
+    return <p className="mt-3 text-sm text-slate-500 dark:text-[#8A96A5]">No calls yet.</p>;
   }
 
   const barWidth = innerWidth / values.length;
@@ -163,7 +158,7 @@ function TimelineChart({ timeline, values, display, metric }: TimelineChartProps
         const isTurnBoundary = timeline[i]?.isTurnBoundary === true;
         const isCompaction = timeline[i]?.isCompaction === true;
         return (
-          <g key={i}>
+          <g key={timeline[i]?.callIndex ?? i}>
             <rect
               x={x}
               y={y}

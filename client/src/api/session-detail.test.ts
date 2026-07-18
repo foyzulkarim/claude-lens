@@ -219,9 +219,7 @@ describe("getSessionDetail — error handling", () => {
       },
     });
 
-    await expect(getSessionDetail("s1")).rejects.toBeInstanceOf(
-      SessionDetailResponseShapeError,
-    );
+    await expect(getSessionDetail("s1")).rejects.toBeInstanceOf(SessionDetailResponseShapeError);
   });
 
   it("rejects a turn with a non-numeric mainCost (corrupt optional field)", async () => {
@@ -303,8 +301,6 @@ describe("getSessionDetail — error handling", () => {
       },
     });
 
-    await expect(getSessionDetail("s1")).rejects.toBeInstanceOf(
-      SessionDetailResponseShapeError,
-    );
+    await expect(getSessionDetail("s1")).rejects.toBeInstanceOf(SessionDetailResponseShapeError);
   });
 });

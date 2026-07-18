@@ -72,9 +72,10 @@ describe("GET /api/sessions/:id — known resource", () => {
   it("returns 200 with the projected response when the session is registered", async () => {
     store.applyRecords(
       "s1",
-      batch([call({ sessionId: "s1", messageId: "m1" })], [
-        { sessionId: "s1", promptId: "p1", text: "hi", timestamp: "2026-07-13T00:00:00.000Z" },
-      ]),
+      batch(
+        [call({ sessionId: "s1", messageId: "m1" })],
+        [{ sessionId: "s1", promptId: "p1", text: "hi", timestamp: "2026-07-13T00:00:00.000Z" }],
+      ),
     );
     // Force-compute now (debounceMs: 0 still schedules a microtask).
     store.flushAll();
@@ -144,7 +145,11 @@ describe("GET /api/sessions/:id — unknown session", () => {
 
 describe("GET /api/sessions/:id — projector wiring", () => {
   it("returns 200 with logical turn grouping (sidechain folds into parent prompt)", async () => {
-    const mainCall = call({ sessionId: "s1", messageId: "m1", timestamp: "2026-07-13T00:01:00.000Z" });
+    const mainCall = call({
+      sessionId: "s1",
+      messageId: "m1",
+      timestamp: "2026-07-13T00:01:00.000Z",
+    });
     const sideCall = call({
       sessionId: "s1",
       messageId: "m2",

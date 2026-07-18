@@ -24,12 +24,10 @@ export function WorkflowFunnel({ workflow }: WorkflowFunnelProps): React.JSX.Ele
       data-testid="session-detail-workflow"
       className="rounded-md border border-slate-200 bg-white p-4 dark:border-[#232B36] dark:bg-[#151A21]"
     >
-      <h2 className="text-sm font-semibold text-slate-900 dark:text-[#E8EDF2]">
-        Workflow funnel
-      </h2>
+      <h2 className="text-sm font-semibold text-slate-900 dark:text-[#E8EDF2]">Workflow funnel</h2>
       <p className="mt-1 text-xs text-slate-500 dark:text-[#8A96A5]">
-        Edit turns through the five canonical coverage stages. Every later stage
-        counts ≤ the prior stage.
+        Edit turns through the five canonical coverage stages. Every later stage counts ≤ the prior
+        stage.
       </p>
       <ul aria-label="Workflow stages" className="mt-3 space-y-2">
         {workflow.stages.map((stage, idx) => {
