@@ -12,10 +12,12 @@ The dashboard reads directly from your `~/.claude` transcripts; nothing leaves y
 ## Quick start
 
 ```bash
-npx github:foyzulkarim/claude-lens
+npx @foyzulkarim/claude-lens@latest
 ```
 
-This builds and runs the app, then opens it in your browser (defaults to `~/.claude` for data, and picks a free port starting at `4128` if that one's busy).
+This runs the app and opens it in your browser (defaults to `~/.claude` for data, and picks a free port starting at `4128` if that one's busy).
+
+To run straight from a branch or commit instead of the published release, use `npx github:foyzulkarim/claude-lens[#ref]`.
 
 ## Local setup
 
