@@ -167,7 +167,7 @@ Pages are cheap by design: filter state + preset `MetricsQuery`s + layout. The H
 - [ ] **#P4-3 — Search index + prompt search**
   `GET /api/search-index` + MiniSearch client integration; results deep-link to Session Detail at the matching turn.
   *Acceptance:* search-as-you-type over full history with no server round-trip per keystroke.
-- [ ] **#P4-4 — Sessions page** *(§2)*
+- [x] **#P4-4 — Sessions page** *(§2)*
   Includes the `GET /api/sessions` list route (architecture §9 — the sortable, tier-dependent list payload). Table (sortable, tier-dependent columns), timeline/gantt toggle, efficiency scatter with regression, cost histogram with percentile markers, compare mode. The full-text-search slot is a stable placeholder until #P4-3 mounts the search UI, so this page can land independently. Tags column stubs until #P4-15; gate-score column stubs until #P4-12. Tier-dependent columns (lines ±, observed $, ctx %) light up when C/L files are present — pages spec §2 row 3.
   *Acceptance:* matches `sessions.html`; drill-in from Dashboard lands filtered.
 - [ ] **#P4-5 — Session Detail page** *(§3)*

@@ -5,7 +5,7 @@ import { buildApp } from "../app.js";
 import { buildRuntimeMetadata } from "../runtime.js";
 import { Store } from "../store/store.js";
 import type { ApiCall } from "../../shared/types.js";
-import { parseSessionsQuery } from "./sessions.js";
+import { parseSessionsPageQuery, parseSessionsQuery, SESSIONS_TIMELINE_CAP } from "./sessions.js";
 
 // Same local-Date convention as routes/metrics.test.ts and metrics/engine.test.ts
 // — `grain.ts` buckets by *local* calendar day, so hardcoded "...Z" timestamps
@@ -714,5 +714,318 @@ describe("GET /api/sessions — app registration regression guard", () => {
       "string",
     );
     expect(parseSessionsQuery({ project: "a,b" })).toMatchObject({ project: ["a", "b"] });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Page projection (#P4-4 / ARCH-sessions-page T2)
+// ---------------------------------------------------------------------------
+
+describe("GET /api/sessions?view=page — validation", () => {
+  let app: FastifyInstance;
+  let store: Store;
+
+  beforeEach(() => {
+    ({ app, store } = buildTestApp());
+  });
+
+  afterEach(async () => {
+    store.stop();
+    await app.close();
+  });
+
+  it("rejects view=page requests without explicit page fields", async () => {
+    // A view=page request without from/to is technically allowed (compare-
+    // only path), but if it carries page-only filters they still need to be
+    // well-formed.
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/sessions?view=page&minCostComputed=not-a-number",
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ error: expect.stringContaining("minCostComputed") });
+  });
+
+  it("rejects contradictory cost bounds (min > max)", async () => {
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/sessions?view=page&minCostComputed=10&maxCostComputed=1",
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ error: expect.stringContaining("minCostComputed") });
+  });
+
+  it("rejects more than 3 session IDs in compare hydration", async () => {
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/sessions?view=page&sessionId=a,b,c,d",
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ error: expect.stringContaining("sessionId") });
+  });
+
+  it("rejects duplicate session IDs", async () => {
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/sessions?view=page&sessionId=a,b,a",
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ error: expect.stringContaining("sessionId") });
+  });
+
+  it("rejects view=page&include=trace (cross-projection modifier)", async () => {
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/sessions?view=page&include=trace",
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it("rejects include=timeline without view=page", async () => {
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/sessions?include=timeline",
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it("accepts the wider page sort union", async () => {
+    const cases = [
+      "totalTokens",
+      "turnCount",
+      "cacheHitPct",
+      "costObserved",
+      "gateScore",
+      "branch",
+      "version",
+    ];
+    for (const sort of cases) {
+      const response = await app.inject({
+        method: "GET",
+        url: `/api/sessions?view=page&sort=${sort}&from=${iso(2026, 6, 1)}&to=${iso(2026, 6, 30)}`,
+      });
+      expect(response.statusCode).toBe(200);
+    }
+  });
+});
+
+describe("GET /api/sessions?view=page — projection behavior", () => {
+  let app: FastifyInstance;
+  let store: Store;
+
+  beforeEach(() => {
+    ({ app, store } = buildTestApp());
+    // 4 sessions with distinct firstAt, project, model — enough to exercise
+    // page-row sorting, timeline projection, and compare hydration.
+    addSession(store, {
+      sessionId: "s-a",
+      timestamp: iso(2026, 6, 10, 10, 0),
+      project: "/repo/alpha",
+      branch: "main",
+      inputTokens: 100,
+      outputTokens: 10,
+    });
+    addSession(store, {
+      sessionId: "s-b",
+      timestamp: iso(2026, 6, 12, 10, 0),
+      project: "/repo/beta",
+      branch: "feature",
+      inputTokens: 5000,
+      outputTokens: 500,
+    });
+    addSession(store, {
+      sessionId: "s-c",
+      timestamp: iso(2026, 6, 11, 10, 0),
+      project: "/repo/alpha",
+      branch: "main",
+      inputTokens: 2000,
+      outputTokens: 200,
+    });
+    addSession(store, {
+      sessionId: "s-d",
+      timestamp: iso(2026, 6, 14, 10, 0),
+      project: "/repo/gamma",
+      branch: "main",
+      model: "claude-haiku-4-5",
+      inputTokens: 100,
+      outputTokens: 10,
+    });
+  });
+
+  afterEach(async () => {
+    store.stop();
+    await app.close();
+  });
+
+  it("returns strict page rows with totalTokens computed server-side", async () => {
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/sessions?view=page&sort=costComputed&order=desc&from=${iso(2026, 6, 1)}&to=${iso(2026, 6, 30)}`,
+    });
+    expect(response.statusCode).toBe(200);
+    const items = response.json().items;
+    expect(items).toHaveLength(4);
+    for (const item of items) {
+      expect(item).toHaveProperty("models");
+      expect(item).toHaveProperty("entrypoint");
+      expect(item).toHaveProperty("version");
+      expect(item).toHaveProperty("host");
+      expect(item).toHaveProperty("totalTokens");
+      expect(item).toHaveProperty("cacheHitPct");
+      expect(item).toHaveProperty("hasDrilldown");
+      expect(item).toHaveProperty("tier");
+    }
+  });
+
+  it("paginates deterministically — sort by totalTokens respects tie-break", async () => {
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/sessions?view=page&sort=totalTokens&order=desc&limit=2&offset=0&from=${iso(2026, 6, 1)}&to=${iso(2026, 6, 30)}`,
+    });
+    expect(response.statusCode).toBe(200);
+    const ids = response.json().items.map((i: { sessionId: string }) => i.sessionId);
+    expect(ids).toHaveLength(2);
+    const next = await app.inject({
+      method: "GET",
+      url: `/api/sessions?view=page&sort=totalTokens&order=desc&limit=2&offset=2&from=${iso(2026, 6, 1)}&to=${iso(2026, 6, 30)}`,
+    });
+    const nextIds = next.json().items.map((i: { sessionId: string }) => i.sessionId);
+    expect(nextIds).toHaveLength(2);
+    // No overlap, total preserved across pages.
+    for (const id of nextIds) expect(ids.includes(id)).toBe(false);
+    expect(response.json().total).toBe(next.json().total);
+  });
+
+  it("hydrates comparison only for IDs in the active population", async () => {
+    // sessionId=... with no range — only IDs that exist in the store are returned.
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/sessions?view=page&sessionId=s-a,s-missing,s-c",
+    });
+    expect(response.statusCode).toBe(200);
+    const ids = response
+      .json()
+      .items.map((i: { sessionId: string }) => i.sessionId)
+      .sort();
+    expect(ids).toEqual(["s-a", "s-c"]);
+  });
+
+  it("timeline projection discloses invalid-time exclusions and sampling", async () => {
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/sessions?view=page&include=timeline&from=${iso(2026, 6, 1)}&to=${iso(2026, 6, 30)}`,
+    });
+    expect(response.statusCode).toBe(200);
+    const timeline = response.json().timeline;
+    expect(timeline).toBeDefined();
+    expect(timeline.matched).toBe(4);
+    expect(timeline.eligible).toBe(4);
+    expect(timeline.returned).toBe(4);
+    expect(timeline.sampled).toBe(false);
+    expect(timeline.excludedInvalidTime).toBe(0);
+    expect(timeline.items).toHaveLength(4);
+  });
+
+  it("timeline sampling caps at SESSIONS_TIMELINE_CAP and reports sampled=true", async () => {
+    // Build a separate store with > SESSIONS_TIMELINE_CAP sessions.
+    const bigApp = buildApp({ store, logger: false, metadata: buildRuntimeMetadata() });
+    try {
+      // Synthesize enough sessions to exceed the cap. The existing 4 plus
+      // SESSIONS_TIMELINE_CAP more (deterministic ISO dates, one per day).
+      for (let i = 0; i < SESSIONS_TIMELINE_CAP + 100; i++) {
+        addSession(store, {
+          sessionId: `bulk-${String(i).padStart(4, "0")}`,
+          timestamp: iso(2025, 0, 1 + (i % 365)),
+          project: "/repo/bulk",
+        });
+      }
+      const response = await bigApp.inject({
+        method: "GET",
+        url: `/api/sessions?view=page&include=timeline&from=${iso(2025, 0, 1)}&to=${iso(2025, 11, 31, 23, 59)}`,
+      });
+      expect(response.statusCode).toBe(200);
+      const timeline = response.json().timeline;
+      expect(timeline.returned).toBeLessThanOrEqual(SESSIONS_TIMELINE_CAP);
+      expect(timeline.sampled).toBe(true);
+      // matched >= eligible (in this fixture no sessions have invalid times)
+      expect(timeline.matched).toBeGreaterThan(SESSIONS_TIMELINE_CAP);
+    } finally {
+      await bigApp.close();
+    }
+  });
+
+  it("preserves sessionId hydration as a population narrow even with range", async () => {
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/sessions?view=page&sessionId=s-a&from=${iso(2026, 6, 11)}&to=${iso(2026, 6, 30)}`,
+    });
+    expect(response.statusCode).toBe(200);
+    // s-a is at firstAt=Jul 10, outside the range — narrow drops it even
+    // though the sessionId allowlist contains it.
+    expect(response.json().items).toEqual([]);
+  });
+
+  it("keeps the section-level lock — globalCapture is filter-independent", async () => {
+    // Mark one session with cost sidecar; globalCapture should reflect the
+    // unfiltered file set even under a narrow filter.
+    store.markSidecarPresent("s-b", "cost");
+    const filtered = await app.inject({
+      method: "GET",
+      url: `/api/sessions?view=page&from=${iso(2026, 6, 1)}&to=${iso(2026, 6, 5)}`,
+    });
+    expect(filtered.statusCode).toBe(200);
+    expect(filtered.json().meta.globalCapture.hasCostSamples).toBe(true);
+  });
+});
+
+describe("parseSessionsPageQuery — unit coverage", () => {
+  it("returns the typed params for a valid request", () => {
+    const parsed = parseSessionsPageQuery({
+      view: "page",
+      sort: "totalTokens",
+      order: "desc",
+      offset: 0,
+      limit: 25,
+      from: "2026-07-01",
+      to: "2026-07-31",
+      project: "alpha,beta",
+      entrypoint: "cli,sdk",
+      minCostComputed: "0",
+      maxCostComputed: "5",
+      hasDrilldown: "true",
+      sessionId: "a,b",
+      include: "timeline",
+    });
+    expect(typeof parsed).toBe("object");
+    expect(parsed).toMatchObject({
+      view: "page",
+      sort: "totalTokens",
+      entrypoint: ["cli", "sdk"],
+      hasDrilldown: true,
+      sessionId: ["a", "b"],
+      include: "timeline",
+    });
+  });
+
+  it("rejects unknown sort values", () => {
+    expect(typeof parseSessionsPageQuery({ view: "page", sort: "bogus" })).toBe("string");
+  });
+
+  it("rejects contradictory cost bounds", () => {
+    expect(
+      typeof parseSessionsPageQuery({
+        view: "page",
+        minCostComputed: 5,
+        maxCostComputed: 1,
+      }),
+    ).toBe("string");
+  });
+
+  it("rejects non-boolean hasDrilldown", () => {
+    expect(typeof parseSessionsPageQuery({ view: "page", hasDrilldown: "yes" })).toBe("string");
+  });
+
+  it("rejects more than 3 session IDs", () => {
+    expect(typeof parseSessionsPageQuery({ view: "page", sessionId: "a,b,c,d" })).toBe("string");
   });
 });

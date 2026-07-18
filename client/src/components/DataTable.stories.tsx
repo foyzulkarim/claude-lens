@@ -1,5 +1,6 @@
 import { createColumnHelper } from "@tanstack/react-table";
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { useState } from "react";
 import { DataTable } from "./DataTable.js";
 
 interface SessionRow {
@@ -51,6 +52,14 @@ export const Plain: Story = {
 
 export const Sorted: Story = {
   args: { data: makeRows(6), columns, initialSorting: [{ id: "cost", desc: true }] },
+};
+
+export const ControlledSorting: Story = {
+  render: (args) => {
+    const [sorting, setSorting] = useState([{ id: "cost", desc: true }]);
+    return <DataTable {...args} manualSorting sorting={sorting} onSortingChange={setSorting} />;
+  },
+  args: { data: makeRows(6), columns, label: "Server-sorted sessions" },
 };
 
 export const Loading: Story = {

@@ -586,6 +586,32 @@ describe("metrics — mode: distribution dispatch", () => {
     expect(alpha?.distribution?.p50).toBeCloseTo(0.005, 10);
   });
 
+  it("narrows session distributions with sessionPopulation before computing percentiles", () => {
+    const input: MetricsInput = {
+      calls: [
+        call({ sessionId: "s1", usage: usage(100) }),
+        call({ sessionId: "s2", usage: usage(900) }),
+      ],
+      turns: [],
+      sessions: [
+        session({ sessionId: "s1", project: "/repo/alpha" }),
+        session({ sessionId: "s2", project: "/repo/beta" }),
+      ],
+      pricing: PRICING,
+    };
+    const result = metrics(input, {
+      measures: ["inputTokens"],
+      dimensions: [],
+      grain: "day",
+      range: { from: iso(2026, 6, 13), to: iso(2026, 6, 15) },
+      mode: "distribution",
+      distributionEntity: "session",
+      sessionPopulation: { project: ["/repo/alpha"] },
+    });
+    expect(result[0]?.distribution?.p50).toBe(100);
+    expect(result[0]?.distribution?.p99).toBe(100);
+  });
+
   describe("distribution entity population selection", () => {
     it('distributionEntity: "call" builds the population from individual calls', () => {
       const calls = [
