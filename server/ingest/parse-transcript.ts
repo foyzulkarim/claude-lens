@@ -171,6 +171,7 @@ function parseAssistantLine(
         }
         tools.push({
           name,
+          id: id !== "" ? id : undefined,
           inputBytes: Buffer.byteLength(JSON.stringify(block.input ?? {}), "utf8"),
         });
       }

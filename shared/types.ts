@@ -17,6 +17,15 @@ export interface TokenUsage {
 export interface ToolUseRef {
   name: string;
   inputBytes: number;
+  /**
+   * The `tool_use` block's own id (Anthropic API's `content[].id`), when
+   * present. Lets warm-cache reconstruction rebuild the toolUseId → name
+   * map (server/ingest/parse-transcript.ts's Bash exit-code attribution)
+   * from a cached ApiCall's tools without re-parsing the raw transcript
+   * line. Optional so pre-existing test fixtures and cache entries that
+   * predate this field remain valid.
+   */
+  id?: string;
 }
 
 export interface ApiCall {

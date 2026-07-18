@@ -20,6 +20,14 @@ vi.mock("../../api/sessions.js", () => ({
   listSessions: (params: unknown, signal: unknown) => listSessionsMock(params, signal),
 }));
 
+// ChartCard renders real ECharts via <Chart>, which needs a ResizeObserver
+// and real layout jsdom doesn't provide — stub it out like ChartCard.test.tsx
+// does, so these tests exercise ChartCard's query wiring, not the canvas.
+vi.mock("../../charts/Chart.js", () => ({
+  Chart: () => <div data-testid="chart-stub" />,
+}));
+
+import { ChartCard } from "../../charts/ChartCard.js";
 import { AnomalyFeed } from "./AnomalyFeed.js";
 import { FailedWorkStat } from "./FailedWorkStat.js";
 import { LeaderboardsCard } from "./LeaderboardsCard.js";
@@ -131,5 +139,50 @@ describe("dashboard cards — stable default time (review #4)", () => {
     await screen.findByText("Gate failure and capture-gap data not available yet.");
     expect(listSessionsMock).toHaveBeenCalledTimes(1);
     expect(queryClient.getQueryCache().getAll()).toHaveLength(1);
+  });
+
+  it("ChartCard fires exactly one query after first paint", async () => {
+    const queryClient = renderCard(<ChartCard title="Cost over time" defaultUnit="$" />);
+    await screen.findByTestId("chart-stub");
+    expect(postMetricsMock).toHaveBeenCalledTimes(1);
+    expect(queryClient.getQueryCache().getAll()).toHaveLength(1);
+  });
+
+  it("ChartCard rolls its range forward when useStableNow ticks (review: frozen new Date())", async () => {
+    // Pre-fix, ChartCard's query memo called `new Date()` directly instead
+    // of routing through `useStableNow` — since the memo's dependency array
+    // never included that call's result, the captured value froze at mount
+    // forever, and the query never rolled its default preset range forward.
+    // Exercised here the same way `useStableNow`'s tick eventually presents
+    // a new `now` to the component: via a fresh Date passed back in as the
+    // `now` prop (the same seam BurnRateCard/SubscriptionWindow use for
+    // their own frozen-time regression tests).
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { hook, searchHook } = memoryLocation({ path: "/", static: true });
+    const initialNow = new Date("2026-07-16T12:00:00.000Z");
+    const { rerender } = render(
+      <QueryClientProvider client={queryClient}>
+        <Router hook={hook} searchHook={searchHook}>
+          <ChartCard title="Cost over time" defaultUnit="$" now={initialNow} />
+        </Router>
+      </QueryClientProvider>,
+    );
+    await screen.findByTestId("chart-stub");
+    expect(postMetricsMock).toHaveBeenCalledTimes(1);
+    const firstRange = (postMetricsMock.mock.calls[0][0] as { range: { to: string } }).range;
+    expect(firstRange.to).toBe(initialNow.toISOString());
+
+    const tickedNow = new Date(initialNow.getTime() + 60_000);
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <Router hook={hook} searchHook={searchHook}>
+          <ChartCard title="Cost over time" defaultUnit="$" now={tickedNow} />
+        </Router>
+      </QueryClientProvider>,
+    );
+    await vi.waitFor(() => expect(postMetricsMock).toHaveBeenCalledTimes(2));
+    const secondRange = (postMetricsMock.mock.calls[1][0] as { range: { to: string } }).range;
+    expect(secondRange.to).toBe(tickedNow.toISOString());
+    expect(secondRange.to).not.toBe(firstRange.to);
   });
 });

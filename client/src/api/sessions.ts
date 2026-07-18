@@ -56,12 +56,18 @@ function isStringOrUndefined(value: unknown): value is string | undefined {
   return value === undefined || typeof value === "string";
 }
 
+function isFiniteOrUndefined(value: unknown): value is number | undefined {
+  return value === undefined || (typeof value === "number" && Number.isFinite(value));
+}
+
 function isTracePoint(value: unknown): value is TracePoint {
   return (
     typeof value === "object" &&
     value !== null &&
     typeof (value as { turnIndex?: unknown }).turnIndex === "number" &&
+    Number.isFinite((value as { turnIndex?: unknown }).turnIndex) &&
     typeof (value as { cost?: unknown }).cost === "number" &&
+    Number.isFinite((value as { cost?: unknown }).cost) &&
     typeof (value as { timestamp?: unknown }).timestamp === "string"
   );
 }
@@ -75,10 +81,18 @@ function isSessionListItem(value: unknown): value is SessionListItem {
     typeof v.lastAt === "string" &&
     typeof v.project === "string" &&
     typeof v.model === "string" &&
+    isStringOrUndefined(v.branch) &&
+    isStringOrUndefined(v.host) &&
     typeof v.durationMs === "number" &&
+    Number.isFinite(v.durationMs) &&
     typeof v.turnCount === "number" &&
+    Number.isFinite(v.turnCount) &&
     typeof v.costComputed === "number" &&
-    // Optional numeric/TracePoint fields: either missing or of the right shape.
+    Number.isFinite(v.costComputed) &&
+    isFiniteOrUndefined(v.cacheSavingsComputed) &&
+    isFiniteOrUndefined(v.maxTurnCostComputed) &&
+    isFiniteOrUndefined(v.contextPctEstimated) &&
+    // Optional TracePoint field: either missing or an array of well-formed points.
     (v.trace === undefined || (Array.isArray(v.trace) && v.trace.every(isTracePoint)))
   );
 }
@@ -98,12 +112,12 @@ function isSessionListMeta(value: unknown): value is SessionListMeta {
   ) {
     return false;
   }
-  // matchedExtent is {from, to} | null — both bounds string-or-undefined OK.
-  if (v.matchedExtent !== null && typeof v.matchedExtent === "object") {
+  // matchedExtent is {from, to} | null (shared/sessions-contract.ts) — both
+  // bounds are required strings together, not independently optional.
+  if (v.matchedExtent !== null) {
+    if (typeof v.matchedExtent !== "object") return false;
     const e = v.matchedExtent as Record<string, unknown>;
-    if (!isStringOrUndefined(e.from) || !isStringOrUndefined(e.to)) return false;
-  } else if (v.matchedExtent !== null) {
-    return false;
+    if (typeof e.from !== "string" || typeof e.to !== "string") return false;
   }
   return true;
 }

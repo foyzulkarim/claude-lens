@@ -17,12 +17,25 @@ interface TailFileState {
   chain: Promise<void>;
   // Tracked for future Data Health surfacing (#P2-13); intentionally not read here.
   readErrorCount: number;
+  // toolUseId -> tool name, carried across incremental reads so a Bash
+  // exit-code fallback (parse-transcript.ts's CQ4 fix) can still resolve
+  // the originating tool when its tool_use assistant line landed in an
+  // earlier read than its tool_result user line. Rebuilding a fresh map
+  // per read (the pre-fix behavior) silently dropped that attribution at
+  // every read-chunk boundary.
+  toolNameByToolUseId: Map<string, string>;
 }
 
 const NEWLINE = 0x0a;
 
 function freshState(): TailFileState {
-  return { offset: 0, seen: new Set(), chain: Promise.resolve(), readErrorCount: 0 };
+  return {
+    offset: 0,
+    seen: new Set(),
+    chain: Promise.resolve(),
+    readErrorCount: 0,
+    toolNameByToolUseId: new Map(),
+  };
 }
 
 export class Tailer {
@@ -44,7 +57,12 @@ export class Tailer {
     if (this.cache) {
       const cached = await this.loadFromCache(file);
       if (cached) {
-        for (const call of cached.calls) state.seen.add(call.messageId);
+        for (const call of cached.calls) {
+          state.seen.add(call.messageId);
+          for (const tool of call.tools) {
+            if (tool.id) state.toolNameByToolUseId.set(tool.id, tool.name);
+          }
+        }
         state.offset = file.size;
         this.emitRecords(file, cached);
         return;
@@ -107,6 +125,7 @@ export class Tailer {
     if (file.size < state.offset) {
       state.seen.clear();
       state.offset = 0;
+      state.toolNameByToolUseId.clear();
       this.emitReset(file);
     }
     await this.readGrowth(file, state, file.size);
@@ -140,7 +159,7 @@ export class Tailer {
       const lines = text.slice(0, -1).split("\n");
       state.offset += lastNewline + 1;
 
-      const result = parseTranscriptLines(lines, state.seen);
+      const result = parseTranscriptLines(lines, state.seen, state.toolNameByToolUseId);
       this.emitRecords(file, result);
       onParsed?.(result);
     } catch {

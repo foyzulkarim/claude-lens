@@ -111,8 +111,8 @@ describe("dashboard smoke", () => {
     // 9. Records strip — the dashboard surfaces 5 record rows.
     cy.get('[data-testid="records-strip"]')
       .should("be.visible")
-      .contains("Records")
       .within(() => {
+        cy.contains("Records").should("be.visible");
         cy.contains("Most expensive day").should("exist");
         cy.contains("Most expensive session").should("exist");
         cy.contains("Most expensive turn").should("exist");

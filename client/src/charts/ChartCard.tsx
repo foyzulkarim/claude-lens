@@ -16,6 +16,7 @@ import {
   serializeFilters,
 } from "../filters/state.js";
 import { useFilters } from "../filters/useFilters.js";
+import { useStableNow } from "../pages/dashboard/useStableNow.js";
 import { TOGGLE_ACTIVE_CLASS, TOGGLE_CLASS } from "../ui/toggleStyles.js";
 import { Chart } from "./Chart.js";
 import { buildTimeseriesOption } from "./timeseries.js";
@@ -259,6 +260,8 @@ function buildBucketColumns(
 export interface ChartCardProps {
   title: string;
   defaultUnit: Unit;
+  /** Injection seam for stories/tests; defaults to the real current time. */
+  now?: Date;
 }
 
 /**
@@ -269,10 +272,15 @@ export interface ChartCardProps {
  * toolbar + `<Chart>`. Controls are local `useState`, not URL state
  * (decision A4) — per-widget display prefs, not shareable filter state.
  */
-export function ChartCard({ title, defaultUnit }: ChartCardProps) {
+export function ChartCard({ title, defaultUnit, now: injectedNow }: ChartCardProps) {
   const { filters } = useFilters();
   const [, navigate] = useLocation();
   const filtersKey = serializeFilters(filters);
+  // Keep `now` stable across query-driven renders (a fresh Date in the
+  // memo below would churn the query key on every render and create a
+  // continuous POST /api/metrics loop) while still ticking on its own
+  // cadence — same fix as BurnRateCard/SubscriptionWindow (review #4).
+  const now = useStableNow(injectedNow);
 
   const [unit, setUnit] = useState<Unit>(defaultUnit);
   const [family, setFamily] = useState<Family>("area");
@@ -297,11 +305,11 @@ export function ChartCard({ title, defaultUnit }: ChartCardProps) {
       measures: UNIT_MEASURES[unit],
       dimensions: ["time"],
       grain,
-      ...filtersToQuery(filters, new Date()),
+      ...filtersToQuery(filters, now),
       ...(compare ? { compare: "previous-period" as const } : {}),
       ...(smoothing ? { smoothing: "ma7" as const } : {}),
     }),
-    [filtersKey, unit, grain, compare, smoothing],
+    [filtersKey, unit, grain, compare, smoothing, now],
   );
 
   const { data, isPending, isError, error } = useQuery({

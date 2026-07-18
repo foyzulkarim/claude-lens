@@ -224,11 +224,14 @@ export function SubscriptionWindow({ ceiling, now: injectedNow }: SubscriptionWi
   const sessionsExtent = probeQuery.data?.meta.matchedExtent ?? null;
   const extentTo = sessionsExtent?.to ?? now.toISOString();
   // Use the categorical filters fragment (without the date range — A7)
-  // for the metrics query, exactly like `BurnRateCard`. The metrics
-  // query's range itself is overridden below to span from `range.from` (the
-  // user's chosen preset) through the matched extent's `to`, so the helper
-  // math has enough history for the peak search.
-  const { filters: categoricalFilters, range: metricsRange } = filtersToQuery(filters, now);
+  // for the metrics query, exactly like `BurnRateCard`. The metrics query's
+  // range itself is overridden below to span the matched extent's own
+  // [from, to] (not the active preset's `range.from`, which can be
+  // narrower than the matched history and starve the peak search of the
+  // hours it needs), so the helper math has enough history for the peak
+  // search.
+  const { filters: categoricalFilters } = filtersToQuery(filters, now);
+  const extentFrom = sessionsExtent?.from ?? extentTo;
 
   const tokenQueries = useQueries({
     queries: TOKEN_MEASURES.map(
@@ -238,7 +241,7 @@ export function SubscriptionWindow({ ceiling, now: injectedNow }: SubscriptionWi
             measures: [measure],
             dimensions: ["time"],
             grain: "hour",
-            range: { from: metricsRange.from, to: extentTo },
+            range: { from: extentFrom, to: extentTo },
             filters: categoricalFilters,
           } as SeriesMetricsQuery),
           queryFn: ({ signal }: { signal: AbortSignal }) =>
@@ -247,7 +250,7 @@ export function SubscriptionWindow({ ceiling, now: injectedNow }: SubscriptionWi
                 measures: [measure],
                 dimensions: ["time"],
                 grain: "hour",
-                range: { from: metricsRange.from, to: extentTo },
+                range: { from: extentFrom, to: extentTo },
                 filters: categoricalFilters,
               },
               signal,
@@ -341,6 +344,7 @@ export function SubscriptionWindow({ ceiling, now: injectedNow }: SubscriptionWi
                   aria-valuenow={Math.round(row.current)}
                   aria-valuemin={0}
                   aria-valuemax={Math.max(basisTokens, row.current, 1)}
+                  aria-valuetext={`${formatUnitValue(row.current, "tokens")} tokens of ${basisLabel.toLowerCase()} ${formatUnitValue(basisTokens, "tokens")} tokens`}
                   className="mt-1 h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-[#0B0F14]"
                 >
                   <div

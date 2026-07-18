@@ -408,11 +408,24 @@ export function registerSessionsRoute(
     // /api/metrics validation (range.from/to must be parseable dates).
     const timestamped = matched.filter((s) => s.firstAt !== "" && s.lastAt !== "");
     if (timestamped.length > 0) {
+      // Numeric comparison (review #14 / CQ7 convention, see sessionMatchesFilters
+      // above): raw string comparison sorts today's ISO timestamps correctly but
+      // is fragile against sub-second-precision or offset variations.
       let earliest = timestamped[0].firstAt;
+      let earliestMs = Date.parse(earliest);
       let latest = timestamped[0].lastAt;
+      let latestMs = Date.parse(latest);
       for (const s of timestamped) {
-        if (s.firstAt < earliest) earliest = s.firstAt;
-        if (s.lastAt > latest) latest = s.lastAt;
+        const firstMs = Date.parse(s.firstAt);
+        if (firstMs < earliestMs) {
+          earliest = s.firstAt;
+          earliestMs = firstMs;
+        }
+        const lastMs = Date.parse(s.lastAt);
+        if (lastMs > latestMs) {
+          latest = s.lastAt;
+          latestMs = lastMs;
+        }
       }
       matchedExtent = { from: earliest, to: latest };
     }
