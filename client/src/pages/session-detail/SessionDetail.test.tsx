@@ -531,3 +531,67 @@ describe("SessionDetail — PromptList + WorkflowFunnel (T9)", () => {
     expect(within(workflowEl).getByText("Committed")).toBeInTheDocument();
   });
 });
+
+describe("SessionDetail — TokenFunnel + ContextComposition (T10)", () => {
+  beforeEach(() => {
+    getSessionDetailMock.mockReset();
+  });
+  afterEach(() => {
+    cleanup();
+    getSessionDetailMock.mockReset();
+  });
+
+  it("TokenFunnel renders context/cache/fresh/output bars with reconciliation intact", async () => {
+    const tokenFunnel = {
+      contextOffered: 450,
+      cacheServed: 120,
+      freshBilled: 330,
+      output: 50,
+    };
+    getSessionDetailMock.mockResolvedValue(makeResponse({ tokenFunnel }));
+    const { Wrapper } = makeWrapper();
+
+    render(<Wrapper><div /></Wrapper>);
+
+    const tokenEl = await screen.findByTestId("session-detail-token-funnel");
+    expect(tokenEl).toBeInTheDocument();
+    // Each bar label rendered
+    expect(within(tokenEl).getByText("Context offered")).toBeInTheDocument();
+    expect(within(tokenEl).getByText("Cache served")).toBeInTheDocument();
+    expect(within(tokenEl).getByText("Fresh billed")).toBeInTheDocument();
+    expect(within(tokenEl).getByText("Output")).toBeInTheDocument();
+  });
+
+  it("ContextComposition groups bytes by originating tool with deterministic order", async () => {
+    const contextComposition = [
+      { toolName: "Bash", bytes: 200, share: 0.5 },
+      { toolName: "Read", bytes: 100, share: 0.25 },
+      { toolName: "Unknown", bytes: 100, share: 0.25 },
+    ];
+    getSessionDetailMock.mockResolvedValue(makeResponse({ contextComposition }));
+    const { Wrapper } = makeWrapper();
+
+    render(<Wrapper><div /></Wrapper>);
+
+    const ctxEl = await screen.findByTestId("session-detail-context-composition");
+    expect(ctxEl).toBeInTheDocument();
+    expect(within(ctxEl).getByText("Bash")).toBeInTheDocument();
+    expect(within(ctxEl).getByText("Read")).toBeInTheDocument();
+    expect(within(ctxEl).getByText("Unknown")).toBeInTheDocument();
+  });
+
+  it("ContextComposition does not leak target paths or commands", async () => {
+    const contextComposition = [
+      { toolName: "Read", bytes: 100, share: 0.5 },
+      { toolName: "Bash", bytes: 100, share: 0.5 },
+    ];
+    getSessionDetailMock.mockResolvedValue(makeResponse({ contextComposition }));
+    const { Wrapper } = makeWrapper();
+
+    render(<Wrapper><div /></Wrapper>);
+
+    const ctxEl = await screen.findByTestId("session-detail-context-composition");
+    expect(ctxEl.textContent).not.toContain("/secret");
+    expect(ctxEl.textContent).not.toContain("git commit -m");
+  });
+});

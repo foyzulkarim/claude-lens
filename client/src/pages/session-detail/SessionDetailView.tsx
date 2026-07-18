@@ -1,9 +1,11 @@
 import type { ReactNode } from "react";
 import type { SessionDetailResponse } from "../../../../shared/session-detail-contract.js";
 import { CacheStrip } from "./CacheStrip.js";
+import { ContextComposition } from "./ContextComposition.js";
 import { CostTimeline } from "./CostTimeline.js";
 import { Header } from "./Header.js";
 import { PromptList } from "./PromptList.js";
+import { TokenFunnel } from "./TokenFunnel.js";
 import { ToolMix } from "./ToolMix.js";
 import { TurnsSection } from "./TurnsSection.js";
 import { WorkflowFunnel } from "./WorkflowFunnel.js";
@@ -32,19 +34,8 @@ export function SessionDetailView({ data }: SessionDetailViewProps): ReactNode {
       <ToolMix toolMix={data.toolMix} toolTimeline={data.toolTimeline} />
       <PromptList prompts={data.prompts} />
       <WorkflowFunnel workflow={data.workflow} />
-
-      <section aria-labelledby="session-detail-tokens">
-        <h2 id="session-detail-tokens" className="text-base font-semibold">
-          Token &amp; Context
-        </h2>
-        {/* T10 fills this in. */}
-        <div
-          data-region="tokens"
-          className="rounded border border-dashed border-slate-300 p-4 text-sm"
-        >
-          {data.contextComposition.length} context item(s).
-        </div>
-      </section>
+      <TokenFunnel funnel={data.tokenFunnel} />
+      <ContextComposition items={data.contextComposition} />
     </div>
   );
 }
