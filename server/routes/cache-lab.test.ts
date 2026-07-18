@@ -62,6 +62,7 @@ describe("POST /api/cache-lab", () => {
       toolResultBytes: [],
       duplicateCount: 0,
       malformedCount: 0,
+      compactions: [],
     });
 
     const response = await app.inject({
@@ -199,6 +200,7 @@ describe("POST /api/cache-lab", () => {
       toolResultBytes: [],
       duplicateCount: 0,
       malformedCount: 0,
+      compactions: [],
     });
 
     const customResponse = await customApp.inject({
@@ -264,6 +266,7 @@ describe("POST /api/cache-lab", () => {
       toolResultBytes: [],
       duplicateCount: 0,
       malformedCount: 0,
+      compactions: [],
     });
 
     const before = callsReads + turnsReads + sessionsReads;
@@ -303,6 +306,7 @@ describe("POST /api/cache-lab", () => {
       toolResultBytes: [],
       duplicateCount: 0,
       malformedCount: 0,
+      compactions: [],
     });
 
     const response = await app.inject({
