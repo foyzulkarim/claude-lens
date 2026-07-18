@@ -7,6 +7,7 @@ import { qk } from "../../api/queryKeys.js";
 import { formatUnitValue } from "../../charts/units.js";
 import { filtersToQuery, serializeFilters } from "../../filters/state.js";
 import { useFilters } from "../../filters/useFilters.js";
+import { useStableNow } from "./useStableNow.js";
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -70,10 +71,10 @@ export function BurnRateCard({ budget, now: injectedNow }: BurnRateCardProps) {
   const { filters } = useFilters();
   const filtersKey = serializeFilters(filters);
   // A default parameter (`now = new Date()`) creates a new object on every
-  // query-driven render. Because `now` is part of the query key, each response
-  // would then produce a different key and immediately fetch again. Resolve
-  // the fallback once per mount while still following an injected prop change.
-  const now = useMemo(() => injectedNow ?? new Date(), [injectedNow]);
+  // query-driven render, which would churn the query key and refetch forever.
+  // useStableNow keeps `now` stable across renders but still ticks on its own
+  // cadence, so month/window boundaries roll forward without a page reload.
+  const now = useStableNow(injectedNow);
 
   const monthStart = useMemo(() => utcMonthStart(now), [now]);
   const daysInMonth = useMemo(() => daysInUtcMonth(now), [now]);

@@ -475,6 +475,34 @@ describe("GET /api/sessions — pagination, trace, and meta", () => {
     expect(Date.parse(extent.from)).toBeLessThanOrEqual(Date.parse(extent.to));
   });
 
+  it('sort=lastAt always places a session with no parsed calls yet (lastAt still "") last, regardless of order', async () => {
+    // "" (derive-session.ts's unset sentinel) sorts lexically before every
+    // real ISO timestamp, so under order=asc an in-progress session would
+    // otherwise jump to the very top of the list instead of staying at the
+    // bottom where an unset session belongs in either direction.
+    store.applyRecords("s-empty", {
+      calls: [],
+      prompts: [],
+      toolResultBytes: [],
+      duplicateCount: 0,
+      malformedCount: 0,
+    });
+
+    const desc = await app.inject({
+      method: "GET",
+      url: "/api/sessions?sort=lastAt&order=desc&limit=25",
+    });
+    const descItems = desc.json().items as Array<{ sessionId: string }>;
+    expect(descItems.at(-1)?.sessionId).toBe("s-empty");
+
+    const asc = await app.inject({
+      method: "GET",
+      url: "/api/sessions?sort=lastAt&order=asc&limit=25",
+    });
+    const ascItems = asc.json().items as Array<{ sessionId: string }>;
+    expect(ascItems.at(-1)?.sessionId).toBe("s-empty");
+  });
+
   it("meta.globalCapture reflects the unfiltered file set — filter-independent", async () => {
     // Mark one session's sidecar so the OR-aggregate flips a flag.
     store.markSidecarPresent("s-05", "cost");

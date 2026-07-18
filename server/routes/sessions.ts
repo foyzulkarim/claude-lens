@@ -224,6 +224,15 @@ function compareSessions(
   key: SortKey,
   direction: NonNullable<SessionListParams["order"]>,
 ): number {
+  if (key === "lastAt") {
+    // Sessions with no parsed calls yet carry lastAt === "" (derive-session.ts's
+    // unset sentinel). "" is not a meaningful position in either chronological
+    // direction, so it must always sort last regardless of `order` — otherwise
+    // an in-progress session jumps to the top of the list under order=asc.
+    const aUnset = a.lastAt === "";
+    const bUnset = b.lastAt === "";
+    if (aUnset !== bUnset) return aUnset ? 1 : -1;
+  }
   const av = sortValue(a, key);
   const bv = sortValue(b, key);
   let cmp: number;

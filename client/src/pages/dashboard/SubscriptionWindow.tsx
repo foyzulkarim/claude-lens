@@ -6,6 +6,7 @@ import { qk } from "../../api/queryKeys.js";
 import { formatUnitValue } from "../../charts/units.js";
 import { filtersToQuery, serializeFilters } from "../../filters/state.js";
 import { useFilters } from "../../filters/useFilters.js";
+import { useStableNow } from "./useStableNow.js";
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -152,10 +153,11 @@ export interface SubscriptionWindowProps {
 export function SubscriptionWindow({ ceiling, now: injectedNow }: SubscriptionWindowProps) {
   const { filters } = useFilters();
   const filtersKey = serializeFilters(filters);
-  // Keep the default time stable across query-driven renders. A fresh Date in
-  // the parameter default changes this component's query key after every
-  // response and creates a continuous POST /api/metrics loop.
-  const now = useMemo(() => injectedNow ?? new Date(), [injectedNow]);
+  // Keep `now` stable across query-driven renders (a fresh Date in the
+  // parameter default would churn the query key and create a continuous
+  // POST /api/metrics loop) while still ticking on its own cadence, so the
+  // rolling window and its countdown roll forward without a page reload.
+  const now = useStableNow(injectedNow);
 
   const lookbackStart = useMemo(() => new Date(now.getTime() - PEAK_LOOKBACK_DAYS * DAY_MS), [now]);
 
