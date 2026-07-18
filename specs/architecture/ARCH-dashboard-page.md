@@ -487,5 +487,1108 @@ _Broader-than-files impact — modules, services, teams, contracts, cross-cuttin
 
 # Tasks
 
-_This section is populated by the **generate-tasks** skill (Phase 3)._
-_Run: `/generate-tasks from: specs/architecture/ARCH-dashboard-page.md`_
+> **Date:** 2026-07-18
+> **Critical path:** T1 → T3a → T4 → T5 → T6 → T7 → T9 → T14 → T15 (9 layers; 16 tasks total)
+> **Max concurrent fan-out:** 5 (T9-T13 in Layer 5, after T7 lands)
+> **Dependency layers:**
+> ```
+> L0: T1, T2, T8                                 (no deps)
+> L1: T3a, T3b (both depend on T1)
+> L2: T4 (T1, T2, T3a)
+> L3: T5 (T4); T6 (T1, T5)
+> L4: T7 (T1, T6)
+> L5: T9, T10, T11, T12, T13 (T7; T12 also T3a; T13 also T3b)
+> L6: T14 (T9-T13)
+> L7: T15 (T14)
+> ```
+
+## Task T1: Shared contracts layer
+
+> **Status:** not started
+> **Verification:** tdd
+> **Effort:** s
+> **Priority:** critical (foundation for everything downstream)
+> **Depends on:** None
+> **Satisfies REQs:** R3, R4, R8
+> **Footprint slice:**
+> - New: `shared/sessions-contract.ts`
+> - Modified: `shared/types.ts` (add `Turn.errorToolResults?`, `Session.{cacheSavingsComputed?, maxTurnCostComputed?, contextPctEstimated?}`)
+> - Modified: `shared/metrics-contract.ts` (add `toolErrors | cacheSavingsComputed | routingSavingsComputed` to `Measure` and `MEASURES`)
+> **High-risk areas touched:** None (type-level only)
+
+### Description
+
+Lands the wire-shape primitives the rest of the implementation hangs off: additive optional fields on Turn/Session, the new sessions-list query/response contract, and three new `Measure` literals driving the cost-related series on the Dashboard. Every downstream task reads from these — landing them first prevents guard-clause drift across the codebase.
+
+### Test Plan
+
+#### Test File(s)
+- `shared/metrics-contract.test.ts` (new)
+- `shared/sessions-contract.test.ts` (new)
+- `shared/types.test.ts` (new)
+
+#### Test Scenarios
+
+##### Exhaustive Measure union
+
+- **every Measure literal is in MEASURES** — GIVEN the Measure union WHEN MEASURES is read THEN it contains all 15 prior literals plus `toolErrors`, `cacheSavingsComputed`, `routingSavingsComputed`, and only those _(guards the exhaustive-array pattern at `shared/metrics-contract.ts:11`)_
+- **unknown Measure literal rejected** — GIVEN a literal not in the union WHEN used as a Measure THEN TypeScript fails to compile
+
+##### SessionListResponse shape
+
+- **default response has items + total + meta** — GIVEN a successful query WHEN the response is projected THEN `items: SessionListItem[]`, `total: number`, and `meta.matchedExtent: {from,to}|null` and `meta.globalCapture: TierFlags` are all present _(satisfies R4)_
+- **trace inclusion is opt-in** — GIVEN `include=trace` WHEN building the response THEN `items[*].trace` is populated; GIVEN no `include` THEN it is `undefined` _(satisfies R3)_
+
+##### Turn / Session additive fields
+
+- **Turn.errorToolResults is optional and additive** — GIVEN a Session lacking the field WHEN read THEN value is `undefined`, not `0` _(honors R3 — null/missing means unavailable)_
+- **Session savings/max-turn/context fields default absent** — GIVEN a rollup before derive-session runs WHEN fields are read THEN `cacheSavingsComputed`, `maxTurnCostComputed`, `contextPctEstimated` are each `undefined`
+
+##### Type Stability (Regression Guard)
+
+- **existing fields preserved** — GIVEN an existing fixture Session WHEN read THEN `sessionId`, `startedAt`, `project`, etc. are still present and unchanged _(guards `shared/types.ts` silent regression)_
+- **ws-protocol untouched** — GIVEN `shared/ws-protocol.ts` WHEN imported THEN message types are unchanged _(guards wire contract per A12)_
+
+### Implementation Notes
+
+- **Module(s):** `shared/types.ts`, `shared/sessions-contract.ts`, `shared/metrics-contract.ts`
+- **Pattern reference:** Existing `exhaustiveArray<T>()` helper at `shared/metrics-contract.ts:11`; existing additive field patterns in `shared/types.ts`
+- **Key decisions:** A2 (typed response metadata + opt-in trace), A3 (pricing surface stays server-side; optional fields are additive only)
+- **Libraries:** None new.
+
+### Scope Boundaries
+
+- Do NOT alter existing field types or required-ness.
+- Do NOT introduce runtime logic — pure type additions.
+- Only these 3 files.
+
+### Files Expected
+
+**New files:**
+- `shared/sessions-contract.ts` — query vocabulary, list item, response metadata, optional trace; pattern: `shared/metrics-contract.ts`
+- `shared/metrics-contract.test.ts` — exhaustive union + type-only compile checks
+- `shared/sessions-contract.test.ts` — shape checks
+- `shared/types.test.ts` — optional-field round-trip
+
+**Modified files:**
+- `shared/types.ts` — add `errorToolResults?` to `Turn`; add `cacheSavingsComputed?`, `maxTurnCostComputed?`, `contextPctEstimated?` to `Session`
+- `shared/metrics-contract.ts` — extend `Measure` union and `MEASURES`
+
+**Must NOT modify:**
+- `shared/ws-protocol.ts` — wire contract frozen (per A12)
+- `server/**`, `client/**` — downstream tasks own those
+
+---
+
+## Task T2: Model-metadata provider (context-window catalog)
+
+> **Status:** not started
+> **Verification:** tdd
+> **Effort:** s
+> **Priority:** high (input to T4 context-pct derivation)
+> **Depends on:** None
+> **Satisfies REQs:** R3, R9
+> **Footprint slice:**
+> - New: `server/metrics/model-metadata.ts` and its test
+> **High-risk areas touched:** None (pure resolver)
+
+### Description
+
+Lands the default model context-window catalog and resolver used by T4's derive-session to compute the optional `contextPctEstimated` field, and replaces the unknown-model "guessed percentage" anti-pattern with an explicit `null`/`undefined`. The provider is one of two runtime inputs (the other being pricing) that the CLI assembles in T5; it has no Store or route dependencies and lands independently.
+
+### Test Plan
+
+#### Test File(s)
+- `server/metrics/model-metadata.test.ts` (new)
+
+#### Test Scenarios
+
+##### Resolver semantics
+
+- **known model returns catalog window** — GIVEN a known model WHEN `resolveContextWindow(model)` is called THEN the window token count matches the catalog entry
+- **unknown model returns null** — GIVEN an unlisted model WHEN `resolveContextWindow(model)` is called THEN it returns `null` (not `0`, not `undefined`) _(honors R3 — explicit unavailable)_
+- **empty catalog returns null** — GIVEN an empty catalog WHEN any model is resolved THEN `null` is returned
+- **resolver is pure** — GIVEN the same input WHEN called twice THEN results are reference-equal or value-equal
+
+##### Catalog stability (Regression Guard)
+
+- **default catalog lists the four known models** — GIVEN `DEFAULT_CONTEXT_WINDOWS` WHEN read THEN it includes `claude-fable-5`, `claude-opus-4-8`, `claude-sonnet-5`, `claude-haiku-4-5-20251001` _(guards catalog drift from `shared/types.ts`)_
+
+### Implementation Notes
+
+- **Module(s):** `server/metrics/model-metadata.ts`
+- **Pattern reference:** `server/metrics/measures.ts` `ModelRate`/`PricingTable` shape (`measures.ts:4-30`)
+- **Key decisions:** A4 (estimate via catalog; unknown returns explicitly unavailable)
+- **Libraries:** None new.
+- **High-risk callouts:** None.
+
+### Scope Boundaries
+
+- Do NOT include premium-observed context overrides (#P4-13).
+- Do NOT yet wire into Store (that's T4).
+- Only this one file plus its test.
+
+### Files Expected
+
+**New files:**
+- `server/metrics/model-metadata.ts` — catalog + `resolveContextWindow` resolver; pattern: `ModelRate`/`PricingTable`
+- `server/metrics/model-metadata.test.ts` — catalog + resolver unit tests
+
+**Must NOT modify:**
+- `shared/**` — context types live in `shared/types.ts` (T1)
+- `server/store/**`, `server/ingest/**` — T4 owns wiring
+
+---
+
+## Task T3a: Metrics engine measures (toolErrors, cacheSavingsComputed, routingSavingsComputed)
+
+> **Status:** not started
+> **Verification:** tdd
+> **Effort:** s
+> **Priority:** critical (T12 and T13 depend on these measures)
+> **Depends on:** T1 (Measure literal extensions)
+> **Satisfies REQs:** R1, R6, R9
+> **Footprint slice:**
+> - Modified: `server/metrics/measures.ts` (add 3 new measures + export pricing primitives)
+> - Modified: `server/metrics/measures.test.ts` (new tests; existing file likely present)
+> - Modified: `server/metrics/engine.test.ts` (extend coverage through existing series/distribution paths)
+> **High-risk areas touched:** Metrics engine surface (Medium) — exhaustive validation must include the new literals
+
+### Description
+
+Implements the three new Dashboard metrics measures in `server/metrics/measures.ts`: `toolErrors` (count of classified failed tool results), `cacheSavingsComputed` (current-model cache discount), and `routingSavingsComputed` (current-model vs all-Opus-uncached difference on a non-overlapping basis). Also exports reusable pricing primitives so T4's derive-session and T6's sessions route share one pricing helper. Scope-aware semantics: turn-grain measures return `null` (not 0) for unsupported entity/distribution combinations.
+
+### Test Plan
+
+#### Test File(s)
+- `server/metrics/measures.test.ts` (extend; existing file)
+- `server/metrics/engine.test.ts` (extend; existing file)
+
+#### Test Scenarios
+
+##### toolErrors measure
+
+- **counts classified failed tool results** — GIVEN a Turn with `errorToolResults` set WHEN the measure runs over a turn-grain scope THEN it returns the sum of failed tool results per turn
+- **returns null on unsupported distribution entity** — GIVEN `mode: "distribution"` `entity: "call"` THEN `toolErrors` returns `null` (calls have no classified tool-result failure metadata) _(satisfies R6; honors R3 null/unavailable)_
+- **zero failed results is a real zero** — GIVEN a Turn with `errorToolResults: 0` THEN the measure returns `0`, not `null`
+
+##### cacheSavingsComputed measure
+
+- **computes cache discount correctly** — GIVEN priced calls with cache reads WHEN summed THEN `actual cost` is subtracted from `uncached cost at current model rates` (cacheRead price treated as if it were input rate for the counterfactual)
+- **unknown/unpriced model returns null** — GIVEN a call with an unpriced model THEN the contributing share is `null`, and an aggregate containing it returns `null` (not silently 0)
+- **matches hand-rolled expectations** — GIVEN a hand-priced fixture WHEN the measure runs THEN values match within rounding tolerance
+
+##### routingSavingsComputed measure
+
+- **computes all-Opus counterfactual** — GIVEN priced calls WHEN the routing measure runs THEN it represents `(cost at all-Opus uncached) − actual cost`
+- **shares non-overlapping cache counterfactual** — GIVEN a session with cache and cheap routing WHEN both savings measures sum THEN they equal `all-Opus-uncached − actual` exactly (no double counting) _(satisfies A8 invariant)_
+- **unknown model returns null** — same as above for unpriced contributing calls
+
+##### Engine integration (Regression Guard)
+
+- **series-mode returns Series[]** — GIVEN a `SeriesMetricsQuery` with the new measures THEN the engine produces valid Series with no NaN/Infinity entries
+- **distribution-mode for compatible measures** — GIVEN a `DistributionMetricsQuery` THEN compatible measures return valid Distribution; incompatible return `null` per scope rules
+- **unknown measure literal still exhaustively rejected** — GIVEN a typo'd measure WHEN the engine runs THEN it returns the existing 400-equivalent error path
+
+### Implementation Notes
+
+- **Module(s):** `server/metrics/measures.ts`
+- **Pattern reference:** Existing `computeMeasure` switch at `measures.ts:65-` and `priceCall` helper at `measures.ts:39-`
+- **Key decisions:** A8 (cache + routing through one non-overlapping counterfactual); A9 (toolErrors extends compact tool-result metadata, not parallel pipeline)
+- **Libraries:** None new.
+- **High-risk callouts:** **Scope mistakes can silently emit plausible but wrong values.** Mitigated by exhaustive measure switch + per-scope return semantics in the test plan above.
+
+### Scope Boundaries
+
+- Do NOT add new pricing tables (T5 wires runtime).
+- Do NOT implement session-level rollups (those live on Session in T4).
+- Do NOT yet touch `routes/metrics.ts` — T5 wires runtime pricing into the route.
+
+### Files Expected
+
+**Modified files:**
+- `server/metrics/measures.ts` — extend `computeMeasure` switch with the 3 measures; export `priceCall` and pricing helpers for T4/T6 reuse
+- `server/metrics/measures.test.ts` — extend existing tests with 3 new measure blocks
+- `server/metrics/engine.test.ts` — extend existing series/distribution tests to cover the new measures
+
+**Must NOT modify:**
+- `server/metrics/engine.ts` — touched but not changed (silent-regression hotspot; covered by engine tests)
+- `shared/**` — T1 owns contract updates
+- `server/store/**`, `server/routes/**` — downstream tasks
+
+---
+
+## Task T3b: Anomaly detector (shared pure function)
+
+> **Status:** not started
+> **Verification:** tdd
+> **Effort:** s
+> **Priority:** high (T13 anomaly feed depends on output; future #P4-5 session detail reuses)
+> **Depends on:** T1 (pre-priced sample type availability)
+> **Satisfies REQs:** R5
+> **Footprint slice:**
+> - New: `shared/anomaly.ts` and its test
+> **High-risk areas touched:** None (pure function)
+
+### Description
+
+Lands the user-history-aware anomaly detector as a pure shared function over pre-priced turn samples. The detector returns deterministic baseline (median), ratios, and flagged samples; empty or invalid populations produce no fabricated flags. The function is the single source of truth for "expensive turn" judgments reused by this Dashboard's anomaly feed (T13) and later Session Detail's per-turn bars.
+
+### Test Plan
+
+#### Test File(s)
+- `shared/anomaly.test.ts` (new)
+
+#### Test Scenarios
+
+##### Detector semantics
+
+- **flags only samples above threshold** — GIVEN samples where exactly one is `5x` the median WHEN the detector runs with `factor=5` THEN that sample is flagged and others are not
+- **default factor is 5** — GIVEN no factor argument WHEN the detector runs THEN it uses `5` (matches ARCH's section-level lock)
+- **non-positive factor rejected** — GIVEN `factor=0` or `factor=-1` WHEN the detector runs THEN it throws a typed error (no fabricated flags)
+- **empty population returns no flags** — GIVEN an empty samples array WHEN the detector runs THEN it returns `{baseline: null, ratio: null, flagged: []}`
+- **single-sample population returns no flags** — GIVEN exactly one sample WHEN the detector runs THEN no flag is emitted (insufficient baseline)
+- **median computation correct** — GIVEN hand-crafted odd-count and even-count samples WHEN computed THEN median matches the textbook definition
+
+##### Determinism (Regression Guard)
+
+- **stable output for stable input** — GIVEN identical input WHEN called twice THEN output is structurally identical (no map ordering surprises)
+- **does not mutate input** — GIVEN a samples array WHEN the detector runs THEN the input array is unchanged
+
+### Implementation Notes
+
+- **Module(s):** `shared/anomaly.ts`
+- **Pattern reference:** Pure/tested helpers such as `server/metrics/distributions.ts`
+- **Key decisions:** A10 (pre-priced history, user-wide baseline, reusable output)
+- **Libraries:** None new.
+- **High-risk callouts:** None.
+
+### Scope Boundaries
+
+- Do NOT import server pricing (the detector receives pre-priced inputs).
+- Do NOT produce side effects (no I/O, no globals).
+- Do NOT include Session Detail's per-turn integration (later phase).
+
+### Files Expected
+
+**New files:**
+- `shared/anomaly.ts` — `detectTurnCostAnomalies(samples, factor?)`; pure function; pattern: `server/metrics/distributions.ts`
+- `shared/anomaly.test.ts` — pure function test suite per the scenarios above
+
+**Must NOT modify:**
+- `server/**`, `client/**` — downstream tasks consume this module
+
+---
+
+## Task T8: ChartCard fix (time-series + filter-preserving drills)
+
+> **Status:** not started
+> **Verification:** tdd
+> **Effort:** s
+> **Priority:** high (the Dashboard's Cost-over-time section is the existing stub using ChartCard; fixing the wrapper upgrades the section)
+> **Depends on:** None
+> **Satisfies REQs:** R2, R8
+> **Footprint slice:**
+> - Modified: `client/src/charts/ChartCard.tsx` (request `time` dimension; preserve categorical filters in bucket drill links)
+> - Modified: `client/src/charts/ChartCard.test.tsx` (extend existing tests)
+> **High-risk areas touched:** Chart foundation (Medium) — accessible chart/table behavior and existing tests change together
+
+### Description
+
+Corrects `ChartCard.tsx` so it requests the `time` dimension by default for area-style cost charts (current call passes `dimensions: []` which is aggregate-only), and so its bucket drill links preserve active categorical filters (project/model/branch/host) while replacing the global date range with the clicked bucket's `[from, to]`. This is also the natural vehicle for single-day buckets drilling to `from = to = dayStart`. The current Dashboard stub renders Cost-over-time through ChartCard, so this fix upgrades that section in place.
+
+### Test Plan
+
+#### Test File(s)
+- `client/src/charts/ChartCard.test.tsx` (extend existing)
+- `cypress/e2e/chart-accessibility.cy.ts` (extend, if existing test covers bucket drilling)
+
+#### Test Scenarios
+
+##### Time-dimension query
+
+- **requests `time` dimension by default for area charts** — GIVEN a ChartCard rendering a unit=`$` area chart WHEN rendered THEN the underlying `/api/metrics` request payload includes `dimensions: ["time"]`
+- **aggregate-mode for non-area charts** — GIVEN a ChartCard with `mode: "aggregate"` THEN `dimensions: []` is still sent (no regression)
+- **grain honors active range preset** — GIVEN the active URL range is `7D` THEN the request uses `grain: "hour"` (matches existing range-derived grain logic in `client/src/charts/timeseries.ts`)
+
+##### Bucket drill link
+
+- **drill preserves categorical filters** — GIVEN a ChartCard with active chips `project=alpha, model=fable` WHEN a bucket is clicked THEN the resulting navigation URL retains both `project=alpha` and `model=fable`
+- **drill replaces global date range with bucket range** — GIVEN the active global range is `30D` and the user clicks a single-day bucket THEN the new URL has `from=<bucket-start>` and `to=<bucket-end>`
+- **single-day bucket clicks drill to point** — GIVEN a daily-granular bucket WHEN clicked THEN `from == to == dayStart`
+
+##### Accessibility (Regression Guard)
+
+- **chart role/label still set** — GIVEN the rendered chart WHEN introspected THEN `role="img"` with `aria-label` is present and includes the total _(guards `chart-accessibility.cy.ts`)_
+- **data-table fallback still rendered** — GIVEN any state WHEN inspected THEN the sr-only table is present and `aria-describedby`/`aria-controls` references match
+
+### Implementation Notes
+
+- **Module(s):** `client/src/charts/ChartCard.tsx`
+- **Pattern reference:** Existing drill-link serialization in `client/src/charts/` and `client/src/filters/state.ts`
+- **Key decisions:** A6 (correct to time buckets and filter-preserving drills), section-level lock for click-to-drill semantics
+- **Libraries:** None new.
+- **High-risk callouts:** **Drill URL construction must use `URLSearchParams` / existing serialization, not string concatenation** (per ARCH "Security" cross-cutting).
+
+### Scope Boundaries
+
+- Do NOT introduce a new chart component.
+- Do NOT alter Dashboard's section composition (T14 owns that).
+- Do NOT change the existing aggregate-mode behavior.
+
+### Files Expected
+
+**Modified files:**
+- `client/src/charts/ChartCard.tsx` — request `time` dimension; bucket-drill link construction preserves categorical filters and replaces date range
+- `client/src/charts/ChartCard.test.tsx` — extend with time-dimension and drill tests per scenarios above
+- `cypress/e2e/chart-accessibility.cy.ts` — extend (if drill scenarios aren't already covered)
+
+**Must NOT modify:**
+- `client/src/charts/Chart.tsx` (low-level wrapper; ChartCard owns its drill behavior)
+- `client/src/filters/state.ts`, `useFilters.ts` (silent-regression hotspots; chart uses existing serialization)
+- `client/src/pages/Dashboard.tsx` (T14 owns composition)
+
+---
+
+## Task T4: Parser + derivation + Store threading (errors + savings + context estimate)
+
+> **Status:** not started
+> **Verification:** tdd
+> **Effort:** m
+> **Priority:** critical (every consumer of Session fields depends on this)
+> **Depends on:** T1, T2, T3a
+> **Satisfies REQs:** R3, R6, R9
+> **Footprint slice:**
+> - Modified: `server/ingest/parse-transcript.ts` (classify tool_result `is_error` before content is dropped)
+> - Modified: `server/store/derive-turns.ts` (aggregate `errorToolResults` into the attributed Turn)
+> - Modified: `server/store/derive-session.ts` (compute `cacheSavingsComputed`, `maxTurnCostComputed`, `contextPctEstimated`)
+> - Modified: `server/store/store.ts` (carry pricer + context resolver through recomputation)
+> - Modified: each of the three test files above
+> **High-risk areas touched:** Pricing/session derivation (High); Transcript parser/store (Medium)
+
+### Description
+
+Threads the data path from raw transcript through Sessions such that every consumer (routes, metrics, sessions list) sees `costComputed` from a single injected pricer, `cacheSavingsComputed`/`maxTurnCostComputed` from one shared counterfactual formula, optional `contextPctEstimated` from the catalog resolver, and `errorToolResults` per Turn from parser-classified failures. Parser classifies the failed-command exit evidence and raw `is_error` flag before content is dropped; Store recomputes through the existing debounced window.
+
+### Test Plan
+
+#### Test File(s)
+- `server/ingest/parse-transcript.test.ts` (extend)
+- `server/store/derive-turns.test.ts` (extend)
+- `server/store/derive-session.test.ts` (extend)
+- `server/store/store.test.ts` (extend)
+
+#### Test Scenarios
+
+##### Parser classification
+
+- **classifies raw `is_error: true`** — GIVEN a tool_result block with `is_error: true` WHEN parsed THEN the resulting record carries `isError: true`
+- **classifies recognized failed-command exit** — GIVEN a Bash tool_result containing a non-zero exit marker matching the predefined patterns WHEN parsed THEN it is flagged `isError: true` (test fixtures provide positive and negative cases)
+- **retains only flags/byte counts** — GIVEN any classified tool_result WHEN the parser finishes THEN the record holds no raw result body (memory discipline per ARCH A9)
+- **malformed lines never throw** — GIVEN a malformed JSONL line WHEN parsed THEN the parser counts it and continues (honors existing parser contract)
+
+##### Derive-turns aggregation
+
+- **aggregates failed tool results per Turn** — GIVEN a Turn with prompt-attributed tool results WHEN derived THEN `errorToolResults` equals the count of `isError: true` records attributed to that prompt
+- **missing field treated as 0** — GIVEN an older parser event without the new field WHEN derived THEN `errorToolResults` is `0` (additive backward compat)
+
+##### Derive-session field computation
+
+- **`costComputed` non-zero under priced table** — GIVEN a session with priced calls and an injected pricing table WHEN derived THEN `costComputed > 0` (fixes the current zero-cost regression)
+- **`costComputed = 0` under empty pricing** — GIVEN the same session and an empty pricing table WHEN derived THEN `costComputed = 0`, not `null` (matches existing unpriced convention)
+- **`cacheSavingsComputed` matches measure expectation** — GIVEN a hand-priced fixture WHEN derived THEN `cacheSavingsComputed` equals the value produced by the `cacheSavingsComputed` measure in T3a
+- **`maxTurnCostComputed` is the max over Turns** — GIVEN a session with multiple Turns WHEN derived THEN `maxTurnCostComputed` is `max(turn.costComputed)`
+- **`contextPctEstimated` computed for known models** — GIVEN a session's last-call model exists in `DEFAULT_CONTEXT_WINDOWS` WHEN derived THEN `contextPctEstimated` is in `[0, 1]`
+- **`contextPctEstimated` undefined for unknown model** — GIVEN the same with an unlisted model WHEN derived THEN `contextPctEstimated` is `undefined`, not `0` _(honors R3)_
+
+##### Store threading (Regression Guard)
+
+- **`costComputed` survives Store recompute** — GIVEN a session in Store WHEN Store recomputes THEN its `costComputed` reflects the latest pricing input
+- **changing pricing triggers recompute** — GIVEN a session derived under pricing-A WHEN pricing changes to pricing-B and recompute runs THEN values flip accordingly (no stale field drift; satisfies ARCH stress-test "Pricing/config changes later")
+- **existing derive-turns/derive-session invariants preserved** — GIVEN the existing turn/session test fixtures WHEN re-run under the new types THEN pre-existing assertions still pass
+
+### Implementation Notes
+
+- **Module(s):** Per Module Boundaries — Store derivation owns compact per-session rolls; parser owns classification before content drop.
+- **Pattern reference:** Existing `derive-turns.ts` / `derive-session.ts` per-prompt attribution; `parse-transcript.ts` existing malformed-line handling
+- **Key decisions:** A3 (one injected pricer), A4 (catalog-derived context, `null` for unknown), A8 (savings share one counterfactual), A9 (extend compact metadata, no parallel pipeline)
+- **Libraries:** None new.
+- **High-risk callouts:**
+  - **Pricing/session derivation (H):** monetary correctness downstream — covered by hand-priced fixtures and engine cross-check
+  - **Transcript parser/store (M):** hot ingest path must keep malformed-line safety — covered by malformed-line tests
+
+### Scope Boundaries
+
+- Do NOT introduce runtime pricing/context assembly (T5).
+- Do NOT add HTTP routes (T5/T6).
+- Do NOT recompute history on file-change apart from existing debounce.
+
+### Files Expected
+
+**Modified files:**
+- `server/ingest/parse-transcript.ts` — classify `isError` before drop, retain flag/byte count
+- `server/ingest/parse-transcript.test.ts` — classification scenarios
+- `server/store/derive-turns.ts` — aggregate `errorToolResults` per Turn
+- `server/store/derive-turns.test.ts` — aggregation + backward-compat scenarios
+- `server/store/derive-session.ts` — compute `cacheSavingsComputed`, `maxTurnCostComputed`, `contextPctEstimated`
+- `server/store/derive-session.test.ts` — derivation scenarios per the rules above
+- `server/store/store.ts` — accept pricer + context resolver; thread through recompute
+- `server/store/store.test.ts` — recompute + pricing-change scenarios
+
+**Must NOT modify:**
+- `server/cli.ts`, `server/ingest/pipeline.ts`, `server/app.ts` (T5)
+- `server/routes/**` (T5/T6)
+
+---
+
+## Task T5: Runtime assembly wiring (CLI + pipeline + app)
+
+> **Status:** not started
+> **Verification:** test-after
+> **Effort:** s
+> **Priority:** high (replaces current zero-cost CLI with priced runtime)
+> **Depends on:** T4
+> **Satisfies REQs:** R3, R9
+> **Footprint slice:**
+> - Modified: `server/cli.ts` (assemble one runtime pricing input + context resolver; pass to ingest and Fastify)
+> - Modified: `server/ingest/pipeline.ts` (thread providers into Store construction)
+> - Modified: `server/app.ts` (accept runtime metadata; pass to ingest + register metrics route with priced context)
+> - Modified: `server/routes/metrics.ts` (use injected runtime pricing instead of importing default at request time)
+> - Modified: each test file
+> **High-risk areas touched:** Pricing/session derivation (High)
+
+### Description
+
+Replaces the CLI's current implicit-pricing path with one runtime pricing input built once at startup and passed to both the ingest pipeline and the Fastify app. The `/api/metrics` route consumes the decorated pricing so sessions are priced consistently across routes and Store. The app also accepts and forwards the context resolver so derived-session's `contextPctEstimated` works in production.
+
+### Test Plan
+
+#### Test File(s)
+- `server/cli.test.ts` (new or extend, depending on existing coverage)
+- `server/app.test.ts` (new or extend)
+- `server/routes/metrics.test.ts` (extend)
+
+#### Test Scenarios
+
+##### Runtime pricing assembly
+
+- **CLI builds one PricingTable** — GIVEN CLI startup WHEN the app is assembled THEN the same `PricingTable` instance is observable in both the Store and the running Fastify instance
+- **pricing comes from a single source** — GIVEN a custom pricing injected via env WHEN CLI runs THEN it is honored exactly once (no duplicate or competing tables)
+
+##### App metadata acceptance
+
+- **app accepts runtime metadata** — GIVEN an `BuildAppOptions` (or equivalent seam) WHEN app is built with pricing + context resolver THEN both are wired to the metrics route and Store construction
+- **app preserves existing defaults** — GIVEN tests that call app without metadata WHEN assembled THEN defaults still work (existing test compatibility preserved)
+
+##### Metrics route pricing (Regression Guard)
+
+- **route uses decorated pricing** — GIVEN an injected custom pricing WHEN `/api/metrics` is called THEN aggregation uses the injected table's rates (and not the default)
+- **existing metrics contract unchanged** — GIVEN the existing metrics endpoint tests WHEN re-run THEN series shapes, error codes, and validation behavior are preserved
+
+### Implementation Notes
+
+- **Module(s):** `server/cli.ts`, `server/ingest/pipeline.ts`, `server/app.ts`, `server/routes/metrics.ts`
+- **Pattern reference:** Existing CLI assembly in `server/cli.ts`; existing `BuildAppOptions` (or equivalent) in `server/app.ts`
+- **Key decisions:** A3 (one runtime pricing input), A5 (route uses injected pricing), A13 (settings/calibration deferred to #P4-15)
+- **Libraries:** None new.
+- **High-risk callouts:** **A change here silently changes the prices seen by every consumer.** Mitigated by single-source assertion and route-level integration test.
+
+### Scope Boundaries
+
+- Do NOT create the sessions route (T6).
+- Do NOT add new pricing tables or a Settings UI (#P4-15 territory).
+- Do NOT alter existing CLI parsing or env contracts beyond what is needed for the input.
+
+### Files Expected
+
+**Modified files:**
+- `server/cli.ts` — build runtime pricing + context; pass to ingest and `app.ts`
+- `server/ingest/pipeline.ts` — accept providers; forward to Store
+- `server/app.ts` — accept runtime metadata; wire to metrics route + Store
+- `server/app.test.ts` — extend if exists, else new
+- `server/routes/metrics.ts` — use decorated pricing
+- `server/routes/metrics.test.ts` — extend with injected-pricing scenarios
+
+**Must NOT modify:**
+- `shared/**`, `server/store/**` (T1/T4)
+- `server/routes/sessions.ts` (T6)
+
+---
+
+## Task T6: Sessions API route (GET /api/sessions)
+
+> **Status:** not started
+> **Verification:** tdd
+> **Effort:** m
+> **Priority:** critical (foundation reused by #P4-4 later)
+> **Depends on:** T1, T5 (T5 modifies app.ts; T6 registers the route within app.ts)
+> **Satisfies REQs:** R3, R4, R8
+> **Footprint slice:**
+> - New: `server/routes/sessions.ts` (Fastify route + validation + projection)
+> - New: `server/routes/sessions.test.ts`
+> - Modified: `server/app.ts` (register the sessions route; surgical add — one `fastify.register(sessionsRoutes, ...)`)
+> **High-risk areas touched:** General sessions API (High) — durable contract for #P4-4 and other consumers
+
+### Description
+
+Adds the general paginated sessions endpoint as a new Fastify plugin. Reads through `Store.listSessions()`, validates every query field against the contract from T1, supports the six `sort` keys, CSV-style categorical filters, paired `from`/`to`, capped `limit`, `offset`, and the opt-in `include=trace`. Returns the typed `SessionListResponse` from T1.
+
+### Test Plan
+
+#### Test File(s)
+- `server/routes/sessions.test.ts` (new)
+
+#### Test Scenarios
+
+##### Validation
+
+- **rejects negative offset** — GIVEN `offset=-1` WHEN the route runs THEN 400 with a typed error
+- **caps limit at the documented maximum** — GIVEN `limit=99999` WHEN the route runs THEN response uses the cap and reflects it (header or response meta)
+- **rejects unknown sort** — GIVEN `sort=garbage` WHEN route runs THEN 400
+- **rejects cross-field date contradictions** — GIVEN `from > to` WHEN route runs THEN 400
+
+##### Filtering / sorting
+
+- **sort=lastAt default** — GIVEN no sort WHEN called THEN results are recent-first
+- **each supported sort key works** — GIVEN `sort` in `lastAt|costComputed|durationMs|cacheSavingsComputed|maxTurnCostComputed` WHEN called THEN ordering matches expectation
+- **CSV filters apply per dimension** — GIVEN `?project=a,b&model=fable` WHEN called THEN only matching sessions are returned
+- **range filter respects session-start convention** — GIVEN `from`/`to` WHEN called THEN sessions whose `startedAt` falls inside are included (matches existing metrics engine convention)
+
+##### Pagination / trace
+
+- **paginates deterministically** — GIVEN a stored set of N=20 sessions and `limit=10` WHEN called twice with `offset=0` and `offset=10` THEN no overlap and total is 20
+- **trace restricted to small page** — GIVEN `include=trace&limit=5` WHEN called THEN the trace is included; GIVEN `include=trace&limit=999` WHEN called THEN 400 (trace cap)
+- **matched extent returned in meta** — GIVEN any response WHEN `meta.matchedExtent` is checked THEN it is the earliest/latest timestamp among matches, or `null` when none
+- **globalCapture from unfiltered file set** — GIVEN filters WHEN called THEN `meta.globalCapture` still reflects the unfiltered C/B/L presence (this is the section-level lock item)
+
+##### App registration (Regression Guard)
+
+- **route is registered exactly once** — GIVEN app startup WHEN introspected THEN `/api/sessions` is reachable and metrics endpoints still resolve
+- **existing routes still respond** — GIVEN `/api/metrics` WHEN called THEN its shape is unchanged
+
+### Implementation Notes
+
+- **Module(s):** `server/routes/sessions.ts`
+- **Pattern reference:** Existing `server/routes/metrics.ts` validation + plugin registration shape
+- **Key decisions:** A1 (land in #P4-2 vs. waiting for #P4-4), A2 (typed metadata + opt-in trace), section-level lock on global capture and click-to-drill
+- **Libraries:** None new.
+- **High-risk callouts:** **Sort/filter/range/pagination drift becomes a later-page dependency (#P4-4).** Mitigated by deterministic sort + capped defaults in tests.
+
+### Scope Boundaries
+
+- Do NOT persist or mutate sessions in the route (read-only).
+- Do NOT include non-entity endpoints.
+- Only registration in `app.ts` (one line); T5 already established the BuildAppOptions shape.
+
+### Files Expected
+
+**New files:**
+- `server/routes/sessions.ts` — Fastify plugin, validation, projection, sort/filter/page
+- `server/routes/sessions.test.ts` — full coverage per scenarios
+
+**Modified files:**
+- `server/app.ts` — register sessions route; surgical add
+
+**Must NOT modify:**
+- `shared/sessions-contract.ts` (T1 owns)
+- `server/store/store.ts` (T4 owns listSessions shape)
+
+---
+
+## Task T7: Client foundation (api/sessions + queryKeys + WS invalidation)
+
+> **Status:** not started
+> **Verification:** test-after
+> **Effort:** s
+> **Priority:** critical (every section task consumes this)
+> **Depends on:** T1, T6
+> **Satisfies REQs:** R4, R7
+> **Footprint slice:**
+> - New: `client/src/api/sessions.ts`
+> - Modified: `client/src/api/queryKeys.ts` (add canonical `qk.sessions()`)
+> - Modified: `client/src/ws.ts` (invalidate sessions lists on add/update)
+> - Modified: `client/src/ws.test.ts`
+> **High-risk areas touched:** Query invalidation (Medium)
+
+### Description
+
+Lands the client-side wrapper for `/api/sessions`, the canonical query-key factory entries under the existing sessions prefix, and the WS invalidation that makes any session-backed card refetch on `session-added` and `session-updated` messages. This is the single foundation layer every Dashboard section (T9-T13) depends on, so its scope and tests are deliberately tight.
+
+### Test Plan
+
+#### Test File(s)
+- `client/src/api/sessions.test.ts` (new)
+- `client/src/api/queryKeys.test.ts` (new or extend)
+- `client/src/ws.test.ts` (extend)
+
+#### Test Scenarios
+
+##### Sessions fetch wrapper
+
+- **sends allowed query fields verbatim** — GIVEN `listSessions({sort: "costComputed", limit: 10})` WHEN called THEN the URL is `/api/sessions?sort=costComputed&limit=10`
+- **omits empty values** — GIVEN a params object with empty strings/arrays WHEN called THEN those keys are dropped (no `?limit=` empty)
+- **aborts superseded request** — GIVEN an in-flight `listSessions` call WHEN a new query is started with overlapping params THEN the previous request's AbortSignal fires
+- **decodes 400 with typed error** — GIVEN the server returns 400 WHEN the wrapper resolves THEN it throws a typed error carrying the validation message
+- **opt-in trace** — GIVEN `{include: "trace"}` WHEN called THEN the response items carry `.trace`
+
+##### Query keys
+
+- **`qk.sessions(params)` lives under `qk.prefixes.sessions`** — GIVEN a params object WHEN `qk.sessions(...)` is called THEN the key path starts with `qk.prefixes.sessions`
+- **stable key for stable params** — GIVEN the same params object WHEN computed twice THEN the keys are reference-equal (deterministic under React Query caching)
+- **different params produce different keys** — GIVEN two params differing in `sort` or `from` THEN keys differ
+
+##### WS invalidation
+
+- **`session-added` invalidates sessions prefix** — GIVEN a mounted `qk.sessions(...)` listener WHEN a `session-added` message arrives THEN the query refetches
+- **`session-updated` invalidates sessions prefix** — same as above for `session-updated`
+- **`metrics-added` does NOT invalidate sessions prefix** — GIVEN a `metrics-added` event WHEN received THEN sessions queries are NOT refetched (separation of concerns)
+- **still invalidates metrics prefix as before** — GIVEN any metrics event WHEN received THEN the existing invalidation behavior is preserved _(guards `client/src/ws.ts` silent regression)_
+
+### Implementation Notes
+
+- **Module(s):** `client/src/api/sessions.ts`, `client/src/api/queryKeys.ts`, `client/src/ws.ts`
+- **Pattern reference:** `client/src/api/metrics.ts` wrapper shape; existing `qk` factory pattern; `client/src/ws.ts` invalidation wiring
+- **Key decisions:** A2 (typed metadata + opt-in trace), A12 (invalidate sessions on add/update), section-level lock on global capture revalidation timing
+- **Libraries:** None new.
+- **High-risk callouts:** **Missing invalidation leaves stale cards; excessive invalidation can amplify request load.** Mitigated by per-message-type tests.
+
+### Scope Boundaries
+
+- Do NOT introduce new chart components or sections (those follow in T8-T14).
+- Do NOT broaden WS protocol (`shared/ws-protocol.ts` is frozen).
+- Only the three files listed above plus their tests.
+
+### Files Expected
+
+**New files:**
+- `client/src/api/sessions.ts` — typed `listSessions` wrapper with AbortSignal support; pattern: `client/src/api/metrics.ts`
+- `client/src/api/sessions.test.ts` — wrapper unit tests
+- `client/src/api/queryKeys.test.ts` — factory test
+
+**Modified files:**
+- `client/src/api/queryKeys.ts` — add canonical `qk.sessions()` under existing sessions prefix
+- `client/src/ws.ts` — invalidate sessions lists for `session-added`/`session-updated`
+- `client/src/ws.test.ts` — extend with new invalidation scenarios; preserve existing metrics tests
+
+**Must NOT modify:**
+- `shared/ws-protocol.ts` — frozen
+- `client/src/pages/Dashboard.tsx` — T14 owns composition
+- `client/src/filters/**` — silent-regression hotspots; section tasks read filters but do not change them
+
+---
+
+## Task T9: Data-driven sections (StatCardsRow + RecentSessionCard)
+
+> **Status:** not started
+> **Verification:** ui
+> **Effort:** m
+> **Priority:** high (5 stat cards + recent session are the Dashboard's most-trafficked surfaces)
+> **Depends on:** T7 (also T8 for stat-card sparkline use of ChartCard — see notes)
+> **Satisfies REQs:** R1, R2
+> **Footprint slice:**
+> - New: `client/src/pages/dashboard/StatCardsRow.tsx`
+> - New: `client/src/pages/dashboard/RecentSessionCard.tsx`
+> - New: `client/src/pages/dashboard/StatCardsRow.stories.tsx`
+> - New: `client/src/pages/dashboard/RecentSessionCard.stories.tsx`
+> **High-risk areas touched:** Dashboard UI (Medium)
+
+### Description
+
+Builds the row of 5 stat cards (spend, total tokens, cache hit %, sessions, avg $/session) with delta + sparkline using the corrected ChartCard from T8 for the sparkline role, and the most-recent-session card with trace thumbnail, turns count, and estimated context %. Each card deep-links per the section-level contract locks (spend → §8, tokens → §6, cache hit % → §7, sessions → §2, avg $/session → §8). The recent-session card calls `/api/sessions?sort=lastAt&limit=1&include=trace` with active filters applied.
+
+### Verification Checklist
+
+- **renders 5 stat cards with correct labels** — see run: open Dashboard with seed fixtures → expected: row shows 5 cards labeled Spend / Total tokens / Cache hit % / Sessions / Avg $/session, in that order.
+- **delta arrows present** — expected: each card shows ▲▼ with previous-equal-period value; card without a previous period shows "—" or hides the delta.
+- **sparkline renders** — expected: each card has an accessible sparkline (`role="img"` + `aria-label`).
+- **drill links match the section-level lock matrix** — run: inspect `href` on each card → expected: spend/avg-$-session → `/trends`, tokens → `/models`, cache hit % → `/cache`, sessions → `/sessions`, filters retained in query string.
+- **recent-session card renders trace thumbnail** — run: with seeded session that has trace WHEN rendered → expected: thumbnail bars visible, scaled to trace points.
+- **recent-session card displays turns count** — expected: "N turns" label visible.
+- **ctx % shown for known model, hidden for unknown** — run: with a known-model session → expected: shows percentage; with an unlisted model → expected: shows "—" with no number.
+- **filters carry into recent-session** — run: set project=alpha in URL → expected: the displayed session is from project alpha (or empty state otherwise).
+- **independent loading/error states** — run: throttle /api/sessions WHEN metrics respond → expected: only stat-cards renders ready, recent-session shows its loading state; if /api/sessions errors → expected: only recent-session shows error; stats remain.
+- **stories cover loading/error/empty/populated/estimated states** — run: `npm run storybook` → expected: all 5 states per card visible.
+
+#### Testable Seams (component tests)
+- Drill link target via accessible-name click — uses existing `renderHook`/`render` patterns from `client/src/components/StatCard.stories.tsx`.
+
+### Implementation Notes
+
+- **Module(s):** `client/src/pages/dashboard/StatCardsRow.tsx`, `RecentSessionCard.tsx`
+- **Pattern reference:** `client/src/components/StatCard.tsx`; section-container pattern from `charts/ChartCard.tsx`
+- **Key decisions:** A5 (section-owned, measure-batched queries); section-level locks for drill matrix and tier basis
+- **Libraries:** None new.
+- **High-risk callouts:** Stat-card query batch must include both aggregate+compare and time-bucketed sparkline variants in one call (per ARCH A5) — fan-out is the perf-critical seam.
+
+### Scope Boundaries
+
+- Do NOT replace the existing stub `Dashboard.tsx` (T14).
+- Do NOT introduce new shared components (`StatCard.tsx` already supports delta + sparkline).
+- Only these two files plus their stories.
+
+### Files Expected
+
+**New files:**
+- `client/src/pages/dashboard/StatCardsRow.tsx` — 5 cards, drill links, batched queries
+- `client/src/pages/dashboard/RecentSessionCard.tsx` — summary, trace thumbnail, ctx %, drill to §3
+- `client/src/pages/dashboard/StatCardsRow.stories.tsx`
+- `client/src/pages/dashboard/RecentSessionCard.stories.tsx`
+
+**Must NOT modify:**
+- `client/src/components/StatCard.tsx` (silent-regression hotspot; downstream consumers depend on its public shape)
+- `client/src/pages/Dashboard.tsx` (T14 owns composition)
+- `client/src/charts/ChartCard.tsx` (T8 owns the fix)
+
+---
+
+## Task T10: Windowed sections (BurnRateCard + SubscriptionWindow)
+
+> **Status:** not started
+> **Verification:** ui
+> **Effort:** s
+> **Priority:** medium (independent of /api/sessions; can run in parallel with T9)
+> **Depends on:** T7
+> **Satisfies REQs:** R1
+> **Footprint slice:**
+> - New: `client/src/pages/dashboard/BurnRateCard.tsx`
+> - New: `client/src/pages/dashboard/SubscriptionWindow.tsx`
+> - New: stories for each
+> **High-risk areas touched:** Dashboard UI (Medium)
+
+### Description
+
+Builds the calendar-month-to-date burn-rate card with linear projection to month-end and an honest budget-bar state when no budget is set, and the rolling 5h/7d subscription-window tracker with "resets in Xh Ym" and vs-peak comparison. Both sections override only the global date range; categorical filters remain active. The subscription tracker distinguishes computed historical peak vs Settings-calibrated ceiling per the section-level lock.
+
+### Verification Checklist
+
+- **BurnRateCard renders MTD value** — run: with seeded calls in current month → expected: shows MTD $ within rounding tolerance.
+- **projection is linear** — expected: projected month-end = `MTD / elapsedDays * daysInMonth` (sanity check using known fixture).
+- **budget bar honest** — run: with no budget configured → expected: shows "no budget set" CTA → Settings, no fake number; with budget configured → expected: bar shows MTD/budget.
+- **categorical filters applied** — run: set project=alpha WHEN rendered → expected: numbers reflect only alpha sessions.
+- **SubscriptionWindow bars show 5h and 7d totals** — expected: two bars per the labels "5h" and "7d".
+- **"resets in Xh Ym" label** — run: with rolling window in progress → expected: countdown matches the oldest contributing event's age.
+- **historical peak fallback when no ceiling set** — run: with no Settings calibration → expected: peak = max historical rolling-window value seen in current matched extent.
+- **Settings ceiling replaces peak when set** — placeholder for #P4-15; present `Settings`-sourced ceiling with same label.
+- **stories cover unconfigured/populated states** — run: `npm run storybook` → expected: both states visible per section.
+
+#### Testable Seams
+- MTD/projection values via `aria-label` queries; subscription countdown timer via `data-testid` if needed.
+
+### Implementation Notes
+
+- **Module(s):** `client/src/pages/dashboard/BurnRateCard.tsx`, `SubscriptionWindow.tsx`
+- **Pattern reference:** Existing card/container primitives; `client/src/charts/units.ts` for unit switching
+- **Key decisions:** A7 (date override only), A11 (rolling-window semantics, peak vs ceiling), A13 (budget unconfigured state)
+- **Libraries:** Existing `date-fns` for MTD/window math.
+- **High-risk callouts:** Burn-rate calendar needs timezone choice — UTC for consistency with metrics engine, but UI labels in local time; pin explicitly.
+
+### Scope Boundaries
+
+- Do NOT add a Settings UI for budget/calibration (#P4-10 / #P4-15 territory).
+- Do NOT compute rolling windows server-side; current scope derives client-side from hourly series.
+
+### Files Expected
+
+**New files:**
+- `client/src/pages/dashboard/BurnRateCard.tsx`
+- `client/src/pages/dashboard/SubscriptionWindow.tsx`
+- `client/src/pages/dashboard/BurnRateCard.stories.tsx`
+- `client/src/pages/dashboard/SubscriptionWindow.stories.tsx`
+
+**Must NOT modify:**
+- `client/src/pages/Dashboard.tsx` (T14)
+
+---
+
+## Task T11: Simple stat sections (RecordsStrip + LeverageRatio + FailedWorkStat)
+
+> **Status:** not started
+> **Verification:** ui
+> **Effort:** s
+> **Priority:** medium
+> **Depends on:** T7
+> **Satisfies REQs:** R1
+> **Footprint slice:**
+> - New: `client/src/pages/dashboard/RecordsStrip.tsx`
+> - New: `client/src/pages/dashboard/LeverageRatio.tsx`
+> - New: `client/src/pages/dashboard/FailedWorkStat.tsx`
+> - New: stories for each
+> **High-risk areas touched:** Dashboard UI (Medium)
+
+### Description
+
+Builds three simple value sections: a RecordsStrip with five records (most expensive day, session, turn; longest session; biggest cache save), a LeverageRatio headline (cache ÷ fresh-billed, "Nx" format), and a FailedWorkStat counter for classified error tool_results/failed commands. Records ignore only the active date range; categorical filters remain. Leverage renders unavailable (not NaN/Infinity) on a zero denominator.
+
+### Verification Checklist
+
+- **RecordsStrip shows 5 records with correct measures** — expected: most-expensive-day → `costComputed` aggregate over matched history extent; -session → `listSessions({sort:"costComputed", limit:1})`; -turn → derived from each session's max turn; longest-session → `listSessions({sort:"durationMs", limit:1})`; biggest-cache-save → `listSessions({sort:"cacheSavingsComputed", limit:1})`.
+- **records respect categorical filters** — run: set project=alpha WHEN rendered → expected: project filter applied to records.
+- **records ignore date range** — expected: navigating date range does not change records display (override per A7).
+- **LeverageRatio renders Nx format** — expected: pattern is "Nx" with one decimal place; e.g., "20.5×".
+- **zero denominator renders unavailable, not NaN** — run: with no fresh-billed tokens → expected: shows "—" or "unavailable", no NaN/Infinity.
+- **FailedWorkStat reflects toolErrors measure** — run: with seeded failed tool results WHEN rendered → expected: number equals `measure: toolErrors` aggregate over the active range.
+- **zero failed results is a real zero** — expected: shows "0", not "—", when the parser records zero failures.
+- **stories cover empty/zero/populated states** — run: storybook → expected: each section has at least 3 states visible.
+
+#### Testable Seams
+- LeverageRatio numerator/denominator test (denominator=0 case).
+- FailedWorkStat renders `0` vs `undefined` distinctly.
+
+### Implementation Notes
+
+- **Module(s):** `client/src/pages/dashboard/RecordsStrip.tsx`, `LeverageRatio.tsx`, `FailedWorkStat.tsx`
+- **Pattern reference:** `components/StatCard.tsx` formatting; the section-container pattern
+- **Key decisions:** A7 (date override for records), section-level lock on Records strip measures, A3+R3 (zero failed = real zero, leverage zero = unavailable)
+- **Libraries:** None new.
+
+### Scope Boundaries
+
+- Do NOT split failed-work counts into separate `error tool_results` vs `failed commands` numbers — single unioned count per section-level lock.
+- Do NOT deep-link the records (spec shows "—" for record drill targets).
+
+### Files Expected
+
+**New files:**
+- `client/src/pages/dashboard/RecordsStrip.tsx` — 5 records per matrix
+- `client/src/pages/dashboard/LeverageRatio.tsx`
+- `client/src/pages/dashboard/FailedWorkStat.tsx`
+- Three colocated `*.stories.tsx`
+
+**Must NOT modify:**
+- `client/src/pages/Dashboard.tsx` (T14)
+
+---
+
+## Task T12: Savings decomposition section
+
+> **Status:** not started
+> **Verification:** ui
+> **Effort:** s
+> **Priority:** medium
+> **Depends on:** T3a (cache/routing measures), T7 (client foundation for fetch)
+> **Satisfies REQs:** R1, R9
+> **Footprint slice:**
+> - New: `client/src/pages/dashboard/SavingsDecomposition.tsx` + story
+> **High-risk areas touched:** Dashboard UI (Medium); Metrics engine surface (M, indirect via measure consumption)
+
+### Description
+
+Builds the SavingsDecomposition section showing two stacked savings values (cache discount + cheap-model routing) using the new measures from T3a. The two must sum exactly to the all-Opus-uncached counterfactual savings without double-counting (per A8). Unknown or unpriced models contribute no fabricated savings.
+
+### Verification Checklist
+
+- **shows two stacked savings segments** — expected: stack chart or stacked bar with cache and routing segments; both labeled.
+- **sums to all-Opus-uncached savings** — run: with hand-priced fixture WHEN rendered → expected: `cache + routing` equals `costAtOpusUncached − actualCost` within tolerance.
+- **unknown model contributes no fabricated savings** — run: with one unpriced call WHEN rendered → expected: that call's share is silently dropped from both segments; total savings is non-negative and consistent with only the priced calls.
+- **zero savings is a real zero** — expected: shows $0.00 (or "—") instead of fabricating any optimistic number.
+- **stories cover unpriced/populated/zero states** — run: storybook → expected: ≥3 states visible.
+
+#### Testable Seams
+- Sum-of-savings invariant test (asserts cache+routing == opus-uncached-actual within tolerance).
+
+### Implementation Notes
+
+- **Module(s):** `client/src/pages/dashboard/SavingsDecomposition.tsx`
+- **Pattern reference:** section-card pattern; stack rendering matches existing placeholder pattern in mockup
+- **Key decisions:** A8 (one non-overlapping counterfactual); section-level lock for stack algebra
+- **Libraries:** None new.
+- **High-risk callouts:** **Double-counting cache + routing** is the failure mode this task explicitly guards against.
+
+### Scope Boundaries
+
+- Do NOT introduce per-model rate switching (#P4-15 territory).
+- Do NOT display savings for sessions without pricing (#P4-15 territory).
+
+### Files Expected
+
+**New files:**
+- `client/src/pages/dashboard/SavingsDecomposition.tsx`
+- `client/src/pages/dashboard/SavingsDecomposition.stories.tsx`
+
+**Must NOT modify:**
+- `client/src/pages/Dashboard.tsx` (T14)
+
+---
+
+## Task T13: Composite sections (LeaderboardsCard + AnomalyFeed)
+
+> **Status:** not started
+> **Verification:** ui
+> **Effort:** m
+> **Priority:** high (leaderboards tie to existing pages; anomaly feed hooks up the detector)
+> **Depends on:** T3b (anomaly detector output), T7
+> **Satisfies REQs:** R1, R5
+> **Footprint slice:**
+> - New: `client/src/pages/dashboard/LeaderboardsCard.tsx`
+> - New: `client/src/pages/dashboard/AnomalyFeed.tsx`
+> - New: stories for each
+> **High-risk areas touched:** Dashboard UI (Medium)
+
+### Description
+
+Builds the tabbed top-sessions/top-projects/top-models LeaderboardsCard (each tab deep-links to §3 / §5 / §6 per the section-level lock) using the `/api/sessions` endpoint for sessions and dimension metrics queries for projects/models. Builds AnomalyFeed as a stable UI container that today renders a "gate data not available yet" stub but is shaped to render the three item kinds (`anomaly`, `gateFailure`, `captureGap`) once #P4-12 lands, and reuses `shared/anomaly.ts` from T3b for the `anomaly` kind today when enough session history exists.
+
+### Verification Checklist
+
+- **LeaderboardsCard renders 3 tabs** — run: with seeded fixture → expected: tabbar with Sessions / Projects / Models; default Sessions.
+- **Sessions tab uses /api/sessions** — expected: top 5 sessions by `costComputed` desc, each row links to `/sessions/:id`.
+- **Projects tab uses dimension metrics query** — expected: top 5 projects by `costComputed` aggregate, links to `/projects`.
+- **Models tab uses dimension metrics query** — expected: top 5 models, links to `/models`.
+- **each row links to the binding page per section-level lock** — expected: tab Sessions → §3, Projects → §5, Models → §6; if a row is uncategorized/empty, "no data yet" empty state shown.
+- **AnomalyFeed renders "gate data not available yet" by default** — expected: explicit message, not an empty list.
+- **AnomalyFeed structure is item-kind aware** — expected: a `data-testid="anomaly-feed"` exists; under the hood, when items are present the row rendering path branches on `kind` (`anomaly` / `gateFailure` / `captureGap`) with the documented fields (`sessionId`, optional `turnId`, `severity`, `summary`, `drill`).
+- **anomaly item uses detector output** — run: with seeded pre-priced samples that have one outlier, AFTER T3b lands → expected: row appears with summary derived from the detector's output.
+- **stories cover empty/populated/anomaly-only/capture-gap states** — run: storybook → expected: ≥4 states visible for AnomalyFeed.
+
+#### Testable Seams
+- Tab-switch interaction (render with active tab prop).
+- Item-kind rendering branches in AnomalyFeed (mock data per kind).
+
+### Implementation Notes
+
+- **Module(s):** `client/src/pages/dashboard/LeaderboardsCard.tsx`, `AnomalyFeed.tsx`
+- **Pattern reference:** `components/DataTable.tsx` for tabular rows; section-container pattern
+- **Key decisions:** A2/A4 (entity delivery + display), A10 (anomaly detector output feed forward), section-level lock on item kinds
+- **Libraries:** None new.
+- **High-risk callouts:** Leaderboards are the busiest cross-page drill surface — link correctness is the user-facing risk.
+
+### Scope Boundaries
+
+- Do NOT implement real gate-failure data wiring (that's #P4-12).
+- Do NOT include premium capture-gap detection beyond what the contract's `captureGap` kind reserves.
+
+### Files Expected
+
+**New files:**
+- `client/src/pages/dashboard/LeaderboardsCard.tsx`
+- `client/src/pages/dashboard/AnomalyFeed.tsx`
+- Two colocated `*.stories.tsx`
+
+**Must NOT modify:**
+- `client/src/pages/Dashboard.tsx` (T14)
+- `shared/anomaly.ts` (T3b owns the detector)
+
+---
+
+## Task T14: Page shell (CaptureBanner + format/queries helpers + Dashboard composition)
+
+> **Status:** not started
+> **Verification:** ui
+> **Effort:** m
+> **Priority:** high (composition glue; one failing section must not blank the page)
+> **Depends on:** T7, T9, T10, T11, T12, T13
+> **Satisfies REQs:** R1, R2, R8
+> **Footprint slice:**
+> - New: `client/src/pages/dashboard/CaptureBanner.tsx` (+ story)
+> - New: `client/src/pages/dashboard/format.ts`
+> - New: `client/src/pages/dashboard/queries.ts`
+> - Modified: `client/src/pages/Dashboard.tsx` (replace stub with the responsive 12-section composition)
+> **High-risk areas touched:** Dashboard UI (Medium); Build/deployment (Low, additive only)
+
+### Description
+
+Lands the page shell that composes every other section in a responsive 12-section layout. Adds the CaptureBanner that surfaces the global CTA when no C/B/L source exists (using `meta.globalCapture` from `/api/sessions`, intentionally filter-independent per the section-level lock), the `format.ts`/`queries.ts` helpers shared across section components, and replaces the current `Dashboard.tsx` stub with the full composition. Section components retain independent loading/error/empty states so one failure does not blank the page.
+
+### Verification Checklist
+
+- **Dashboard renders all 12 sections** — run: with full fixtures WHEN `/` is loaded → expected: Cost over time, Burn rate, Most recent session, Top sessions/projects/models, Anomaly & gate feed, Records strip, Subscription windows, Leverage ratio, Savings decomposition, Failed-work stat, Capture banner — and the 5 stat cards from T9. Order matches mockup unless the spec table dictates otherwise.
+- **CaptureBanner hidden when C/B/L present** — run: with seeded capture files → expected: banner is not rendered.
+- **CaptureBanner shown when no C/B/L** — run: without capture files → expected: banner is rendered with copy + link to `/settings`.
+- **CaptureBanner ignores active filters** — run: set project=alpha WHEN rendered → expected: banner visibility does not change.
+- **section errors do not blank the page** — run: deliberately break `/api/sessions` WHEN rendered → expected: only the affected sections show error; rest of page renders.
+- **responsive layout survives narrow viewports** — run: resize to ~640px → expected: sections reflow; nothing clipped offscreen.
+- **existing steel-thread assertions still pass** — run: `cypress/e2e/steel-thread.cy.ts` → expected: cost over time chart and persisted filters still work.
+
+#### Testable Seams
+- Dashboard smoke component test: render with mocked sections asserting presence of all 12 placeholders.
+- CaptureBanner visibility based on `globalCapture` prop.
+
+### Implementation Notes
+
+- **Module(s):** `client/src/pages/dashboard/{CaptureBanner.tsx,format.ts,queries.ts}`, `client/src/pages/Dashboard.tsx`
+- **Pattern reference:** `components/LockedCard.tsx` for the banner shell; `client/src/charts/units.ts` for format helpers
+- **Key decisions:** A5 (section-owned queries), section-level locks for tier basis, capture banner global rule, and date overrides; layout order from `specs/pages/dashboard.html` mockup unless spec table conflicts (mockup precedence per ARCH §"Specs over mockup for presence")
+- **Libraries:** None new.
+- **High-risk callouts:** **One failing section blanking the page** is the failure mode this task explicitly guards against — verified by the "section errors do not blank" checklist item.
+
+### Scope Boundaries
+
+- Do NOT introduce new shared components beyond what's needed.
+- Do NOT change filter wiring (sections already use `useFilters()`).
+- Only these 4 files.
+
+### Files Expected
+
+**New files:**
+- `client/src/pages/dashboard/CaptureBanner.tsx`
+- `client/src/pages/dashboard/CaptureBanner.stories.tsx`
+- `client/src/pages/dashboard/format.ts` — display/range formatting helpers (no pricing formulas)
+- `client/src/pages/dashboard/queries.ts` — query construction helpers
+
+**Modified files:**
+- `client/src/pages/Dashboard.tsx` — replace stub with the 12-section composition
+
+**Must NOT modify:**
+- `client/src/filters/**` (silent-regression hotspot)
+- `client/src/components/**` (silent-regression hotspots)
+- `client/src/charts/ChartCard.tsx` (T8 owns)
+
+---
+
+## Task T15: Cypress smoke + fixture
+
+> **Status:** not started
+> **Verification:** checklist
+> **Effort:** s
+> **Priority:** high (final DoD gate from issue acceptance criteria)
+> **Depends on:** T14
+> **Satisfies REQs:** R1, R2, R8
+> **Footprint slice:**
+> - New: `cypress/e2e/dashboard.cy.ts`
+> - New: `test/fixtures/projects/-Users-demo-project-alpha/44444444-4444-4444-8444-444444444444.jsonl`
+> - Modified: `test/fixtures/README.md` (document the new fixture)
+> **High-risk areas touched:** Build/deployment (Low, additive only)
+
+### Description
+
+Adds the Phase 4 standing-rules deliverable: a Cypress smoke spec that loads the Dashboard route from fixtures, asserts key sections render, and exercises at least one drill-link navigation that lands on a correctly filtered destination. Also adds a fixture session with anomaly/failed-result history so the anomaly feed and failed-work stat have real data to consume, and documents the new fixture in `test/fixtures/README.md`.
+
+### Verification Checklist
+
+- **npm run test:e2e passes** — run: `npm run test:e2e` from primary checkout (or local equivalent) → expected: all Cypress specs pass, including the new `dashboard.cy.ts`.
+- **Dashboard route renders key sections** — run: spec visit → expected: visible text for "Cost over time", "Burn rate", "Recent session", "Top", "Records", and at least one of "Leverage", "Savings", "Failed work".
+- **at least one drill-link lands on the right filtered destination** — run: spec clicks a stat card or leaderboard row → expected: URL matches the section-level lock target (`/trends`, `/sessions`, `/models`, `/cache`, `/projects`, `/sessions/:id`) AND filter chips carried over.
+- **fixture document updated** — run: read `test/fixtures/README.md` → expected: an entry documents the `44444444-…jsonl` fixture (anomaly history + failed tool result).
+- **no orphan failure of existing specs** — run: existing `steel-thread.cy.ts` and `chart-accessibility.cy.ts` → expected: still pass with the new fixture present.
+
+### Implementation Notes
+
+- **Module(s):** `cypress/e2e/dashboard.cy.ts`, `test/fixtures/projects/-Users-demo-project-alpha/...`, `test/fixtures/README.md`
+- **Pattern reference:** Existing `cypress/e2e/steel-thread.cy.ts` patterns: fixture URL pattern, `setDateInput`, `totalFromLabel` helpers
+- **Key decisions:** Issue acceptance criteria + Phase 4 standing rules
+- **Libraries:** Cypress (existing).
+- **High-risk callouts:** Cypress must use the existing test-fixtures convention; the existing fixture must keep working (no project-wide reset).
+
+### Scope Boundaries
+
+- Do NOT delete or modify existing fixtures.
+- Do NOT introduce a new test runner.
+- Only these 3 files.
+
+### Files Expected
+
+**New files:**
+- `cypress/e2e/dashboard.cy.ts` — fixture-backed Dashboard smoke + one filtered drill journey
+- `test/fixtures/projects/-Users-demo-project-alpha/44444444-4444-4444-8444-444444444444.jsonl` — anomaly/failed-result fixture
+
+**Modified files:**
+- `test/fixtures/README.md` — document the new fixture
+
+**Must NOT modify:**
+- Existing fixture files (silent-regression for `steel-thread.cy.ts` and `chart-accessibility.cy.ts`)
+- `cypress.config.ts` or other Cypress configuration unless strictly needed (prefer to keep scope additive)
+
+---
+
+
+
