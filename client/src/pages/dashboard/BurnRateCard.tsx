@@ -66,9 +66,14 @@ export interface BurnRateCardProps {
  * the current UTC month — categorical chip filters (project/model/branch/
  * host) stay active (decision A7).
  */
-export function BurnRateCard({ budget, now = new Date() }: BurnRateCardProps) {
+export function BurnRateCard({ budget, now: injectedNow }: BurnRateCardProps) {
   const { filters } = useFilters();
   const filtersKey = serializeFilters(filters);
+  // A default parameter (`now = new Date()`) creates a new object on every
+  // query-driven render. Because `now` is part of the query key, each response
+  // would then produce a different key and immediately fetch again. Resolve
+  // the fallback once per mount while still following an injected prop change.
+  const now = useMemo(() => injectedNow ?? new Date(), [injectedNow]);
 
   const monthStart = useMemo(() => utcMonthStart(now), [now]);
   const daysInMonth = useMemo(() => daysInUtcMonth(now), [now]);

@@ -10,6 +10,40 @@ const FIXTURE_RANGE = "?from=2026-07-01T00%3A00%3A00.000Z&to=2026-08-01T00%3A00%
  * non-empty state.
  */
 describe("dashboard smoke", () => {
+  it("does not continuously refetch live-window metrics", () => {
+    let liveWindowRequestCount = 0;
+    let settledRequestCount = 0;
+
+    cy.intercept("POST", "/api/metrics", (request) => {
+      const query = request.body as {
+        measures?: unknown;
+        dimensions?: unknown;
+        grain?: unknown;
+      };
+      if (
+        JSON.stringify(query.measures) === JSON.stringify(["costComputed"]) &&
+        JSON.stringify(query.dimensions) === JSON.stringify([]) &&
+        query.grain === "hour"
+      ) {
+        liveWindowRequestCount++;
+      }
+    });
+
+    cy.visit(`/${FIXTURE_RANGE}`);
+    cy.get('[data-testid="burn-rate-card"]').should("be.visible");
+    cy.get('[data-testid="subscription-window"]').should("be.visible");
+
+    // Allow initial queries and the WebSocket-open invalidation to settle,
+    // then verify query-driven renders do not keep creating new time keys.
+    cy.wait(750).then(() => {
+      settledRequestCount = liveWindowRequestCount;
+      expect(settledRequestCount).to.be.greaterThan(0);
+    });
+    cy.wait(1000).then(() => {
+      expect(liveWindowRequestCount).to.equal(settledRequestCount);
+    });
+  });
+
   it("renders every Dashboard section with fixture data", () => {
     cy.visit(`/${FIXTURE_RANGE}`);
     cy.contains("h1", "Dashboard").should("be.visible");

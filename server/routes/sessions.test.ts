@@ -446,6 +446,35 @@ describe("GET /api/sessions — pagination, trace, and meta", () => {
     expect(noMatches.json().items).toEqual([]);
   });
 
+  it('meta.matchedExtent ignores a session with no parsed calls yet (firstAt/lastAt still "")', async () => {
+    // A session discovered but not yet tailed past its first line (or one
+    // whose only lines so far don't produce an ApiCall) derives firstAt/
+    // lastAt as "" (derive-session.ts's unset sentinel). "" sorts before
+    // every real timestamp, so without a guard it would corrupt the extent
+    // to an empty string — which then fails /api/metrics's date validation
+    // when a caller (e.g. the dashboard's RecordsStrip) forwards it as
+    // range.from. No from/to here (RecordsStrip's real query has none,
+    // decision A7) — a date filter would exclude "" via
+    // `session.firstAt < params.from` before the extent is even computed,
+    // masking the bug this test guards against.
+    store.applyRecords("s-empty", {
+      calls: [],
+      prompts: [],
+      toolResultBytes: [],
+      duplicateCount: 0,
+      malformedCount: 0,
+    });
+
+    const response = await app.inject({ method: "GET", url: "/api/sessions?limit=1" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().total).toBe(21);
+    const extent = response.json().meta.matchedExtent;
+    expect(extent).not.toBeNull();
+    expect(extent.from).not.toBe("");
+    expect(extent.to).not.toBe("");
+    expect(Date.parse(extent.from)).toBeLessThanOrEqual(Date.parse(extent.to));
+  });
+
   it("meta.globalCapture reflects the unfiltered file set — filter-independent", async () => {
     // Mark one session's sidecar so the OR-aggregate flips a flag.
     store.markSidecarPresent("s-05", "cost");

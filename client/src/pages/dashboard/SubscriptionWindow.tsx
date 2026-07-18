@@ -149,9 +149,13 @@ export interface SubscriptionWindowProps {
  * categorical chip filters stay active (decision A7). Rolling-window expiry
  * and historical-peak-vs-ceiling calibration per decision A11.
  */
-export function SubscriptionWindow({ ceiling, now = new Date() }: SubscriptionWindowProps) {
+export function SubscriptionWindow({ ceiling, now: injectedNow }: SubscriptionWindowProps) {
   const { filters } = useFilters();
   const filtersKey = serializeFilters(filters);
+  // Keep the default time stable across query-driven renders. A fresh Date in
+  // the parameter default changes this component's query key after every
+  // response and creates a continuous POST /api/metrics loop.
+  const now = useMemo(() => injectedNow ?? new Date(), [injectedNow]);
 
   const lookbackStart = useMemo(() => new Date(now.getTime() - PEAK_LOOKBACK_DAYS * DAY_MS), [now]);
 

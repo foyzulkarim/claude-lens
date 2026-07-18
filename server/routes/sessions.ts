@@ -357,10 +357,16 @@ export function registerSessionsRoute(
     matched.sort((a, b) => compareSessions(a, b, sort, order));
 
     let matchedExtent: SessionListMeta["matchedExtent"] = null;
-    if (matched.length > 0) {
-      let earliest = matched[0].firstAt;
-      let latest = matched[0].lastAt;
-      for (const s of matched) {
+    // Sessions with no parsed calls yet (e.g. still being tailed live) carry
+    // firstAt/lastAt === "" (derive-session.ts's unset sentinel). "" sorts
+    // before every real ISO timestamp, so an in-progress session would
+    // otherwise poison the extent to an empty string that fails downstream
+    // /api/metrics validation (range.from/to must be parseable dates).
+    const timestamped = matched.filter((s) => s.firstAt !== "" && s.lastAt !== "");
+    if (timestamped.length > 0) {
+      let earliest = timestamped[0].firstAt;
+      let latest = timestamped[0].lastAt;
+      for (const s of timestamped) {
         if (s.firstAt < earliest) earliest = s.firstAt;
         if (s.lastAt > latest) latest = s.lastAt;
       }
