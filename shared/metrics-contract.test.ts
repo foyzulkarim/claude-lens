@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+// biome-ignore lint/correctness/noUnusedImports: Type-level exhaustive guard — presence here keeps the tsc --noEmit gate honest if a literal is added to Measure without a corresponding MEASURES entry.
+import type { Measure } from "./metrics-contract.js";
 import {
   MEASURES,
   type ScatterMetricsQuery,
@@ -6,8 +8,6 @@ import {
   type ScatterPoint,
   type ScatterRegression,
 } from "./metrics-contract.js";
-// biome-ignore lint/correctness/noUnusedImports: Type-level exhaustive guard — presence here keeps the tsc --noEmit gate honest if a literal is added to Measure without a corresponding MEASURES entry.
-import type { Measure } from "./metrics-contract.js";
 
 describe("MEASURES -- exhaustive union", () => {
   it("MEASURES contains exactly the union literals (19 total)", () => {

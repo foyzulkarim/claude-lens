@@ -11,8 +11,8 @@ import {
 } from "../../shared/metrics-contract.js";
 import type { SessionPopulationCriteria } from "../../shared/sessions-contract.js";
 import { metrics } from "../metrics/engine.js";
-import { metricsScatter } from "../metrics/scatter.js";
 import { DEFAULT_PRICING_TABLE, type PricingTable } from "../metrics/measures.js";
+import { metricsScatter } from "../metrics/scatter.js";
 import type { Store } from "../store/store.js";
 
 // routes/ may only import store/ for data (architecture §3) — the metrics/

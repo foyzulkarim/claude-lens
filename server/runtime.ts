@@ -9,7 +9,7 @@
  * call `buildRuntimeMetadata(custom)` once with the user's overrides —
  * every downstream consumer reads the same shape.
  */
-import { DEFAULT_PRICING_TABLE, priceUsage, type PricingTable } from "./metrics/measures.js";
+import { DEFAULT_PRICING_TABLE, type PricingTable, priceUsage } from "./metrics/measures.js";
 import { resolveContextWindow } from "./metrics/model-metadata.js";
 import type { ContextResolver, Pricer } from "./store/derive-session.js";
 

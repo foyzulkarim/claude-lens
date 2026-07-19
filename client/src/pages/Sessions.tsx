@@ -11,8 +11,8 @@ import { SessionsFilters } from "./sessions/SessionsFilters.js";
 import {
   pageOwnedKeys,
   parseSessionsPageState,
-  serializeSessionsPageState,
   type SessionsPageState,
+  serializeSessionsPageState,
 } from "./sessions/state.js";
 
 /**

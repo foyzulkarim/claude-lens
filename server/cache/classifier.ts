@@ -1,9 +1,9 @@
-import type { ApiCall } from "../../shared/types.js";
 import type {
   CacheMissAttribution,
   CacheWriteCause,
   ClassifierTrace,
 } from "../../shared/cache-lab-contract.js";
+import type { ApiCall } from "../../shared/types.js";
 
 /**
  * Pure stream-partitioning primitive shared by the analyzer (T2) and the

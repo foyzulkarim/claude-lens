@@ -1,12 +1,12 @@
 import { Link } from "wouter";
-import { formatUnitValue } from "../../charts/units.js";
-import { Badge, type BadgeVariant } from "../../components/Badge.js";
 import type {
   CacheLabAnalysis,
   CacheMissAttribution,
   CacheWriteCause,
   GalleryItem,
 } from "../../../../shared/cache-lab-contract.js";
+import { formatUnitValue } from "../../charts/units.js";
+import { Badge, type BadgeVariant } from "../../components/Badge.js";
 
 const CAUSE_VARIANT: Record<CacheWriteCause, BadgeVariant> = {
   "first-call": "neutral",

@@ -1,6 +1,6 @@
+import clsx from "clsx";
 import type { ReactNode } from "react";
 import { Link, useLocation, useSearch } from "wouter";
-import clsx from "clsx";
 import { FilterBar } from "../filters/FilterBar.js";
 import { navRoutes } from "../routes.js";
 

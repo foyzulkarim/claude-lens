@@ -1,11 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { MetricsQuery } from "../../shared/metrics-contract.js";
+import type { ApiCall } from "../../shared/types.js";
 import { buildApp } from "../app.js";
-import { parseMetricsQuery } from "./metrics.js";
 import { DEFAULT_PRICING_TABLE } from "../metrics/measures.js";
 import { Store } from "../store/store.js";
-import type { ApiCall } from "../../shared/types.js";
+import { parseMetricsQuery } from "./metrics.js";
 
 // Same local-Date convention as metrics/engine.test.ts — grain.ts buckets by
 // *local* calendar day, so hardcoded "...Z" timestamps would make bucket

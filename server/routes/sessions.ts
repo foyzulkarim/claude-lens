@@ -14,10 +14,10 @@ import type {
 } from "../../shared/sessions-contract.js";
 import type { Session } from "../../shared/types.js";
 import type { PricingTable } from "../metrics/measures.js";
+import { applyRange, totalTokensForSession } from "../metrics/session-population.js";
 import type { Pricer } from "../store/derive-session.js";
 import { aggregateLogicalTurnCost, groupLogicalTurns } from "../store/logical-turns.js";
 import type { Store } from "../store/store.js";
-import { applyRange, totalTokensForSession } from "../metrics/session-population.js";
 
 // GET /api/sessions — general paginated sessions list (ARCH T6 / #P4-2).
 // Patterned on routes/metrics.ts (Fastify plugin, manual validation that

@@ -1,7 +1,7 @@
 import type React from "react";
-import { TierBadge, costTierLevel } from "../../components/TierBadge.js";
-import { Badge } from "../../components/Badge.js";
 import type { SessionDetailHeader } from "../../../../shared/session-detail-contract.js";
+import { Badge } from "../../components/Badge.js";
+import { costTierLevel, TierBadge } from "../../components/TierBadge.js";
 import {
   formatCost,
   formatCostBasis,

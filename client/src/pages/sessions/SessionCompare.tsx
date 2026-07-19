@@ -1,12 +1,12 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type { SessionPageItem } from "../../../../shared/sessions-contract.js";
-import { listSessionsPage } from "../../api/sessions.js";
 import { qk } from "../../api/queryKeys.js";
-import { EmptyState } from "../../components/EmptyState.js";
+import { listSessionsPage } from "../../api/sessions.js";
 import { formatDuration, formatUnitValue } from "../../charts/units.js";
+import { EmptyState } from "../../components/EmptyState.js";
 import { useFilters } from "../../filters/useFilters.js";
 import { useStableNow } from "../dashboard/useStableNow.js";
-import { type SessionsPageState, buildListQuery } from "./state.js";
+import { buildListQuery, type SessionsPageState } from "./state.js";
 
 export interface SessionCompareProps {
   state: SessionsPageState;

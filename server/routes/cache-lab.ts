@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
-import { DIMENSIONS, type Dimension, GRAINS, type Grain } from "../../shared/metrics-contract.js";
 import type { CacheLabAnalysis, CacheLabQuery } from "../../shared/cache-lab-contract.js";
+import { DIMENSIONS, type Dimension, GRAINS, type Grain } from "../../shared/metrics-contract.js";
 import { analyzeCacheLab } from "../cache/analysis.js";
 import { DEFAULT_PRICING_TABLE, type PricingTable } from "../metrics/measures.js";
 import type { Store } from "../store/store.js";

@@ -139,14 +139,14 @@ describe("aggregateLogicalTurnCost", () => {
     const result = groupLogicalTurns([main, side]);
 
     expect(result).toHaveLength(1);
-    expect(aggregateLogicalTurnCost(result[0]!, PRICER)).toBe(140);
+    expect(aggregateLogicalTurnCost(result[0], PRICER)).toBe(140);
   });
 
   it("returns 0 for a logical turn with no calls (sidechain-only, empty)", () => {
     const side = turn("p1", true, []);
     const result = groupLogicalTurns([side]);
 
-    expect(aggregateLogicalTurnCost(result[0]!, PRICER)).toBe(0);
+    expect(aggregateLogicalTurnCost(result[0], PRICER)).toBe(0);
   });
 
   it("matches the per-turn sum across every segment", () => {
@@ -165,6 +165,6 @@ describe("aggregateLogicalTurnCost", () => {
     ]);
     const result = groupLogicalTurns([main, side]);
     // 15 + 25 + 30 = 70
-    expect(aggregateLogicalTurnCost(result[0]!, PRICER)).toBe(70);
+    expect(aggregateLogicalTurnCost(result[0], PRICER)).toBe(70);
   });
 });

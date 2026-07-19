@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ApiCall } from "../../shared/types.js";
 import type { WarmCacheEntry, WarmCacheKey } from "./warm-cache.js";
-import { WARM_CACHE_SCHEMA_VERSION, createWarmCache } from "./warm-cache.js";
+import { createWarmCache, WARM_CACHE_SCHEMA_VERSION } from "./warm-cache.js";
 
 const tmpDirs: string[] = [];
 

@@ -207,7 +207,7 @@ describe("projectSessionDetail — timeline", () => {
       call("m2", "2026-07-14T10:01:00.000Z", { usage: usage({ inputTokens: 200 }) }),
       call("m3", "2026-07-14T10:02:00.000Z", { usage: usage({ inputTokens: 50 }) }),
     ];
-    const turns = [turn("p1", false, [calls[0]!, calls[1]!]), turn("p2", false, [calls[2]!])];
+    const turns = [turn("p1", false, [calls[0], calls[1]]), turn("p2", false, [calls[2]])];
     const snap = snapshotWith(sessionWithTier(), calls, turns, [
       { sessionId: "s1", promptId: "p1", text: "first", timestamp: "2026-07-14T09:59:00.000Z" },
       { sessionId: "s1", promptId: "p2", text: "second", timestamp: "2026-07-14T10:01:30.000Z" },
@@ -246,9 +246,9 @@ describe("projectSessionDetail — timeline", () => {
       call("m3", "2026-07-14T10:04:00.000Z"),
     ];
     const turns = [
-      turn("p1", false, [calls[0]!]),
-      turn("p2", false, [calls[1]!]),
-      turn("p3", false, [calls[2]!]),
+      turn("p1", false, [calls[0]]),
+      turn("p2", false, [calls[1]]),
+      turn("p3", false, [calls[2]]),
     ];
     const compactions: CompactionRecord[] = [
       { sessionId: "s1", timestamp: "2026-07-14T10:02:00.000Z" },
@@ -550,8 +550,8 @@ describe("projectSessionDetail — prompts", () => {
   it("emits prompts in logical-turn order with text + timestamp", () => {
     const calls = [call("m1", "2026-07-14T10:00:00.000Z"), call("m2", "2026-07-14T10:01:00.000Z")];
     const turns = [
-      turn("p1", false, [calls[0]!], { promptText: "first" }),
-      turn("p2", false, [calls[1]!], { promptText: "second" }),
+      turn("p1", false, [calls[0]], { promptText: "first" }),
+      turn("p2", false, [calls[1]], { promptText: "second" }),
     ];
     const snap = snapshotWith(sessionWithTier(), calls, turns, []);
 

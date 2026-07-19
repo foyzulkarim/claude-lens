@@ -7,13 +7,14 @@ import type {
 } from "../ingest/parse-transcript.js";
 import type { PricingTable } from "../metrics/measures.js";
 import {
-  deriveSession,
   type ContextResolver,
+  deriveSession,
   type Pricer,
   type SessionSidecarFlags,
 } from "./derive-session.js";
 import { deriveTurns } from "./derive-turns.js";
 import { createInvalidator, type Invalidator } from "./invalidation.js";
+
 // The in-memory columnar store (architecture §5.5, §6). Per-session raw
 // arrays plus cached derived Turn[]/Session. `ingest/` is the only writer
 // (applyRecords/resetSession/markSidecarPresent); everything else reads.

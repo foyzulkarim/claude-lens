@@ -1,9 +1,9 @@
-import type { SessionListParams, SessionPageParams } from "../../../../shared/sessions-contract.js";
 import type {
   DistributionMetricsQuery,
   ScatterMeasure,
   ScatterMetricsQuery,
 } from "../../../../shared/metrics-contract.js";
+import type { SessionListParams, SessionPageParams } from "../../../../shared/sessions-contract.js";
 import type { FilterState } from "../../filters/state.js";
 import { resolveRange } from "../../filters/state.js";
 

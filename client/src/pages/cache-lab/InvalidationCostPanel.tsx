@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
 import clsx from "clsx";
+import { useMemo, useState } from "react";
+import type { InvalidationCostPoint } from "../../../../shared/cache-lab-contract.js";
 import { Chart } from "../../charts/Chart.js";
 import { formatUnitValue } from "../../charts/units.js";
 import { TOGGLE_ACTIVE_CLASS, TOGGLE_CLASS } from "../../ui/toggleStyles.js";
@@ -9,7 +10,6 @@ import {
   classifySpanSummary,
   sumInvalidationCause,
 } from "./chart-options.js";
-import type { InvalidationCostPoint } from "../../../../shared/cache-lab-contract.js";
 
 type Family = "trend" | "totals";
 const FAMILIES: Family[] = ["trend", "totals"];

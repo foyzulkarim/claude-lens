@@ -1,8 +1,8 @@
 import { useMemo } from "react";
-import { Chart } from "../../charts/Chart.js";
-import { buildContextGrowthOption } from "./chart-options.js";
-import { TierBadge } from "../../components/TierBadge.js";
 import type { ContextGrowthSection } from "../../../../shared/cache-lab-contract.js";
+import { Chart } from "../../charts/Chart.js";
+import { TierBadge } from "../../components/TierBadge.js";
+import { buildContextGrowthOption } from "./chart-options.js";
 
 /**
  * Cache Lab context-growth panel (ARCH §T6 R9): per-session token-

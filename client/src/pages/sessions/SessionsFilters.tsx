@@ -1,5 +1,5 @@
-import { TOGGLE_CLASS } from "../../ui/toggleStyles.js";
 import type { FilterState } from "../../filters/state.js";
+import { TOGGLE_CLASS } from "../../ui/toggleStyles.js";
 import type { SessionsPageState } from "./state.js";
 
 export interface SessionsFiltersProps {

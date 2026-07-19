@@ -36,9 +36,9 @@ import type {
 import { CACHE_LAB_LIMITS } from "../../shared/cache-lab-contract.js";
 import type { Dimension, Grain } from "../../shared/metrics-contract.js";
 import type { ApiCall, Session, Turn } from "../../shared/types.js";
-import { attributeCacheMiss, classifyCacheWrite, partitionCacheStreams } from "./classifier.js";
 import { bucketStart, enumerateBuckets } from "../metrics/grain.js";
 import type { PricingTable } from "../metrics/measures.js";
+import { attributeCacheMiss, classifyCacheWrite, partitionCacheStreams } from "./classifier.js";
 
 /**
  * Bounded top-K selection: keeps only the best `k` items by `compare`
@@ -131,7 +131,7 @@ function callMatchesChip(
     case "gateStatus":
       return true;
     default: {
-      const unhandled: never = dim;
+      const _unhandled: never = dim;
       return true;
     }
   }

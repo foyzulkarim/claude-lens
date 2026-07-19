@@ -1,10 +1,4 @@
 import { describe, expect, it } from "vitest";
-import {
-  CACHE_LAB_LIMITS,
-  CACHE_MISS_ATTRIBUTIONS,
-  CACHE_WRITE_CAUSES,
-  MISS_ATTRIBUTION_VERDICTS,
-} from "./cache-lab-contract.js";
 import type {
   CacheLabAnalysis,
   CacheLabQuery,
@@ -12,6 +6,12 @@ import type {
   CacheWriteCause,
   ClassifiedCacheWrite,
   MissAttributionVerdict,
+} from "./cache-lab-contract.js";
+import {
+  CACHE_LAB_LIMITS,
+  CACHE_MISS_ATTRIBUTIONS,
+  CACHE_WRITE_CAUSES,
+  MISS_ATTRIBUTION_VERDICTS,
 } from "./cache-lab-contract.js";
 
 describe("CACHE_WRITE_CAUSES -- exhaustive K2 base-cause vocabulary", () => {

@@ -13,8 +13,8 @@ import {
   applyRange,
   indexSessionsByScope,
   measureForSession,
-  totalTokensForSession,
   type SessionScope,
+  totalTokensForSession,
 } from "./session-population.js";
 
 /**

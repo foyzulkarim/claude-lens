@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { CacheLabQuery } from "../../shared/cache-lab-contract.js";
-import type { ApiCall, Session, Turn } from "../../shared/types.js";
-import { analyzeCacheLab, type AnalysisInput } from "./analysis.js";
+import type { ApiCall, Turn } from "../../shared/types.js";
 import { DEFAULT_PRICING_TABLE } from "../metrics/measures.js";
+import { type AnalysisInput, analyzeCacheLab } from "./analysis.js";
 
 function call(overrides: Partial<ApiCall> = {}): ApiCall {
   return {
@@ -164,7 +164,7 @@ describe("analyzeCacheLab — economics + nullability", () => {
       baseQuery(),
     );
 
-    const rate = DEFAULT_PRICING_TABLE["claude-sonnet-5"]!;
+    const rate = DEFAULT_PRICING_TABLE["claude-sonnet-5"];
     // Cache savings = (uncached - actual) per call.
     // For call "a": input=100 + cacheRead=1_000_000 → uncached at input rate,
     //              actual at cacheRead rate. Savings = 1_000_000 * (input - cacheRead).
@@ -486,7 +486,7 @@ describe("analyzeCacheLab — gallery bounds", () => {
     expect(result.gallery.total).toBe(60);
     expect(result.gallery.truncated).toBe(true);
     // Newest first — first item's timestamp >= last item's.
-    expect(result.gallery.items[0]!.timestamp >= result.gallery.items[49]!.timestamp).toBe(true);
+    expect(result.gallery.items[0]?.timestamp >= result.gallery.items[49]?.timestamp).toBe(true);
   });
 });
 

@@ -1,8 +1,8 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { createQueryClient } from "./api/queryClient.js";
 import { App } from "./App.js";
+import { createQueryClient } from "./api/queryClient.js";
 import "./index.css";
 import { connectWs } from "./ws.js";
 

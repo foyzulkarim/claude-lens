@@ -1,5 +1,5 @@
-import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
 import type { SeriesMetricsQuery } from "../../../shared/metrics-contract.js";
 import { postMetrics } from "../api/metrics.js";
 import { qk } from "../api/queryKeys.js";

@@ -1,6 +1,6 @@
+import type { CacheLabAnalysis } from "../../../../shared/cache-lab-contract.js";
 import { formatUnitValue } from "../../charts/units.js";
 import { EmptyState } from "../../components/EmptyState.js";
-import type { CacheLabAnalysis } from "../../../../shared/cache-lab-contract.js";
 
 /**
  * Net cache-benefit panel (ARCH §T6 R3): "saved by cache vs. lost to

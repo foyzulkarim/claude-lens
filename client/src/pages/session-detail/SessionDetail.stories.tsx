@@ -377,17 +377,20 @@ export const Empty: Story = {
 export const Anomalous: Story = {
   args: {
     data: baseResponse({
-      turns: [
-        baseResponse().turns[0]!,
-        {
-          ...baseResponse().turns[1]!,
-          cost: 4.8,
-          mainCost: 4.2,
-          sidechainCost: 0.6,
-          fleetPercentile: 99,
-          isAnomaly: true,
-        },
-      ],
+      turns: (() => {
+        const [first, second] = baseResponse().turns;
+        return [
+          first,
+          {
+            ...second,
+            cost: 4.8,
+            mainCost: 4.2,
+            sidechainCost: 0.6,
+            fleetPercentile: 99,
+            isAnomaly: true,
+          },
+        ];
+      })(),
     }),
   },
 };

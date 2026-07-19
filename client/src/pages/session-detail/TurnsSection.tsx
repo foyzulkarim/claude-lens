@@ -1,13 +1,13 @@
-import { useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Link, useSearch } from "wouter";
 import clsx from "clsx";
+import { useMemo, useState } from "react";
+import { Link, useSearch } from "wouter";
 import type {
   SessionDetailDistribution,
   SessionDetailTurn,
 } from "../../../../shared/session-detail-contract.js";
-import { formatCost, formatPercent, formatTokens } from "./format.js";
 import { DataTable } from "../../components/DataTable.js";
+import { formatCost, formatPercent, formatTokens } from "./format.js";
 
 export interface TurnsSectionProps {
   sessionId: string;

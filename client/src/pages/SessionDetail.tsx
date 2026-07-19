@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "wouter";
-import { getSessionDetail, SessionDetailApiError } from "../api/session-detail.js";
 import { qk } from "../api/queryKeys.js";
+import { getSessionDetail, SessionDetailApiError } from "../api/session-detail.js";
 import { SessionDetailView } from "./session-detail/SessionDetailView.js";
 
 /**

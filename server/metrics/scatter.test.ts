@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { ScatterMetricsQuery, ScatterPoint } from "../../shared/metrics-contract.js";
 import type { ApiCall, Session, Turn } from "../../shared/types.js";
+import type { MetricsInput } from "./engine.js";
+import { DEFAULT_PRICING_TABLE } from "./measures.js";
 import {
+  computeRegression,
   metricsScatter,
   SCATTER_VISUAL_CAP,
   samplePointsDeterministically,
-  computeRegression,
 } from "./scatter.js";
-import type { MetricsInput } from "./engine.js";
-import { DEFAULT_PRICING_TABLE } from "./measures.js";
 
 function iso(y: number, mo: number, d: number, h = 0, mi = 0): string {
   return new Date(y, mo, d, h, mi).toISOString();

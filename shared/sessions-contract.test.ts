@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type {
-  SessionListParams,
   SessionListItem,
+  SessionListParams,
   SessionListResponse,
-  TracePoint,
-  SessionPageParams,
   SessionPageItem,
+  SessionPageParams,
   SessionPageResponse,
-  SessionTimelineSet,
-  SessionPopulationFilter,
   SessionPopulationCriteria,
+  SessionPopulationFilter,
+  SessionTimelineSet,
+  TracePoint,
 } from "./sessions-contract.js";
 
 describe("SessionListParams", () => {

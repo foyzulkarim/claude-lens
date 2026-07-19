@@ -1,8 +1,8 @@
 import { useMemo } from "react";
+import type { BaselinePoint } from "../../../../shared/cache-lab-contract.js";
 import { Chart } from "../../charts/Chart.js";
 import { formatUnitValue } from "../../charts/units.js";
 import { buildBaselineWeightOption, classifySpanSummary } from "./chart-options.js";
-import type { BaselinePoint } from "../../../../shared/cache-lab-contract.js";
 
 /**
  * Cache Lab baseline-weight panel (ARCH §T6 R6): median "first cache

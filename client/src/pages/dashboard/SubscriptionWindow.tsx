@@ -7,7 +7,7 @@ import { qk } from "../../api/queryKeys.js";
 import { listSessions } from "../../api/sessions.js";
 import { pointValueOrNull } from "../../charts/series-math.js";
 import { formatUnitValue } from "../../charts/units.js";
-import { filtersToQuery, serializeFilters, type FilterState } from "../../filters/state.js";
+import { type FilterState, filtersToQuery, serializeFilters } from "../../filters/state.js";
 import { useFilters } from "../../filters/useFilters.js";
 import { useStableNow } from "./useStableNow.js";
 

@@ -4,9 +4,9 @@ import type {
   SessionDetailResponse,
 } from "../../shared/session-detail-contract.js";
 import { projectSessionDetail, type RuntimeMetadata } from "../session-detail/projector.js";
-import type { Store } from "../store/store.js";
 import type { Pricer } from "../store/derive-session.js";
 import { aggregateLogicalTurnCost, groupLogicalTurns } from "../store/logical-turns.js";
+import type { Store } from "../store/store.js";
 
 // GET /api/sessions/:id — Session Detail (ARCH T5 / #P4-5).
 //

@@ -3,9 +3,9 @@ import "@testing-library/jest-dom/vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { SessionDetailResponse } from "../../../../shared/session-detail-contract.js";
 import { Route, Router, Switch } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
+import type { SessionDetailResponse } from "../../../../shared/session-detail-contract.js";
 import { SessionDetail } from "../SessionDetail.js";
 
 // Minimal stub of getSessionDetail so we can swap per test. The real

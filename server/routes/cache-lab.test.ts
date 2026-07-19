@@ -1,9 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { ApiCall } from "../../shared/types.js";
 import { buildApp } from "../app.js";
 import { DEFAULT_PRICING_TABLE } from "../metrics/measures.js";
 import { Store } from "../store/store.js";
-import type { ApiCall } from "../../shared/types.js";
 
 function iso(y: number, mo: number, d: number, h = 0, mi = 0): string {
   return new Date(y, mo, d, h, mi).toISOString();
@@ -176,7 +176,7 @@ describe("POST /api/cache-lab", () => {
     const customPricing = {
       ...DEFAULT_PRICING_TABLE,
       "claude-sonnet-5": {
-        ...DEFAULT_PRICING_TABLE["claude-sonnet-5"]!,
+        ...DEFAULT_PRICING_TABLE["claude-sonnet-5"],
         cacheRead: 0.05, // 10x cheaper than default 0.5 → larger savings
       },
     };

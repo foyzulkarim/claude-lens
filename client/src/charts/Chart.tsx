@@ -1,11 +1,11 @@
+import type { BarSeriesOption, LineSeriesOption, ScatterSeriesOption } from "echarts/charts";
 import { BarChart, LineChart, ScatterChart } from "echarts/charts";
+import type { GridComponentOption, TooltipComponentOption } from "echarts/components";
 import { GridComponent, TooltipComponent } from "echarts/components";
 import type { ComposeOption, ECElementEvent } from "echarts/core";
 import * as echarts from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
 import { useEffect, useRef } from "react";
-import type { BarSeriesOption, LineSeriesOption, ScatterSeriesOption } from "echarts/charts";
-import type { GridComponentOption, TooltipComponentOption } from "echarts/components";
 import type { TimeseriesOption } from "./timeseries.js";
 
 // Register the time-series + scatter chart families (ARCH A9). The scatter

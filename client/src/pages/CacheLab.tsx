@@ -5,7 +5,6 @@ import { postMetrics } from "../api/metrics.js";
 import { qk } from "../api/queryKeys.js";
 import { filtersToQuery, serializeFilters } from "../filters/state.js";
 import { useFilters } from "../filters/useFilters.js";
-import { useStableNow } from "./dashboard/useStableNow.js";
 import { BaselineWeightPanel } from "./cache-lab/BaselineWeightPanel.js";
 import { BustEconomicsPanel } from "./cache-lab/BustEconomicsPanel.js";
 import { ContextGrowthPanel } from "./cache-lab/ContextGrowthPanel.js";
@@ -16,6 +15,7 @@ import { InvalidationGallery } from "./cache-lab/InvalidationGallery.js";
 import { MissAttributionPanel } from "./cache-lab/MissAttributionPanel.js";
 import { TtlMixPanel } from "./cache-lab/TtlMixPanel.js";
 import { useCacheLabAnalysis } from "./cache-lab/useCacheLabAnalysis.js";
+import { useStableNow } from "./dashboard/useStableNow.js";
 
 const GRAIN = "day";
 

@@ -1,7 +1,7 @@
+import type { CacheLabAnalysis } from "../../../../shared/cache-lab-contract.js";
 import type { Series } from "../../../../shared/metrics-contract.js";
 import { formatUnitValue } from "../../charts/units.js";
 import { StatCard, StatRow } from "../../components/StatCard.js";
-import type { CacheLabAnalysis } from "../../../../shared/cache-lab-contract.js";
 
 /**
  * Cache Lab overview quartet (ARCH §T6 R1-R3): cache hit %, tokens

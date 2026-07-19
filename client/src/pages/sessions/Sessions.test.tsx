@@ -6,7 +6,7 @@ import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Router } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
-import type { Series, ScatterMetricsResult } from "../../../../shared/metrics-contract.js";
+import type { ScatterMetricsResult, Series } from "../../../../shared/metrics-contract.js";
 import type { SessionPageResponse } from "../../../../shared/sessions-contract.js";
 import type { ChartProps } from "../../charts/Chart.js";
 

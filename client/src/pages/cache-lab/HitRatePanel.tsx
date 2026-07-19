@@ -1,13 +1,14 @@
+import clsx from "clsx";
 import { useMemo, useState } from "react";
 import { useLocation } from "wouter";
-import clsx from "clsx";
+import type { Grain, Series } from "../../../../shared/metrics-contract.js";
 import { Chart } from "../../charts/Chart.js";
 import {
+  type BucketRow,
   bucketRows,
   chartAriaLabel,
   chartRangeSummary,
   chartTrendSummary,
-  type BucketRow,
 } from "../../charts/ChartCard.js";
 import { sessionsHrefForBucket } from "../../charts/drilldown.js";
 import { formatUnitValue } from "../../charts/units.js";
@@ -18,7 +19,6 @@ import {
   buildHitRateOption,
   classifySpanSummary,
 } from "./chart-options.js";
-import type { Grain, Series } from "../../../../shared/metrics-contract.js";
 
 type Family = "line" | "histogram";
 

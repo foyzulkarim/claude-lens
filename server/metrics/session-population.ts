@@ -1,8 +1,8 @@
+import type { Measure } from "../../shared/metrics-contract.js";
 import type {
   SessionPopulationCriteria,
   SessionPopulationFilter,
 } from "../../shared/sessions-contract.js";
-import type { Measure } from "../../shared/metrics-contract.js";
 import type { ApiCall, Session, Turn } from "../../shared/types.js";
 import type { MeasureScope, PricingTable } from "./measures.js";
 import { computeMeasure } from "./measures.js";

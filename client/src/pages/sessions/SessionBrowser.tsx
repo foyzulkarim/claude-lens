@@ -8,15 +8,15 @@ import type {
   SessionPageParams,
   SessionTimelineItem,
 } from "../../../../shared/sessions-contract.js";
-import { listSessionsPage } from "../../api/sessions.js";
 import { qk } from "../../api/queryKeys.js";
+import { listSessionsPage } from "../../api/sessions.js";
+import { formatDuration, formatUnitValue } from "../../charts/units.js";
 import { DataTable } from "../../components/DataTable.js";
 import { EmptyState } from "../../components/EmptyState.js";
-import { formatDuration, formatUnitValue } from "../../charts/units.js";
 import { useFilters } from "../../filters/useFilters.js";
-import { useStableNow } from "../dashboard/useStableNow.js";
 import { TOGGLE_ACTIVE_CLASS, TOGGLE_CLASS } from "../../ui/toggleStyles.js";
-import { type SessionsPageState, buildListQuery } from "./state.js";
+import { useStableNow } from "../dashboard/useStableNow.js";
+import { buildListQuery, type SessionsPageState } from "./state.js";
 
 export interface SessionBrowserProps {
   state: SessionsPageState;

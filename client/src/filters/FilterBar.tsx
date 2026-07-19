@@ -1,8 +1,8 @@
-import { useState } from "react";
 import clsx from "clsx";
+import { useState } from "react";
 import { TOGGLE_ACTIVE_CLASS, TOGGLE_CLASS } from "../ui/toggleStyles.js";
-import { useFacets } from "./useFacets.js";
 import { type ChipDimension, type FilterRange, type RangePreset, resolveRange } from "./state.js";
+import { useFacets } from "./useFacets.js";
 import { useFilters } from "./useFilters.js";
 
 const PRESETS: { preset: RangePreset; label: string }[] = [

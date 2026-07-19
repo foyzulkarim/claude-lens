@@ -281,7 +281,7 @@ describe("T7 panels — chart-options helpers", () => {
       { t: "2026-07-04T00:00:00.000Z", hitRate: 0.7 },
     ]);
     const series = option.series as { data: [string, number | null][] }[];
-    const data = series[0]!.data;
+    const data = series[0]?.data;
     expect(data[0]?.[1]).toBe(0.5);
     expect(data[1]?.[1]).toBeNull();
     expect(data[2]?.[1]).toBeNull();
@@ -294,8 +294,8 @@ describe("T7 panels — chart-options helpers", () => {
       { t: "2026-07-02T00:00:00.000Z", medianTokens: null, sampleCount: 0 },
     ]);
     const series = option.series as { data: [string, number | null][] }[];
-    expect(series[0]!.data[0]?.[1]).toBe(12000);
-    expect(series[0]!.data[1]?.[1]).toBeNull();
+    expect(series[0]?.data[0]?.[1]).toBe(12000);
+    expect(series[0]?.data[1]?.[1]).toBeNull();
   });
 
   it("invalidation cost option stacks 3 causes and propagates per-cause nulls", () => {

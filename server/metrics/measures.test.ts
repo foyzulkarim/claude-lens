@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { ApiCall, Session, Turn } from "../../shared/types.js";
 import {
-  DEFAULT_PRICING_TABLE,
-  uncachedPrice,
-  type MeasureScope,
   computeMeasure,
+  DEFAULT_PRICING_TABLE,
+  type MeasureScope,
+  uncachedPrice,
 } from "./measures.js";
 
 /** Asserts a value is non-null; throws with the given message otherwise. Used to

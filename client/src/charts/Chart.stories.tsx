@@ -1,9 +1,9 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
 import type { ScatterPoint } from "../../../shared/metrics-contract.js";
+import type { ChartProps } from "./Chart.js";
 import { Chart } from "./Chart.js";
 import { buildScatterOption } from "./scatterOption.js";
-import type { ChartProps } from "./Chart.js";
 import type { TimeseriesOption } from "./timeseries.js";
 
 // Real ECharts, no mocks — human-verified per ARCH-chart-layer-live-chart.md

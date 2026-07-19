@@ -8,7 +8,7 @@ import type { Grain, Series, SeriesMetricsQuery } from "../../../shared/metrics-
 import { postMetrics } from "../api/metrics.js";
 import { qk } from "../api/queryKeys.js";
 import { DataTable } from "../components/DataTable.js";
-import { type FilterState, filtersToQuery, serializeFilters } from "../filters/state.js";
+import { filtersToQuery, serializeFilters } from "../filters/state.js";
 import { useFilters } from "../filters/useFilters.js";
 import { useStableNow } from "../pages/dashboard/useStableNow.js";
 import { TOGGLE_ACTIVE_CLASS, TOGGLE_CLASS } from "../ui/toggleStyles.js";

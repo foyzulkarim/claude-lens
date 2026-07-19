@@ -1,18 +1,18 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import clsx from "clsx";
 import { useMemo, useState } from "react";
-import { qk } from "../../api/queryKeys.js";
+import type { ScatterMeasure } from "../../../../shared/metrics-contract.js";
 import { postScatterMetrics } from "../../api/metrics.js";
+import { qk } from "../../api/queryKeys.js";
 import { Chart } from "../../charts/Chart.js";
 import { buildScatterOption } from "../../charts/scatterOption.js";
-import type { ScatterMeasure } from "../../../../shared/metrics-contract.js";
 import { useFilters } from "../../filters/useFilters.js";
-import { useStableNow } from "../dashboard/useStableNow.js";
 import { TOGGLE_ACTIVE_CLASS, TOGGLE_CLASS } from "../../ui/toggleStyles.js";
+import { useStableNow } from "../dashboard/useStableNow.js";
 import {
+  buildScatterQuery,
   type ScatterPreset,
   type SessionsPageState,
-  buildScatterQuery,
   scatterPresets,
 } from "./state.js";
 

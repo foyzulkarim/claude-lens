@@ -1,9 +1,9 @@
-import { useMemo, useState } from "react";
-import type React from "react";
 import clsx from "clsx";
+import type React from "react";
+import { useMemo, useState } from "react";
 import type { SessionDetailTimelinePoint } from "../../../../shared/session-detail-contract.js";
-import { formatCost, formatTokens } from "./format.js";
 import { TOGGLE_ACTIVE_CLASS, TOGGLE_CLASS } from "../../ui/toggleStyles.js";
+import { formatCost, formatTokens } from "./format.js";
 
 export interface CostTimelineProps {
   timeline: SessionDetailTimelinePoint[];

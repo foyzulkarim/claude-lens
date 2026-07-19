@@ -1,15 +1,15 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import clsx from "clsx";
 import { useMemo } from "react";
-import { qk } from "../../api/queryKeys.js";
 import { postMetrics } from "../../api/metrics.js";
+import { qk } from "../../api/queryKeys.js";
 import { Chart } from "../../charts/Chart.js";
 import { buildTimeseriesOption } from "../../charts/timeseries.js";
 import { formatUnitValue } from "../../charts/units.js";
 import { useFilters } from "../../filters/useFilters.js";
-import { useStableNow } from "../dashboard/useStableNow.js";
 import { TOGGLE_ACTIVE_CLASS, TOGGLE_CLASS } from "../../ui/toggleStyles.js";
-import { type SessionsPageState, buildDistributionQuery } from "./state.js";
+import { useStableNow } from "../dashboard/useStableNow.js";
+import { buildDistributionQuery, type SessionsPageState } from "./state.js";
 
 // ARCH A3 / A11: distribution runs server-side on the canonical session
 // population. The histogram + percentile toggles operate on the SAME

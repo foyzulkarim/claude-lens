@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
+import type { ApiCall } from "../shared/types.js";
 import { priceCall } from "./metrics/measures.js";
 import { buildRuntimeMetadata } from "./runtime.js";
-import type { ApiCall } from "../shared/types.js";
 
 function makeCall(overrides: Partial<ApiCall["usage"]> = {}): ApiCall {
   return {
