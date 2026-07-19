@@ -1,26 +1,6 @@
 import type { SeriesPoint } from "../../../../shared/metrics-contract.js";
+import type { MonthForecast } from "../../charts/forecast.js";
 import { pointValue } from "../../charts/series-math.js";
-
-/**
- * Month-end spend forecast (ARCH-trends-calendar-budget.md; pages spec §8
- * Budget + Forecast, collapsed into one combined panel per decision A2).
- * No EWMA/projection utility existed anywhere in the repo before this — this
- * is page-specific derived display math over an already-fetched day-grain
- * `costComputed` series, same "pure function over already-fetched data"
- * pattern as `ChartCard.tsx`'s `chartTrendSummary`/`bucketRows`, not a new
- * engine measure (A1).
- */
-export interface MonthForecast {
-  mtd: number;
-  method: "linear" | "ewma";
-  /** `null` when fewer than `MIN_DAYS_FOR_PROJECTION` days of data exist — a projection off 1-2 points is noise, not a forecast. */
-  projectedEndOfMonth: number | null;
-  bandLow: number | null;
-  bandHigh: number | null;
-  budget: number | null;
-  /** First date (ISO, UTC midnight) the *upper* (worst-case) band trajectory is projected to cross `budget`; `null` if it never does or no budget is set. */
-  crossesBudgetAt: string | null;
-}
 
 const MIN_DAYS_FOR_PROJECTION = 3;
 const EWMA_ALPHA = 0.3;

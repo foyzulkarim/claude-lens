@@ -45,6 +45,12 @@ export function registerConfigRoute(
       reply.code(400);
       return { error: parsed };
     }
-    return writeConfig(parsed, options.configPath);
+    try {
+      return await writeConfig(parsed, options.configPath);
+    } catch (err) {
+      app.log.error({ err }, "failed to write config");
+      reply.code(500);
+      return { error: "failed to save config" };
+    }
   });
 }

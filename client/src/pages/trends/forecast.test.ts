@@ -28,6 +28,15 @@ describe("computeForecast — insufficient data", () => {
     expect(result.bandHigh).toBeNull();
     expect(result.crossesBudgetAt).toBeNull();
   });
+
+  it("produces a non-null projection at exactly the 3-day minimum", () => {
+    const now = new Date("2026-07-04T12:00:00.000Z");
+    const result = computeForecast(points([10, 10, 10]), { now, method: "linear", budget: null });
+    expect(result.mtd).toBe(30);
+    expect(result.projectedEndOfMonth).not.toBeNull();
+    expect(result.bandLow).not.toBeNull();
+    expect(result.bandHigh).not.toBeNull();
+  });
 });
 
 describe("computeForecast — linear method", () => {

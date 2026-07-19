@@ -104,4 +104,39 @@ describe("BudgetForecastPanel", () => {
     renderPanel();
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("config boom"));
   });
+
+  it("blocks saving an invalid budget and never calls putConfig", async () => {
+    getConfigMock.mockResolvedValue({ budget: null });
+    postMetricsMock.mockResolvedValue(dailyPoints(Array(10).fill(10)));
+    renderPanel();
+    await waitFor(() => expect(screen.getByText(/No budget set/)).toBeInTheDocument());
+
+    await userEvent.type(screen.getByLabelText("Monthly budget cap"), "-5");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(putConfigMock).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert")).toHaveTextContent(/positive number/i);
+  });
+
+  it("surfaces a failed budget save without silently succeeding", async () => {
+    getConfigMock.mockResolvedValue({ budget: null });
+    putConfigMock.mockRejectedValue(
+      new Error(
+        "PUT /api/config failed (400): budget must be null or a finite number greater than 0",
+      ),
+    );
+    postMetricsMock.mockResolvedValue(dailyPoints(Array(10).fill(10)));
+    renderPanel();
+    await waitFor(() => expect(screen.getByText(/No budget set/)).toBeInTheDocument());
+
+    await userEvent.type(screen.getByLabelText("Monthly budget cap"), "500");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(putConfigMock).toHaveBeenCalledWith({ budget: 500 }));
+    await waitFor(() =>
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        /budget must be null or a finite number/i,
+      ),
+    );
+  });
 });

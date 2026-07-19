@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createServer } from "node:net";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import type { FastifyInstance } from "fastify";
 import open from "open";
 import { buildApp } from "./app.js";
@@ -137,7 +137,7 @@ async function main() {
     store: ingest.store,
     broadcaster,
     metadata,
-    configPath: options.configDir ? join(options.configDir, "config.json") : undefined,
+    configPath: options.configDir ? join(resolve(options.configDir), "config.json") : undefined,
   });
 
   // Ingest now holds real poller/tailer timers and open file handles; tear it

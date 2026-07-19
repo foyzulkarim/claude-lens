@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { MonthForecast } from "../pages/trends/forecast.js";
-import { buildForecastBandOption, type ForecastPoint } from "./forecast.js";
+import { buildForecastBandOption, type ForecastPoint, type MonthForecast } from "./forecast.js";
 
 const ACTUAL: ForecastPoint[] = [
   { t: "2026-07-01", value: 10 },

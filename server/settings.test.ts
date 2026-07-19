@@ -59,4 +59,18 @@ describe("readConfig / writeConfig", () => {
     const result = await writeConfig({ budget: null }, configPath);
     expect(result).toEqual({ budget: null });
   });
+
+  it("readConfig falls back to null when the on-disk budget is an invalid shape", async () => {
+    const { writeFile, mkdir } = await import("node:fs/promises");
+    await mkdir(join(dir, "nested"), { recursive: true });
+    await writeFile(configPath, JSON.stringify({ budget: "not-a-number" }), "utf8");
+    expect(await readConfig(configPath)).toEqual({ budget: null });
+  });
+
+  it("readConfig falls back to null when the on-disk budget is negative", async () => {
+    const { writeFile, mkdir } = await import("node:fs/promises");
+    await mkdir(join(dir, "nested"), { recursive: true });
+    await writeFile(configPath, JSON.stringify({ budget: -5 }), "utf8");
+    expect(await readConfig(configPath)).toEqual({ budget: null });
+  });
 });

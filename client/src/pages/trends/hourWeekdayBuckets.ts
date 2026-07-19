@@ -1,19 +1,6 @@
 import type { Series } from "../../../../shared/metrics-contract.js";
+import type { HourWeekdayCell } from "../../charts/heatmap.js";
 import { pointValue } from "../../charts/series-math.js";
-
-/**
- * One cell of the "when do I burn money" grid (ARCH-trends-calendar-budget.md,
- * A1: pure client-side timestamp math, no new engine `Dimension`).
- * `weekday` is Monday-first (`0` = Monday … `6` = Sunday, matching the
- * mockup's M/W/F/S row labels); `hour` is the UTC hour-of-day (`0`-`23`,
- * consistent with the engine's UTC bucket boundaries — same "UTC-pinned"
- * convention `ChartCard.tsx`'s `RANGE_DATE_FORMAT` documents).
- */
-export interface HourWeekdayCell {
-  hour: number;
-  weekday: number;
-  value: number;
-}
 
 const HOURS = 24;
 const WEEKDAYS = 7;

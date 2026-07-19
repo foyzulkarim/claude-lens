@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { HourWeekdayCell } from "../pages/trends/hourWeekdayBuckets.js";
-import { buildHourWeekdayHeatmapOption } from "./heatmap.js";
+import { buildHourWeekdayHeatmapOption, type HourWeekdayCell } from "./heatmap.js";
 
 describe("buildHourWeekdayHeatmapOption", () => {
   it("maps each cell to an [hour, weekday, value] triple", () => {

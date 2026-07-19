@@ -77,4 +77,27 @@ describe("GET/PUT /api/config", () => {
     });
     expect(put.statusCode).toBe(400);
   });
+
+  it("PUT returns a clean 500 (not a hang/crash) when the config file can't be written", async () => {
+    const { writeFile } = await import("node:fs/promises");
+    // Put a *file* where writeConfig's mkdir(dirname, {recursive:true}) needs a
+    // directory, so the write fails with ENOTDIR instead of succeeding.
+    const blockerDir = join(dir, "blocked");
+    await writeFile(blockerDir, "not a directory", "utf8");
+    const brokenApp = buildApp({
+      store,
+      logger: false,
+      configPath: join(blockerDir, "config.json"),
+    });
+
+    const put = await brokenApp.inject({
+      method: "PUT",
+      url: "/api/config",
+      payload: { budget: 300 },
+    });
+    expect(put.statusCode).toBe(500);
+    expect(put.json()).toEqual({ error: "failed to save config" });
+
+    await brokenApp.close();
+  });
 });

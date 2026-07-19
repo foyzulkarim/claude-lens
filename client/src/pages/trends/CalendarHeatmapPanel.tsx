@@ -48,7 +48,7 @@ export function CalendarHeatmapPanel({ now: injectedNow }: CalendarHeatmapPanelP
     placeholderData: keepPreviousData,
   });
 
-  const option = useMemo(
+  const chartOption = useMemo(
     () => buildCalendarHeatmapOption(data ?? [], { unit, range: query.range }),
     [data, unit, query.range],
   );
@@ -61,15 +61,15 @@ export function CalendarHeatmapPanel({ now: injectedNow }: CalendarHeatmapPanelP
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-sm font-semibold text-slate-900 dark:text-[#E8EDF2]">Calendar</h2>
         <div className="flex items-center gap-1">
-          {UNITS.map((option_) => (
+          {UNITS.map((unitOption) => (
             <button
-              key={option_}
+              key={unitOption}
               type="button"
-              onClick={() => setUnit(option_)}
-              aria-pressed={unit === option_}
-              className={clsx(TOGGLE_CLASS, unit === option_ && TOGGLE_ACTIVE_CLASS)}
+              onClick={() => setUnit(unitOption)}
+              aria-pressed={unit === unitOption}
+              className={clsx(TOGGLE_CLASS, unit === unitOption && TOGGLE_ACTIVE_CLASS)}
             >
-              {option_}
+              {unitOption}
             </button>
           ))}
         </div>
@@ -88,7 +88,7 @@ export function CalendarHeatmapPanel({ now: injectedNow }: CalendarHeatmapPanelP
 
       {!isPending && !isError && (
         <Chart
-          option={option}
+          option={chartOption}
           className="mt-4 h-40 w-full"
           ariaLabel={`Calendar heatmap of ${unit === "$" ? "cost" : "tokens"} per day`}
           onPointClick={(params) => {

@@ -1,7 +1,6 @@
 import type { LineSeriesOption } from "echarts/charts";
 import type { GridComponentOption, TooltipComponentOption } from "echarts/components";
 import type { ComposeOption } from "echarts/core";
-import type { MonthForecast } from "../pages/trends/forecast.js";
 
 export type ForecastBandOption = ComposeOption<
   LineSeriesOption | GridComponentOption | TooltipComponentOption
@@ -10,6 +9,24 @@ export type ForecastBandOption = ComposeOption<
 export interface ForecastPoint {
   t: string;
   value: number;
+}
+
+/**
+ * Month-end spend forecast (ARCH-trends-calendar-budget.md; pages spec §8
+ * Budget + Forecast, collapsed into one combined panel per decision A2).
+ * Computed by `pages/trends/forecast.ts`'s `computeForecast`; this module
+ * only owns the wire shape so the chart builder never depends on page code.
+ */
+export interface MonthForecast {
+  mtd: number;
+  method: "linear" | "ewma";
+  /** `null` when fewer than `MIN_DAYS_FOR_PROJECTION` days of data exist — a projection off 1-2 points is noise, not a forecast. */
+  projectedEndOfMonth: number | null;
+  bandLow: number | null;
+  bandHigh: number | null;
+  budget: number | null;
+  /** First date (ISO, UTC midnight) the *upper* (worst-case) band trajectory is projected to cross `budget`; `null` if it never does or no budget is set. */
+  crossesBudgetAt: string | null;
 }
 
 const GHOST_LINE_STYLE = { type: "dashed" as const, opacity: 0.5 };

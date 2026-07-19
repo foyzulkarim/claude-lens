@@ -53,6 +53,7 @@ export function BudgetForecastPanel({ now: injectedNow }: BudgetForecastPanelPro
   const now = useStableNow(injectedNow);
   const [method, setMethod] = useState<"linear" | "ewma">("linear");
   const [budgetInput, setBudgetInput] = useState("");
+  const [inputError, setInputError] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
   const configQuery = useQuery({
@@ -66,6 +67,8 @@ export function BudgetForecastPanel({ now: injectedNow }: BudgetForecastPanelPro
       queryClient.invalidateQueries({ queryKey: qk.prefixes.config });
     },
   });
+
+  const saveErrorMessage = saveMutation.isError ? (saveMutation.error as Error).message : null;
 
   const monthStart = useMemo(() => utcMonthStart(now), [now]);
 
@@ -114,11 +117,16 @@ export function BudgetForecastPanel({ now: injectedNow }: BudgetForecastPanelPro
 
   function handleSave() {
     if (budgetInput.trim() === "") {
+      setInputError(null);
       saveMutation.mutate(null);
       return;
     }
     const parsed = Number(budgetInput);
-    if (!Number.isFinite(parsed) || parsed <= 0) return;
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      setInputError("Budget must be a positive number.");
+      return;
+    }
+    setInputError(null);
     saveMutation.mutate(parsed);
   }
 
@@ -169,6 +177,12 @@ export function BudgetForecastPanel({ now: injectedNow }: BudgetForecastPanelPro
           Save
         </button>
       </div>
+
+      {(inputError || saveErrorMessage) && (
+        <p role="alert" className="mt-2 text-[11px] text-[#B23A3A] dark:text-[#E05252]">
+          {inputError ?? saveErrorMessage}
+        </p>
+      )}
 
       {isPending && (
         <p role="status" className="mt-3 text-sm text-slate-500 dark:text-[#8B98A9]">

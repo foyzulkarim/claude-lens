@@ -1,4 +1,4 @@
-import type { AppConfig } from "../../../shared/settings-contract.js";
+import { type AppConfig, isValidBudget } from "../../../shared/settings-contract.js";
 
 /**
  * The single client caller of GET/PUT /api/config (server/routes/config.ts,
@@ -28,6 +28,12 @@ export class ConfigResponseShapeError extends Error {
 function assertAppConfig(value: unknown): asserts value is AppConfig {
   if (typeof value !== "object" || value === null) {
     throw new ConfigResponseShapeError("expected object at the response root");
+  }
+  const budget = (value as { budget?: unknown }).budget;
+  if (budget !== undefined && !isValidBudget(budget)) {
+    throw new ConfigResponseShapeError(
+      "expected budget to be null or a finite number greater than 0",
+    );
   }
 }
 

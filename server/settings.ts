@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import type { AppConfig } from "../shared/settings-contract.js";
+import { type AppConfig, isValidBudget } from "../shared/settings-contract.js";
 
 /**
  * Minimal local config store (ARCH-trends-calendar-budget.md; architecture
@@ -45,7 +45,9 @@ export async function readConfig(configPath?: string): Promise<AppConfig> {
   }
 
   if (!isRecord(parsed)) return { ...DEFAULT_CONFIG };
-  return { ...DEFAULT_CONFIG, ...(parsed as AppConfig) };
+  const merged: AppConfig = { ...DEFAULT_CONFIG, ...(parsed as AppConfig) };
+  if (!isValidBudget(merged.budget ?? null)) merged.budget = null;
+  return merged;
 }
 
 /**

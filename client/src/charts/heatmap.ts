@@ -5,11 +5,24 @@ import type {
   VisualMapComponentOption,
 } from "echarts/components";
 import type { ComposeOption } from "echarts/core";
-import type { HourWeekdayCell } from "../pages/trends/hourWeekdayBuckets.js";
 
 export type HourWeekdayHeatmapOption = ComposeOption<
   HeatmapSeriesOption | GridComponentOption | VisualMapComponentOption | TooltipComponentOption
 >;
+
+/**
+ * One cell of the "when do I burn money" grid (ARCH-trends-calendar-budget.md,
+ * A1: pure client-side timestamp math, no new engine `Dimension`).
+ * `weekday` is Monday-first (`0` = Monday … `6` = Sunday, matching the
+ * mockup's M/W/F/S row labels); `hour` is the UTC hour-of-day (`0`-`23`,
+ * consistent with the engine's UTC bucket boundaries — same "UTC-pinned"
+ * convention `ChartCard.tsx`'s `RANGE_DATE_FORMAT` documents).
+ */
+export interface HourWeekdayCell {
+  hour: number;
+  weekday: number;
+  value: number;
+}
 
 const HOUR_LABELS = Array.from({ length: 24 }, (_, hour) => String(hour));
 // Monday-first, matching `hourWeekdayBuckets.ts`'s weekday convention.

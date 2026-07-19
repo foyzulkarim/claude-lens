@@ -32,11 +32,12 @@ interface DecileRow {
  */
 export function paretoDecileRows(curve: NonNullable<Distribution["pareto"]>["curve"]): DecileRow[] {
   const rows: DecileRow[] = [];
+  let cursor = 0;
+  let closest = curve[0];
   for (let decile = 10; decile <= 100; decile += 10) {
-    let closest = curve[0];
-    for (const point of curve) {
-      if (point.entityPct <= decile) closest = point;
-      else break;
+    while (cursor < curve.length && curve[cursor].entityPct <= decile) {
+      closest = curve[cursor];
+      cursor++;
     }
     rows.push({ decile, cumulativeValuePct: closest?.cumulativeValuePct ?? 0 });
   }
