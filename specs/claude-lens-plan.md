@@ -188,7 +188,7 @@ Pages are cheap by design: filter state + preset `MetricsQuery`s + layout. The H
 - [x] **#P4-10 — Trends, Calendar & Budget page** *(§8)*
   Calendar heatmap, hour×weekday heatmap, stacked weekly bars, Pareto, rolling efficiency, forecast (EWMA, labeled naive), budget config + projection band + Dashboard threshold alert. Includes a minimal `settings.ts` + `GET/PUT /api/config` limited to the budget value (#P4-15 extends it to the full config surface). Gate pass-rate trend stubs until #P4-12.
   *Acceptance:* matches `trends.html`; budget value persists in `~/.claude-lens/config.json`.
-- [ ] **#P4-11 — Gates engine** *(gates.md)*
+- [x] **#P4-11 — Gates engine** *(gates.md)*
   `gates/engine.ts` + six gate files (V1, V2, P3, C3, K2, E1/E2); shared preprocessing (dedupe, sidechain exclusion, edit/command call classification); evidence with Turn Inspector deep-links; session scoring per gates.md; configurable thresholds. Adds the gate-scenario fixtures (per-gate pass/fail transcripts) under the #P0-3 `test/fixtures/` README convention.
   *Acceptance:* per-gate fixture tests including N/A-turn denominators and E1/E2 filesystem checks (labeled "as of now"); E1/E2 follows `@import` one level; P3 treats user-message attachments containing the path as a prior read; V2 detects repeated failing commands via `tool_result.is_error` and exit-code markers.
 - [ ] **#P4-12 — Report Card UI + gate feeds**
