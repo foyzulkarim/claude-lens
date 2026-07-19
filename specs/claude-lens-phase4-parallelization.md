@@ -90,14 +90,14 @@ lanes concurrently unless their start-time plans prove the edits are isolated.
 | #P4-9 / #41 Cache Lab | #34 | 5 | Cache Lab | ✅ closed |
 | #P4-10 / #42 Trends/Budget | #34 | 4 | Dashboard, config | ✅ closed |
 | #P4-3 / #35 Search | #36 and #37 | 2 | Sessions | ⚪ open |
-| #P4-6 / #38 Turn Inspector | #37 | 4 | Turn Inspector | ⚪ open |
+| #P4-6 / #38 Turn Inspector | #37 | 4 | Turn Inspector | ✅ closed |
 | #P4-11 / #43 Gates engine | #41 | 4 | gate/config plumbing | ✅ closed |
 | #P4-12 / #44 Report Card UI | #36, #37, #38, #39, #42, and #43 | 2 | cross-page integration | ⚪ open |
 | #P4-13 / #45 Premium upgrades | #36, #37, #38, #40, and #41 | 3 | cross-page integration | ⚪ open |
 | #P4-14 / #46 Data Health | #45 | 2 | Data Health | ⚪ open |
-| #P4-15 / #47 Settings | #36, #37, #42, and #43 | 3 | Sessions, config | ⚪ open |
+| #P4-15 / #47 Settings | #36, #37, #42, and #43 | 3 | Sessions, config | ✅ closed |
 | #P4-16 / #48 Explore | #47 | 2 | Dashboard | ⚪ open |
-| #P4-17 / #49 Export | #36 | 2 | global export | ⚪ open |
+| #P4-17 / #49 Export | #36 | 2 | global export | ✅ closed |
 | #P4-18 / #50 Cross-page E2E | every issue #35–#49 | 1 | solo terminal gate | ⚪ open |
 
 `Status` reflects live GitHub state as of the §13 snapshot date — it is informational here; the orchestrator must still verify against §6 before opening a lane.
@@ -132,18 +132,18 @@ regenerated.
 | 4 | #37 | #34 | ✅ closed |
 | 5 | #41 | #34 | ✅ closed |
 | 6 | #36 | #34 | ✅ closed |
-| 7 | #38 | #37 | ⚪ open |
+| 7 | #38 | #37 | ✅ closed |
 | 8 | #42 | #34 | ✅ closed |
 | 9 | #43 | #41 | ✅ closed |
 | 10 | #40 | #34 | ✅ closed |
 | 11 | #39 | #34 | ✅ closed |
 | 12 | #45 | #36, #37, #38, #40, #41 | ⚪ open |
-| 13 | #47 | #36, #37, #42, #43 | ⚪ open |
+| 13 | #47 | #36, #37, #42, #43 | ✅ closed |
 | 14 | #35 | #36, #37 | ⚪ open |
 | 15 | #44 | #36, #37, #38, #39, #42, #43 | ⚪ open |
 | 16 | #46 | #45 | ⚪ open |
 | 17 | #48 | #47 | ⚪ open |
-| 18 | #49 | #36 | ⚪ open |
+| 18 | #49 | #36 | ✅ closed |
 | 19 | #50 | #35–#49, all merged | ⚪ open |
 
 Notes:
@@ -437,6 +437,20 @@ Do not parallelize it. Each task consumes the prior task's output.
 
 Informational only; always refresh using §6.
 
+- 2026-07-20: #38 (PR #103), #47 (PR #102), and #49 (PR #101) have merged. #38 and #49
+  have been archived (`11dd740`, `1a0edda`); #47's archive commit has not yet landed —
+  head of `main` is `d8c43bf` (the merge commit for #47) and `specs/context/47.md` plus
+  `specs/architecture/ARCH-settings-local-store.md` are still in the tree. Remaining
+  open: #35, #44, #45, #46, #48, #50. No active worktrees; primary clean on `main`.
+  With three empty lanes, the §4 depth-desc / descendant-count-desc / issue-asc queue
+  ranks #45 (depth 3, 1 descendant #46) ahead of #35, #44, #48 (depth 2, 0
+  descendants), but §3 reservations forbid #45 co-running with anything in the ready
+  pool: its Dashboard + Sessions + Session Detail + Turn Inspector reservation all
+  collide with #35, #44, and #48. The actual wave-1 selection honoring reservations is
+  **#35 + #48 in parallel** (Sessions on #35 vs Dashboard on #48 → disjoint); lane 3
+  stays idle. #44 and #45 can each start only after one of #35 or #48 lands and frees
+  its reservation. #46 remains blocked on #45; #50 remains blocked on all four
+  remaining open issues per §3.
 - 2026-07-19 (updated again): #39 and #43 have also merged and been archived since the prior
   2026-07-19 entry. Remaining open: #35, #38, #44, #45, #46, #47, #48, #49, #50.
 - 2026-07-19 (updated): #40 and #42 have also merged and been archived since the earlier
