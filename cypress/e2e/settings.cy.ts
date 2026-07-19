@@ -65,23 +65,32 @@ describe("settings smoke", () => {
   it("drill-link from a saved view lands on the filtered Sessions page (#P4-15 DoD)", () => {
     // Seed a saved view through the FilterBar (architecture §11: filter
     // state lives in the URL, saved views are permalinks), then assert
-    // the Settings → Saved-views manager renders a button that returns
+    // the Settings → Saved-views manager renders a link that returns
     // the user to that filtered Sessions view.
+    //
     cy.visit(`/sessions?from=2026-07-01T00%3A00%3A00.000Z&to=2026-08-01T00%3A00%3A00.000Z`);
+
+    // FilterBar's SaveViewButton uses a native window.prompt for naming
+    // (see client/src/filters/FilterBar.tsx SaveViewButton). Stub the
+    // prompt on the app's window directly — `cy.on("window:prompt", …)`
+    // proved unreliable here, returning null on the Electron headless
+    // runner, which would leave the saved-views list empty.
+    cy.window().then((win) => {
+      cy.stub(win, "prompt").returns("July fixtures");
+    });
 
     // The FilterBar exposes the "Save view" action globally (ARCH A5).
     cy.contains("button", /save view/i).click();
-    cy.get('[data-testid="save-view-name-input"]').type("July fixtures");
-    cy.contains("button", /^save$/i).click();
 
     // Drill from the Settings saved-views manager back to the filtered
     // Sessions page (the documented user journey: save → manage → reload).
     cy.visit("/settings");
     cy.get('[data-testid="saved-views-tags-panel"]').within(() => {
       cy.contains("July fixtures").should("be.visible");
-      cy.contains("button", /open|load|view/i)
-        .first()
-        .click();
+      // SavedViewsTagsPanel renders each saved view as a wouter <Link>
+      // (anchor) — click the link to navigate to its captured pathname
+      // + query string.
+      cy.contains("a", "July fixtures").click();
     });
 
     cy.location("pathname").should("eq", "/sessions");
