@@ -1,6 +1,6 @@
 import type { GateEvidence, GateResult, GateThresholds } from "../../shared/gates-contract.js";
-import type { ApiCall, Turn } from "../../shared/types.js";
 import type { ToolResultBytesRecord } from "../ingest/parse-transcript.js";
+import type { PreprocessedSession } from "./preprocess.js";
 
 /**
  * C3 — Fat tool result (gates.md §"C3 — Fat tool result").
@@ -20,37 +20,24 @@ import type { ToolResultBytesRecord } from "../ingest/parse-transcript.js";
  * "remaining calls" denominator since they too re-read the cached prefix.
  */
 
+/** Approximate tokens per character — Anthropic's rule-of-thumb for English text. */
+const CHARS_PER_TOKEN = 4;
+
 export function evaluateC3(
-  turns: Turn[],
-  calls: ApiCall[],
-  allCalls: ApiCall[],
-  mainToolResults: ToolResultBytesRecord[],
+  pre: PreprocessedSession,
   allToolResults: ToolResultBytesRecord[],
   thresholds: Pick<GateThresholds, "c3MaxChars">,
 ): GateResult {
-  void calls; // main-only calls input reserved for future gate variants
-  void mainToolResults; // the gate itself only consumes main-chain results
-
   // Index originating calls by toolUseId — needed to attach evidence to
   // the call that produced each fat tool_result, and to locate its turn.
-  const callByToolUseId = new Map<string, ApiCall>();
-  for (const call of calls) {
+  // Main-chain calls only — sidechain tool_results are filtered out
+  // below, so a sidechain toolUseId never appears as a lookup key.
+  const callByToolUseId = new Map<string, (typeof pre.mainCalls)[number]>();
+  for (const call of pre.mainCalls) {
     for (const tool of call.tools) {
       if (typeof tool.id === "string" && tool.id.length > 0) {
         callByToolUseId.set(tool.id, call);
       }
-    }
-  }
-
-  // Build call messageId → 1-indexed main turn number for the evidence's
-  // turnN field. Sidechain turns are skipped (gates.md §Shared
-  // preprocessing); tool_results from sidechain calls are NOT in the
-  // gate's check scope, so their evidence stays empty here.
-  const turnNByMessageId = new Map<string, number>();
-  for (let i = 0; i < turns.length; i++) {
-    const turn = turns[i];
-    for (const call of turn.calls) {
-      turnNByMessageId.set(call.messageId, i + 1);
     }
   }
 
@@ -59,6 +46,7 @@ export function evaluateC3(
   // cheap binary search / linear sweep, not an O(N) scan per fat result.
   // Stable secondary key on messageId so identical-timestamp calls aren't
   // sensitive to iteration order.
+  const allCalls = [...pre.mainCalls, ...pre.sidechainCalls];
   const sortedAllCalls = [...allCalls].sort((a, b) => {
     if (a.timestamp !== b.timestamp) return a.timestamp.localeCompare(b.timestamp);
     return a.messageId.localeCompare(b.messageId);
@@ -74,21 +62,22 @@ export function evaluateC3(
   // Index of each messageId in the sorted list, for fast lookup.
   const indexByMessageId = new Map<string, number>();
   for (let i = 0; i < sortedAllCalls.length; i++) {
-    indexByMessageId.set(sortedAllCalls[i].messageId, i);
+    indexByMessageId.set(sortedAllCalls[i]?.messageId ?? "", i);
   }
 
   const evidence: GateEvidence[] = [];
 
   for (const record of allToolResults) {
+    // Sidechain tool_results are out of scope (gates.md §Shared
+    // preprocessing) — skip upfront so the rest of the loop body is
+    // main-chain-only and reads in the order documented by the spec
+    // (review nice-to-have "reorder sidechain skip to upfront"). The
+    // recurring-cost math on main-chain fat results still counts
+    // sidechain calls in the denominator via sortedAllCalls above.
+    if (record.isSidechain === true) continue;
     if (record.bytes <= thresholds.c3MaxChars) continue;
     const originatingCall = callByToolUseId.get(record.toolUseId);
     if (!originatingCall) continue;
-    // Sidechain tool_results are out of scope (gates.md §Shared
-    // preprocessing) — they don't generate evidence. The gate still
-    // notes their existence by skipping here; the recurring-cost math
-    // on main-chain fat results already counts them in the denominator
-    // (sortedAllCalls above includes both streams).
-    if (record.isSidechain === true) continue;
 
     const tool = originatingCall.tools.find((t) => t.id === record.toolUseId);
     const toolName = tool?.name ?? "unknown";
@@ -97,13 +86,12 @@ export function evaluateC3(
     // Defensive: every call indexed above for toolUseId is in
     // sortedAllCalls because both iterate the same input array.
     if (callIndex === undefined) continue;
-    const remainingCalls = remainingCallsFromIndex[callIndex];
-    const tokens = record.bytes / 4;
+    const remainingCalls = remainingCallsFromIndex[callIndex] ?? 0;
+    const tokens = record.bytes / CHARS_PER_TOKEN;
     const recurringTokenEquivalent = tokens * remainingCalls;
 
-    const turnN = turnNByMessageId.get(originatingCall.messageId);
     evidence.push({
-      turnN,
+      turnN: pre.mainTurnNByMessageId.get(originatingCall.messageId),
       callId: originatingCall.messageId,
       detail:
         `tool "${toolName}" returned ${record.bytes} chars; ` +

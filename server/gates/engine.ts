@@ -1,5 +1,4 @@
 import type {
-  GateId,
   GateReport,
   GateResult,
   GateThresholds,
@@ -22,7 +21,7 @@ import { preprocess } from "./preprocess.js";
  *
  * Evaluates the seven gate IDs from `specs/gates.md` over the post-
  * `deriveSession()` store output plus an E1/E2 filesystem check, and
- * returns the `GateReport` shape (per `shared/gates-contract.ts`). The
+ * returns the report shape (per `shared/gates-contract.ts`). The
  * function deliberately:
  *
  *   - never reads the config (the caller resolves thresholds via
@@ -35,6 +34,9 @@ import { preprocess } from "./preprocess.js";
  * spans main + sidechain (ARCH A7) — every later call, regardless of
  * stream, pays the cache-read cost once.
  */
+
+/** Report Card output sans `evaluatedAt` — the route layer stamps that. */
+export type GateReportEvaluated = Omit<GateReport, "evaluatedAt">;
 
 export interface EngineInput {
   /** The session's persisted rollup. `session.project` is the only field used (it stores the transcript's cwd). */
@@ -65,55 +67,53 @@ function rollupE1E2(e1: GateResult, e2: GateResult): "pass" | "warn" | "fail" {
   return "pass";
 }
 
+/** Score-band thresholds for the `passes / (passes + 0.5·warns + fails)` ratio. */
+const SCORE_BANDS: ReadonlyArray<readonly [number, ScoreLetter]> = [
+  [0.9, "A"],
+  [0.75, "B"],
+  [0.5, "C"],
+  [0.25, "D"],
+];
+
 function bucketScore(score: number): ScoreLetter {
-  if (score >= 0.9) return "A";
-  if (score >= 0.75) return "B";
-  if (score >= 0.5) return "C";
-  if (score >= 0.25) return "D";
+  for (const [threshold, letter] of SCORE_BANDS) {
+    if (score >= threshold) return letter;
+  }
   return "F";
 }
 
 /**
  * Production entry point. Awaits the E1/E2 filesystem check; everything
- * else is in-memory. Returns the same `GateReport` shape; `evaluatedAt`
- * is stamped by the route layer, not here (ARCH A12) so the engine stays
- * deterministic across fixture regression runs.
+ * else is in-memory. Returns the report shape WITHOUT `evaluatedAt` —
+ * the route layer stamps it (ARCH A12) so the engine stays deterministic
+ * across fixture regression runs. The empty-string placeholder from the
+ * prior shape (review M4) is gone: the type-level distinction means a
+ * wire-format consumer can never see `evaluatedAt: ""`.
  */
 export async function evaluateSessionGates(
   input: EngineInput,
   thresholds: GateThresholds,
-): Promise<GateReport> {
+): Promise<GateReportEvaluated> {
   const pre = preprocess(input.calls, input.turns);
 
   const v1 = evaluateV1(pre.mainTurns);
-  const v2 = evaluateV2(pre.mainTurns, pre.mainCalls, input.toolResults, thresholds);
+  const v2 = evaluateV2(pre.mainTurns, input.toolResults, thresholds);
   const p3 = evaluateP3(pre.mainTurns);
-  const c3 = evaluateC3(
-    pre.mainTurns,
-    pre.mainCalls,
-    input.calls, // C3 needs all calls for the recurring-cost denominator (ARCH A7)
-    input.toolResults.filter((r) => r.isSidechain !== true),
-    input.toolResults,
-    thresholds,
-  );
-  const k2 = evaluateK2(pre.mainTurns, pre.mainCalls, thresholds);
-  const e1e2Results = await evaluateE1E2(input.session.project, thresholds, {
+  const c3 = evaluateC3(pre, input.toolResults, thresholds);
+  const k2 = evaluateK2(pre.mainTurns, pre.mainCalls, thresholds, pre.mainTurnNByMessageId);
+  // evaluateE1E2 returns `[E1, E2]` as a tuple; destructuring replaces
+  // the prior positional `e1e2Results[0] ?? inactive` / `[1] ?? ...`
+  // fallback shape (review M2) which silently masked contract drift.
+  const [e1Result, e2Result] = await evaluateE1E2(input.session.project, thresholds, {
     userClaudePath:
       input.userHomeDir !== undefined ? `${input.userHomeDir}/.claude/CLAUDE.md` : undefined,
   });
 
   // Build the 7-entry `gates` list in the prose order from gates.md.
   // E1/E2 contributes two entries; exactly one carries the active outcome.
-  const gates: GateResult[] = [v1, v2, p3, c3, k2, ...e1e2Results];
+  const gates: GateResult[] = [v1, v2, p3, c3, k2, e1Result, e2Result];
 
   // Six check statuses: roll E1 + E2 into one for the score formula.
-  const inactive: GateResult = { gateId: "E1", status: "pass", evidence: [] };
-  const e1Result = e1e2Results[0] ?? inactive;
-  const e2Result = e1e2Results[1] ?? {
-    gateId: "E2" as const,
-    status: "pass" as const,
-    evidence: [],
-  };
   const checks: ("pass" | "warn" | "fail")[] = [
     v1.status,
     v2.status,
@@ -143,12 +143,6 @@ export async function evaluateSessionGates(
     gates,
     score,
     scoreLetter: bucketScore(score),
-    // Empty placeholder — the route stamps `evaluatedAt` (ARCH A12) so
-    // the engine stays deterministic for fixture regression tests.
-    evaluatedAt: "",
     thresholdsUsed: thresholds,
   };
 }
-
-// Surface order helper — exported for tests / debug.
-export const GATE_ORDER: readonly GateId[] = ["V1", "V2", "P3", "C3", "K2", "E1", "E2"];

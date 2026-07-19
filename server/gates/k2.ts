@@ -2,6 +2,7 @@ import type { GateEvidence, GateResult, GateThresholds } from "../../shared/gate
 import type { ClassifierTrace } from "../../shared/cache-lab-contract.js";
 import type { ApiCall, Turn } from "../../shared/types.js";
 import { classifyCacheWrite } from "../cache/classifier.js";
+import type { PreprocessedSession } from "./preprocess.js";
 
 /**
  * K2 — Unexplained cache invalidation (gates.md §"K2 — Unexplained cache
@@ -33,6 +34,7 @@ export function evaluateK2(
   turns: Turn[],
   calls: ApiCall[],
   thresholds: Pick<GateThresholds, "k2Spike">,
+  precomputedTurnNByMessageId?: ReadonlyMap<string, number>,
 ): GateResult {
   // Build the main-chain stream: chronological order is what
   // `classifyCacheWrite` expects (its `partitionCacheStreams` normalizes
@@ -40,20 +42,17 @@ export function evaluateK2(
   const stream = [...calls].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 
   // Map messageId → 1-indexed main turn number for the evidence's turnN
-  // field. Same map as C3's, rebuilt here per-gate to keep each gate's
-  // data flow self-contained.
-  const turnNByMessageId = new Map<string, number>();
-  for (let i = 0; i < turns.length; i++) {
-    const turn = turns[i];
-    for (const call of turn.calls) {
-      turnNByMessageId.set(call.messageId, i + 1);
-    }
-  }
+  // field. The engine passes `preprocess`'s shared `mainTurnNByMessageId`
+  // (avoiding the duplicate rebuild C3 also needed); direct callers
+  // (fixture tests) that only have `turns`/`calls` fall back to building
+  // it locally so the gate stays testable in isolation.
+  const turnNByMessageId = precomputedTurnNByMessageId ?? buildTurnNByMessageId(turns);
 
   const evidence: GateEvidence[] = [];
 
   for (let i = 0; i < stream.length; i++) {
     const call = stream[i];
+    if (!call) continue;
     if (call.usage.cacheCreateTokens <= thresholds.k2Spike) continue;
     const classification = classifyCacheWrite(stream, i, { threshold: thresholds.k2Spike });
     // Classifier returns null when the strict-`>` threshold isn't met
@@ -71,6 +70,23 @@ export function evaluateK2(
 
   const status: GateResult["status"] = evidence.length > 0 ? "fail" : "pass";
   return { gateId: "K2", status, evidence };
+}
+
+// Re-exported so callers that have a `PreprocessedSession` can pass its
+// `mainTurnNByMessageId` straight through as `precomputedTurnNByMessageId`.
+export type { PreprocessedSession };
+
+function buildTurnNByMessageId(turns: Turn[]): Map<string, number> {
+  const turnNByMessageId = new Map<string, number>();
+  for (let i = 0; i < turns.length; i++) {
+    const turn = turns[i];
+    if (!turn) continue;
+    const turnN = i + 1;
+    for (const call of turn.calls) {
+      turnNByMessageId.set(call.messageId, turnN);
+    }
+  }
+  return turnNByMessageId;
 }
 
 /**

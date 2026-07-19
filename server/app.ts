@@ -131,6 +131,21 @@ export function buildApp({
   // `~/.claude-lens/config.json` and `~/.claude/CLAUDE.md` from `homedir()`
   // — the production behavior. Tests pass overrides via BuildAppOptions.
 
+  // ARCH §HTTP errors: every uncaught error in any route handler (today:
+  // the gates engine and the config PUT) must surface as the documented
+  // `{ error, cause }` wire shape, not Fastify's default
+  // `{statusCode, error, message}`. The gates route has its own
+  // try/catch around `evaluateSessionGates`; this top-level handler is
+  // the catch-all for anything that escapes a route's local handling
+  // (defense-in-depth, review H2).
+  app.setErrorHandler((err, _request, reply) => {
+    app.log.error({ err }, "unhandled route error");
+    reply.code(500).send({
+      error: "internal server error",
+      cause: err instanceof Error ? err.message : String(err),
+    });
+  });
+
   app.register(async (instance) => {
     instance.get(
       "/ws",

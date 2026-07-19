@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ApiCall, Turn } from "../../shared/types.js";
 import type { ToolResultBytesRecord } from "../ingest/parse-transcript.js";
 import { evaluateC3 } from "./c3.js";
+import { preprocess } from "./preprocess.js";
 
 function turn(promptId: string, calls: ApiCall[]): Turn {
   return {
@@ -58,13 +59,16 @@ function toolResult(toolUseId: string, bytes: number, isSidechain = false): Tool
   };
 }
 
+/** Build the preprocessed session from raw inputs (the gate consumes `pre`, not raw calls/turns). */
+function pre(turns: Turn[], calls: ApiCall[]): ReturnType<typeof preprocess> {
+  return preprocess(calls, turns);
+}
+
 describe("C3 — Fat tool result", () => {
   it("passes when tool_result content is at or below c3MaxChars (strict >)", () => {
     const calls = [call("m1", "2026-07-01T00:00:00.000Z", [{ name: "Read", id: "tu1" }])];
     const records = [toolResult("tu1", 15_000)];
-    const result = evaluateC3([turn("p1", calls)], calls, calls, records, records, {
-      c3MaxChars: 15_000,
-    });
+    const result = evaluateC3(pre([turn("p1", calls)], calls), records, { c3MaxChars: 15_000 });
     expect(result.status).toBe("pass");
     expect(result.evidence).toEqual([]);
   });
@@ -72,9 +76,7 @@ describe("C3 — Fat tool result", () => {
   it("warns when tool_result content exceeds c3MaxChars", () => {
     const calls = [call("m1", "2026-07-01T00:00:00.000Z", [{ name: "Read", id: "tu1" }])];
     const records = [toolResult("tu1", 16_000)];
-    const result = evaluateC3([turn("p1", calls)], calls, calls, records, records, {
-      c3MaxChars: 15_000,
-    });
+    const result = evaluateC3(pre([turn("p1", calls)], calls), records, { c3MaxChars: 15_000 });
     expect(result.status).toBe("warn");
     expect(result.evidence).toHaveLength(1);
     expect(result.evidence[0]?.detail).toContain("Read");
@@ -87,9 +89,7 @@ describe("C3 — Fat tool result", () => {
     const laterCall2 = call("m3", "2026-07-01T00:00:02.000Z", [{ name: "Bash", id: "tu3" }]);
     const calls = [fatCall, laterCall1, laterCall2];
     const records = [toolResult("tu1", 20_000)];
-    const result = evaluateC3([turn("p1", calls)], calls, calls, records, records, {
-      c3MaxChars: 15_000,
-    });
+    const result = evaluateC3(pre([turn("p1", calls)], calls), records, { c3MaxChars: 15_000 });
     expect(result.status).toBe("warn");
     // size/4 = 5000 tokens; remaining = 2 → 10000 token-equivalents
     expect(result.evidence[0]?.detail).toContain("5000 tokens");
@@ -107,7 +107,7 @@ describe("C3 — Fat tool result", () => {
     const mainAfterCall = call("m3", "2026-07-01T00:00:02.000Z", [{ name: "Bash", id: "tu3" }]);
     const allCalls = [fatCall, sidechainCall, mainAfterCall];
     const records = [toolResult("tu1", 16_000)];
-    const result = evaluateC3([turn("p1", [fatCall])], [fatCall], allCalls, records, records, {
+    const result = evaluateC3(pre([turn("p1", [fatCall])], allCalls), records, {
       c3MaxChars: 15_000,
     });
     // Sidechain call after this Read + main call after = 2 remaining.
@@ -120,9 +120,7 @@ describe("C3 — Fat tool result", () => {
       toolResult("tu1", 16_000, false), // main, fat
       toolResult("tu2", 50_000, true), // sidechain, fat — should be skipped
     ];
-    const result = evaluateC3([turn("p1", calls)], calls, calls, records, records, {
-      c3MaxChars: 15_000,
-    });
+    const result = evaluateC3(pre([turn("p1", calls)], calls), records, { c3MaxChars: 15_000 });
     // Only the main-chain fat result surfaces — the sidechain one is skipped.
     expect(result.evidence).toHaveLength(1);
     expect(result.evidence[0]?.detail).toContain("16000");

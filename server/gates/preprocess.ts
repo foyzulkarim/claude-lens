@@ -9,6 +9,11 @@ import type { ApiCall, Turn } from "../../shared/types.js";
  * partitions by stream; this module flattens that contract to "main only"
  * so downstream gates never have to filter themselves.
  *
+ * The preprocess pass also materializes a `mainTurnNByMessageId` index
+ * (call.messageId → 1-indexed main turn number) once, so turn-keyed
+ * gates (C3, K2) don't each rebuild their own copy — review
+ * nice-to-have "duplicated turnNByMessageId map".
+ *
  * The preprocess pass is intentionally minimal — gates own their own
  * per-gate normalization (Bash command whitespace collapse for V2,
  * `@`-mention matching for P3, etc.) so each gate's logic stays
@@ -24,6 +29,8 @@ export interface PreprocessedSession {
   sidechainCalls: ApiCall[];
   /** Sidechain turns explicitly excluded — available for the engine's future diagnostics, not used by gates today. */
   sidechainTurns: Turn[];
+  /** call.messageId → 1-indexed main turn number. Built once here; consumed by C3 and K2. */
+  mainTurnNByMessageId: ReadonlyMap<string, number>;
 }
 
 /**
@@ -48,5 +55,24 @@ export function preprocess(calls: ApiCall[], turns: Turn[]): PreprocessedSession
     else mainTurns.push(turn);
   }
 
-  return { mainCalls, mainTurns, sidechainCalls, sidechainTurns };
+  // Materialize call.messageId → 1-indexed main turn number in a single
+  // sweep. Gates consume this read-only; mutating it inside a gate would
+  // defeat the "build once" optimization.
+  const mainTurnNByMessageId = new Map<string, number>();
+  for (let i = 0; i < mainTurns.length; i++) {
+    const turn = mainTurns[i];
+    if (!turn) continue;
+    const turnN = i + 1;
+    for (const call of turn.calls) {
+      mainTurnNByMessageId.set(call.messageId, turnN);
+    }
+  }
+
+  return {
+    mainCalls,
+    mainTurns,
+    sidechainCalls,
+    sidechainTurns,
+    mainTurnNByMessageId,
+  };
 }

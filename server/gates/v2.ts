@@ -1,5 +1,5 @@
 import type { GateEvidence, GateResult, GateThresholds } from "../../shared/gates-contract.js";
-import type { ApiCall, Turn } from "../../shared/types.js";
+import type { Turn } from "../../shared/types.js";
 import type { ToolResultBytesRecord } from "../ingest/parse-transcript.js";
 
 /**
@@ -26,7 +26,6 @@ import type { ToolResultBytesRecord } from "../ingest/parse-transcript.js";
 
 export function evaluateV2(
   turns: Turn[],
-  _calls: ApiCall[],
   toolResults: ToolResultBytesRecord[],
   thresholds: Pick<GateThresholds, "v2Repeat">,
 ): GateResult {
@@ -81,7 +80,7 @@ export function evaluateV2(
       evidence.push({
         turnN: i + 1,
         callId: lastFailingCallId,
-        detail: `command "${command}" failed ${slot.count} times in turn ${i + 1}; failing call ids: ${slot.callIds.join(", ")}`,
+        detail: `command "${redactSecrets(command)}" failed ${slot.count} times in turn ${i + 1}; failing call ids: ${slot.callIds.join(", ")}`,
       });
     }
   }
@@ -98,4 +97,28 @@ export function evaluateV2(
  */
 function normalizeBashCommand(text: string): string {
   return text.trim().replace(/\s+/g, " ");
+}
+
+// Recognizable credential shapes to mask before a command string is
+// surfaced in `GateEvidence.detail` (returned unauthenticated over
+// `GET /api/sessions/:id/gates`). Grouping/dedup above runs on the
+// unredacted `normalizeBashCommand` output, so this never affects which
+// commands count as "the same repeated command" — it only narrows what
+// leaves the server in the evidence text (review finding: `bashCommand`
+// retention exposes secrets baked into a failing command, e.g. a Bearer
+// token on a curl invocation).
+const SECRET_PATTERNS: RegExp[] = [
+  /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/-]+=*/gi,
+  /\b(sk|pk|ghp|gho|ghu|ghs|ghr|AKIA)[A-Za-z0-9_-]{10,}/g,
+  /(--?(?:password|token|api[-_]?key|secret)[= ])(\S+)/gi,
+];
+
+function redactSecrets(text: string): string {
+  let redacted = text;
+  for (const pattern of SECRET_PATTERNS) {
+    redacted = redacted.replace(pattern, (_match, prefix?: string) =>
+      prefix ? `${prefix}***REDACTED***` : "***REDACTED***",
+    );
+  }
+  return redacted;
 }

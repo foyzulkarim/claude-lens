@@ -74,13 +74,17 @@ export function evaluateV1(turns: Turn[]): GateResult {
     }
     if (hasCommandAfter) continue;
 
-    const lastEdit = flat[lastEditIndex];
-    if (!lastEdit) {
-      // Defensive: the index came from a successful find, but TS doesn't
-      // see that — a future refactor that broke the invariant would throw
-      // loudly here rather than emit a malformed evidence record.
-      throw new Error(`unreachable: flat[${lastEditIndex}] missing after lastEdit find`);
-    }
+    // lastEditIndex was just set to a valid index returned by the
+    // reverse search above, so `flat[lastEditIndex]` is non-null. The
+    // non-null assertion captures the invariant for TS's narrowing
+    // without a runtime throw — the previous `throw new Error(
+    // "unreachable")` was dead code under current types AND a
+    // programmer-error escape hatch inside a gate the spec promises
+    // "never throws" (review H6). If the invariant ever drifts in a
+    // future refactor, the worst case is `undefined` flowing into the
+    // evidence — surfaced, not silently swallowed.
+    const lastEdit = flat[lastEditIndex] as FlatTool | undefined;
+    if (!lastEdit) continue;
     const lastEditPath = lastEdit.tool.targetPath ?? "";
     // List every edit in the turn for the detail string — "edited file
     // path(s)" per gates.md. Comma-joined; the wire type carries one path

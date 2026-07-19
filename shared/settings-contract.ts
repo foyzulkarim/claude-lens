@@ -51,10 +51,13 @@ export function isValidGateThresholds(value: unknown): value is Partial<GateThre
   for (const field of knownFields) {
     const v = record[field];
     if (v === undefined) continue;
-    // Integer threshold: must be a finite non-negative number. Non-finite,
-    // negative, or non-numeric values are rejected. Reject non-integer
-    // values too — these are counts/token totals, never fractional.
-    if (typeof v !== "number" || !Number.isFinite(v) || v < 0 || !Number.isInteger(v)) {
+    // Integer threshold: must be a non-negative safe integer. `Number.isSafeInteger`
+    // already implies finite + integer (a safe integer is always both), and
+    // the `< 0` check rejects negatives — the remaining failure modes are
+    // only numbers > Number.MAX_SAFE_INTEGER, which are practically
+    // unreachable from a JSON parse but explicit enough that the validator
+    // also rejects the next hand-edited config.json with `2 ** 60`.
+    if (typeof v !== "number" || !Number.isSafeInteger(v) || v < 0) {
       return false;
     }
   }
