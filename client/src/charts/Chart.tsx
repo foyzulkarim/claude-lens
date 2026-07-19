@@ -1,20 +1,34 @@
-import type { BarSeriesOption, LineSeriesOption, ScatterSeriesOption } from "echarts/charts";
-import { BarChart, LineChart, ScatterChart } from "echarts/charts";
 import type {
+  BarSeriesOption,
+  HeatmapSeriesOption,
+  LineSeriesOption,
+  ScatterSeriesOption,
+} from "echarts/charts";
+import { BarChart, HeatmapChart, LineChart, ScatterChart } from "echarts/charts";
+import type {
+  CalendarComponentOption,
   GridComponentOption,
   LegendComponentOption,
   TooltipComponentOption,
+  VisualMapComponentOption,
 } from "echarts/components";
-import { GridComponent, LegendComponent, TooltipComponent } from "echarts/components";
+import {
+  CalendarComponent,
+  GridComponent,
+  LegendComponent,
+  TooltipComponent,
+  VisualMapComponent,
+} from "echarts/components";
 import type { ComposeOption, ECElementEvent } from "echarts/core";
 import * as echarts from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
 import { useEffect, useRef } from "react";
 import type { TimeseriesOption } from "./timeseries.js";
 
-// Register the time-series + scatter chart families (ARCH A9). The scatter
-// addition is purely additive — existing line/bar consumers are untouched,
-// and the lifecycle (`init`/`resize`/`setOption`/`on`/`dispose`) is shared
+// Register the time-series + scatter + heatmap/calendar chart families
+// (ARCH A9; ARCH-trends-calendar-budget.md A4). Every addition here is
+// purely additive — existing line/bar/scatter consumers are untouched, and
+// the lifecycle (`init`/`resize`/`setOption`/`on`/`dispose`) is shared
 // across families. LegendComponent is required by any option that sets
 // `legend:` (Cache Lab and Models both do) — without it ECharts silently
 // drops the legend and logs a console error instead of throwing.
@@ -22,8 +36,11 @@ echarts.use([
   LineChart,
   BarChart,
   ScatterChart,
+  HeatmapChart,
   GridComponent,
   TooltipComponent,
+  CalendarComponent,
+  VisualMapComponent,
   LegendComponent,
   CanvasRenderer,
 ]);
@@ -37,8 +54,11 @@ export type ChartOption = ComposeOption<
   | LineSeriesOption
   | BarSeriesOption
   | ScatterSeriesOption
+  | HeatmapSeriesOption
   | GridComponentOption
   | TooltipComponentOption
+  | CalendarComponentOption
+  | VisualMapComponentOption
   | LegendComponentOption
 >;
 

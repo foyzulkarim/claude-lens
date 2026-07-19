@@ -356,6 +356,12 @@ export async function runE2e(): Promise<void> {
       "--no-open",
       "--port",
       String(port),
+      // #P4-10: isolate GET/PUT /api/config's on-disk store inside the same
+      // already-isolated, already-cleaned-up fixture temp dir — otherwise
+      // the Trends budget-persistence spec would write to a developer's
+      // real ~/.claude-lens/config.json.
+      "--config-dir",
+      runFixtureRoot,
     ]);
     await waitForReady(baseUrl, server);
     if (abort.signal.aborted) throw abort.signal.reason;

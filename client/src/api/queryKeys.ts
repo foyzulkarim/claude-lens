@@ -42,9 +42,17 @@ export const qk = {
    */
   cacheLab: (query: CacheLabQuery) => ["metrics", "cache-lab", query] as const,
 
+  /**
+   * `GET/PUT /api/config` key (#P4-10). A bare literal-array key (no params)
+   * since the route has no query shape — every mounted config read shares
+   * this one cache entry, invalidated wholesale after a successful `PUT`.
+   */
+  config: () => ["config"] as const,
+
   prefixes: {
     metrics: ["metrics"] as const,
     session: ["session"] as const,
     sessions: ["sessions"] as const,
+    config: ["config"] as const,
   },
 };

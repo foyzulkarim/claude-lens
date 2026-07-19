@@ -6,6 +6,14 @@ const FIXTURE_RANGE = "?from=2026-06-01T00%3A00%3A00.000Z&to=2026-07-31T23%3A59%
 const COMMAND_TIMEOUT_MS = 10_000;
 Cypress.config("defaultCommandTimeout", COMMAND_TIMEOUT_MS);
 
+// See steel-thread.cy.ts for why this is here: a benign ECharts/
+// ResizeObserver browser warning, not a real error. The drill-link test
+// below navigates to the (chart-heavy) Sessions page, so this spec needs
+// the same guard every other chart-touching spec already has.
+Cypress.on("uncaught:exception", (err) => {
+  if (err.message.includes("ResizeObserver loop completed")) return false;
+});
+
 /**
  * Cache Lab smoke spec (ARCH-cache-lab-page.md T9): loads the
  * `/cache` route over a wide fixture range, asserts every binding §7

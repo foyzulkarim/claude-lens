@@ -20,10 +20,13 @@ vi.mock("echarts/charts", () => ({
   LineChart: {},
   BarChart: {},
   ScatterChart: {},
+  HeatmapChart: {},
 }));
 vi.mock("echarts/components", () => ({
   GridComponent: {},
   TooltipComponent: {},
+  CalendarComponent: {},
+  VisualMapComponent: {},
   LegendComponent: {},
 }));
 vi.mock("echarts/renderers", () => ({ CanvasRenderer: {} }));

@@ -29,6 +29,20 @@ describe("buildTimeseriesOption — family rendering", () => {
     const [entry] = option.series as { type: string }[];
     expect(entry.type).toBe("bar");
   });
+
+  it("bars-family series are unstacked by default", () => {
+    const option = buildTimeseriesOption([series()], { family: "bars", unit: "$" });
+    const [entry] = option.series as { stack?: string }[];
+    expect(entry.stack).toBeUndefined();
+  });
+
+  it("stacked: true puts every bars-family series on one shared stack", () => {
+    const a = series({ label: "claude-lens" });
+    const b = series({ label: "claude-code" });
+    const option = buildTimeseriesOption([a, b], { family: "bars", unit: "$", stacked: true });
+    const entries = option.series as { stack?: string }[];
+    expect(entries.map((e) => e.stack)).toEqual(["total", "total"]);
+  });
 });
 
 describe("buildTimeseriesOption — null and empty handling", () => {
