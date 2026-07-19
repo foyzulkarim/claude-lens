@@ -84,7 +84,7 @@ function lastBucketTimestamp(serieses: Series[]): string | undefined {
   let latest: string | undefined;
   for (const s of serieses) {
     for (const p of s.points) {
-      if (typeof p.value !== "number" || !Number.isFinite(p.value)) continue;
+      if (typeof p.value !== "number" || !Number.isFinite(p.value) || p.value <= 0) continue;
       if (!latest || p.t.localeCompare(latest) > 0) latest = p.t;
     }
   }

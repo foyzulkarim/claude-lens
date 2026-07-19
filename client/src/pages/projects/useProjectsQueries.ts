@@ -21,7 +21,7 @@ import { useStableNow } from "../dashboard/useStableNow.js";
  *     spend-composition stacked-area (Section A). `compare:
  *     "previous-period"` so the legend can opt into a ghost series
  *     later.
- *   • `efficiency` — `project × {costComputed, sessions, 4 tokens,
+ *   • `efficiency` — `time × project × {costComputed, sessions, 4 tokens,
  *     turns}`. Powers the per-project efficiency table (Section B).
  *     The seven measures share one query body because the panel
  *     derives all five ratio columns client-side from this batch
@@ -95,7 +95,8 @@ export function useProjectsQueries(
     [args],
   );
 
-  // Efficiency — one query carries every measure the table needs to
+  // Efficiency — time buckets preserve each project's latest activity
+  // timestamp while one query carries every measure the table needs to
   // derive ratios client-side. Same shape as Models' `efficiency`
   // query body, dimension swapped from `model` to `project`.
   const efficiencyQuery = useMemo<SeriesMetricsQuery>(
@@ -110,17 +111,17 @@ export function useProjectsQueries(
           "cacheCreateTokens",
           "turns",
         ],
-        ["project"],
+        ["time", "project"],
         args,
         "previous-period",
       ),
     [args],
   );
 
-  // Branches — `filters: { project: [selectedProjectId] ∪ ...globalProject }`.
-  // Merges the selected project into the existing global project chip
-  // so the URL contract stays consistent: the same drill-in lands
-  // regardless of whether the user drilled via Section A or Section B.
+  // Branches — the selected project replaces the global project chip.
+  // The remaining global filters still apply, but unioning the selected
+  // project with an updated URL project filter can aggregate unrelated
+  // projects under the selected project's heading.
   //
   // `branchesQuery` is always a stable `SeriesMetricsQuery` so the
   // hook order never shifts (React's "rules of hooks" requirement);
@@ -130,15 +131,11 @@ export function useProjectsQueries(
   // disabled.
   const branchesQuery = useMemo<SeriesMetricsQuery>(() => {
     const baseFilters = args.filters ?? {};
-    const existingProject = baseFilters.project ?? [];
-    const mergedProject = selectedProjectId
-      ? [...new Set([...existingProject, selectedProjectId])].sort()
-      : existingProject;
     return {
       measures: ["costComputed"],
       dimensions: ["gitBranch"],
       ...args,
-      filters: { ...baseFilters, project: mergedProject },
+      filters: { ...baseFilters, project: selectedProjectId ? [selectedProjectId] : [] },
     };
   }, [args, selectedProjectId]);
 

@@ -53,6 +53,17 @@ export function Projects() {
     setSelectedProjectId(projects[0] ?? null);
   }, [projects, selectedProjectId, userSet]);
 
+  // A project selection is only meaningful while it remains in the
+  // filtered project list. Reset stale explicit selections so a URL
+  // filter change cannot leave the branch panel headed by one project
+  // while the visible chips (and current filter population) contain another.
+  useEffect(() => {
+    if (selectedProjectId === null || projects.length === 0) return;
+    if (projects.includes(selectedProjectId)) return;
+    setSelectedProjectId(null);
+    setUserSet(false);
+  }, [projects, selectedProjectId]);
+
   // If the user narrows filters to a single project, mirror the new
   // selection automatically — beats leaving the user staring at an
   // empty branch panel when the global filter just collapsed the list.

@@ -72,13 +72,12 @@ export const DEFAULT_TOP_N = 8;
 
 /**
  * Reduces a `Series[]` of stacked-area bands to at most `topN + 1`
- * (the `+1` is the `"other"` catch-all). For each bucket, the
- * composer ranks series by their bucket value, keeps the top-N, and
- * sums the rest into a fresh `"other"` series whose value at every
- * bucket is the sum of the dropped series' values there.
+ * (the `+1` is the `"other"` catch-all). The composer ranks projects
+ * by their total spend across the displayed range, keeps the top-N,
+ * and sums every remaining project into a fresh `"other"` series.
  *
  * The composer preserves **stack integrity** — the same input series
- * never appears in both the kept and dropped sets at any bucket, so
+ * never appears in both the kept and dropped sets, so
  * the stacked-area total at every bucket equals the input total (an
  * invariant the panel relies on for its share-of-spend reporting).
  *
@@ -118,31 +117,35 @@ export function topNWithOther(series: Series[], topN: number = DEFAULT_TOP_N): S
     }
   }
 
-  // For each bucket, keep the top-N labels by bucket value; the rest
-  // feed the `"other"` series at that bucket.
+  // Keep one stable top-N across the entire range. Selecting a
+  // different top-N at each bucket and then retaining the union of
+  // those labels would make a project appear both as its own band and
+  // inside "other" in buckets where it fell out of the ranking.
   const sortedBucketKeys = [...buckets].sort((a, b) => a.localeCompare(b));
+  const originalOrder = new Map(series.map((s, i) => [s.label || s.dimensionKey, i]));
+  const ranked = [...labels].map((label) => ({
+    label,
+    total: [...(valueByLabelByBucket.get(label)?.values() ?? [])].reduce(
+      (sum, value) => sum + value,
+      0,
+    ),
+  }));
+  ranked.sort(
+    (a, b) =>
+      b.total - a.total ||
+      (originalOrder.get(a.label) ?? Number.MAX_SAFE_INTEGER) -
+        (originalOrder.get(b.label) ?? Number.MAX_SAFE_INTEGER),
+  );
 
-  const keptLabelsSet = new Set<string>();
-  const otherPoints: { t: BucketKey; value: number | null }[] = [];
-
-  for (const bucket of sortedBucketKeys) {
-    // Pair every label with its value at this bucket (0 if absent),
-    // rank descending, and keep the top-N.
-    const ranked = [...labels].map((label) => ({
-      label,
-      value: valueByLabelByBucket.get(label)?.get(bucket) ?? 0,
-    }));
-    ranked.sort((a, b) => b.value - a.value);
-
-    const top = ranked.slice(0, topN);
-    const dropped = ranked.slice(topN);
-    otherPoints.push({
-      t: bucket,
-      value: dropped.length > 0 ? dropped.reduce((s, x) => s + x.value, 0) : null,
-    });
-
-    for (const { label } of top) keptLabelsSet.add(label);
-  }
+  const keptLabelsSet = new Set(ranked.slice(0, topN).map(({ label }) => label));
+  const droppedLabels = ranked.slice(topN).map(({ label }) => label);
+  const otherPoints = sortedBucketKeys.map((bucket) => ({
+    t: bucket,
+    value: droppedLabels.reduce(
+      (sum, label) => sum + (valueByLabelByBucket.get(label)?.get(bucket) ?? 0),
+      0,
+    ),
+  }));
 
   // Build the kept Series list: re-emit each kept `Series` with its
   // existing points preserved (the engine already populated them).
@@ -160,7 +163,6 @@ export function topNWithOther(series: Series[], topN: number = DEFAULT_TOP_N): S
 
   // Project the engine's stacked-area ordering by sorting kept
   // series in their original `Series` order then appending `other`.
-  const originalOrder = new Map(series.map((s, i) => [s.label || s.dimensionKey, i]));
   kept.sort((a, b) => {
     const ai = originalOrder.get(a.label || a.dimensionKey) ?? 0;
     const bi = originalOrder.get(b.label || b.dimensionKey) ?? 0;

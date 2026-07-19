@@ -77,6 +77,33 @@ describe("chart-options — topNWithOther", () => {
     expect(day2?.value).toBe(0);
   });
 
+  it("does not double-count projects whose per-bucket ranks swap", () => {
+    // With a local top-2, retaining the union of A/B on day 1 and B/C
+    // on day 2 would put A in both its own band and "other" on day 2.
+    // The stable range-wide ranking instead keeps A/B throughout.
+    const input = [
+      series("a", [point("2026-07-01", 10), point("2026-07-02", 1)]),
+      series("b", [point("2026-07-01", 9), point("2026-07-02", 9)]),
+      series("c", [point("2026-07-01", 1), point("2026-07-02", 10)]),
+    ];
+
+    const output = topNWithOther(input, 2);
+    expect(output.map((s) => s.label)).toEqual(["a", "b", "other"]);
+    expect(output.at(-1)?.points).toEqual([point("2026-07-01", 1), point("2026-07-02", 10)]);
+
+    for (const t of ["2026-07-01", "2026-07-02"]) {
+      const inputTotal = input.reduce(
+        (sum, s) => sum + (s.points.find((p) => p.t === t)?.value ?? 0),
+        0,
+      );
+      const outputTotal = output.reduce(
+        (sum, s) => sum + (s.points.find((p) => p.t === t)?.value ?? 0),
+        0,
+      );
+      expect(outputTotal).toBe(inputTotal);
+    }
+  });
+
   it("respects DEFAULT_TOP_N = 8 as the default argument", () => {
     // 12 projects at a single bucket: top-8 stay, 4 sum into "other".
     const input = Array.from({ length: 12 }, (_, i) =>
