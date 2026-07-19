@@ -6,7 +6,8 @@ import open from "open";
 import { buildApp } from "./app.js";
 import { resolveScanConfig } from "./ingest/discovery.js";
 import { startIngest } from "./ingest/pipeline.js";
-import { buildRuntimeMetadata } from "./runtime.js";
+import { buildHostLabels, buildRuntimeMetadata } from "./runtime.js";
+import { readConfig } from "./settings.js";
 import { createBroadcaster } from "./ws/broadcaster.js";
 
 const DEFAULT_PORT = 4128;
@@ -114,30 +115,51 @@ async function listenWithRetry(
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
-  const candidatePort = await findAvailablePort(options.port ?? DEFAULT_PORT);
+
+  const configPath = options.configDir
+    ? join(resolve(options.configDir), "config.json")
+    : undefined;
+  const localStorePath = options.configDir
+    ? join(resolve(options.configDir), "local.json")
+    : undefined;
+
+  // Port probing and config loading are independent (review #19) — neither
+  // result feeds into the other. Run them concurrently to shave a bit of
+  // boot latency. `readConfig` never throws (every failure path is caught
+  // internally — see `server/settings.ts`), so `Promise.all` doesn't change
+  // error-handling shape; the await still rejects if the port probe itself
+  // exhausts the port range.
+  const [candidatePort, savedConfig] = await Promise.all([
+    findAvailablePort(options.port ?? DEFAULT_PORT),
+    readConfig(configPath),
+  ]);
 
   // Runtime metadata (ARCH T5): one PricingTable + one Pricer + one
   // ContextResolver, built once here and threaded into both the ingest
   // Store and the Fastify metrics route. Without this, the Store derived
   // costComputed = 0 (no pricer injected) and the metrics route fell back
   // to its own module-level default — the two halves could drift apart.
-  // #P4-15's Settings UI will call `buildRuntimeMetadata(overrides)` here
-  // and pass the user's overrides through unchanged.
-  const metadata = buildRuntimeMetadata();
+  const metadata = buildRuntimeMetadata({ pricing: savedConfig.pricing });
+  const hostLabels = buildHostLabels(savedConfig.scanRoots);
 
   // The live wiring (#P3-1): the broadcaster is the fan-out seam shared by both
   // sides — ingest sends invalidations into it via `onInvalidate`, and the
   // `/ws` route (inside buildApp) registers connected sockets into it. It must
   // be created before startIngest, since startIngest binds `onInvalidate` at
   // Store-construction time, before buildApp and any socket exists.
-  const config = resolveScanConfig({ roots: options.roots });
+  const config = resolveScanConfig({ roots: options.roots, configRoots: savedConfig.scanRoots });
   const broadcaster = createBroadcaster();
-  const ingest = startIngest(config, { onInvalidate: broadcaster.broadcast, metadata });
+  const ingest = startIngest(config, {
+    onInvalidate: broadcaster.broadcast,
+    metadata,
+    hostLabels,
+  });
   const app = buildApp({
     store: ingest.store,
     broadcaster,
     metadata,
-    configPath: options.configDir ? join(resolve(options.configDir), "config.json") : undefined,
+    configPath,
+    localStorePath,
   });
 
   // Ingest now holds real poller/tailer timers and open file handles; tear it

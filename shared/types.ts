@@ -113,11 +113,10 @@ export interface Session {
   firstAt: string;
   lastAt: string;
   /**
-   * Synthesized host for cross-route parity with the metrics engine (which
-   * uses a constant `"default"` — server/metrics/dimensions.ts). Review #13:
-   * the route now filters on this field rather than silently accepting the
-   * `host` chip and returning the unfiltered set. Replace with a real per-
-   * call host field once capture lands.
+   * The label of the scan root this session's transcript was discovered
+   * under (ARCH-settings-local-store.md), or `"unlabeled"` if the root has
+   * no configured label. Resolved live from `Store.hostLabels`, so a
+   * relabel via `PUT /api/config` takes effect without a restart.
    */
   host: string;
   usage: TokenUsage;

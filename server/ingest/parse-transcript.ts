@@ -1,4 +1,5 @@
 import type { ApiCall, CompactionRecord } from "../../shared/types.js";
+import { isRecord } from "../util.js";
 
 export interface PromptTextRecord {
   sessionId: string;
@@ -96,10 +97,6 @@ interface RawUserLine {
    * parent's FailedWork/Records numbers). */
   isSidechain?: unknown;
   message?: { content?: unknown };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function toStr(value: unknown): string {

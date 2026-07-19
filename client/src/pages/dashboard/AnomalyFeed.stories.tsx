@@ -38,6 +38,7 @@ const emptySessionsResponse: SessionListResponse = {
       hasCostLog: false,
       costBasis: "computed",
     },
+    captureSummary: { capturingSessions: 0, lastCapturedAt: null },
   },
 };
 

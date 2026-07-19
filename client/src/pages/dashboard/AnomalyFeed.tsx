@@ -3,6 +3,7 @@ import { useMemo } from "react";
 import { Link } from "wouter";
 import { detectTurnCostAnomalies, type TurnCostSample } from "../../../../shared/anomaly.js";
 import type { SessionListItem, SessionListParams } from "../../../../shared/sessions-contract.js";
+import { getConfig } from "../../api/config.js";
 import { qk } from "../../api/queryKeys.js";
 import { listSessions } from "../../api/sessions.js";
 import { formatUnitValue } from "../../charts/units.js";
@@ -68,12 +69,15 @@ export function turnSamplesFromSessions(sessions: SessionListItem[]): TurnCostSa
 }
 
 /** Maps the T3b detector's flagged samples into feed items — pure so it's
- * independently testable from the fetch that supplies its input. */
+ * independently testable from the fetch that supplies its input. `factor`
+ * is the Settings-configured anomaly multiplier (#P4-15); omitted falls
+ * back to the detector's own built-in default (5). */
 export function anomalyItemsFromSamples(
   samples: TurnCostSample[],
   limit = MAX_ANOMALY_ITEMS,
+  factor?: number,
 ): AnomalyFeedItem[] {
-  const { baseline, flagged } = detectTurnCostAnomalies(samples);
+  const { baseline, flagged } = detectTurnCostAnomalies(samples, factor);
   if (baseline === null) return [];
   return flagged.slice(0, limit).map((sample) => ({
     kind: "anomaly" as const,
@@ -176,12 +180,22 @@ export function AnomalyFeed({ items, now: injectedNow }: AnomalyFeedProps) {
     enabled: items === undefined,
   });
 
+  // Settings-configured anomaly multiplier (#P4-15). A brief render with the
+  // detector's built-in default (5) while this resolves is acceptable —
+  // same tradeoff BudgetForecastPanel.tsx already ships with for its own
+  // getConfig() load.
+  const configQuery = useQuery({
+    queryKey: qk.config(),
+    queryFn: ({ signal }) => getConfig(signal),
+    enabled: items === undefined,
+  });
+
   const detectedItems = useMemo<AnomalyFeedItem[]>(() => {
     if (items !== undefined) return items;
     if (!sessionsQuery.data) return [];
     const samples = turnSamplesFromSessions(sessionsQuery.data.items);
-    return anomalyItemsFromSamples(samples);
-  }, [items, sessionsQuery.data]);
+    return anomalyItemsFromSamples(samples, undefined, configQuery.data?.anomalyFactor);
+  }, [items, sessionsQuery.data, configQuery.data?.anomalyFactor]);
 
   const showGateStub = items === undefined;
   const isLoading = items === undefined && sessionsQuery.isPending;

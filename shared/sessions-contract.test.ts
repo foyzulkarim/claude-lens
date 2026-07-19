@@ -124,6 +124,7 @@ describe("SessionListResponse", () => {
           hasCostLog: false,
           costBasis: "computed",
         },
+        captureSummary: { capturingSessions: 0, lastCapturedAt: null },
       },
     };
     expect(response).toHaveProperty("items");
@@ -146,6 +147,7 @@ describe("SessionListResponse", () => {
           hasCostLog: true,
           costBasis: "observed",
         },
+        captureSummary: { capturingSessions: 0, lastCapturedAt: null },
       },
     };
     expect(response.meta.matchedExtent?.from).toBe("2024-01-01");
@@ -337,6 +339,7 @@ describe("SessionPageResponse — page projection root", () => {
           hasCostLog: false,
           costBasis: "computed",
         },
+        captureSummary: { capturingSessions: 0, lastCapturedAt: null },
       },
     };
     expect(response.timeline).toBeUndefined();

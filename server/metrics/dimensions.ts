@@ -4,8 +4,11 @@ import type { ApiCall, Turn } from "../../shared/types.js";
 // Value extraction + filter matching for the metrics engine's dimension axes.
 // "time" isn't a value-extraction target (engine.ts handles it via grain.ts's
 // bucketing, not a per-record lookup); "gateStatus" lives on Turn, not
-// ApiCall, hence the split into two functions below.
-export type CallDimension = Exclude<Dimension, "time" | "gateStatus">;
+// ApiCall; "host" lives on Session, not ApiCall (ARCH-settings-local-store.md
+// A7 — resolved once per session from its scan root, not per call) — hence
+// the split into multiple functions, with engine.ts special-casing both the
+// same way.
+export type CallDimension = Exclude<Dimension, "time" | "gateStatus" | "host">;
 
 export const UNKNOWN = "unknown";
 
@@ -36,10 +39,6 @@ export function callDimensionValue(call: ApiCall, dim: CallDimension): string | 
       // tools"), not a missing value, so it returns [] rather than
       // ["unknown"] — the call simply contributes to no tool bucket.
       return [...new Set(call.tools.map((t) => t.name))];
-    case "host":
-      // No real data source yet (architecture §4 — labeled scan roots land
-      // in #P4-15). Every call buckets under one constant value until then.
-      return "default";
   }
 }
 

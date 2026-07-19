@@ -1,6 +1,7 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ColumnDef, createColumnHelper } from "@tanstack/react-table";
 import clsx from "clsx";
+import type { MouseEvent } from "react";
 import { useLocation } from "wouter";
 import type {
   SessionListParams,
@@ -8,6 +9,7 @@ import type {
   SessionPageParams,
   SessionTimelineItem,
 } from "../../../../shared/sessions-contract.js";
+import { setSessionTags } from "../../api/localStore.js";
 import { qk } from "../../api/queryKeys.js";
 import { listSessionsPage } from "../../api/sessions.js";
 import { formatDuration, formatUnitValue } from "../../charts/units.js";
@@ -26,6 +28,57 @@ export interface SessionBrowserProps {
 }
 
 const PAGE_SIZE = 25;
+
+/**
+ * Inline tag editor (#P4-15, ARCH-settings-local-store.md decision from
+ * the requirements interview: tags are created/attached on Sessions rows,
+ * not in Settings). Renders the session's current tags as chips plus a
+ * "+" affordance that prompts for a new tag and appends it — same
+ * one-click-prompt pattern as FilterBar's "Save view" button, so there's
+ * no new modal component for a single-field input.
+ */
+function TagsCell({ item }: { item: SessionPageItem }) {
+  const queryClient = useQueryClient();
+  const tags = item.tags ?? [];
+  const mutation = useMutation({
+    mutationFn: (nextTags: string[]) => setSessionTags(item.sessionId, nextTags),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: qk.prefixes.sessions });
+      queryClient.invalidateQueries({ queryKey: qk.prefixes.tags });
+    },
+  });
+
+  function handleAdd(e: MouseEvent): void {
+    e.stopPropagation(); // don't trigger the row's drill-in click
+    const value = window.prompt("Add a tag");
+    if (!value || value.trim().length === 0) return;
+    const trimmed = value.trim();
+    if (tags.includes(trimmed)) return;
+    mutation.mutate([...tags, trimmed]);
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {tags.map((tag) => (
+        <span
+          key={tag}
+          className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-700 dark:bg-[#232B36] dark:text-[#C7D0DB]"
+        >
+          {tag}
+        </span>
+      ))}
+      <button
+        type="button"
+        onClick={handleAdd}
+        disabled={mutation.isPending}
+        aria-label={`Add a tag to session ${item.sessionId}`}
+        className="rounded-full border border-dashed border-slate-300 px-1.5 py-0.5 text-xs text-slate-500 dark:border-[#3A4756] dark:text-[#8A96A5]"
+      >
+        +
+      </button>
+    </div>
+  );
+}
 
 const helper = createColumnHelper<SessionPageItem>();
 // biome-ignore lint/suspicious/noExplicitAny: matches DataTable's own ColumnDef<T, any>[] contract (DataTable.tsx)
@@ -73,6 +126,10 @@ const pageColumns: ColumnDef<SessionPageItem, any>[] = [
     header: "Drilldown",
     cell: (info) => (info.getValue() ? "Yes" : "—"),
   }),
+  helper.accessor("tags", {
+    header: "Tags",
+    cell: (info) => <TagsCell item={info.row.original} />,
+  }),
 ];
 
 /**
@@ -104,7 +161,16 @@ export function SessionBrowser({ state, onStateChange, now: injectedNow }: Sessi
     placeholderData: keepPreviousData,
   });
 
-  const items = query.data?.items ?? [];
+  // Tag filter (#P4-15) is client-side over the already-fetched page —
+  // tags live in local.json, not the transcript-derived population, so
+  // there's no server-side query param for this (ARCH-settings-local-store.md).
+  // `total` intentionally still reflects the unfiltered server count — tag
+  // filtering narrows what's *shown* on this page, not the population.
+  const allItems = query.data?.items ?? [];
+  const items =
+    state.tags && state.tags.length > 0
+      ? allItems.filter((item) => item.tags?.some((tag) => state.tags?.includes(tag)))
+      : allItems;
   const total = query.data?.total ?? 0;
   const timeline = query.data?.timeline;
 

@@ -116,12 +116,23 @@ export async function discover(config: ScanConfig): Promise<DiscoveredFile[]> {
   return files;
 }
 
-export function resolveScanConfig(cli: { roots?: string[] }): ScanConfig {
+/**
+ * Resolves the scan roots for this process. Precedence (#P4-15,
+ * ARCH-settings-local-store.md): explicit `--roots` CLI flag wins outright
+ * (preserves `scripts/e2e.ts`'s isolated-fixture behavior); otherwise the
+ * user's `~/.claude-lens/config.json` `scanRoots` (with labels) applies;
+ * otherwise the default `~/.claude/projects`. Root *paths* are resolved
+ * once here at boot — changing them requires a restart (ARCH decision A2);
+ * only a root's *label* is live-updatable via `Store.updateHostLabels()`.
+ */
+export function resolveScanConfig(cli: { roots?: string[]; configRoots?: ScanRoot[] }): ScanConfig {
   const claudeDir = join(homedir(), ".claude");
   const roots: ScanRoot[] =
     cli.roots && cli.roots.length > 0
       ? cli.roots.map((path) => ({ path }))
-      : [{ path: join(claudeDir, "projects") }];
+      : cli.configRoots && cli.configRoots.length > 0
+        ? cli.configRoots
+        : [{ path: join(claudeDir, "projects") }];
 
   return { roots, claudeDir };
 }

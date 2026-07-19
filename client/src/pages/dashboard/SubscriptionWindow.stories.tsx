@@ -70,6 +70,7 @@ function sessionsExtentResponse(): SessionListResponse {
         hasCostLog: false,
         costBasis: "computed",
       },
+      captureSummary: { capturingSessions: 0, lastCapturedAt: null },
     },
   };
 }
@@ -120,6 +121,7 @@ export const Empty: Story = {
               hasCostLog: false,
               costBasis: "computed",
             },
+            captureSummary: { capturingSessions: 0, lastCapturedAt: null },
           },
         });
       return Promise.reject(new Error(`unexpected fetch in empty story: ${url}`));

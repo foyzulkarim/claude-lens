@@ -70,11 +70,18 @@ export const qk = {
    */
   config: () => ["config"] as const,
 
+  /** `GET /api/views` key (#P4-15). Bare literal-array key — invalidated wholesale after create/delete. */
+  views: () => ["views"] as const,
+  /** `GET /api/tags` key (#P4-15). Bare literal-array key — invalidated wholesale after rename/delete/attach. */
+  tags: () => ["tags"] as const,
+
   prefixes: {
     metrics: ["metrics"] as const,
     session: ["session"] as const,
     sessions: ["sessions"] as const,
     config: ["config"] as const,
+    views: ["views"] as const,
+    tags: ["tags"] as const,
     turnInspector: ["turn-inspector"] as const,
     /**
      * Per-session Turn Inspector prefix. Matches every mounted turn query

@@ -90,6 +90,14 @@ export interface SessionsPageState {
   scatterSize?: ScatterMeasure;
   /** Compare hydration — up to 3 session IDs. */
   compareIds: string[];
+  /**
+   * Selected tag filter (#P4-15). Client-side only — never sent to the
+   * server (tags live in local.json, not the transcript-derived
+   * population); `SessionBrowser` filters its already-fetched page items
+   * by these values. Lives in the URL for permalink parity like every
+   * other display-only field here.
+   */
+  tags?: string[];
 }
 
 /** Default page state — what every URL starts from. */
@@ -152,6 +160,7 @@ const PAGE_QUERY_KEYS = [
   "scatter",
   "scatterSize",
   "compare",
+  "tags",
 ] as const;
 
 type PageQueryKey = (typeof PAGE_QUERY_KEYS)[number];
@@ -253,6 +262,16 @@ export function parseSessionsPageState(search: string): SessionsPageState {
     state.compareIds = unique.slice(0, COMPARE_ID_MAX);
   }
 
+  // Tags CSV (#P4-15) — client-side filter only, same shape as entrypoint.
+  const tags = params.get("tags");
+  if (tags) {
+    const items = tags
+      .split(",")
+      .map((v) => v.trim())
+      .filter((v) => v.length > 0);
+    if (items.length > 0) state.tags = items;
+  }
+
   return state;
 }
 
@@ -293,6 +312,9 @@ export function serializeSessionsPageState(state: SessionsPageState): string {
   if (state.scatterSize !== undefined) params.set("scatterSize", state.scatterSize);
   if (state.compareIds.length > 0) {
     params.set("compare", [...state.compareIds].sort().join(","));
+  }
+  if (state.tags && state.tags.length > 0) {
+    params.set("tags", [...state.tags].sort().join(","));
   }
 
   return params.toString();

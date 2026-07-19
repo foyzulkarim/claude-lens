@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { type AppConfig, isValidBudget } from "../shared/settings-contract.js";
+import { isRecord } from "./util.js";
 
 /**
  * Minimal local config store (ARCH-trends-calendar-budget.md; architecture
@@ -23,10 +24,6 @@ const DEFAULT_CONFIG: AppConfig = { budget: null };
 
 function configFilePath(configPath?: string): string {
   return configPath ?? join(homedir(), ".claude-lens", "config.json");
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export async function readConfig(configPath?: string): Promise<AppConfig> {

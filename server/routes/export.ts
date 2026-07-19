@@ -285,7 +285,7 @@ export function registerExportRoute(app: FastifyInstance, store: Store): void {
     const sorted = [...matched].sort((a, b) =>
       comparePageSessions(a, b, parsed.sort, parsed.order),
     );
-    const items = sorted.map(projectPageItem);
+    const items = sorted.map((session) => projectPageItem(session));
 
     const filename = exportFilename(parsed.format);
     reply.header("content-disposition", `attachment; filename="${filename}"`);

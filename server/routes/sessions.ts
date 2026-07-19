@@ -12,12 +12,15 @@ import type {
   SessionTimelineSet,
   TracePoint,
 } from "../../shared/sessions-contract.js";
+import { isValidTagList } from "../../shared/local-store-contract.js";
 import type { Session } from "../../shared/types.js";
+import { mutateLocalStore, readLocalStore } from "../local-store.js";
 import type { PricingTable } from "../metrics/measures.js";
 import { applyRange, totalTokensForSession } from "../metrics/session-population.js";
 import type { Pricer } from "../store/derive-session.js";
 import { aggregateLogicalTurnCost, groupLogicalTurns } from "../store/logical-turns.js";
 import type { Store } from "../store/store.js";
+import { extractField } from "../util.js";
 
 // GET /api/sessions — general paginated sessions list (ARCH T6 / #P4-2).
 // Patterned on routes/metrics.ts (Fastify plugin, manual validation that
@@ -59,6 +62,8 @@ export interface RegisterSessionsRouteOptions {
    * uses the exact same accumulator as `deriveSession`'s `costComputed`.
    */
   pricer?: Pricer;
+  /** Overrides `~/.claude-lens/local.json`'s path (#P4-15) — tests only; production always uses the real path. */
+  localStorePath?: string;
 }
 
 const SUMMARY_SORT_KEYS = new Set<NonNullable<SessionListParams["sort"]>>([
@@ -398,17 +403,17 @@ function parsePositiveInt(value: unknown): number | string {
  *     emits `from === to === dayStart`, so a half-open upper silently
  *     returned an empty sessions interval.
  *
- * `host` parity (review #13): the metrics engine synthesizes a constant
- * `"default"` host for every scope (see `server/metrics/dimensions.ts`),
- * and the Dashboard callers pass the active `host` chip straight through
- * to both `/api/sessions` and `/api/metrics`. Pre-fix the route accepted
- * `host` but never projected or filtered it, so a non-matching host chip
- * silently returned every session while `/api/metrics` returned nothing.
- * Now `host` filters the same synthetic `"default"` the engine synthesizes,
- * so a chip value that includes `"default"` matches every session, and any
- * other chip value matches none (the engine and the route agree). When
- * per-host Session fields land, this becomes a real field lookup without
- * changing the contract.
+ * `host` parity (review #13): pre-fix the route accepted `host` but never
+ * projected or filtered it, so a non-matching host chip silently returned
+ * every session while `/api/metrics` returned nothing. Post #P4-15
+ * (review #19), `Session.host` is sourced from the real scan-root label
+ * resolved at recompute time (`server/store/store.ts`'s `sessionRoot` +
+ * `hostLabels`), and this route filters on that same value — Dashboard
+ * callers can pass the chip value straight through to both
+ * `/api/sessions` and `/api/metrics` without drift. Sessions whose root
+ * is unlabeled fall back to the raw root path; sessions with no root at
+ * all (rare) carry the literal sentinel `"unlabeled"` (see
+ * `server/store/derive-session.ts`).
  */
 function sessionMatchesFilters(session: Session, params: SessionListParams): boolean {
   if (params.from !== undefined) {
@@ -514,6 +519,24 @@ function aggregateGlobalCapture(sessions: Session[]): SessionListMeta["globalCap
 }
 
 /**
+ * Cost-capture setup guide readout (#P4-15, `SessionListMeta.captureSummary`).
+ * Rides the same unfiltered-fleet pass as `aggregateGlobalCapture` — no
+ * extra route or fetch (`GET /api/health` is #P4-14's job, not built yet).
+ */
+function computeCaptureSummary(sessions: Session[]): SessionListMeta["captureSummary"] {
+  let capturingSessions = 0;
+  let lastCapturedAt: string | null = null;
+  for (const session of sessions) {
+    if (!session.tier.hasCostSamples) continue;
+    capturingSessions += 1;
+    if (session.lastAt !== "" && (lastCapturedAt === null || session.lastAt > lastCapturedAt)) {
+      lastCapturedAt = session.lastAt;
+    }
+  }
+  return { capturingSessions, lastCapturedAt };
+}
+
+/**
  * Build the cumulative priced-turn trace for one session. Uses the injected
  * pricer so trace costs agree with the Store's `costComputed` accumulation;
  * falls back to 0 per turn when no pricer is wired (legacy `buildApp({ store })`
@@ -543,11 +566,7 @@ function buildTrace(store: Store, session: Session, pricer: Pricer | undefined):
   return points;
 }
 
-/**
- * Project one Store Session into the wire `SessionListItem`. `host` is left
- * undefined (Session doesn't track host today — documented gap, not
- * fabricated).
- */
+/** Project one Store Session into the wire `SessionListItem`. */
 function projectItem(session: Session, trace: TracePoint[] | undefined): SessionListItem {
   return {
     sessionId: session.sessionId,
@@ -559,6 +578,9 @@ function projectItem(session: Session, trace: TracePoint[] | undefined): Session
     // session-detail endpoint (#P4-4), not widen this contract.
     model: session.models[0] ?? "",
     branch: session.gitBranch === "" ? undefined : session.gitBranch,
+    // Real host (#P4-15, ARCH-settings-local-store.md A7) — resolved by the
+    // Store from the session's scan root, no longer a documented gap.
+    host: session.host,
     durationMs: session.durationMs ?? 0,
     turnCount: session.turnCount,
     costComputed: session.costComputed,
@@ -658,8 +680,14 @@ function pagePopulationFilter(params: SessionPageParams): SessionPopulationFilte
 
 /** Strict page-row projection (ARCH `SessionPageItem`). Keeps every
  * transcript-tier field mandatory and surfaces optional premium / gate /
- * tag fields exactly when present (no fabrication). */
-export function projectPageItem(session: Session): SessionPageItem {
+ * tag fields exactly when present (no fabrication). Exported so the
+ * Sessions export route (`server/routes/export.ts`) can reuse the exact
+ * same projection for CSV/JSON downloads — keeps on-screen and on-disk
+ * row shapes in lock-step (review #19 merge with main). The `tags`
+ * parameter is optional: export callers don't have per-session tag data
+ * handy at the moment, while the on-screen page route threads it
+ * through from `readLocalStore`. */
+export function projectPageItem(session: Session, tags?: string[]): SessionPageItem {
   return {
     sessionId: session.sessionId,
     startedAt: session.firstAt,
@@ -682,7 +710,7 @@ export function projectPageItem(session: Session): SessionPageItem {
     contextPctObserved: undefined,
     gateScore: session.gateScore,
     gateStatus: undefined,
-    tags: undefined,
+    tags,
     hasDrilldown: session.turnCount > 0,
     tier: session.tier,
   };
@@ -804,7 +832,7 @@ export function registerSessionsRoute(
         reply.code(400);
         return { error: parsed };
       }
-      return handlePageRequest(store, parsed, reply);
+      return handlePageRequest(store, parsed, reply, options.localStorePath);
     }
 
     const parsed = parseSessionsQuery(query);
@@ -814,6 +842,34 @@ export function registerSessionsRoute(
     }
     return handleSummaryRequest(store, parsed, reply, pricer);
   });
+
+  app.put<{ Params: { id: string } }>(
+    "/api/sessions/:id/tags",
+    async (request, reply): Promise<{ tags: string[] } | { error: string }> => {
+      const sessionId = request.params.id;
+      // getSessionSnapshot forces a synchronous recompute (matches
+      // session-detail.ts's existence check) — getSession alone would 404 a
+      // session whose debounce window hasn't flushed yet even though its
+      // records are already in the Store.
+      if (!store.getSessionSnapshot(sessionId)) {
+        reply.code(404);
+        return { error: "session not found" };
+      }
+      const tags = extractField(request.body, "tags");
+      if (!isValidTagList(tags)) {
+        reply.code(400);
+        return { error: "tags must be an array of non-empty strings" };
+      }
+      // Write failures bubble to app.ts's top-level setErrorHandler
+      // (review #19). Validation/404 stay local because they need a
+      // typed 400/404, not the generic 500 envelope.
+      await mutateLocalStore(
+        (current) => ({ tags: { ...current.tags, [sessionId]: tags } }),
+        options.localStorePath,
+      );
+      return { tags };
+    },
+  );
 }
 
 function handleSummaryRequest(
@@ -869,15 +925,17 @@ function handleSummaryRequest(
     meta: {
       matchedExtent,
       globalCapture,
+      captureSummary: computeCaptureSummary(allSessions),
     },
   };
 }
 
-function handlePageRequest(
+async function handlePageRequest(
   store: Store,
   parsed: SessionPageParams,
   reply: import("fastify").FastifyReply,
-): SessionPageResponse {
+  localStorePath: string | undefined,
+): Promise<SessionPageResponse> {
   const sort = parsed.sort ?? "lastAt";
   const order = parsed.order ?? "desc";
   const offset = parsed.offset ?? 0;
@@ -911,7 +969,10 @@ function handlePageRequest(
 
   const matchedExtent = computeMatchedExtent(matched);
 
-  const pageItems = sorted.slice(offset, offset + effectiveLimit).map(projectPageItem);
+  const { tags: tagsBySessionId } = await readLocalStore(localStorePath);
+  const pageItems = sorted
+    .slice(offset, offset + effectiveLimit)
+    .map((session) => projectPageItem(session, tagsBySessionId[session.sessionId]));
 
   const response: SessionPageResponse = {
     items: pageItems,
@@ -920,6 +981,7 @@ function handlePageRequest(
       matched: total,
       matchedExtent,
       globalCapture,
+      captureSummary: computeCaptureSummary(allSessions),
     },
   };
 

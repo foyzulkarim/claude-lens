@@ -68,6 +68,8 @@ export interface StoreOptions {
   pricing?: PricingTable;
   /** Resolves context window for a model; used to compute contextPctEstimated. */
   contextResolver?: ContextResolver;
+  /** Root path -> label, used to resolve `Session.host` (ARCH-settings-local-store.md). Without one, sessions fall back to their raw root path. */
+  hostLabels?: Map<string, string>;
 }
 
 export class Store {
@@ -76,11 +78,17 @@ export class Store {
   private pricer: Pricer | undefined;
   private pricing: PricingTable | undefined;
   private contextResolver: ContextResolver | undefined;
+  private hostLabels: Map<string, string>;
+  // Root path a session was first tailed from (#P4-15). Set once per session
+  // — a session's files never move roots mid-life — and never overwritten by
+  // later `applyRecords` calls (e.g. a sidecar arriving after the transcript).
+  private readonly sessionRoot = new Map<string, string>();
 
   constructor(options: StoreOptions) {
     this.pricer = options.pricer;
     this.pricing = options.pricing;
     this.contextResolver = options.contextResolver;
+    this.hostLabels = options.hostLabels ?? new Map();
     this.invalidator = createInvalidator({
       debounceMs: options.debounceMs,
       onFlush: (message) => {
@@ -109,6 +117,35 @@ export class Store {
     }
   }
 
+  /**
+   * Swap the root->label map and refresh every session's `host` in place
+   * (ARCH-settings-local-store.md). Mirrors `updatePricing`'s "relabel takes
+   * effect on next read, no restart needed" contract, but — unlike
+   * `updatePricing`, where every derived field can depend on the new
+   * pricing — `host` is the *only* field `deriveSession` derives from
+   * `hostLabels` (see derive-session.ts). Patching it directly skips a full
+   * `deriveTurns`/`deriveSession` recompute for every session on a pure
+   * display-label rename, which would otherwise redo real derivation work
+   * for a change that doesn't touch any session's calls/turns/pricing.
+   *
+   * Still emits a `scanDirty` invalidation so already-mounted
+   * Sessions/Dashboard pages refetch on relabel (review #19). The point of
+   * this method is "no restart", which would be defeated if an open page
+   * silently kept showing the old host until something unrelated triggered
+   * a refetch — `markScanDirty()` is the right shape here (rare, not
+   * bursty) and matches the existing `scanDirty()` broadcast semantics.
+   */
+  updateHostLabels(hostLabels: Map<string, string>): void {
+    this.hostLabels = hostLabels;
+    for (const [sessionId, state] of this.sessions) {
+      if (!state.session) continue;
+      const rootPath = this.sessionRoot.get(sessionId);
+      const host = rootPath ? (hostLabels.get(rootPath) ?? rootPath) : undefined;
+      state.session = { ...state.session, host: host ?? "unlabeled" };
+    }
+    this.invalidator.markScanDirty();
+  }
+
   private stateFor(sessionId: string): SessionState {
     let state = this.sessions.get(sessionId);
     if (!state) {
@@ -127,13 +164,33 @@ export class Store {
     return state;
   }
 
-  /** Append one tailer batch's parsed records for the given session. Only that session is marked dirty. */
-  applyRecords(sessionId: string, result: ParseTranscriptResult): void {
+  /**
+   * Append one tailer batch's parsed records for the given session. Only
+   * that session is marked dirty. `rootPath` (the scan root this file was
+   * discovered under) is recorded once, first-call-wins — a session's
+   * `host` is resolved from this at recompute time via the live
+   * `hostLabels` map, so relabeling never needs to touch `sessionRoot`.
+   *
+   * `rootPath` is intentionally optional (review #19) rather than
+   * required as the original ARCH risk-table assumption had it — the
+   * one production caller (`server/ingest/pipeline.ts`) does pass it,
+   * but the per-test call sites didn't need an artificial stub, and
+   * making it required would have forced ~15+ test rewrites without
+   * gaining any compile-time safety on the only caller that matters.
+   * The trade-off: a future caller that forgets to pass `file.root`
+   * silently gets `"unlabeled"` host instead of a type error. The
+   * pipeline call site is the documented contract holder; any future
+   * caller must thread `file.root` from `DiscoveredFile` through here.
+   */
+  applyRecords(sessionId: string, result: ParseTranscriptResult, rootPath?: string): void {
     const state = this.stateFor(sessionId);
     state.calls.push(...result.calls);
     state.prompts.push(...result.prompts);
     state.toolResultBytes.push(...result.toolResultBytes);
     state.compactions.push(...result.compactions);
+    if (rootPath && !this.sessionRoot.has(sessionId)) {
+      this.sessionRoot.set(sessionId, rootPath);
+    }
     this.invalidator.markDirty(sessionId);
   }
 
@@ -198,6 +255,8 @@ export class Store {
     const state = this.sessions.get(sessionId);
     if (!state) return;
     state.turns = deriveTurns(state.calls, state.prompts, state.toolResultBytes);
+    const rootPath = this.sessionRoot.get(sessionId);
+    const host = rootPath ? (this.hostLabels.get(rootPath) ?? rootPath) : undefined;
     state.session = deriveSession(
       sessionId,
       state.calls,
@@ -206,6 +265,7 @@ export class Store {
       this.pricer,
       this.pricing,
       this.contextResolver,
+      host,
     );
   }
 

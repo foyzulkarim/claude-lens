@@ -1,13 +1,14 @@
 /**
- * Local config wire contract (ARCH-trends-calendar-budget.md; architecture
- * §10). `~/.claude-lens/config.json` is deliberately typed narrow today —
- * only `budget` and `gateThresholds` are named fields. #P4-15 extends this
- * same file with pricing, scan roots, saved views, and tags; `server/settings.ts`
- * round-trips any key it doesn't recognize unchanged so this task can never
- * destroy a field it doesn't know about.
+ * Local config wire contract (ARCH-settings-local-store.md; architecture
+ * §10). `~/.claude-lens/config.json` started narrow (#P4-10: `budget`,
+ * `gateThresholds` only) and is extended here with `pricing`, `scanRoots`,
+ * and `anomalyFactor` (#P4-15). `server/settings.ts` round-trips any key it
+ * doesn't recognize unchanged so no future field is ever destroyed by an
+ * older client.
  */
 
 import type { GateThresholds } from "./gates-contract.js";
+import { isValidPricingTable, type PricingTable } from "./pricing-contract.js";
 
 /**
  * `budget` is `null`/absent when no monthly cap is set (the BurnRateCard's
@@ -20,9 +21,21 @@ import type { GateThresholds } from "./gates-contract.js";
  * constants". #P4-11 owns this field's shape; #P4-15 owns the Settings UI
  * form that edits it.
  */
+/** One scan root (architecture §5.1 discovery, §10 local config). `label` becomes the `host` dimension for every session sourced from `path`. */
+export interface ScanRootConfig {
+  path: string;
+  label?: string;
+}
+
 export interface AppConfig {
   budget?: number | null;
   gateThresholds?: Partial<GateThresholds>;
+  /** Model -> rate table (#P4-15). Absent means the server's built-in `DEFAULT_PRICING_TABLE` applies. */
+  pricing?: PricingTable;
+  /** Scan roots + host labels (#P4-15). Absent means the CLI's `--roots` flag / default `~/.claude/projects` applies. Path changes need a restart; label changes are live. */
+  scanRoots?: ScanRootConfig[];
+  /** Anomaly detector multiplier (shared/anomaly.ts's `factor`). Absent means the detector's own default (5). Must be a finite number > 0. */
+  anomalyFactor?: number;
 }
 
 /** `null` clears the budget; anything else must be a finite number > 0. */
@@ -62,4 +75,35 @@ export function isValidGateThresholds(value: unknown): value is Partial<GateThre
     }
   }
   return true;
+}
+
+/** Re-exported so route/client code validating an `AppConfig.pricing` field doesn't need a second import. */
+export { isValidPricingTable };
+
+/**
+ * Validates a `PUT /api/config` `scanRoots` field: an array of
+ * `{path: string, label?: string}`. `path` must be a non-empty string;
+ * `label`, when present, must be a non-empty string. No filesystem
+ * existence check here — a not-yet-mounted volume (per the Settings
+ * mockup) is a valid root, discovery's own glob just returns nothing for it.
+ */
+export function isValidScanRoots(value: unknown): value is ScanRootConfig[] {
+  if (!Array.isArray(value)) return false;
+  for (const entry of value) {
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return false;
+    const record = entry as Record<string, unknown>;
+    for (const key of Object.keys(record)) {
+      if (key !== "path" && key !== "label") return false;
+    }
+    if (typeof record.path !== "string" || record.path.trim().length === 0) return false;
+    if (record.label !== undefined) {
+      if (typeof record.label !== "string" || record.label.trim().length === 0) return false;
+    }
+  }
+  return true;
+}
+
+/** Anomaly detector multiplier: must be a finite number > 0 (matches `InvalidAnomalyFactorError`'s own guard in `shared/anomaly.ts`). */
+export function isValidAnomalyFactor(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
 }

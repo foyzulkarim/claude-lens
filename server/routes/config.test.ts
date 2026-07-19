@@ -156,4 +156,187 @@ describe("GET/PUT /api/config", () => {
     });
     expect(put.statusCode).toBe(400);
   });
+
+  it("PUT accepts pricing/scanRoots/anomalyFactor alongside budget and persists them (#P4-15)", async () => {
+    const put = await app.inject({
+      method: "PUT",
+      url: "/api/config",
+      payload: {
+        budget: 300,
+        pricing: { "claude-sonnet-5": { input: 3, output: 15, cacheRead: 0.3, cacheCreate: 3.75 } },
+        scanRoots: [{ path: "/x", label: "mac-mini-home" }],
+        anomalyFactor: 3,
+      },
+    });
+    expect(put.statusCode).toBe(200);
+    expect(put.json()).toEqual({
+      budget: 300,
+      pricing: { "claude-sonnet-5": { input: 3, output: 15, cacheRead: 0.3, cacheCreate: 3.75 } },
+      scanRoots: [{ path: "/x", label: "mac-mini-home" }],
+      anomalyFactor: 3,
+    });
+
+    const get = await app.inject({ method: "GET", url: "/api/config" });
+    expect(get.json()).toEqual({
+      budget: 300,
+      pricing: { "claude-sonnet-5": { input: 3, output: 15, cacheRead: 0.3, cacheCreate: 3.75 } },
+      scanRoots: [{ path: "/x", label: "mac-mini-home" }],
+      anomalyFactor: 3,
+    });
+  });
+
+  it("PUT rejects invalid pricing with 400", async () => {
+    const put = await app.inject({
+      method: "PUT",
+      url: "/api/config",
+      payload: { budget: 300, pricing: { "claude-sonnet-5": { input: -1 } } },
+    });
+    expect(put.statusCode).toBe(400);
+    expect(put.json().error).toContain("pricing");
+  });
+
+  it("PUT rejects invalid scanRoots with 400", async () => {
+    const put = await app.inject({
+      method: "PUT",
+      url: "/api/config",
+      payload: { budget: 300, scanRoots: [{ path: "" }] },
+    });
+    expect(put.statusCode).toBe(400);
+    expect(put.json().error).toContain("scanRoots");
+  });
+
+  it("PUT rejects invalid anomalyFactor with 400", async () => {
+    const put = await app.inject({
+      method: "PUT",
+      url: "/api/config",
+      payload: { budget: 300, anomalyFactor: -1 },
+    });
+    expect(put.statusCode).toBe(400);
+    expect(put.json().error).toContain("anomalyFactor");
+  });
+
+  it("PUT with scanRoots propagates live into the Store's host resolution (#P4-15)", async () => {
+    store.applyRecords(
+      "s1",
+      {
+        calls: [
+          {
+            uuid: "u1",
+            sessionId: "s1",
+            messageId: "m1",
+            timestamp: "2026-01-01T00:00:00.000Z",
+            model: "claude-sonnet-5",
+            usage: {
+              inputTokens: 0,
+              outputTokens: 0,
+              cacheReadTokens: 0,
+              cacheCreateTokens: 0,
+            },
+            isSidechain: false,
+            tools: [],
+            cwd: "/proj",
+            gitBranch: "main",
+            version: "1.0.0",
+            entrypoint: "cli",
+          },
+        ],
+        prompts: [],
+        toolResultBytes: [],
+        compactions: [],
+        duplicateCount: 0,
+        malformedCount: 0,
+      },
+      "/roots/a",
+    );
+    store.flushAll();
+    expect(store.getSession("s1")?.host).toBe("/roots/a");
+
+    const put = await app.inject({
+      method: "PUT",
+      url: "/api/config",
+      payload: { budget: 300, scanRoots: [{ path: "/roots/a", label: "mac-mini-home" }] },
+    });
+    expect(put.statusCode).toBe(200);
+    store.flushAll();
+    expect(store.getSession("s1")?.host).toBe("mac-mini-home");
+  });
+
+  it("PUT with scanRoots emits a scan-updated invalidation (review #19)", async () => {
+    const captured: import("../../shared/ws-protocol.js").WsServerMessage[] = [];
+    const storeWithCapture = new Store({ onInvalidate: (m) => captured.push(m) });
+    try {
+      const appWithCapture = buildApp({ store: storeWithCapture, logger: false, configPath });
+      try {
+        const put = await appWithCapture.inject({
+          method: "PUT",
+          url: "/api/config",
+          payload: { budget: 300, scanRoots: [{ path: "/roots/a", label: "mac-mini" }] },
+        });
+        expect(put.statusCode).toBe(200);
+        // updateHostLabels emits scan-updated immediately (no debounce —
+        // matches the existing markScanDirty broadcast semantics). Without
+        // this, already-mounted Sessions/Dashboard pages silently keep
+        // showing the old host label.
+        expect(captured.some((m) => m.type === "scan-updated")).toBe(true);
+      } finally {
+        await appWithCapture.close();
+      }
+    } finally {
+      storeWithCapture.stop();
+    }
+  });
+
+  it("an independent PUT with only `pricing` preserves a `budget` set in a prior PUT (review #19, ARCH Risk table)", async () => {
+    // ARCH-settings-local-store.md's Risk table explicitly calls this
+    // regression out: a Settings PUT that changes `pricing` must not
+    // clobber a `budget` set moments earlier by BudgetForecastPanel —
+    // writeConfig's merge-not-replace semantics is the mechanism, this
+    // test pins the contract across two requests rather than the same
+    // payload.
+    const first = await app.inject({
+      method: "PUT",
+      url: "/api/config",
+      payload: { budget: 300 },
+    });
+    expect(first.statusCode).toBe(200);
+
+    const second = await app.inject({
+      method: "PUT",
+      url: "/api/config",
+      payload: {
+        budget: 300,
+        pricing: { "claude-sonnet-5": { input: 3, output: 15, cacheRead: 0.3, cacheCreate: 3.75 } },
+      },
+    });
+    expect(second.statusCode).toBe(200);
+
+    const get = await app.inject({ method: "GET", url: "/api/config" });
+    expect(get.json()).toEqual({
+      budget: 300,
+      pricing: { "claude-sonnet-5": { input: 3, output: 15, cacheRead: 0.3, cacheCreate: 3.75 } },
+    });
+
+    // Same scenario in reverse order — pricing set first, then budget
+    // edited alone. The same merge-not-replace guarantee applies.
+    await app.inject({
+      method: "PUT",
+      url: "/api/config",
+      payload: {
+        budget: 300,
+        pricing: { "claude-sonnet-5": { input: 3, output: 15, cacheRead: 0.3, cacheCreate: 3.75 } },
+      },
+    });
+    const third = await app.inject({
+      method: "PUT",
+      url: "/api/config",
+      payload: { budget: 450 },
+    });
+    expect(third.statusCode).toBe(200);
+
+    const getAfter = await app.inject({ method: "GET", url: "/api/config" });
+    expect(getAfter.json()).toMatchObject({
+      budget: 450,
+      pricing: { "claude-sonnet-5": { input: 3, output: 15, cacheRead: 0.3, cacheCreate: 3.75 } },
+    });
+  });
 });

@@ -1,5 +1,9 @@
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import { useState } from "react";
+import { useLocation, useSearch } from "wouter";
+import { createView } from "../api/localStore.js";
+import { qk } from "../api/queryKeys.js";
 import { TOGGLE_ACTIVE_CLASS, TOGGLE_CLASS } from "../ui/toggleStyles.js";
 import { type ChipDimension, type FilterRange, type RangePreset, resolveRange } from "./state.js";
 import { useFacets } from "./useFacets.js";
@@ -76,6 +80,45 @@ function ChipDropdown({
   );
 }
 
+/**
+ * Saved-view creation point (#P4-15, ARCH-settings-local-store.md A5). The
+ * only place "the current view" (pathname + full query string, not just
+ * the global-filter-owned keys) is naturally in scope — Settings only ever
+ * *lists/deletes* views, since it has no filter state of its own. A native
+ * `prompt()` keeps this a one-click action with no new modal component;
+ * an empty/cancelled prompt saves nothing.
+ */
+function SaveViewButton() {
+  const [pathname] = useLocation();
+  const search = useSearch();
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: (name: string) =>
+      createView({ name, path: pathname, search: search ? `?${search}` : "" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: qk.prefixes.views });
+    },
+  });
+
+  function handleClick(): void {
+    const name = window.prompt("Name this view");
+    if (!name || name.trim().length === 0) return;
+    mutation.mutate(name.trim());
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      disabled={mutation.isPending}
+      className={TOGGLE_CLASS}
+      aria-label="Save current view"
+    >
+      ☆ Save view
+    </button>
+  );
+}
+
 // Global filter bar (plan #P3-3, pages spec §0): range presets/custom range
 // plus project/model/branch/host chips. Mounted once in AppShell so it
 // appears above every page; all state lives in the URL via useFilters (§11).
@@ -144,6 +187,7 @@ export function FilterBar() {
           />
         ))}
       </div>
+      <SaveViewButton />
     </div>
   );
 }

@@ -64,6 +64,16 @@ describe("parseSessionsPageState — every page-owned key", () => {
     const state = parseSessionsPageState("?compare=a,b,c,d&compare=e");
     expect(state.compareIds).toEqual(["a", "b", "c"]);
   });
+
+  it("decodes tags CSV (#P4-15)", () => {
+    const state = parseSessionsPageState("?tags=important,follow-up");
+    expect(state.tags).toEqual(["important", "follow-up"]);
+  });
+
+  it("leaves tags undefined when absent", () => {
+    const state = parseSessionsPageState("");
+    expect(state.tags).toBeUndefined();
+  });
 });
 
 describe("parseSessionsPageState — malformed values fall back to defaults", () => {
@@ -117,6 +127,7 @@ describe("serializeSessionsPageState — round-trip", () => {
       scatterPreset: "tokens-vs-turns" as const,
       scatterSize: "apiCalls" as const,
       compareIds: ["a", "b"],
+      tags: ["follow-up", "important"],
     };
     const parsed = parseSessionsPageState(serializeSessionsPageState(state));
     expect(parsed).toEqual(state);

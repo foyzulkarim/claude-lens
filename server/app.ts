@@ -11,7 +11,9 @@ import { registerGatesRoute } from "./routes/gates.js";
 import { registerMetricsRoute } from "./routes/metrics.js";
 import { registerSessionDetailRoute } from "./routes/session-detail.js";
 import { registerSessionsRoute } from "./routes/sessions.js";
+import { registerTagsRoute } from "./routes/tags.js";
 import { registerTurnInspectorRoute } from "./routes/turn-inspector.js";
+import { registerViewsRoute } from "./routes/views.js";
 import type { RuntimeMetadata } from "./runtime.js";
 import type { Store } from "./store/store.js";
 import { type Broadcaster, createBroadcaster } from "./ws/broadcaster.js";
@@ -79,6 +81,12 @@ export interface BuildAppOptions {
    * (`cli.ts`) never sets it.
    */
   userHomeDir?: string;
+  /**
+   * Overrides `~/.claude-lens/local.json`'s path (#P4-15) — tests point
+   * this at a temp file so route tests never touch the real user
+   * local-store; production (`cli.ts`) never sets it.
+   */
+  localStorePath?: string;
 }
 
 export function buildApp({
@@ -88,6 +96,7 @@ export function buildApp({
   logger,
   configPath,
   userHomeDir,
+  localStorePath,
 }: BuildAppOptions): FastifyInstance {
   const app = Fastify({
     logger: logger ?? {
@@ -108,23 +117,27 @@ export function buildApp({
 
   registerMetricsRoute(app, store, metadata?.pricing ? { pricing: metadata.pricing } : undefined);
 
-  registerSessionsRoute(
-    app,
-    store,
-    metadata ? { pricing: metadata.pricing, pricer: metadata.pricer } : undefined,
-  );
+  registerSessionsRoute(app, store, {
+    ...(metadata ? { pricing: metadata.pricing, pricer: metadata.pricer } : undefined),
+    localStorePath,
+  });
 
   registerCacheLabRoute(app, store, metadata?.pricing ? { pricing: metadata.pricing } : undefined);
 
   registerExportRoute(app, store);
 
-  registerConfigRoute(app, configPath ? { configPath } : undefined);
+  registerConfigRoute(app, { configPath, store });
 
-  registerSessionDetailRoute(
-    app,
-    store,
-    metadata ? { pricer: metadata.pricer, contextResolver: metadata.contextResolver } : undefined,
-  );
+  registerSessionDetailRoute(app, store, {
+    ...(metadata
+      ? { pricer: metadata.pricer, contextResolver: metadata.contextResolver }
+      : undefined),
+    configPath,
+  });
+
+  registerViewsRoute(app, { localStorePath });
+
+  registerTagsRoute(app, { localStorePath });
 
   registerTurnInspectorRoute(
     app,

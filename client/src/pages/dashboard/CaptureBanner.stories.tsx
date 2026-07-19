@@ -34,7 +34,11 @@ function response(
   return {
     items: [],
     total: 0,
-    meta: { matchedExtent: null, globalCapture },
+    meta: {
+      matchedExtent: null,
+      globalCapture,
+      captureSummary: { capturingSessions: 0, lastCapturedAt: null },
+    },
   };
 }
 

@@ -31,6 +31,7 @@ export function deriveSession(
   pricer?: Pricer,
   pricing?: PricingTable,
   contextResolver?: ContextResolver,
+  host?: string,
 ): Session {
   const usage = emptyUsage();
   const models = new Set<string>();
@@ -138,13 +139,12 @@ export function deriveSession(
     tier,
     firstAt,
     lastAt,
-    // Synthetic host (review #13): the metrics engine synthesizes "default"
-    // for every scope today (server/metrics/dimensions.ts). Mirror that
-    // constant here so `/api/sessions?host=foo` agrees with `/api/metrics`
-    // — pre-fix the route accepted `host` but never projected it, so the
-    // same chip returned every session from sessions and none from metrics.
-    // Replace with the real `call.host` field once per-host capture lands.
-    host: "default",
+    // Real host (#P4-15, ARCH-settings-local-store.md): resolved by the Store
+    // from the session's originating scan root, via the live `hostLabels`
+    // map (root path -> label). `server/metrics/dimensions.ts` reads this
+    // same field now instead of independently synthesizing a constant
+    // (review #13's drift risk — see ARCH decision A7).
+    host: host ?? "unlabeled",
     usage,
     // Logical turn count — groups sidechain segments under their parent
     // prompt so Session Detail, dashboard session-list traces, and the

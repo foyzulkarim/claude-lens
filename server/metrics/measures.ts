@@ -1,20 +1,16 @@
 import type { Measure } from "../../shared/metrics-contract.js";
+import {
+  DEFAULT_MODEL_KEYS,
+  type ModelRate,
+  type PricingTable,
+} from "../../shared/pricing-contract.js";
 import type { ApiCall, Session, TokenUsage, Turn } from "../../shared/types.js";
 import { groupLogicalTurns } from "../store/logical-turns.js";
 
-export interface ModelRate {
-  /** $ per 1,000,000 input tokens */
-  input: number;
-  /** $ per 1,000,000 output tokens */
-  output: number;
-  /** $ per 1,000,000 cache-read tokens */
-  cacheRead: number;
-  /** $ per 1,000,000 cache-write tokens */
-  cacheCreate: number;
-}
-
-/** Keyed by exact `ApiCall.model`. A missing key means unpriced -> $0, never fabricated. */
-export type PricingTable = Record<string, ModelRate>;
+// ModelRate/PricingTable now live in shared/pricing-contract.ts (ARCH-settings-local-store.md
+// A3) since both the client pricing editor and this module need the shape. Re-exported here so
+// every existing importer of these types from this module keeps compiling unchanged.
+export type { ModelRate, PricingTable };
 
 // Placeholder values (V1's flat legacy rates), applied identically across all
 // four known model names for now — explicit decision this session: assume
@@ -25,16 +21,16 @@ const PLACEHOLDER_RATE: ModelRate = { input: 5.0, output: 25.0, cacheRead: 0.5, 
 
 /**
  * The Opus model key — used both as the pricing-table entry and as the
- * counterfactual assumption in `routingSavingsComputed`.
+ * counterfactual assumption in `routingSavingsComputed`. The default
+ * pricing table's full key list comes from the shared pricing contract
+ * (`DEFAULT_MODEL_KEYS`) so the client pricing editor (#P4-15) and the
+ * server defaults can't drift on a future model addition.
  */
 export const OPUS_MODEL_KEY = "claude-opus-4-8";
 
-export const DEFAULT_PRICING_TABLE: PricingTable = {
-  "claude-sonnet-5": PLACEHOLDER_RATE,
-  "claude-fable-5": PLACEHOLDER_RATE,
-  [OPUS_MODEL_KEY]: PLACEHOLDER_RATE,
-  "claude-haiku-4-5": PLACEHOLDER_RATE,
-};
+export const DEFAULT_PRICING_TABLE: PricingTable = Object.fromEntries(
+  DEFAULT_MODEL_KEYS.map((model) => [model, PLACEHOLDER_RATE]),
+) as PricingTable;
 
 /** An already-filtered/grouped/bucketed slice of data for one (measure x group x bucket) cell. */
 export interface MeasureScope {
