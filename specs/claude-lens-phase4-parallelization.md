@@ -90,7 +90,7 @@ lanes concurrently unless their start-time plans prove the edits are isolated.
 | #P4-9 / #41 Cache Lab | #34 | 5 | Cache Lab | ✅ closed |
 | #P4-10 / #42 Trends/Budget | #34 | 4 | Dashboard, config | ✅ closed |
 | #P4-3 / #35 Search | #36 and #37 | 2 | Sessions | ⚪ open |
-| #P4-6 / #38 Turn Inspector | #37 | 4 | Turn Inspector | 🟠 In progress (`feat/38/turn-inspector`) |
+| #P4-6 / #38 Turn Inspector | #37 | 4 | Turn Inspector | ⚪ open |
 | #P4-11 / #43 Gates engine | #41 | 4 | gate/config plumbing | ✅ closed |
 | #P4-12 / #44 Report Card UI | #36, #37, #38, #39, #42, and #43 | 2 | cross-page integration | ⚪ open |
 | #P4-13 / #45 Premium upgrades | #36, #37, #38, #40, and #41 | 3 | cross-page integration | ⚪ open |
@@ -124,35 +124,35 @@ issue in the graph is placed. Read top to bottom instead of re-solving the graph
 replace §3 — if the two ever disagree after a plan/architecture change, §3 wins and this table gets
 regenerated.
 
-| # | Issue | Unlocked by (last gate cleared) |
-|---:|---|---|
-| 1 | #33 | #32, #85 (external prerequisites) |
-| 2 | #84 | #33 |
-| 3 | #34 | #84 |
-| 4 | #37 | #34 |
-| 5 | #41 | #34 |
-| 6 | #36 | #34 |
-| 7 | #38 | #37 |
-| 8 | #42 | #34 |
-| 9 | #43 | #41 |
-| 10 | #40 | #34 |
-| 11 | #39 | #34 |
-| 12 | #45 | #36, #37, #38, #40, #41 |
-| 13 | #47 | #36, #37, #42, #43 |
-| 14 | #35 | #36, #37 |
-| 15 | #44 | #36, #37, #38, #39, #42, #43 |
-| 16 | #46 | #45 |
-| 17 | #48 | #47 |
-| 18 | #49 | #36 |
-| 19 | #50 | #35–#49, all merged |
+| # | Issue | Unlocked by (last gate cleared) | Status |
+|---:|---|---|---|
+| 1 | #33 | #32, #85 (external prerequisites) | ✅ closed |
+| 2 | #84 | #33 | ✅ closed |
+| 3 | #34 | #84 | ✅ closed |
+| 4 | #37 | #34 | ✅ closed |
+| 5 | #41 | #34 | ✅ closed |
+| 6 | #36 | #34 | ✅ closed |
+| 7 | #38 | #37 | ⚪ open |
+| 8 | #42 | #34 | ✅ closed |
+| 9 | #43 | #41 | ✅ closed |
+| 10 | #40 | #34 | ✅ closed |
+| 11 | #39 | #34 | ✅ closed |
+| 12 | #45 | #36, #37, #38, #40, #41 | ⚪ open |
+| 13 | #47 | #36, #37, #42, #43 | ⚪ open |
+| 14 | #35 | #36, #37 | ⚪ open |
+| 15 | #44 | #36, #37, #38, #39, #42, #43 | ⚪ open |
+| 16 | #46 | #45 | ⚪ open |
+| 17 | #48 | #47 | ⚪ open |
+| 18 | #49 | #36 | ⚪ open |
+| 19 | #50 | #35–#49, all merged | ⚪ open |
 
 Notes:
 
 - This is a *single-file* order. With 3 lanes, several adjacent rows run concurrently — e.g. rows 4
   and 5 (#37, #41) open together, and after #34 no more than 3 of rows 4–11 are ever in flight at
   once. The row number is priority order, not a turn number.
-- Live status (closed/in-flight/open) is not embedded here because it goes stale; check current
-  state per §6 before starting any row.
+- Status mirrors §3 and goes stale; verify against §6 before opening any row, and refresh this
+  column alongside the next §13 snapshot.
 
 ---
 
