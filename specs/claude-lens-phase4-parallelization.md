@@ -116,6 +116,44 @@ Premium C/B/L fixtures belong to #P4-13. The filed #P4-13 dependency text that c
 completed #P0-3 foundation is stale: #P0-3/P2-2 delivered the transcript fixture base. This
 scheduling clarification does not mutate the filed issue body.
 
+### 3a. Implementation sequence (derived, not authoritative)
+
+The graph above is the source of truth; this is one linear walk through it, produced by applying
+the §4 tie-break rule (depth desc → descendant count desc → issue number asc) greedily until every
+issue in the graph is placed. Read top to bottom instead of re-solving the graph. It does not
+replace §3 — if the two ever disagree after a plan/architecture change, §3 wins and this table gets
+regenerated.
+
+| # | Issue | Unlocked by (last gate cleared) |
+|---:|---|---|
+| 1 | #33 | #32, #85 (external prerequisites) |
+| 2 | #84 | #33 |
+| 3 | #34 | #84 |
+| 4 | #37 | #34 |
+| 5 | #41 | #34 |
+| 6 | #36 | #34 |
+| 7 | #38 | #37 |
+| 8 | #42 | #34 |
+| 9 | #43 | #41 |
+| 10 | #40 | #34 |
+| 11 | #39 | #34 |
+| 12 | #45 | #36, #37, #38, #40, #41 |
+| 13 | #47 | #36, #37, #42, #43 |
+| 14 | #35 | #36, #37 |
+| 15 | #44 | #36, #37, #38, #39, #42, #43 |
+| 16 | #46 | #45 |
+| 17 | #48 | #47 |
+| 18 | #49 | #36 |
+| 19 | #50 | #35–#49, all merged |
+
+Notes:
+
+- This is a *single-file* order. With 3 lanes, several adjacent rows run concurrently — e.g. rows 4
+  and 5 (#37, #41) open together, and after #34 no more than 3 of rows 4–11 are ever in flight at
+  once. The row number is priority order, not a turn number.
+- Live status (closed/in-flight/open) is not embedded here because it goes stale; check current
+  state per §6 before starting any row.
+
 ---
 
 ## 4. Default ready-queue scheduler
