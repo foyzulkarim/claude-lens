@@ -30,6 +30,12 @@ interface SessionState {
   sidecars: SessionSidecarFlags;
   turns: Turn[];
   session: Session | null;
+  /** Absolute path of this session's transcript `.jsonl` file, set by the
+   * ingest pipeline when the file is first discovered (#P4-6). Used only by
+   * the Turn Inspector transcript-peek route for an on-demand raw-file
+   * read — never affects derived Session/Turn shape, so setting it never
+   * marks the session dirty. */
+  transcriptPath?: string;
 }
 
 /**
@@ -143,6 +149,25 @@ export class Store {
     if (kind === "cost") state.sidecars.hasCostSamples = true;
     if (kind === "turn-boundaries") state.sidecars.hasTurnBoundaries = true;
     this.invalidator.markDirty(sessionId);
+  }
+
+  /**
+   * Record the absolute path of a session's transcript file (#P4-6, Turn
+   * Inspector's lazy transcript-peek route). Overwrites rather than
+   * appends, so a rotated/replaced file's new path always wins. Does
+   * **not** call `markDirty` — this is not derived-session metadata, and
+   * marking it dirty would trigger a spurious recompute + WS broadcast
+   * every time the poller's fast-stat loop re-touches the file.
+   */
+  setTranscriptPath(sessionId: string, path: string): void {
+    const state = this.stateFor(sessionId);
+    state.transcriptPath = path;
+  }
+
+  /** Absolute path of a session's transcript file, or `undefined` if the
+   * session is unknown or no transcript file has been observed yet. */
+  getTranscriptPath(sessionId: string): string | undefined {
+    return this.sessions.get(sessionId)?.transcriptPath;
   }
 
   /** Clear a session's accumulated state (tailer file-reset/truncation path). */

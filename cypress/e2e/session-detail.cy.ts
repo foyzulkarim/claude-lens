@@ -102,8 +102,10 @@ describe("session detail smoke", () => {
     cy.get('[data-testid="turn-drill-2"]').click();
 
     cy.location("pathname").should("eq", `/session/${SESSION_ID}/turn/2`);
-    cy.contains(`session ${SESSION_ID}`).should("be.visible");
-    cy.contains("turn #2").should("be.visible");
+    cy.get('[data-testid="turn-inspector-summary"]').within(() => {
+      cy.contains("Turn 2 of 2").should("be.visible");
+      cy.contains(SESSION_ID.slice(0, 8)).should("be.visible");
+    });
   });
 
   it("preserves active query filters when navigating back to Sessions", () => {

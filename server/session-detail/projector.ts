@@ -67,7 +67,7 @@ const PLAN_TOOLS = new Set([
 const VERIFY_TOOLS = new Set(["Bash"]); // Bash invocations serve as the run-the-checks step
 const GIT_COMMIT_KIND = "git-commit";
 
-function addUsage(usage: TokenUsage, other: TokenUsage): void {
+export function addUsage(usage: TokenUsage, other: TokenUsage): void {
   usage.inputTokens += other.inputTokens;
   usage.outputTokens += other.outputTokens;
   usage.cacheReadTokens += other.cacheReadTokens;
@@ -80,7 +80,7 @@ function addUsage(usage: TokenUsage, other: TokenUsage): void {
   }
 }
 
-function emptyUsage(): TokenUsage {
+export function emptyUsage(): TokenUsage {
   return { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreateTokens: 0 };
 }
 
@@ -89,16 +89,16 @@ function emptyUsage(): TokenUsage {
  * calls (0.1 + 0.2 = 0.30000000000000004). Every $ field flows through
  * this so the wire response is stable across callers (#P4-5 invariant —
  * Session Detail must equal the dashboard per-turn sum). */
-function roundCost(value: number): number {
+export function roundCost(value: number): number {
   if (!Number.isFinite(value)) return value;
   return Math.round(value * 1_000_000) / 1_000_000;
 }
 
-function totalTokens(usage: TokenUsage): number {
+export function totalTokens(usage: TokenUsage): number {
   return usage.inputTokens + usage.outputTokens + usage.cacheReadTokens + usage.cacheCreateTokens;
 }
 
-function percentileRank(sortedAsc: number[], value: number): number | null {
+export function percentileRank(sortedAsc: number[], value: number): number | null {
   if (sortedAsc.length === 0) return null;
   // Floor-rank: strictly-less values below, equal-or-greater above. Returns
   // 0..100. Null when the population is empty.
@@ -187,12 +187,12 @@ function buildHeader(
 // Timeline
 // ---------------------------------------------------------------------------
 
-interface CallTimelineContext {
+export interface CallTimelineContext {
   previousModel?: string;
   seenCompaction: boolean;
 }
 
-function buildTimeline(
+export function buildTimeline(
   orderedCalls: ApiCall[],
   logicalTurns: LogicalTurn[],
   orderedCompactions: CompactionRecord[],
@@ -291,14 +291,17 @@ function buildTimeline(
 // Cache strip + K2-compatible cause classification
 // ---------------------------------------------------------------------------
 
-function classifyCacheCause(ctx: CallTimelineContext, call: ApiCall): SessionDetailCacheCause {
+export function classifyCacheCause(
+  ctx: CallTimelineContext,
+  call: ApiCall,
+): SessionDetailCacheCause {
   if (ctx.seenCompaction) return "compaction";
   if (ctx.previousModel === undefined) return "first-call";
   if (ctx.previousModel !== call.model) return "model-switch";
   return "unexplained";
 }
 
-function buildCacheStrip(
+export function buildCacheStrip(
   orderedCalls: ApiCall[],
   compactionsAfterCall: boolean[],
 ): SessionDetailCachePoint[] {

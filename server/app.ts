@@ -10,6 +10,7 @@ import { registerGatesRoute } from "./routes/gates.js";
 import { registerMetricsRoute } from "./routes/metrics.js";
 import { registerSessionDetailRoute } from "./routes/session-detail.js";
 import { registerSessionsRoute } from "./routes/sessions.js";
+import { registerTurnInspectorRoute } from "./routes/turn-inspector.js";
 import type { RuntimeMetadata } from "./runtime.js";
 import type { Store } from "./store/store.js";
 import { type Broadcaster, createBroadcaster } from "./ws/broadcaster.js";
@@ -117,6 +118,12 @@ export function buildApp({
   registerConfigRoute(app, configPath ? { configPath } : undefined);
 
   registerSessionDetailRoute(
+    app,
+    store,
+    metadata ? { pricer: metadata.pricer, contextResolver: metadata.contextResolver } : undefined,
+  );
+
+  registerTurnInspectorRoute(
     app,
     store,
     metadata ? { pricer: metadata.pricer, contextResolver: metadata.contextResolver } : undefined,
