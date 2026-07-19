@@ -86,9 +86,9 @@ lanes concurrently unless their start-time plans prove the edits are isolated.
 | #P4-4 / #36 Sessions | #34 | 4 | Sessions | ✅ closed |
 | #P4-5 / #37 Session Detail | #34 | 5 | Session Detail | ✅ closed |
 | #P4-7 / #39 Projects | #34 | 3 | Projects | ⚪ open |
-| #P4-8 / #40 Models | #34 | 4 | Models | ⚪ open |
+| #P4-8 / #40 Models | #34 | 4 | Models | ✅ closed |
 | #P4-9 / #41 Cache Lab | #34 | 5 | Cache Lab | ✅ closed |
-| #P4-10 / #42 Trends/Budget | #34 | 4 | Dashboard, config | ⚪ open |
+| #P4-10 / #42 Trends/Budget | #34 | 4 | Dashboard, config | ✅ closed |
 | #P4-3 / #35 Search | #36 and #37 | 2 | Sessions | ⚪ open |
 | #P4-6 / #38 Turn Inspector | #37 | 4 | Turn Inspector | 🟠 In progress (`feat/38/turn-inspector`) |
 | #P4-11 / #43 Gates engine | #41 | 4 | gate/config plumbing | ⚪ open |
@@ -399,6 +399,11 @@ Do not parallelize it. Each task consumes the prior task's output.
 
 Informational only; always refresh using §6.
 
+- 2026-07-19 (updated): #40 and #42 have also merged and been archived since the earlier
+  2026-07-19 entry below. Remaining open: #35, #38, #39, #43, #44, #45, #46, #47, #48, #49,
+  #50. #38 is still in flight on `feat/38/turn-inspector` (worktree `.worktrees/38`, no PR
+  yet) and is the only active lane; the §4 ready queue with #38 occupying one lane selects
+  **#43 and #39** to fill the two free lanes.
 - 2026-07-19: The serial spine (#33 → #84 → #34) has fully landed. Closed since the
   2026-07-17 snapshot: #33, #84, #34, #36, #37, #41. Remaining open: #35, #38, #39, #40,
   #42, #43, #44, #45, #46, #47, #48, #49, #50. #38 is in flight on
