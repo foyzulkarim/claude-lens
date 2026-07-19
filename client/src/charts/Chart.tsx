@@ -8,12 +8,14 @@ import { BarChart, HeatmapChart, LineChart, ScatterChart } from "echarts/charts"
 import type {
   CalendarComponentOption,
   GridComponentOption,
+  LegendComponentOption,
   TooltipComponentOption,
   VisualMapComponentOption,
 } from "echarts/components";
 import {
   CalendarComponent,
   GridComponent,
+  LegendComponent,
   TooltipComponent,
   VisualMapComponent,
 } from "echarts/components";
@@ -27,7 +29,9 @@ import type { TimeseriesOption } from "./timeseries.js";
 // (ARCH A9; ARCH-trends-calendar-budget.md A4). Every addition here is
 // purely additive — existing line/bar/scatter consumers are untouched, and
 // the lifecycle (`init`/`resize`/`setOption`/`on`/`dispose`) is shared
-// across families.
+// across families. LegendComponent is required by any option that sets
+// `legend:` (Cache Lab and Models both do) — without it ECharts silently
+// drops the legend and logs a console error instead of throwing.
 echarts.use([
   LineChart,
   BarChart,
@@ -37,6 +41,7 @@ echarts.use([
   TooltipComponent,
   CalendarComponent,
   VisualMapComponent,
+  LegendComponent,
   CanvasRenderer,
 ]);
 
@@ -54,6 +59,7 @@ export type ChartOption = ComposeOption<
   | TooltipComponentOption
   | CalendarComponentOption
   | VisualMapComponentOption
+  | LegendComponentOption
 >;
 
 export interface ChartProps {

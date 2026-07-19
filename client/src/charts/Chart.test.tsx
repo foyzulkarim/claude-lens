@@ -27,6 +27,7 @@ vi.mock("echarts/components", () => ({
   TooltipComponent: {},
   CalendarComponent: {},
   VisualMapComponent: {},
+  LegendComponent: {},
 }));
 vi.mock("echarts/renderers", () => ({ CanvasRenderer: {} }));
 
