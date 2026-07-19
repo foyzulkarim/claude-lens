@@ -185,7 +185,7 @@ Pages are cheap by design: filter state + preset `MetricsQuery`s + layout. The H
 - [x] **#P4-9 — Cache Lab page** *(§7)*
   Fleet totals + hit-rate histogram/trend, input composition, busts net panel, **miss-attribution classifier (K2 base + TTL-lapse heuristic)**, TTL bucket mix, baseline weight trend, $ saved + counterfactual, invalidation gallery + cost-by-cause trend. The classifier built here is reused by gate K2.
   *Acceptance:* matches `cache-lab.html`; classifier has unit tests on fixtures.
-- [ ] **#P4-10 — Trends, Calendar & Budget page** *(§8)*
+- [x] **#P4-10 — Trends, Calendar & Budget page** *(§8)*
   Calendar heatmap, hour×weekday heatmap, stacked weekly bars, Pareto, rolling efficiency, forecast (EWMA, labeled naive), budget config + projection band + Dashboard threshold alert. Includes a minimal `settings.ts` + `GET/PUT /api/config` limited to the budget value (#P4-15 extends it to the full config surface). Gate pass-rate trend stubs until #P4-12.
   *Acceptance:* matches `trends.html`; budget value persists in `~/.claude-lens/config.json`.
 - [ ] **#P4-11 — Gates engine** *(gates.md)*
