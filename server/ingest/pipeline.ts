@@ -77,6 +77,7 @@ export function startIngest(config: ScanConfig, options: IngestPipelineOptions):
   const poller = new Poller(config, {
     onFileAdded(file) {
       if (file.class === "transcript") {
+        if (file.sessionId) store.setTranscriptPath(file.sessionId, file.path);
         track(tailer.onFileAdded(file));
         return;
       }
@@ -88,6 +89,7 @@ export function startIngest(config: ScanConfig, options: IngestPipelineOptions):
     },
     onFileChanged(file) {
       if (file.class === "transcript") {
+        if (file.sessionId) store.setTranscriptPath(file.sessionId, file.path);
         track(tailer.onFileChanged(file));
       }
       // Sidecar file content changes (cost/turn-boundaries/cost-log) are not

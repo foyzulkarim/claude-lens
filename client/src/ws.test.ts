@@ -51,14 +51,15 @@ describe("invalidateForMessage", () => {
     expect(spy).toHaveBeenCalledWith({ queryKey: ["sessions"] });
   });
 
-  it("invalidates metrics, the session prefix, AND the sessions prefix on session-updated", () => {
+  it("invalidates metrics, the session prefix, the turn-inspector prefix, AND the sessions prefix on session-updated", () => {
     const queryClient = new QueryClient();
     const spy = vi.spyOn(queryClient, "invalidateQueries");
     invalidateForMessage(queryClient, { type: "session-updated", sessionId: "s1" });
     expect(spy).toHaveBeenNthCalledWith(1, { queryKey: ["metrics"] });
     expect(spy).toHaveBeenNthCalledWith(2, { queryKey: ["session", "s1"] });
-    expect(spy).toHaveBeenNthCalledWith(3, { queryKey: ["sessions"] });
-    expect(spy).toHaveBeenCalledTimes(3);
+    expect(spy).toHaveBeenNthCalledWith(3, { queryKey: ["turn-inspector", "s1"] });
+    expect(spy).toHaveBeenNthCalledWith(4, { queryKey: ["sessions"] });
+    expect(spy).toHaveBeenCalledTimes(4);
   });
 
   it("invalidates only the matching detail key when two session IDs are mounted", () => {
@@ -72,6 +73,10 @@ describe("invalidateForMessage", () => {
     invalidateForMessage(queryClient, { type: "session-updated", sessionId: "s1" });
     expect(spy).toHaveBeenCalledWith({ queryKey: ["session", "s1"] });
     expect(spy).not.toHaveBeenCalledWith({ queryKey: ["session", "s2"] });
+    // Same scoping for the Turn Inspector prefix — a `session-updated`
+    // for `s1` must NOT invalidate a Turn Inspector mounted on `s2`.
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["turn-inspector", "s1"] });
+    expect(spy).not.toHaveBeenCalledWith({ queryKey: ["turn-inspector", "s2"] });
   });
 
   it("invalidates the sessions prefix on session-updated", () => {
@@ -175,7 +180,8 @@ describe("connectWs", () => {
     vi.advanceTimersByTime(INVALIDATION_COALESCE_MS);
 
     // One shared metrics invalidation and one shared sessions invalidation —
-    // not three of each — plus exactly one detail invalidation per session.
+    // not three of each — plus exactly one detail invalidation per session
+    // (session detail + turn inspector, both keyed by sessionId).
     const metricsCalls = spy.mock.calls.filter(
       ([arg]) => JSON.stringify(arg) === JSON.stringify({ queryKey: ["metrics"] }),
     );
@@ -187,7 +193,11 @@ describe("connectWs", () => {
     expect(spy).toHaveBeenCalledWith({ queryKey: ["session", "s1"] });
     expect(spy).toHaveBeenCalledWith({ queryKey: ["session", "s2"] });
     expect(spy).toHaveBeenCalledWith({ queryKey: ["session", "s3"] });
-    expect(spy).toHaveBeenCalledTimes(5);
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["turn-inspector", "s1"] });
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["turn-inspector", "s2"] });
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["turn-inspector", "s3"] });
+    // 1 metrics + 1 sessions + 3 session detail + 3 turn-inspector = 8.
+    expect(spy).toHaveBeenCalledTimes(8);
   });
 
   it("includes a message that arrives mid-window (after the timer is scheduled but before it fires)", () => {
@@ -210,6 +220,8 @@ describe("connectWs", () => {
 
     expect(spy).toHaveBeenCalledWith({ queryKey: ["session", "s1"] });
     expect(spy).toHaveBeenCalledWith({ queryKey: ["session", "s2"] });
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["turn-inspector", "s1"] });
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["turn-inspector", "s2"] });
     const metricsCalls = spy.mock.calls.filter(
       ([arg]) => JSON.stringify(arg) === JSON.stringify({ queryKey: ["metrics"] }),
     );
@@ -233,7 +245,8 @@ describe("connectWs", () => {
     expect(spy).toHaveBeenCalledWith({ queryKey: ["metrics"] });
     expect(spy).toHaveBeenCalledWith({ queryKey: ["sessions"] });
     expect(spy).toHaveBeenCalledWith({ queryKey: ["session", "s1"] });
-    expect(spy).toHaveBeenCalledTimes(3);
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["turn-inspector", "s1"] });
+    expect(spy).toHaveBeenCalledTimes(4);
   });
 
   it("does not apply pending batched invalidations after dispose", () => {

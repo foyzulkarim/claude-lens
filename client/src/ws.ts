@@ -63,10 +63,20 @@ type InvalidationAction =
   | { kind: "all" }
   | { kind: "metrics" }
   | { kind: "sessions" }
-  | { kind: "session"; sessionId: string };
+  | { kind: "session"; sessionId: string }
+  | { kind: "turnInspectorSession"; sessionId: string };
 
 function actionKey(action: InvalidationAction): string {
-  return action.kind === "session" ? `session:${action.sessionId}` : action.kind;
+  switch (action.kind) {
+    case "session":
+      return `session:${action.sessionId}`;
+    case "turnInspectorSession":
+      return `turnInspectorSession:${action.sessionId}`;
+    case "all":
+    case "metrics":
+    case "sessions":
+      return action.kind;
+  }
 }
 
 /**
@@ -87,10 +97,14 @@ function actionsForMessage(message: WsServerMessage): InvalidationAction[] {
       // Per-session invalidation (ARCH T5, #P4-5): mounted detail queries
       // for THIS session refetch; the metrics/list paths invalidate too
       // because the row's badge/cost can shift as a side effect of the
-      // append.
+      // append. The Turn Inspector is keyed under its own
+      // `["turn-inspector", sessionId, ...]` prefix (not `qk.session`), so
+      // it needs its own action — without this, an open inspector would
+      // stay stale until a manual remount or a `scan-updated` arrived.
       return [
         { kind: "metrics" },
         { kind: "session", sessionId: message.sessionId },
+        { kind: "turnInspectorSession", sessionId: message.sessionId },
         { kind: "sessions" },
       ];
     default: {
@@ -116,6 +130,11 @@ function applyInvalidationAction(queryClient: QueryClient, action: InvalidationA
       return;
     case "session":
       queryClient.invalidateQueries({ queryKey: qk.session(action.sessionId) });
+      return;
+    case "turnInspectorSession":
+      queryClient.invalidateQueries({
+        queryKey: qk.prefixes.turnInspectorForSession(action.sessionId),
+      });
       return;
     default: {
       // Exhaustive check, mirroring actionsForMessage's switch above: a

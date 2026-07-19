@@ -12,6 +12,7 @@ import { registerMetricsRoute } from "./routes/metrics.js";
 import { registerSessionDetailRoute } from "./routes/session-detail.js";
 import { registerSessionsRoute } from "./routes/sessions.js";
 import { registerTagsRoute } from "./routes/tags.js";
+import { registerTurnInspectorRoute } from "./routes/turn-inspector.js";
 import { registerViewsRoute } from "./routes/views.js";
 import type { RuntimeMetadata } from "./runtime.js";
 import type { Store } from "./store/store.js";
@@ -137,6 +138,12 @@ export function buildApp({
   registerViewsRoute(app, { localStorePath });
 
   registerTagsRoute(app, { localStorePath });
+
+  registerTurnInspectorRoute(
+    app,
+    store,
+    metadata ? { pricer: metadata.pricer, contextResolver: metadata.contextResolver } : undefined,
+  );
 
   registerGatesRoute(
     app,

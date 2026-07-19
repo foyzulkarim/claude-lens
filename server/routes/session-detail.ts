@@ -6,7 +6,7 @@ import type {
 import { projectSessionDetail, type RuntimeMetadata } from "../session-detail/projector.js";
 import { readConfig } from "../settings.js";
 import type { Pricer } from "../store/derive-session.js";
-import { aggregateLogicalTurnCost, groupLogicalTurns } from "../store/logical-turns.js";
+import { buildFleetBaselines } from "../store/fleet-baselines.js";
 import type { Store } from "../store/store.js";
 
 // GET /api/sessions/:id — Session Detail (ARCH T5 / #P4-5).
@@ -23,25 +23,6 @@ export interface RegisterSessionDetailRouteOptions {
   contextResolver?: (model: string) => number | null;
   /** Overrides the on-disk config path — tests only; production always uses `~/.claude-lens/config.json`. */
   configPath?: string;
-}
-
-function buildFleetBaselines(
-  store: Store,
-  pricer: Pricer | undefined,
-): { fleetTurnCosts: number[]; fleetSessionCosts: number[] } {
-  // Lazy cross-session recompute, identical to the metrics route — the
-  // Store guards this with staleness checks and the debounce window. The
-  // result is the documented "all-history" baseline; Phase 5 owns any
-  // switch to a sampled/paginated variant. (#P4-5, A5)
-  const sessions = store.listSessions();
-  const turns = store.listTurns();
-  const fleetTurnCosts: number[] = [];
-  for (const logicalTurn of groupLogicalTurns(turns)) {
-    if (!pricer) continue;
-    fleetTurnCosts.push(aggregateLogicalTurnCost(logicalTurn, pricer));
-  }
-  const fleetSessionCosts = sessions.map((s) => s.costComputed);
-  return { fleetTurnCosts, fleetSessionCosts };
 }
 
 export function registerSessionDetailRoute(
