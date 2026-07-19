@@ -1,7 +1,7 @@
 import { QueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WsServerMessage } from "../../shared/ws-protocol.js";
-import { connectWs, invalidateForMessage, type WsLike } from "./ws.js";
+import { connectWs, INVALIDATION_COALESCE_MS, invalidateForMessage, type WsLike } from "./ws.js";
 
 class FakeSocket implements WsLike {
   onopen: (() => void) | null = null;
@@ -138,7 +138,7 @@ describe("connectWs", () => {
     expect(spy).toHaveBeenCalledExactlyOnceWith();
   });
 
-  it("routes an inbound message through invalidateForMessage", () => {
+  it("routes an inbound message through the invalidation batcher", () => {
     const queryClient = new QueryClient();
     const spy = vi.spyOn(queryClient, "invalidateQueries");
     const { sockets, createSocket } = harness();
@@ -146,13 +146,62 @@ describe("connectWs", () => {
     connectWs(queryClient, { url: "ws://test/ws", createSocket });
     sockets[0].onmessage?.({ data: JSON.stringify({ type: "session-added", sessionId: "s1" }) });
 
+    // Batched, not applied synchronously (#P4-20) — nothing fires until the
+    // coalescing window elapses.
+    expect(spy).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(INVALIDATION_COALESCE_MS);
+
     // A single inbound `session-added` message triggers both metrics- and
     // sessions-prefix invalidations (aggregate metrics + the list itself
     // are stale). The router passes both through; this test guards the
-    // connectWs→onmessage→invalidateForMessage wiring, not the prefix set.
+    // connectWs→onmessage→batcher wiring, not the prefix set.
     expect(spy).toHaveBeenCalledWith({ queryKey: ["metrics"] });
     expect(spy).toHaveBeenCalledWith({ queryKey: ["sessions"] });
     expect(spy).toHaveBeenCalledTimes(2);
+  });
+
+  it("coalesces multiple session-updated messages within one window into a single metrics/sessions invalidation, keeping each session's own detail invalidation", () => {
+    const queryClient = new QueryClient();
+    const spy = vi.spyOn(queryClient, "invalidateQueries");
+    const { sockets, createSocket } = harness();
+
+    connectWs(queryClient, { url: "ws://test/ws", createSocket });
+    // Three concurrently-active sessions each flush within the same window —
+    // this is the #P4-20 fan-out scenario (N sessions, N raw messages).
+    sockets[0].onmessage?.({ data: JSON.stringify({ type: "session-updated", sessionId: "s1" }) });
+    sockets[0].onmessage?.({ data: JSON.stringify({ type: "session-updated", sessionId: "s2" }) });
+    sockets[0].onmessage?.({ data: JSON.stringify({ type: "session-updated", sessionId: "s3" }) });
+
+    vi.advanceTimersByTime(INVALIDATION_COALESCE_MS);
+
+    // One shared metrics invalidation and one shared sessions invalidation —
+    // not three of each — plus exactly one detail invalidation per session.
+    const metricsCalls = spy.mock.calls.filter(
+      ([arg]) => JSON.stringify(arg) === JSON.stringify({ queryKey: ["metrics"] }),
+    );
+    const sessionsCalls = spy.mock.calls.filter(
+      ([arg]) => JSON.stringify(arg) === JSON.stringify({ queryKey: ["sessions"] }),
+    );
+    expect(metricsCalls).toHaveLength(1);
+    expect(sessionsCalls).toHaveLength(1);
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["session", "s1"] });
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["session", "s2"] });
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["session", "s3"] });
+    expect(spy).toHaveBeenCalledTimes(5);
+  });
+
+  it("does not apply pending batched invalidations after dispose", () => {
+    const queryClient = new QueryClient();
+    const spy = vi.spyOn(queryClient, "invalidateQueries");
+    const { sockets, createSocket } = harness();
+
+    const dispose = connectWs(queryClient, { url: "ws://test/ws", createSocket });
+    sockets[0].onmessage?.({ data: JSON.stringify({ type: "session-added", sessionId: "s1" }) });
+    dispose();
+    spy.mockClear();
+
+    vi.advanceTimersByTime(INVALIDATION_COALESCE_MS);
+    expect(spy).not.toHaveBeenCalled();
   });
 
   it("ignores malformed frames without throwing", () => {
@@ -162,6 +211,7 @@ describe("connectWs", () => {
 
     connectWs(queryClient, { url: "ws://test/ws", createSocket });
     expect(() => sockets[0].onmessage?.({ data: "not json" })).not.toThrow();
+    vi.advanceTimersByTime(INVALIDATION_COALESCE_MS);
     expect(spy).not.toHaveBeenCalled();
   });
 
