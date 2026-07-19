@@ -173,7 +173,7 @@ Pages are cheap by design: filter state + preset `MetricsQuery`s + layout. The H
 - [x] **#P4-5 — Session Detail page** *(§3)*
   All sections except Report Card (lands in #P4-12): header, cumulative timeline, per-turn bars, turn table, turn-vs-history distribution, cache strip, tool mix, prompt list, workflow funnel, token funnel, context composition. Needs `GET /api/sessions/:id`.
   *Acceptance:* matches `session-detail.html`; live-updates during an active session.
-- [ ] **#P4-6 — Turn Inspector page** *(§4)*
+- [x] **#P4-6 — Turn Inspector page** *(§4)*
   Turn summary, API-call waterfall (timestamp-delta fallback widths), cache narrative, transcript peek (lazy raw-file read route), sidechain breakdown. Needs `GET /api/sessions/:id/turns/:n` and `/transcript?turn=n`.
   *Acceptance:* matches `turn-inspector.html`; reachable from Session Detail and gate evidence links.
 - [x] **#P4-7 — Projects page** *(§5)*
