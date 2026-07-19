@@ -20,6 +20,13 @@ export const LOCAL_STORE_STRING_MAX = 200;
  * filters live in the query string), captured under a user-given name.
  * `id`/`createdAt` are server-generated on `POST /api/views`, never
  * client-supplied.
+ *
+ * `pinned` (ARCH-explore-page.md A3) is the contract signal that lets the
+ * Dashboard pin target (#P4-2 / #34) filter `views.filter(v => v.pinned)`
+ * without inspecting `path`. Views saved from the Explore page default to
+ * `pinned: true`; views saved from the global FilterBar leave it
+ * undefined. Optional + additive — old `local.json` files without the
+ * field read back unchanged, and old server versions ignore the field.
  */
 export interface SavedView {
   id: string;
@@ -28,6 +35,12 @@ export interface SavedView {
   path: string;
   /** `location.search` at save time, e.g. "?range=7d&project=claude-lens". */
   search: string;
+  /**
+   * When true, the Dashboard pin target surfaces this view as a pinned tile.
+   * Undefined and false are equivalent (not pinned). See ARCH-explore-page.md
+   * A3 for the rationale.
+   */
+  pinned?: boolean;
   createdAt: string;
 }
 
@@ -47,26 +60,37 @@ export interface LocalStore {
  * when validating on-disk reads (review #19) — a hand-edited or
  * partially-corrupt `local.json` with `views: [{}]` would otherwise pass
  * the container check and surface `id: undefined` to the API surface.
+ *
+ * `pinned` is optional and additive (ARCH-explore-page.md A3). When
+ * present it must be a boolean — a string `"true"` would otherwise slip
+ * past and crash `Boolean(...)` consumers with a truthy-but-not-boolean
+ * value. When absent, the view reads back as not pinned.
  */
 export function isValidSavedView(value: unknown): value is SavedView {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const r = value as Record<string, unknown>;
-  return (
-    typeof r.id === "string" &&
-    r.id.length > 0 &&
-    r.id.length <= LOCAL_STORE_STRING_MAX &&
-    typeof r.name === "string" &&
-    r.name.trim().length > 0 &&
-    r.name.length <= LOCAL_STORE_STRING_MAX &&
-    typeof r.path === "string" &&
-    r.path.length > 0 &&
-    r.path.length <= LOCAL_STORE_STRING_MAX &&
-    typeof r.search === "string" &&
-    r.search.length <= LOCAL_STORE_STRING_MAX &&
-    typeof r.createdAt === "string" &&
-    r.createdAt.length > 0 &&
-    r.createdAt.length <= LOCAL_STORE_STRING_MAX
-  );
+  if (
+    !(
+      typeof r.id === "string" &&
+      r.id.length > 0 &&
+      r.id.length <= LOCAL_STORE_STRING_MAX &&
+      typeof r.name === "string" &&
+      r.name.trim().length > 0 &&
+      r.name.length <= LOCAL_STORE_STRING_MAX &&
+      typeof r.path === "string" &&
+      r.path.length > 0 &&
+      r.path.length <= LOCAL_STORE_STRING_MAX &&
+      typeof r.search === "string" &&
+      r.search.length <= LOCAL_STORE_STRING_MAX &&
+      typeof r.createdAt === "string" &&
+      r.createdAt.length > 0 &&
+      r.createdAt.length <= LOCAL_STORE_STRING_MAX
+    )
+  ) {
+    return false;
+  }
+  if (r.pinned !== undefined && typeof r.pinned !== "boolean") return false;
+  return true;
 }
 
 /** Type guard for the `tags[sessionId]` value — an array of non-empty
@@ -84,10 +108,12 @@ export function isValidTagList(value: unknown): value is string[] {
   return true;
 }
 
-/** `POST /api/views` request body: everything except the server-generated `id`/`createdAt`. */
+/** `POST /api/views` request body: everything except the server-generated
+ * `id`/`createdAt`. `pinned` is optional (ARCH-explore-page.md A3); when
+ * present it must be a boolean. */
 export function isValidSavedViewInput(
   value: unknown,
-): value is { name: string; path: string; search: string } {
+): value is { name: string; path: string; search: string; pinned?: boolean } {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const record = value as Record<string, unknown>;
   if (typeof record.name !== "string" || record.name.trim().length === 0) return false;
@@ -96,5 +122,6 @@ export function isValidSavedViewInput(
   if (record.path.length > LOCAL_STORE_STRING_MAX) return false;
   if (typeof record.search !== "string") return false;
   if (record.search.length > LOCAL_STORE_STRING_MAX) return false;
+  if (record.pinned !== undefined && typeof record.pinned !== "boolean") return false;
   return true;
 }
