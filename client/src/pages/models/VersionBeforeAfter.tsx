@@ -27,6 +27,11 @@ interface BucketSummary {
   bucket: string;
   major: number;
   minor: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreateTokens: number;
+  cost: number;
   tokensPerTurn: number | null;
   cacheHitPct: number | null;
   dollarsPerTurn: number | null;
@@ -84,6 +89,11 @@ function deriveBuckets(data: Series[] | undefined): BucketSummary[] {
         bucket,
         major,
         minor,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheCreateTokens: 0,
+        cost: 0,
         tokensPerTurn: null,
         cacheHitPct: null,
         dollarsPerTurn: null,
@@ -123,12 +133,20 @@ function deriveBuckets(data: Series[] | undefined): BucketSummary[] {
       }
     }
 
-    const eligible = input + cacheRead + cacheCreate;
-    summary.cacheHitPct = eligible > 0 ? cacheRead / eligible : null;
-    summary.tokensPerTurn = safeDiv(input + output, turns);
-    summary.dollarsPerTurn = safeDiv(cost, turns);
-    summary.turns = turns;
+    summary.inputTokens += input;
+    summary.outputTokens += output;
+    summary.cacheReadTokens += cacheRead;
+    summary.cacheCreateTokens += cacheCreate;
+    summary.cost += cost;
+    summary.turns += turns;
     summary.samples += 1;
+  }
+
+  for (const summary of map.values()) {
+    const eligible = summary.inputTokens + summary.cacheReadTokens + summary.cacheCreateTokens;
+    summary.cacheHitPct = eligible > 0 ? summary.cacheReadTokens / eligible : null;
+    summary.tokensPerTurn = safeDiv(summary.inputTokens + summary.outputTokens, summary.turns);
+    summary.dollarsPerTurn = safeDiv(summary.cost, summary.turns);
   }
 
   // Numeric sort by major then minor — string `"v10.0.x".localeCompare("v9.0.x")`

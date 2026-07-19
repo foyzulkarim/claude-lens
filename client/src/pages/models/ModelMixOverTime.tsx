@@ -58,7 +58,10 @@ export function ModelMixOverTime({ filters, grain, isPending }: ModelMixOverTime
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: filters covered by its stable serialized identity (filtersKey)
   const query = useMemo<SeriesMetricsQuery>(() => {
-    const measures: Measure[] = UNIT_MEASURES[unit];
+    // This chart needs one band per model. The shared token-display mapping
+    // includes both input and output tokens, which would return two series
+    // per model here; the Models-page contract specifies output tokens.
+    const measures: Measure[] = unit === "tokens" ? ["outputTokens"] : UNIT_MEASURES[unit];
     return {
       measures,
       dimensions: ["time", "model"],

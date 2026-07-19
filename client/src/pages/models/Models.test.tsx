@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Router } from "wouter";
@@ -26,6 +26,7 @@ vi.mock("../../charts/Chart.js", () => ({
 }));
 
 const { Models } = await import("./Models.js");
+const { VersionBeforeAfter } = await import("./VersionBeforeAfter.js");
 
 function emptySeries(): Series[] {
   return [];
@@ -143,5 +144,56 @@ describe("Models page shell", () => {
       expect(screen.getByTestId("locked-lines-per-cost")).toBeInTheDocument();
     });
     expect(screen.getByText(/linesAdded \/ linesRemoved/i)).toBeInTheDocument();
+  });
+
+  it("requests output tokens only for the model-mix token view", async () => {
+    postMetricsMock.mockResolvedValue(populatedSeries());
+    renderAt();
+
+    fireEvent.click(await screen.findByRole("button", { name: "tokens" }));
+
+    await waitFor(() => {
+      expect(postMetricsMock).toHaveBeenCalledWith(
+        expect.objectContaining({ dimensions: ["time", "model"], measures: ["outputTokens"] }),
+      );
+    });
+  });
+
+  it("derives version metrics from all measures in each bucket", () => {
+    const point = (value: number) => [{ t: "2026-07-01T00:00:00.000Z", value }];
+    const metrics = (version: string, values: Record<string, number>): Series[] =>
+      Object.entries(values).map(([measure, value]) => ({
+        measure: measure as Series["measure"],
+        dimensionKey: `version:${version}`,
+        label: version,
+        points: point(value),
+      }));
+
+    render(
+      <VersionBeforeAfter
+        data={[
+          ...metrics("3.18.0", {
+            inputTokens: 100,
+            outputTokens: 50,
+            cacheReadTokens: 30,
+            cacheCreateTokens: 10,
+            costComputed: 2,
+            turns: 10,
+          }),
+          ...metrics("3.19.0", {
+            inputTokens: 100,
+            outputTokens: 100,
+            cacheReadTokens: 50,
+            cacheCreateTokens: 50,
+            costComputed: 4,
+            turns: 10,
+          }),
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("15 tok/turn")).toBeInTheDocument();
+    expect(screen.getByText("21.4% cache")).toBeInTheDocument();
+    expect(screen.getByText("$0.20/turn")).toBeInTheDocument();
   });
 });
