@@ -260,4 +260,83 @@ describe("GET/PUT /api/config", () => {
     store.flushAll();
     expect(store.getSession("s1")?.host).toBe("mac-mini-home");
   });
+
+  it("PUT with scanRoots emits a scan-updated invalidation (review #19)", async () => {
+    const captured: import("../../shared/ws-protocol.js").WsServerMessage[] = [];
+    const storeWithCapture = new Store({ onInvalidate: (m) => captured.push(m) });
+    try {
+      const appWithCapture = buildApp({ store: storeWithCapture, logger: false, configPath });
+      try {
+        const put = await appWithCapture.inject({
+          method: "PUT",
+          url: "/api/config",
+          payload: { budget: 300, scanRoots: [{ path: "/roots/a", label: "mac-mini" }] },
+        });
+        expect(put.statusCode).toBe(200);
+        // updateHostLabels emits scan-updated immediately (no debounce —
+        // matches the existing markScanDirty broadcast semantics). Without
+        // this, already-mounted Sessions/Dashboard pages silently keep
+        // showing the old host label.
+        expect(captured.some((m) => m.type === "scan-updated")).toBe(true);
+      } finally {
+        await appWithCapture.close();
+      }
+    } finally {
+      storeWithCapture.stop();
+    }
+  });
+
+  it("an independent PUT with only `pricing` preserves a `budget` set in a prior PUT (review #19, ARCH Risk table)", async () => {
+    // ARCH-settings-local-store.md's Risk table explicitly calls this
+    // regression out: a Settings PUT that changes `pricing` must not
+    // clobber a `budget` set moments earlier by BudgetForecastPanel —
+    // writeConfig's merge-not-replace semantics is the mechanism, this
+    // test pins the contract across two requests rather than the same
+    // payload.
+    const first = await app.inject({
+      method: "PUT",
+      url: "/api/config",
+      payload: { budget: 300 },
+    });
+    expect(first.statusCode).toBe(200);
+
+    const second = await app.inject({
+      method: "PUT",
+      url: "/api/config",
+      payload: {
+        budget: 300,
+        pricing: { "claude-sonnet-5": { input: 3, output: 15, cacheRead: 0.3, cacheCreate: 3.75 } },
+      },
+    });
+    expect(second.statusCode).toBe(200);
+
+    const get = await app.inject({ method: "GET", url: "/api/config" });
+    expect(get.json()).toEqual({
+      budget: 300,
+      pricing: { "claude-sonnet-5": { input: 3, output: 15, cacheRead: 0.3, cacheCreate: 3.75 } },
+    });
+
+    // Same scenario in reverse order — pricing set first, then budget
+    // edited alone. The same merge-not-replace guarantee applies.
+    await app.inject({
+      method: "PUT",
+      url: "/api/config",
+      payload: {
+        budget: 300,
+        pricing: { "claude-sonnet-5": { input: 3, output: 15, cacheRead: 0.3, cacheCreate: 3.75 } },
+      },
+    });
+    const third = await app.inject({
+      method: "PUT",
+      url: "/api/config",
+      payload: { budget: 450 },
+    });
+    expect(third.statusCode).toBe(200);
+
+    const getAfter = await app.inject({ method: "GET", url: "/api/config" });
+    expect(getAfter.json()).toMatchObject({
+      budget: 450,
+      pricing: { "claude-sonnet-5": { input: 3, output: 15, cacheRead: 0.3, cacheCreate: 3.75 } },
+    });
+  });
 });

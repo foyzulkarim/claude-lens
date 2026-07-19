@@ -1,5 +1,9 @@
 import type { Measure } from "../../shared/metrics-contract.js";
-import type { ModelRate, PricingTable } from "../../shared/pricing-contract.js";
+import {
+  DEFAULT_MODEL_KEYS,
+  type ModelRate,
+  type PricingTable,
+} from "../../shared/pricing-contract.js";
 import type { ApiCall, Session, TokenUsage, Turn } from "../../shared/types.js";
 import { groupLogicalTurns } from "../store/logical-turns.js";
 
@@ -17,16 +21,16 @@ const PLACEHOLDER_RATE: ModelRate = { input: 5.0, output: 25.0, cacheRead: 0.5, 
 
 /**
  * The Opus model key — used both as the pricing-table entry and as the
- * counterfactual assumption in `routingSavingsComputed`.
+ * counterfactual assumption in `routingSavingsComputed`. The default
+ * pricing table's full key list comes from the shared pricing contract
+ * (`DEFAULT_MODEL_KEYS`) so the client pricing editor (#P4-15) and the
+ * server defaults can't drift on a future model addition.
  */
 export const OPUS_MODEL_KEY = "claude-opus-4-8";
 
-export const DEFAULT_PRICING_TABLE: PricingTable = {
-  "claude-sonnet-5": PLACEHOLDER_RATE,
-  "claude-fable-5": PLACEHOLDER_RATE,
-  [OPUS_MODEL_KEY]: PLACEHOLDER_RATE,
-  "claude-haiku-4-5": PLACEHOLDER_RATE,
-};
+export const DEFAULT_PRICING_TABLE: PricingTable = Object.fromEntries(
+  DEFAULT_MODEL_KEYS.map((model) => [model, PLACEHOLDER_RATE]),
+) as PricingTable;
 
 /** An already-filtered/grouped/bucketed slice of data for one (measure x group x bucket) cell. */
 export interface MeasureScope {

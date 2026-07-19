@@ -1,9 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { GateThresholds } from "../../../../shared/gates-contract.js";
 import { getConfig, putConfig } from "../../api/config.js";
 import { qk } from "../../api/queryKeys.js";
 import { TOGGLE_CLASS } from "../../ui/toggleStyles.js";
+import { useConfigSyncedFormState } from "./useConfigSyncedFormState.js";
 
 /** Mirrors `server/gates/thresholds.ts`'s `DEFAULT_GATE_THRESHOLDS` /
  * `specs/gates.md`'s "Configurable constants" table — duplicated as a
@@ -26,11 +27,37 @@ const GATE_FIELDS: { key: keyof GateThresholds; label: string }[] = [
   { key: "e2MaxLines", label: "E2 CLAUDE.md max lines" },
 ];
 
+interface ThresholdsSeed {
+  budgetInput: string;
+  anomalyInput: string;
+  gateThresholds: GateThresholds;
+}
+
+function seedThresholds(cfg: object): ThresholdsSeed {
+  const c = cfg as {
+    budget?: number | null;
+    anomalyFactor?: number;
+    gateThresholds?: Partial<GateThresholds>;
+  };
+  return {
+    budgetInput: c.budget != null ? String(c.budget) : "",
+    anomalyInput: c.anomalyFactor != null ? String(c.anomalyFactor) : "",
+    gateThresholds: { ...DEFAULT_GATE_THRESHOLDS, ...(c.gateThresholds ?? {}) },
+  };
+}
+
 /**
  * Budget, anomaly multiplier, and gate thresholds (#P4-15, pages spec
  * §10). Three previously-separate config surfaces (#P4-10's budget,
  * #P4-11's gateThresholds, this task's anomalyFactor) combined into one
  * panel per the mockup's "Budget & thresholds" table.
+ *
+ * Shares the Settings-page dirty-guard (review #19) — the three fields are
+ * written together with the rest of `AppConfig`, and a sibling panel's save
+ * would otherwise refetch the shared `["config"]` query and clobber the
+ * in-progress edits in this one. `useConfigSyncedFormState` flags dirty on
+ * the first update and skips reseeding until `accept()` is called after a
+ * successful save.
  */
 export function ThresholdsPanel() {
   const queryClient = useQueryClient();
@@ -39,20 +66,19 @@ export function ThresholdsPanel() {
     queryFn: ({ signal }) => getConfig(signal),
   });
 
-  const [budgetInput, setBudgetInput] = useState("");
-  const [anomalyInput, setAnomalyInput] = useState("");
-  const [gateThresholds, setGateThresholds] = useState<GateThresholds>(DEFAULT_GATE_THRESHOLDS);
+  const [seed, setSeed] = useState<ThresholdsSeed>({
+    budgetInput: "",
+    anomalyInput: "",
+    gateThresholds: { ...DEFAULT_GATE_THRESHOLDS },
+  });
   const [validationError, setValidationError] = useState<string | null>(null);
+  const sync = useConfigSyncedFormState<ThresholdsSeed>({
+    data: configQuery.data,
+    apply: seedThresholds,
+    setRows: setSeed,
+  });
 
-  useEffect(() => {
-    if (configQuery.data) {
-      setBudgetInput(configQuery.data.budget != null ? String(configQuery.data.budget) : "");
-      setAnomalyInput(
-        configQuery.data.anomalyFactor != null ? String(configQuery.data.anomalyFactor) : "",
-      );
-      setGateThresholds({ ...DEFAULT_GATE_THRESHOLDS, ...configQuery.data.gateThresholds });
-    }
-  }, [configQuery.data]);
+  const { budgetInput, anomalyInput, gateThresholds } = seed;
 
   const saveMutation = useMutation({
     mutationFn: (patch: {
@@ -61,15 +87,20 @@ export function ThresholdsPanel() {
       gateThresholds: GateThresholds;
     }) => putConfig(patch),
     onSuccess: () => {
+      sync.accept();
       queryClient.invalidateQueries({ queryKey: qk.prefixes.config });
     },
   });
 
   function updateGateField(key: keyof GateThresholds, value: string): void {
+    sync.markDirty();
     const n = Number(value);
-    setGateThresholds((prev) => ({
+    setSeed((prev) => ({
       ...prev,
-      [key]: Number.isFinite(n) && n >= 0 ? Math.round(n) : 0,
+      gateThresholds: {
+        ...prev.gateThresholds,
+        [key]: Number.isFinite(n) && n >= 0 ? Math.round(n) : 0,
+      },
     }));
   }
 
@@ -99,7 +130,7 @@ export function ThresholdsPanel() {
   }
 
   const errorMessage =
-    validationError ?? (saveMutation.isError ? (saveMutation.error as Error).message : null);
+    validationError ?? (saveMutation.isError ? (saveMutation.error?.message ?? null) : null);
 
   return (
     <section
@@ -151,7 +182,10 @@ export function ThresholdsPanel() {
                   step="1"
                   placeholder="not set"
                   value={budgetInput}
-                  onChange={(e) => setBudgetInput(e.target.value)}
+                  onChange={(e) => {
+                    sync.markDirty();
+                    setSeed((prev) => ({ ...prev, budgetInput: e.target.value }));
+                  }}
                   className="w-24 rounded border border-slate-200 bg-transparent px-1 py-0.5 text-right dark:border-[#2A323D]"
                 />
               </td>
@@ -168,7 +202,10 @@ export function ThresholdsPanel() {
                   step="0.1"
                   placeholder={String(DEFAULT_ANOMALY_FACTOR)}
                   value={anomalyInput}
-                  onChange={(e) => setAnomalyInput(e.target.value)}
+                  onChange={(e) => {
+                    sync.markDirty();
+                    setSeed((prev) => ({ ...prev, anomalyInput: e.target.value }));
+                  }}
                   className="w-24 rounded border border-slate-200 bg-transparent px-1 py-0.5 text-right dark:border-[#2A323D]"
                 />
               </td>

@@ -88,9 +88,15 @@ export interface RegisterConfigRouteOptions {
    * When provided, a PUT that changes `pricing` or `scanRoots` propagates
    * live into the running ingest Store (ARCH-settings-local-store.md A1) —
    * `pricing` via `Store.updatePricing()`, `scanRoots` via
-   * `Store.updateHostLabels()`. Both mark every session dirty; the next
-   * read recomputes with the new inputs, no restart needed. Optional so
-   * route tests that don't care about live propagation can omit it.
+   * `Store.updateHostLabels()`. The two paths are intentionally asymmetric:
+   * `updatePricing` marks every session dirty so the debounced
+   * `session-updated` flush recomputes each session with new inputs;
+   * `updateHostLabels` patches `Session.host` in place and fires an
+   * immediate `scan-updated` invalidation, since only the host label
+   * changed and every already-mounted page should refetch the new value
+   * (review #19). Both routes meet the acceptance criterion
+   * "without restart". Optional so route tests that don't care about live
+   * propagation can omit it.
    */
   store?: Store;
 }

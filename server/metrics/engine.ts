@@ -200,6 +200,16 @@ function sessionValueForDim(session: Session, dim: Dimension): string[] {
     case "model":
       return session.models.length > 0 ? session.models : [UNKNOWN];
     case "host":
+      // `Session.host` is documented as always non-empty (the Store
+      // falls back to the literal `"unlabeled"` when no root exists, see
+      // store.ts's updateHostLabels + derive-session.ts). So the `|| UNKNOWN`
+      // here is effectively unreachable for sessions in the index — but
+      // kept for symmetry with the other dimensions above and to surface a
+      // belt-and-braces fallback if a future change ever relaxes the
+      // contract. (`UNKNOWN` and `"unlabeled"` are intentionally distinct
+      // sentinels: `UNKNOWN` is the metrics-engine "this cell has no
+      // value" bucket shared by every dimension, `"unlabeled"` is the
+      // Session-level "this session has no known root" state.)
       return [session.host || UNKNOWN];
     case "sidechain":
     case "tool":

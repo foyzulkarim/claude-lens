@@ -121,6 +121,13 @@ export class Store {
    * `deriveTurns`/`deriveSession` recompute for every session on a pure
    * display-label rename, which would otherwise redo real derivation work
    * for a change that doesn't touch any session's calls/turns/pricing.
+   *
+   * Still emits a `scanDirty` invalidation so already-mounted
+   * Sessions/Dashboard pages refetch on relabel (review #19). The point of
+   * this method is "no restart", which would be defeated if an open page
+   * silently kept showing the old host until something unrelated triggered
+   * a refetch — `markScanDirty()` is the right shape here (rare, not
+   * bursty) and matches the existing `scanDirty()` broadcast semantics.
    */
   updateHostLabels(hostLabels: Map<string, string>): void {
     this.hostLabels = hostLabels;
@@ -130,6 +137,7 @@ export class Store {
       const host = rootPath ? (hostLabels.get(rootPath) ?? rootPath) : undefined;
       state.session = { ...state.session, host: host ?? "unlabeled" };
     }
+    this.invalidator.markScanDirty();
   }
 
   private stateFor(sessionId: string): SessionState {
@@ -156,6 +164,17 @@ export class Store {
    * discovered under) is recorded once, first-call-wins — a session's
    * `host` is resolved from this at recompute time via the live
    * `hostLabels` map, so relabeling never needs to touch `sessionRoot`.
+   *
+   * `rootPath` is intentionally optional (review #19) rather than
+   * required as the original ARCH risk-table assumption had it — the
+   * one production caller (`server/ingest/pipeline.ts`) does pass it,
+   * but the per-test call sites didn't need an artificial stub, and
+   * making it required would have forced ~15+ test rewrites without
+   * gaining any compile-time safety on the only caller that matters.
+   * The trade-off: a future caller that forgets to pass `file.root`
+   * silently gets `"unlabeled"` host instead of a type error. The
+   * pipeline call site is the documented contract holder; any future
+   * caller must thread `file.root` from `DiscoveredFile` through here.
    */
   applyRecords(sessionId: string, result: ParseTranscriptResult, rootPath?: string): void {
     const state = this.stateFor(sessionId);

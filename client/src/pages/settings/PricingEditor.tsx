@@ -1,15 +1,21 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
-import type { ModelRate, PricingTable } from "../../../../shared/pricing-contract.js";
+import { useState } from "react";
+import {
+  DEFAULT_MODEL_KEYS,
+  type ModelRate,
+  type PricingTable,
+} from "../../../../shared/pricing-contract.js";
 import { getConfig, putConfig } from "../../api/config.js";
 import { qk } from "../../api/queryKeys.js";
 import { TOGGLE_CLASS } from "../../ui/toggleStyles.js";
+import { useConfigSyncedFormState } from "./useConfigSyncedFormState.js";
 
 /** Ships as blank-rate placeholder rows when the server has no `pricing`
- * override yet — matches the known model names the server's own
- * `DEFAULT_PRICING_TABLE` (server/metrics/measures.ts) ships with, so the
- * editor's starting point mirrors what's actually pricing calls today. */
-const KNOWN_MODELS = ["claude-opus-4-8", "claude-sonnet-5", "claude-fable-5", "claude-haiku-4-5"];
+ * override yet. The model names come from the shared pricing contract's
+ * `DEFAULT_MODEL_KEYS` — same list the server's `DEFAULT_PRICING_TABLE`
+ * (`server/metrics/measures.ts`) is built from, so the editor's starting
+ * point always mirrors what's actually pricing calls today and a future
+ * server-side default shows up in the editor automatically (review #19). */
 
 const RATE_FIELDS: { key: keyof ModelRate; label: string }[] = [
   { key: "input", label: "Input" },
@@ -21,7 +27,7 @@ const RATE_FIELDS: { key: keyof ModelRate; label: string }[] = [
 function seedRows(pricing: PricingTable | undefined): PricingTable {
   if (pricing && Object.keys(pricing).length > 0) return pricing;
   const seeded: PricingTable = {};
-  for (const model of KNOWN_MODELS) {
+  for (const model of DEFAULT_MODEL_KEYS) {
     seeded[model] = { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 };
   }
   return seeded;
@@ -30,9 +36,13 @@ function seedRows(pricing: PricingTable | undefined): PricingTable {
 /**
  * Pricing table editor (#P4-15, pages spec §10). Ships with default rates
  * (0-priced placeholders for known models) until the server's config has a
- * `pricing` override; saving PUTs the full table. `budget` is echoed
- * unchanged in the PUT body — the route requires it on every request
- * (#P4-10's original contract).
+ * `pricing` override; saving PUTs the full table. `budget` is echoed from
+ * the *live query cache* at submit time (review #19) — closing over
+ * `configQuery.data.budget` would silently revert a just-saved budget from
+ * a sibling panel. The `["config"]` query invalidation also doesn't wipe
+ * this panel's unsaved edits mid-form-filling: `useConfigSyncedFormState`
+ * flags dirty on every user edit and skips reseeding until `accept()` is
+ * called (after a successful save).
  */
 export function PricingEditor() {
   const queryClient = useQueryClient();
@@ -42,19 +52,28 @@ export function PricingEditor() {
   });
   const [rows, setRows] = useState<PricingTable>({});
   const [newModel, setNewModel] = useState("");
-
-  useEffect(() => {
-    if (configQuery.data) setRows(seedRows(configQuery.data.pricing));
-  }, [configQuery.data]);
+  const sync = useConfigSyncedFormState<PricingTable>({
+    data: configQuery.data,
+    apply: (cfg) => seedRows((cfg as { pricing?: PricingTable }).pricing),
+    setRows,
+  });
 
   const saveMutation = useMutation({
-    mutationFn: () => putConfig({ budget: configQuery.data?.budget ?? null, pricing: rows }),
+    mutationFn: () => {
+      // Read `budget` from the live cache, not the closure — the closed-over
+      // snapshot is stale the moment a sibling panel saves first.
+      const current = queryClient.getQueryData(qk.config());
+      const budget = (current as { budget?: number | null } | undefined)?.budget ?? null;
+      return putConfig({ budget, pricing: rows });
+    },
     onSuccess: () => {
+      sync.accept();
       queryClient.invalidateQueries({ queryKey: qk.prefixes.config });
     },
   });
 
   function updateRate(model: string, field: keyof ModelRate, value: string): void {
+    sync.markDirty();
     const n = Number(value);
     setRows((prev) => ({
       ...prev,
@@ -65,11 +84,12 @@ export function PricingEditor() {
   function addModel(): void {
     const name = newModel.trim();
     if (!name || rows[name]) return;
+    sync.markDirty();
     setRows((prev) => ({ ...prev, [name]: { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 } }));
     setNewModel("");
   }
 
-  const errorMessage = saveMutation.isError ? (saveMutation.error as Error).message : null;
+  const errorMessage = saveMutation.isError ? (saveMutation.error?.message ?? null) : null;
 
   return (
     <section

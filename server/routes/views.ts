@@ -9,6 +9,13 @@ import { mutateLocalStore, readLocalStore } from "../local-store.js";
  * via the global `FilterBar`'s "Save view" action (ARCH decision A5) and
  * managed (listed/deleted) on the Settings page. `id`/`createdAt` are
  * always server-generated — a `POST` body never supplies them.
+ *
+ * Per review #19, the local try/catch around `mutateLocalStore` was
+ * dropped: a write failure now bubbles to `app.ts`'s top-level
+ * `setErrorHandler` (matches the convention the ARCH doc states twice —
+ * "new routes rely on `app.ts`'s top-level `setErrorHandler`"), so the
+ * whole API surface produces the same `{ error, cause }` 500 shape rather
+ * than five slightly different bespoke ones.
  */
 
 export interface RegisterViewsRouteOptions {
@@ -38,18 +45,14 @@ export function registerViewsRoute(
       search,
       createdAt: new Date().toISOString(),
     };
-    try {
-      await mutateLocalStore(
-        (current) => ({ views: [...current.views, view] }),
-        options.localStorePath,
-      );
-      reply.code(200);
-      return view;
-    } catch (err) {
-      app.log.error({ err }, "failed to save view");
-      reply.code(500);
-      return { error: "failed to save view" };
-    }
+    // Write failures bubble to app.ts's top-level setErrorHandler
+    // (review #19). Validation failures stay local because they need
+    // a typed 400, not the generic 500 envelope.
+    await mutateLocalStore(
+      (current) => ({ views: [...current.views, view] }),
+      options.localStorePath,
+    );
+    return view;
   });
 
   app.delete<{ Params: { id: string } }>(
@@ -60,18 +63,15 @@ export function registerViewsRoute(
         reply.code(404);
         return { error: "view not found" };
       }
-      try {
-        await mutateLocalStore(
-          (latest) => ({ views: latest.views.filter((v) => v.id !== request.params.id) }),
-          options.localStorePath,
-        );
-        reply.code(204);
-        return undefined;
-      } catch (err) {
-        app.log.error({ err }, "failed to delete view");
-        reply.code(500);
-        return { error: "failed to delete view" };
-      }
+      // Write failures bubble to app.ts's top-level setErrorHandler
+      // (review #19). Validation/404 stay local because they need a
+      // typed 404, not the generic 500 envelope.
+      await mutateLocalStore(
+        (latest) => ({ views: latest.views.filter((v) => v.id !== request.params.id) }),
+        options.localStorePath,
+      );
+      reply.code(204);
+      return undefined;
     },
   );
 }

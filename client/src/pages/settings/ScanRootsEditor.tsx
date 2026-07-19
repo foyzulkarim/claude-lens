@@ -1,9 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { ScanRootConfig } from "../../../../shared/settings-contract.js";
 import { getConfig, putConfig } from "../../api/config.js";
 import { qk } from "../../api/queryKeys.js";
 import { TOGGLE_CLASS } from "../../ui/toggleStyles.js";
+import { useConfigSyncedFormState } from "./useConfigSyncedFormState.js";
 
 /** A row needs a stable React key independent of its (editable, possibly
  * duplicate-while-typing) `path` value — `clientId` is never sent to the
@@ -18,6 +19,10 @@ interface RootRow extends ScanRootConfig {
  * live — no restart. Adding/removing/editing a root's *path* requires a
  * restart (ARCH decision A2), called out explicitly so the save action
  * doesn't silently promise something it can't deliver.
+ *
+ * `budget` is read from the live query cache at submit time (review #19) —
+ * closing over `configQuery.data.budget` would silently revert a just-saved
+ * budget from a sibling panel.
  */
 export function ScanRootsEditor() {
   const queryClient = useQueryClient();
@@ -27,50 +32,58 @@ export function ScanRootsEditor() {
   });
   const [roots, setRoots] = useState<RootRow[]>([]);
   const [pathsChanged, setPathsChanged] = useState(false);
-
-  useEffect(() => {
-    if (configQuery.data) {
-      setRoots(
-        (configQuery.data.scanRoots ?? []).map((r) => ({ ...r, clientId: crypto.randomUUID() })),
-      );
-      setPathsChanged(false);
-    }
-  }, [configQuery.data]);
+  const sync = useConfigSyncedFormState<RootRow[]>({
+    data: configQuery.data,
+    apply: (cfg) =>
+      ((cfg as { scanRoots?: ScanRootConfig[] }).scanRoots ?? []).map((r) => ({
+        ...r,
+        clientId: crypto.randomUUID(),
+      })),
+    setRows: setRoots,
+  });
 
   const saveMutation = useMutation({
-    mutationFn: () =>
-      putConfig({
-        budget: configQuery.data?.budget ?? null,
+    mutationFn: () => {
+      const current = queryClient.getQueryData(qk.config());
+      const budget = (current as { budget?: number | null } | undefined)?.budget ?? null;
+      return putConfig({
+        budget,
         scanRoots: roots.map(({ path, label }) => ({ path, label })),
-      }),
+      });
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qk.prefixes.config });
+      sync.accept();
       setPathsChanged(false);
+      queryClient.invalidateQueries({ queryKey: qk.prefixes.config });
     },
   });
 
   function updateLabel(clientId: string, label: string): void {
+    sync.markDirty();
     setRoots((prev) =>
       prev.map((r) => (r.clientId === clientId ? { ...r, label: label || undefined } : r)),
     );
   }
 
   function updatePath(clientId: string, path: string): void {
+    sync.markDirty();
     setRoots((prev) => prev.map((r) => (r.clientId === clientId ? { ...r, path } : r)));
     setPathsChanged(true);
   }
 
   function removeRoot(clientId: string): void {
+    sync.markDirty();
     setRoots((prev) => prev.filter((r) => r.clientId !== clientId));
     setPathsChanged(true);
   }
 
   function addRoot(): void {
+    sync.markDirty();
     setRoots((prev) => [...prev, { path: "", clientId: crypto.randomUUID() }]);
     setPathsChanged(true);
   }
 
-  const errorMessage = saveMutation.isError ? (saveMutation.error as Error).message : null;
+  const errorMessage = saveMutation.isError ? (saveMutation.error?.message ?? null) : null;
 
   return (
     <section

@@ -115,7 +115,6 @@ async function listenWithRetry(
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
-  const candidatePort = await findAvailablePort(options.port ?? DEFAULT_PORT);
 
   const configPath = options.configDir
     ? join(resolve(options.configDir), "config.json")
@@ -124,12 +123,16 @@ async function main() {
     ? join(resolve(options.configDir), "local.json")
     : undefined;
 
-  // Load the user's local config before building runtime metadata / scan
-  // config (#P4-15, ARCH-settings-local-store.md) — `pricing` and
-  // `scanRoots` seed both, so a Settings edit persisted on a previous run
-  // actually takes effect on this one instead of silently reverting to
-  // built-in defaults every restart.
-  const savedConfig = await readConfig(configPath);
+  // Port probing and config loading are independent (review #19) — neither
+  // result feeds into the other. Run them concurrently to shave a bit of
+  // boot latency. `readConfig` never throws (every failure path is caught
+  // internally — see `server/settings.ts`), so `Promise.all` doesn't change
+  // error-handling shape; the await still rejects if the port probe itself
+  // exhausts the port range.
+  const [candidatePort, savedConfig] = await Promise.all([
+    findAvailablePort(options.port ?? DEFAULT_PORT),
+    readConfig(configPath),
+  ]);
 
   // Runtime metadata (ARCH T5): one PricingTable + one Pricer + one
   // ContextResolver, built once here and threaded into both the ingest

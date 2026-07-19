@@ -20,6 +20,7 @@ import { applyRange, totalTokensForSession } from "../metrics/session-population
 import type { Pricer } from "../store/derive-session.js";
 import { aggregateLogicalTurnCost, groupLogicalTurns } from "../store/logical-turns.js";
 import type { Store } from "../store/store.js";
+import { extractField } from "../util.js";
 
 // GET /api/sessions — general paginated sessions list (ARCH T6 / #P4-2).
 // Patterned on routes/metrics.ts (Fastify plugin, manual validation that
@@ -402,17 +403,17 @@ function parsePositiveInt(value: unknown): number | string {
  *     emits `from === to === dayStart`, so a half-open upper silently
  *     returned an empty sessions interval.
  *
- * `host` parity (review #13): the metrics engine synthesizes a constant
- * `"default"` host for every scope (see `server/metrics/dimensions.ts`),
- * and the Dashboard callers pass the active `host` chip straight through
- * to both `/api/sessions` and `/api/metrics`. Pre-fix the route accepted
- * `host` but never projected or filtered it, so a non-matching host chip
- * silently returned every session while `/api/metrics` returned nothing.
- * Now `host` filters the same synthetic `"default"` the engine synthesizes,
- * so a chip value that includes `"default"` matches every session, and any
- * other chip value matches none (the engine and the route agree). When
- * per-host Session fields land, this becomes a real field lookup without
- * changing the contract.
+ * `host` parity (review #13): pre-fix the route accepted `host` but never
+ * projected or filtered it, so a non-matching host chip silently returned
+ * every session while `/api/metrics` returned nothing. Post #P4-15
+ * (review #19), `Session.host` is sourced from the real scan-root label
+ * resolved at recompute time (`server/store/store.ts`'s `sessionRoot` +
+ * `hostLabels`), and this route filters on that same value — Dashboard
+ * callers can pass the chip value straight through to both
+ * `/api/sessions` and `/api/metrics` without drift. Sessions whose root
+ * is unlabeled fall back to the raw root path; sessions with no root at
+ * all (rare) carry the literal sentinel `"unlabeled"` (see
+ * `server/store/derive-session.ts`).
  */
 function sessionMatchesFilters(session: Session, params: SessionListParams): boolean {
   if (params.from !== undefined) {
@@ -848,26 +849,19 @@ export function registerSessionsRoute(
         reply.code(404);
         return { error: "session not found" };
       }
-      const body = request.body;
-      const tags =
-        typeof body === "object" && body !== null && "tags" in body
-          ? (body as { tags: unknown }).tags
-          : undefined;
+      const tags = extractField(request.body, "tags");
       if (!isValidTagList(tags)) {
         reply.code(400);
         return { error: "tags must be an array of non-empty strings" };
       }
-      try {
-        await mutateLocalStore(
-          (current) => ({ tags: { ...current.tags, [sessionId]: tags } }),
-          options.localStorePath,
-        );
-        return { tags };
-      } catch (err) {
-        app.log.error({ err, sessionId }, "failed to save session tags");
-        reply.code(500);
-        return { error: "failed to save tags" };
-      }
+      // Write failures bubble to app.ts's top-level setErrorHandler
+      // (review #19). Validation/404 stay local because they need a
+      // typed 400/404, not the generic 500 envelope.
+      await mutateLocalStore(
+        (current) => ({ tags: { ...current.tags, [sessionId]: tags } }),
+        options.localStorePath,
+      );
+      return { tags };
     },
   );
 }

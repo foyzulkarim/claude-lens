@@ -53,6 +53,33 @@ describe("GET /api/tags, PUT/DELETE /api/tags/:tag", () => {
     ]);
   });
 
+  it("PUT renaming into an existing tag name dedupes per-session (review #19)", async () => {
+    // s1 has ["important","follow-up"]. Renaming `important` → `follow-up`
+    // would have produced ["follow-up","follow-up"] pre-fix, inflating the
+    // sessionCount and rendering as two duplicate chips. The dedupe on the
+    // rebuild path keeps it as a single, honest entry.
+    const put = await app.inject({
+      method: "PUT",
+      url: "/api/tags/important",
+      payload: { newName: "follow-up" },
+    });
+    expect(put.statusCode).toBe(200);
+
+    const get = await app.inject({ method: "GET", url: "/api/tags" });
+    // s1's two `follow-up`s collapse to one. s2's lone `important` is
+    // renamed to `follow-up`. So the surviving tag is `follow-up` with
+    // sessionCount 2.
+    expect(get.json()).toEqual([{ tag: "follow-up", sessionCount: 2 }]);
+
+    // Read the raw on-disk store directly so a future regression that
+    // re-introduced duplicates on the wire but kept the dedupe in the
+    // GET count helper would still fail this test.
+    const { readLocalStore } = await import("../local-store.js");
+    const onDisk = await readLocalStore(localStorePath);
+    expect(onDisk.tags.s1).toEqual(["follow-up"]);
+    expect(onDisk.tags.s2).toEqual(["follow-up"]);
+  });
+
   it("PUT rejects an empty newName with 400", async () => {
     const put = await app.inject({
       method: "PUT",

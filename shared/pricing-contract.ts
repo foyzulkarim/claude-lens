@@ -23,6 +23,20 @@ export type PricingTable = Record<string, ModelRate>;
 
 const RATE_FIELDS = ["input", "output", "cacheRead", "cacheCreate"] as const;
 
+/**
+ * Known model keys the server ships with default pricing entries
+ * (`server/metrics/measures.ts`'s `DEFAULT_PRICING_TABLE`). Exported from the
+ * shared contract so the client pricing editor (#P4-15) and the server's
+ * default pricing table can never drift — adding a model server-side makes
+ * the editor's "ships with defaults" list pick it up automatically.
+ */
+export const DEFAULT_MODEL_KEYS = [
+  "claude-sonnet-5",
+  "claude-fable-5",
+  "claude-opus-4-8",
+  "claude-haiku-4-5",
+] as const;
+
 function isValidModelRate(value: unknown): value is ModelRate {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const record = value as Record<string, unknown>;
