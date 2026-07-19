@@ -74,7 +74,9 @@ describe("discover — snapshot over real and synthetic roots", () => {
     });
 
     const transcripts = files.filter((f) => f.class === "transcript");
-    expect(transcripts).toHaveLength(5);
+    // 5 original fixtures + 7 added by #P4-11 (gates engine). The full set
+    // is documented in test/fixtures/README.md.
+    expect(transcripts).toHaveLength(12);
     expect(new Set(transcripts.map((f) => f.sessionId))).toEqual(
       new Set([
         "11111111-1111-4111-8111-111111111111",
@@ -82,6 +84,13 @@ describe("discover — snapshot over real and synthetic roots", () => {
         "33333333-3333-4333-8333-333333333333",
         "44444444-4444-4444-8444-444444444444",
         "55555555-5555-4555-8555-555555555555",
+        "66666666-6664-4666-8666-666666666666",
+        "77777777-7774-4777-8777-777777777777",
+        "88888888-8884-4888-8888-888888888888",
+        "99999999-9994-4999-8999-999999999999",
+        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
       ]),
     );
   });

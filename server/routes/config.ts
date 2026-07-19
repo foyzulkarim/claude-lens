@@ -1,13 +1,18 @@
 import type { FastifyInstance } from "fastify";
-import { type AppConfig, isValidBudget } from "../../shared/settings-contract.js";
+import {
+  type AppConfig,
+  isValidBudget,
+  isValidGateThresholds,
+} from "../../shared/settings-contract.js";
 import { readConfig, writeConfig } from "../settings.js";
 
 /**
- * GET/PUT /api/config — the minimal, budget-only config surface (#P4-10;
- * ARCH-trends-calendar-budget.md). #P4-15 extends this same route with
- * pricing, scan roots, and thresholds; this task's `PUT` body validation
- * intentionally only recognizes `budget` so it can never lock the schema
- * down for that later work.
+ * GET/PUT /api/config — the budget + gate-thresholds config surface
+ * (#P4-10 + #P4-11; ARCH-trends-calendar-budget.md, ARCH-gates-engine.md).
+ * `budget` is still required in PUT bodies (existing #P4-10 / BurnRateCard
+ * contract); `gateThresholds` is an optional addition. #P4-15 extends this
+ * same route further (pricing, scan roots, saved views, tags) — adding an
+ * optional field here cannot lock the schema down for that later work.
  */
 
 /**
@@ -15,6 +20,11 @@ import { readConfig, writeConfig } from "../settings.js";
  * validated patch or a human-readable error message — never throws. Same
  * "validate, snapshot, delegate" shape as `routes/cache-lab.ts`'s
  * `parseCacheLabQuery`.
+ *
+ * `budget` is required (preserves the existing #P4-10 / BurnRateCard
+ * contract). `gateThresholds` is optional; when present, every present
+ * field is validated. An empty object `{}` resets to defaults — useful
+ * for "I want a clean slate" without dropping the whole field.
  */
 export function parseConfigPatch(body: unknown): Partial<AppConfig> | string {
   if (typeof body !== "object" || body === null || Array.isArray(body)) {
@@ -25,7 +35,21 @@ export function parseConfigPatch(body: unknown): Partial<AppConfig> | string {
   if (!isValidBudget(b.budget)) {
     return "budget must be null or a finite number greater than 0";
   }
-  return { budget: b.budget };
+
+  const patch: Partial<AppConfig> = { budget: b.budget };
+
+  if ("gateThresholds" in b) {
+    if (!isValidGateThresholds(b.gateThresholds)) {
+      return (
+        "gateThresholds must be an object with valid non-negative integer fields " +
+        "(v2Repeat, c3MaxChars, k2Spike, e2MaxChars, e2MaxLines); " +
+        "use {} to reset to defaults"
+      );
+    }
+    patch.gateThresholds = b.gateThresholds;
+  }
+
+  return patch;
 }
 
 export interface RegisterConfigRouteOptions {
