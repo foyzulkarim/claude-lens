@@ -179,7 +179,7 @@ Pages are cheap by design: filter state + preset `MetricsQuery`s + layout. The H
 - [ ] **#P4-7 — Projects page** *(§5)*
   Spend + WoW, stacked-area composition, efficiency table, per-branch breakdown, → Sessions links. Gate pass-rate column in the efficiency table stubs until #P4-12.
   *Acceptance:* matches `projects.html`.
-- [ ] **#P4-8 — Models page** *(§6)*
+- [x] **#P4-8 — Models page** *(§6)*
   Token/$ split, model mix over time, efficiency ratios, CC-version dimension, entrypoint breakdown; latency/throughput sections render 🟡 fallback (timestamp deltas) until premium (#P4-13) upgrades them.
   *Acceptance:* matches `models.html`.
 - [x] **#P4-9 — Cache Lab page** *(§7)*

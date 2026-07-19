@@ -1,6 +1,12 @@
 const FIXTURE_RANGE = "?from=2026-07-01T00%3A00%3A00.000Z&to=2026-08-01T00%3A00%3A00.000Z";
 const SESSION_ID = "11111111-1111-4111-8111-111111111111";
 
+// See steel-thread.cy.ts for why this is here: a benign ECharts/
+// ResizeObserver browser warning, not a real error.
+Cypress.on("uncaught:exception", (err) => {
+  if (err.message.includes("ResizeObserver loop completed")) return false;
+});
+
 /**
  * Session Detail smoke spec (#P4-5, T11). Loads the real detail resource
  * from the existing multi-turn/sidechain fixture (never edited here —

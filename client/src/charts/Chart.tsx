@@ -1,7 +1,11 @@
 import type { BarSeriesOption, LineSeriesOption, ScatterSeriesOption } from "echarts/charts";
 import { BarChart, LineChart, ScatterChart } from "echarts/charts";
-import type { GridComponentOption, TooltipComponentOption } from "echarts/components";
-import { GridComponent, TooltipComponent } from "echarts/components";
+import type {
+  GridComponentOption,
+  LegendComponentOption,
+  TooltipComponentOption,
+} from "echarts/components";
+import { GridComponent, LegendComponent, TooltipComponent } from "echarts/components";
 import type { ComposeOption, ECElementEvent } from "echarts/core";
 import * as echarts from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
@@ -11,8 +15,18 @@ import type { TimeseriesOption } from "./timeseries.js";
 // Register the time-series + scatter chart families (ARCH A9). The scatter
 // addition is purely additive — existing line/bar consumers are untouched,
 // and the lifecycle (`init`/`resize`/`setOption`/`on`/`dispose`) is shared
-// across families.
-echarts.use([LineChart, BarChart, ScatterChart, GridComponent, TooltipComponent, CanvasRenderer]);
+// across families. LegendComponent is required by any option that sets
+// `legend:` (Cache Lab and Models both do) — without it ECharts silently
+// drops the legend and logs a console error instead of throwing.
+echarts.use([
+  LineChart,
+  BarChart,
+  ScatterChart,
+  GridComponent,
+  TooltipComponent,
+  LegendComponent,
+  CanvasRenderer,
+]);
 
 /**
  * The widened chart option type — ARCH A9: "reusable unchanged by future
@@ -25,6 +39,7 @@ export type ChartOption = ComposeOption<
   | ScatterSeriesOption
   | GridComponentOption
   | TooltipComponentOption
+  | LegendComponentOption
 >;
 
 export interface ChartProps {
