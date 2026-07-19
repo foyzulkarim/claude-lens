@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildDistributionQuery,
+  buildExportUrl,
   buildListQuery,
   buildScatterQuery,
   DEFAULT_SESSIONS_PAGE_STATE,
@@ -197,6 +198,71 @@ describe("buildListQuery — population parity", () => {
     expect(pop.project).toEqual(["alpha"]);
     expect(pop.model).toEqual(["claude-sonnet-5"]);
     expect(pop.entrypoint).toEqual(["cli"]);
+  });
+});
+
+describe("buildExportUrl", () => {
+  const baseFilters = {
+    range: { preset: "7d" as const },
+    project: [] as string[],
+    model: [] as string[],
+    branch: [] as string[],
+    host: [] as string[],
+  };
+
+  it("builds a minimal /api/export URL with format/from/to/sort/order", () => {
+    const url = buildExportUrl(DEFAULT_SESSIONS_PAGE_STATE, baseFilters, "csv", NOW);
+    const params = new URLSearchParams(url.split("?")[1]);
+    expect(url.startsWith("/api/export?")).toBe(true);
+    expect(params.get("format")).toBe("csv");
+    expect(params.get("sort")).toBe(DEFAULT_SESSIONS_PAGE_STATE.sort);
+    expect(params.get("order")).toBe(DEFAULT_SESSIONS_PAGE_STATE.order);
+    expect(params.has("from")).toBe(true);
+    expect(params.has("to")).toBe(true);
+    // No pagination/include/compare fields belong in the export query.
+    expect(params.has("offset")).toBe(false);
+    expect(params.has("limit")).toBe(false);
+    expect(params.has("include")).toBe(false);
+    expect(params.has("sessionId")).toBe(false);
+    expect(params.has("compare")).toBe(false);
+  });
+
+  it("resolves the same range as buildListQuery for the same filters", () => {
+    const url = buildExportUrl(DEFAULT_SESSIONS_PAGE_STATE, baseFilters, "json", NOW);
+    const params = new URLSearchParams(url.split("?")[1]);
+    const listQuery = buildListQuery(DEFAULT_SESSIONS_PAGE_STATE, baseFilters, NOW);
+    expect(params.get("from")).toBe(listQuery.from);
+    expect(params.get("to")).toBe(listQuery.to);
+  });
+
+  it("propagates global chip filters and page-only filters", () => {
+    const filters = { ...baseFilters, project: ["alpha"], model: ["claude-sonnet-5"] };
+    const state = {
+      ...DEFAULT_SESSIONS_PAGE_STATE,
+      minCostComputed: 0,
+      maxCostComputed: 5,
+      hasDrilldown: true,
+      entrypoint: ["cli"],
+      // Compare selection must NOT restrict the exported population.
+      compareIds: ["s-a", "s-b"],
+    };
+    const url = buildExportUrl(state, filters, "csv", NOW);
+    const params = new URLSearchParams(url.split("?")[1]);
+    expect(params.get("project")).toBe("alpha");
+    expect(params.get("model")).toBe("claude-sonnet-5");
+    expect(params.get("minCostComputed")).toBe("0");
+    expect(params.get("maxCostComputed")).toBe("5");
+    expect(params.get("hasDrilldown")).toBe("true");
+    expect(params.get("entrypoint")).toBe("cli");
+    expect(params.has("compare")).toBe(false);
+    expect(params.has("sessionId")).toBe(false);
+  });
+
+  it("respects the requested format", () => {
+    const csvUrl = buildExportUrl(DEFAULT_SESSIONS_PAGE_STATE, baseFilters, "csv", NOW);
+    const jsonUrl = buildExportUrl(DEFAULT_SESSIONS_PAGE_STATE, baseFilters, "json", NOW);
+    expect(new URLSearchParams(csvUrl.split("?")[1]).get("format")).toBe("csv");
+    expect(new URLSearchParams(jsonUrl.split("?")[1]).get("format")).toBe("json");
   });
 });
 

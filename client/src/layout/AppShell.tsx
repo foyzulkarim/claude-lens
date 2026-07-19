@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { Link, useLocation, useSearch } from "wouter";
 import { FilterBar } from "../filters/FilterBar.js";
 import { navRoutes } from "../routes.js";
+import { GlobalActionsBar } from "./GlobalActionsBar.js";
 
 // Minimal nav chrome — deliberately unstyled beyond Tailwind base. The real
 // primitives (stat-card, data-table, etc.) land in #P4-1; this just proves
@@ -41,6 +42,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </nav>
       <div className="flex flex-1 flex-col">
         <FilterBar />
+        <GlobalActionsBar />
         <main className="flex-1">{children}</main>
       </div>
     </div>

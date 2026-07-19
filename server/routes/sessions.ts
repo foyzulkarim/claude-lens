@@ -73,7 +73,7 @@ const SUMMARY_SORT_KEYS = new Set<NonNullable<SessionListParams["sort"]>>([
   "cacheSavingsComputed",
   "maxTurnCostComputed",
 ]);
-const PAGE_SORT_KEYS = new Set<NonNullable<SessionPageParams["sort"]>>([
+export const PAGE_SORT_KEYS = new Set<NonNullable<SessionPageParams["sort"]>>([
   "lastAt",
   "costComputed",
   "costObserved",
@@ -598,7 +598,7 @@ function projectItem(session: Session, trace: TracePoint[] | undefined): Session
 /** Numeric/date/string extraction for every supported page sort key. The
  * exhaustive switch throws on a future SortKey addition rather than silently
  * falling through (review #18 pattern from the summary projection). */
-function pageSortValue(session: Session, key: PageSortKey): number | string {
+export function pageSortValue(session: Session, key: PageSortKey): number | string {
   switch (key) {
     case "lastAt":
       return session.lastAt;
@@ -631,7 +631,7 @@ function pageSortValue(session: Session, key: PageSortKey): number | string {
   }
 }
 
-function comparePageSessions(
+export function comparePageSessions(
   a: Session,
   b: Session,
   key: PageSortKey,
@@ -680,8 +680,14 @@ function pagePopulationFilter(params: SessionPageParams): SessionPopulationFilte
 
 /** Strict page-row projection (ARCH `SessionPageItem`). Keeps every
  * transcript-tier field mandatory and surfaces optional premium / gate /
- * tag fields exactly when present (no fabrication). */
-function projectPageItem(session: Session, tags: string[] | undefined): SessionPageItem {
+ * tag fields exactly when present (no fabrication). Exported so the
+ * Sessions export route (`server/routes/export.ts`) can reuse the exact
+ * same projection for CSV/JSON downloads — keeps on-screen and on-disk
+ * row shapes in lock-step (review #19 merge with main). The `tags`
+ * parameter is optional: export callers don't have per-session tag data
+ * handy at the moment, while the on-screen page route threads it
+ * through from `readLocalStore`. */
+export function projectPageItem(session: Session, tags?: string[]): SessionPageItem {
   return {
     sessionId: session.sessionId,
     startedAt: session.firstAt,
