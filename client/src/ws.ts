@@ -117,6 +117,13 @@ function applyInvalidationAction(queryClient: QueryClient, action: InvalidationA
     case "session":
       queryClient.invalidateQueries({ queryKey: qk.session(action.sessionId) });
       return;
+    default: {
+      // Exhaustive check, mirroring actionsForMessage's switch above: a
+      // future 5th InvalidationAction variant fails typecheck here instead
+      // of silently no-oping at runtime.
+      const unhandled: never = action;
+      console.warn("[ws] unhandled invalidation action", unhandled);
+    }
   }
 }
 

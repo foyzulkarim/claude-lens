@@ -190,6 +190,52 @@ describe("connectWs", () => {
     expect(spy).toHaveBeenCalledTimes(5);
   });
 
+  it("includes a message that arrives mid-window (after the timer is scheduled but before it fires)", () => {
+    const queryClient = new QueryClient();
+    const spy = vi.spyOn(queryClient, "invalidateQueries");
+    const { sockets, createSocket } = harness();
+
+    connectWs(queryClient, { url: "ws://test/ws", createSocket });
+    // First message schedules the window's timer; a second message for a
+    // DIFFERENT session arrives partway through the same window, before it
+    // fires. Both must still land in the single flush — a regression that
+    // reset `pending` per-enqueue or re-armed the timer per-message would
+    // drop or indefinitely delay this second message.
+    sockets[0].onmessage?.({ data: JSON.stringify({ type: "session-updated", sessionId: "s1" }) });
+    vi.advanceTimersByTime(INVALIDATION_COALESCE_MS / 2);
+    expect(spy).not.toHaveBeenCalled();
+    sockets[0].onmessage?.({ data: JSON.stringify({ type: "session-updated", sessionId: "s2" }) });
+
+    vi.advanceTimersByTime(INVALIDATION_COALESCE_MS / 2);
+
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["session", "s1"] });
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["session", "s2"] });
+    const metricsCalls = spy.mock.calls.filter(
+      ([arg]) => JSON.stringify(arg) === JSON.stringify({ queryKey: ["metrics"] }),
+    );
+    expect(metricsCalls).toHaveLength(1);
+  });
+
+  it("collapses session-added and session-updated for the same session in one window into a single set of shared invalidations", () => {
+    const queryClient = new QueryClient();
+    const spy = vi.spyOn(queryClient, "invalidateQueries");
+    const { sockets, createSocket } = harness();
+
+    connectWs(queryClient, { url: "ws://test/ws", createSocket });
+    // Both message types resolve to overlapping actions for the same
+    // session — actionKey must collapse them to one entry per action kind
+    // regardless of which message contributed it.
+    sockets[0].onmessage?.({ data: JSON.stringify({ type: "session-added", sessionId: "s1" }) });
+    sockets[0].onmessage?.({ data: JSON.stringify({ type: "session-updated", sessionId: "s1" }) });
+
+    vi.advanceTimersByTime(INVALIDATION_COALESCE_MS);
+
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["metrics"] });
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["sessions"] });
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["session", "s1"] });
+    expect(spy).toHaveBeenCalledTimes(3);
+  });
+
   it("does not apply pending batched invalidations after dispose", () => {
     const queryClient = new QueryClient();
     const spy = vi.spyOn(queryClient, "invalidateQueries");
