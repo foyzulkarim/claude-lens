@@ -39,10 +39,21 @@ export interface ToolUseRef {
    * `name === "Bash"`. `"git-commit"` covers any command that begins with
    * `git commit` (case-insensitive, leading whitespace tolerated) — the
    * one workflow signal needed by the Session Detail workflow funnel and
-   * the future #P4-11/#P4-12 gates. Full command strings are never
-   * retained. (#P4-5, A7)
+   * the future #P4-11/#P4-12 gates. (#P4-5, A7)
    */
   bashKind?: "git-commit" | "other";
+  /**
+   * Full Bash command string, retained for the V2 failing-command-loop gate
+   * (#P4-11) which needs to detect repeated failures of the *same
+   * normalized command* (gates.md §V2). The parser writes this verbatim
+   * from the tool_use `input.command` field — only set for `Bash` blocks.
+   * Unlike `bashKind` (a one-token classification), this is the full
+   * command body, so it's bounded only by what the upstream tool_use
+   * carries. Stored on the wire so V2 doesn't need a separate input
+   * pipeline; the existing `compact tool metadata` rationale still holds
+   * for every non-Bash tool where this field stays undefined.
+   */
+  bashCommand?: string;
 }
 
 export interface ApiCall {

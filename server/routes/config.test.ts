@@ -100,4 +100,60 @@ describe("GET/PUT /api/config", () => {
 
     await brokenApp.close();
   });
+
+  it("PUT accepts gateThresholds alongside budget and persists both (#P4-11)", async () => {
+    const put = await app.inject({
+      method: "PUT",
+      url: "/api/config",
+      payload: {
+        budget: 300,
+        gateThresholds: { v2Repeat: 5, c3MaxChars: 25_000 },
+      },
+    });
+    expect(put.statusCode).toBe(200);
+    expect(put.json()).toEqual({
+      budget: 300,
+      gateThresholds: { v2Repeat: 5, c3MaxChars: 25_000 },
+    });
+
+    const get = await app.inject({ method: "GET", url: "/api/config" });
+    expect(get.json()).toEqual({
+      budget: 300,
+      gateThresholds: { v2Repeat: 5, c3MaxChars: 25_000 },
+    });
+  });
+
+  it("PUT { gateThresholds: {} } (empty) resets thresholds to defaults", async () => {
+    await app.inject({
+      method: "PUT",
+      url: "/api/config",
+      payload: { budget: 300, gateThresholds: { v2Repeat: 5 } },
+    });
+    const put = await app.inject({
+      method: "PUT",
+      url: "/api/config",
+      payload: { budget: 300, gateThresholds: {} },
+    });
+    expect(put.statusCode).toBe(200);
+    expect(put.json()).toEqual({ budget: 300, gateThresholds: {} });
+  });
+
+  it("PUT rejects invalid gateThresholds with 400", async () => {
+    const put = await app.inject({
+      method: "PUT",
+      url: "/api/config",
+      payload: { budget: 300, gateThresholds: { v2Repeat: -1 } },
+    });
+    expect(put.statusCode).toBe(400);
+    expect(put.json().error).toContain("gateThresholds");
+  });
+
+  it("PUT rejects gateThresholds with unknown fields (typo protection)", async () => {
+    const put = await app.inject({
+      method: "PUT",
+      url: "/api/config",
+      payload: { budget: 300, gateThresholds: { v2reapeat: 5 } },
+    });
+    expect(put.statusCode).toBe(400);
+  });
 });

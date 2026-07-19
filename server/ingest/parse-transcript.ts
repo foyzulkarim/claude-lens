@@ -226,6 +226,12 @@ function parseAssistantLine(
         }
         if (name === "Bash") {
           toolRef.bashKind = classifyBash(input);
+          // V2 failing-command-loop gate (#P4-11) needs the full command
+          // text to detect "same normalized command repeated". Other
+          // tools keep the compact `inputBytes`-only footprint.
+          if (isRecord(input) && typeof input.command === "string" && input.command.length > 0) {
+            toolRef.bashCommand = input.command;
+          }
         }
         tools.push(toolRef);
       }

@@ -6,6 +6,7 @@ import fastifyWebsocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from "fastify";
 import { registerCacheLabRoute } from "./routes/cache-lab.js";
 import { registerConfigRoute } from "./routes/config.js";
+import { registerGatesRoute } from "./routes/gates.js";
 import { registerMetricsRoute } from "./routes/metrics.js";
 import { registerSessionDetailRoute } from "./routes/session-detail.js";
 import { registerSessionsRoute } from "./routes/sessions.js";
@@ -69,6 +70,13 @@ export interface BuildAppOptions {
    * the real user config; production (`cli.ts`) never sets it.
    */
   configPath?: string;
+  /**
+   * Overrides the user-home directory used by the gates engine's E1/E2
+   * check (`~/.claude/CLAUDE.md` lookup). Tests point this at a temp
+   * dir so the engine doesn't read the real user config; production
+   * (`cli.ts`) never sets it.
+   */
+  userHomeDir?: string;
 }
 
 export function buildApp({
@@ -77,6 +85,7 @@ export function buildApp({
   metadata,
   logger,
   configPath,
+  userHomeDir,
 }: BuildAppOptions): FastifyInstance {
   const app = Fastify({
     logger: logger ?? {
@@ -112,6 +121,30 @@ export function buildApp({
     store,
     metadata ? { pricer: metadata.pricer, contextResolver: metadata.contextResolver } : undefined,
   );
+
+  registerGatesRoute(
+    app,
+    store,
+    configPath || userHomeDir ? { configPath, userHomeDir } : undefined,
+  );
+  // Note: when configPath/userHomeDir are absent, the route reads the real
+  // `~/.claude-lens/config.json` and `~/.claude/CLAUDE.md` from `homedir()`
+  // — the production behavior. Tests pass overrides via BuildAppOptions.
+
+  // ARCH §HTTP errors: every uncaught error in any route handler (today:
+  // the gates engine and the config PUT) must surface as the documented
+  // `{ error, cause }` wire shape, not Fastify's default
+  // `{statusCode, error, message}`. The gates route has its own
+  // try/catch around `evaluateSessionGates`; this top-level handler is
+  // the catch-all for anything that escapes a route's local handling
+  // (defense-in-depth, review H2).
+  app.setErrorHandler((err, _request, reply) => {
+    app.log.error({ err }, "unhandled route error");
+    reply.code(500).send({
+      error: "internal server error",
+      cause: err instanceof Error ? err.message : String(err),
+    });
+  });
 
   app.register(async (instance) => {
     instance.get(
