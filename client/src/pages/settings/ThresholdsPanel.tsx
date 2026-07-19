@@ -113,7 +113,7 @@ export function ThresholdsPanel() {
         <button
           type="button"
           onClick={handleSave}
-          disabled={saveMutation.isPending}
+          disabled={saveMutation.isPending || configQuery.isPending}
           className={TOGGLE_CLASS}
         >
           Save

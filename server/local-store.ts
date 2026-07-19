@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { LocalStore } from "../shared/local-store-contract.js";
+import { isRecord } from "./util.js";
 
 /**
  * Local-store file I/O (ARCH-settings-local-store.md; architecture §10).
@@ -19,17 +20,19 @@ function localStoreFilePath(storePath?: string): string {
   return storePath ?? join(homedir(), ".claude-lens", "local.json");
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function isValidOnDiskShape(value: Record<string, unknown>): boolean {
   if (!Array.isArray(value.views)) return false;
   if (!isRecord(value.tags)) return false;
   return true;
 }
 
-export async function readLocalStore(storePath?: string): Promise<LocalStore> {
+// GET /api/sessions attaches tags on every page request — the app's
+// hottest, most-frequently-refetched endpoint — so a plain re-read+parse
+// per call would add disk I/O to that hot path. Cache per file path and
+// invalidate only on a write through mutateLocalStore/writeLocalStore.
+const readCache = new Map<string, LocalStore>();
+
+async function readLocalStoreUncached(storePath?: string): Promise<LocalStore> {
   let raw: string;
   try {
     raw = await readFile(localStoreFilePath(storePath), "utf8");
@@ -48,14 +51,49 @@ export async function readLocalStore(storePath?: string): Promise<LocalStore> {
   return { views: parsed.views as LocalStore["views"], tags: parsed.tags as LocalStore["tags"] };
 }
 
+export async function readLocalStore(storePath?: string): Promise<LocalStore> {
+  const key = localStoreFilePath(storePath);
+  const cached = readCache.get(key);
+  if (cached) return cached;
+  const store = await readLocalStoreUncached(storePath);
+  readCache.set(key, store);
+  return store;
+}
+
 export async function writeLocalStore(
   patch: Partial<LocalStore>,
   storePath?: string,
 ): Promise<LocalStore> {
+  return mutateLocalStore(() => patch, storePath);
+}
+
+// Serializes read-modify-write cycles per file path so concurrent mutations
+// (e.g. a tag rename racing a per-session tag update) can't both read the
+// pre-mutation state and have one silently overwrite the other's write.
+const mutationQueues = new Map<string, Promise<unknown>>();
+
+/**
+ * Reads the current store, lets `mutate` compute a patch from it, and writes
+ * the result — the whole cycle serialized against any other in-flight
+ * mutation for the same `storePath`, so callers never race each other.
+ */
+export async function mutateLocalStore(
+  mutate: (current: LocalStore) => Partial<LocalStore>,
+  storePath?: string,
+): Promise<LocalStore> {
   const filePath = localStoreFilePath(storePath);
-  const current = await readLocalStore(storePath);
-  const next: LocalStore = { ...current, ...patch };
-  await mkdir(dirname(filePath), { recursive: true });
-  await writeFile(filePath, JSON.stringify(next, null, 2), "utf8");
-  return next;
+  const run = async (): Promise<LocalStore> => {
+    const current = await readLocalStoreUncached(storePath);
+    const next: LocalStore = { ...current, ...mutate(current) };
+    await mkdir(dirname(filePath), { recursive: true });
+    await writeFile(filePath, JSON.stringify(next, null, 2), "utf8");
+    readCache.set(filePath, next);
+    return next;
+  };
+  const queued = (mutationQueues.get(filePath) ?? Promise.resolve()).then(run, run);
+  mutationQueues.set(
+    filePath,
+    queued.catch(() => undefined),
+  );
+  return queued;
 }

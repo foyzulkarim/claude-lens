@@ -85,7 +85,7 @@ export function ScanRootsEditor() {
         <button
           type="button"
           onClick={() => saveMutation.mutate()}
-          disabled={saveMutation.isPending}
+          disabled={saveMutation.isPending || configQuery.isPending}
           className={TOGGLE_CLASS}
         >
           Save

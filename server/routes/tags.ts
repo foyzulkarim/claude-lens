@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { readLocalStore, writeLocalStore } from "../local-store.js";
+import { mutateLocalStore, readLocalStore } from "../local-store.js";
 
 /**
  * GET /api/tags, PUT/DELETE /api/tags/:tag — fleet-wide tag manager
@@ -56,12 +56,13 @@ export function registerTagsRoute(
         return { error: "newName must be a non-empty string" };
       }
       try {
-        const current = await readLocalStore(options.localStorePath);
-        const nextTags: Record<string, string[]> = {};
-        for (const [sessionId, sessionTags] of Object.entries(current.tags)) {
-          nextTags[sessionId] = sessionTags.map((t) => (t === oldName ? newName : t));
-        }
-        await writeLocalStore({ tags: nextTags }, options.localStorePath);
+        await mutateLocalStore((current) => {
+          const nextTags: Record<string, string[]> = {};
+          for (const [sessionId, sessionTags] of Object.entries(current.tags)) {
+            nextTags[sessionId] = sessionTags.map((t) => (t === oldName ? newName : t));
+          }
+          return { tags: nextTags };
+        }, options.localStorePath);
         return { tag: newName };
       } catch (err) {
         app.log.error({ err }, "failed to rename tag");
@@ -76,12 +77,13 @@ export function registerTagsRoute(
     async (request, reply): Promise<undefined | { error: string }> => {
       const tag = request.params.tag;
       try {
-        const current = await readLocalStore(options.localStorePath);
-        const nextTags: Record<string, string[]> = {};
-        for (const [sessionId, sessionTags] of Object.entries(current.tags)) {
-          nextTags[sessionId] = sessionTags.filter((t) => t !== tag);
-        }
-        await writeLocalStore({ tags: nextTags }, options.localStorePath);
+        await mutateLocalStore((current) => {
+          const nextTags: Record<string, string[]> = {};
+          for (const [sessionId, sessionTags] of Object.entries(current.tags)) {
+            nextTags[sessionId] = sessionTags.filter((t) => t !== tag);
+          }
+          return { tags: nextTags };
+        }, options.localStorePath);
         reply.code(204);
         return undefined;
       } catch (err) {

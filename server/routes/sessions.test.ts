@@ -1,4 +1,6 @@
 import type { FastifyInstance } from "fastify";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ApiCall } from "../../shared/types.js";
 import { buildApp } from "../app.js";
@@ -58,7 +60,12 @@ function buildTestApp(): BuiltApp {
     pricer: metadata.pricer,
     pricing: metadata.pricing,
   });
-  const app = buildApp({ store, logger: false, metadata });
+  // Isolated, never-written path: readLocalStore treats ENOENT as "no
+  // local store yet" and returns the default, so this never touches disk
+  // — but it keeps handlePageRequest's tag lookup from falling back to
+  // the real ~/.claude-lens/local.json on whatever machine runs the test.
+  const localStorePath = join(tmpdir(), `claude-lens-test-unused-${Math.random()}`, "local.json");
+  const app = buildApp({ store, logger: false, metadata, localStorePath });
   return { app, store };
 }
 

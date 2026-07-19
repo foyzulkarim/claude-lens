@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { isValidSavedViewInput, type SavedView } from "../../shared/local-store-contract.js";
-import { readLocalStore, writeLocalStore } from "../local-store.js";
+import { mutateLocalStore, readLocalStore } from "../local-store.js";
 
 /**
  * GET/POST /api/views, DELETE /api/views/:id — saved-view CRUD
@@ -39,8 +39,10 @@ export function registerViewsRoute(
       createdAt: new Date().toISOString(),
     };
     try {
-      const current = await readLocalStore(options.localStorePath);
-      await writeLocalStore({ views: [...current.views, view] }, options.localStorePath);
+      await mutateLocalStore(
+        (current) => ({ views: [...current.views, view] }),
+        options.localStorePath,
+      );
       reply.code(200);
       return view;
     } catch (err) {
@@ -59,8 +61,10 @@ export function registerViewsRoute(
         return { error: "view not found" };
       }
       try {
-        const nextViews = current.views.filter((v) => v.id !== request.params.id);
-        await writeLocalStore({ views: nextViews }, options.localStorePath);
+        await mutateLocalStore(
+          (latest) => ({ views: latest.views.filter((v) => v.id !== request.params.id) }),
+          options.localStorePath,
+        );
         reply.code(204);
         return undefined;
       } catch (err) {

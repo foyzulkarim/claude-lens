@@ -14,7 +14,7 @@ import type {
 } from "../../shared/sessions-contract.js";
 import { isValidTagList } from "../../shared/local-store-contract.js";
 import type { Session } from "../../shared/types.js";
-import { readLocalStore, writeLocalStore } from "../local-store.js";
+import { mutateLocalStore, readLocalStore } from "../local-store.js";
 import type { PricingTable } from "../metrics/measures.js";
 import { applyRange, totalTokensForSession } from "../metrics/session-population.js";
 import type { Pricer } from "../store/derive-session.js";
@@ -858,9 +858,10 @@ export function registerSessionsRoute(
         return { error: "tags must be an array of non-empty strings" };
       }
       try {
-        const current = await readLocalStore(options.localStorePath);
-        const nextTags = { ...current.tags, [sessionId]: tags };
-        await writeLocalStore({ tags: nextTags }, options.localStorePath);
+        await mutateLocalStore(
+          (current) => ({ tags: { ...current.tags, [sessionId]: tags } }),
+          options.localStorePath,
+        );
         return { tags };
       } catch (err) {
         app.log.error({ err, sessionId }, "failed to save session tags");

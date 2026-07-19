@@ -8,6 +8,7 @@ import type {
   PromptTextRecord,
   ToolResultBytesRecord,
 } from "./parse-transcript.js";
+import { isRecord } from "../util.js";
 
 export interface WarmCacheKey {
   path: string;
@@ -40,10 +41,6 @@ type CacheRecordLine =
   | { kind: "tool-result-bytes"; record: ToolResultBytesRecord }
   | { kind: "compaction"; record: CompactionRecord }
   | { kind: "meta"; duplicateCount: number; malformedCount: number };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function isWarmCacheKey(value: unknown): value is WarmCacheKey {
   return (

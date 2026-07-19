@@ -112,15 +112,23 @@ export class Store {
   }
 
   /**
-   * Swap the root->label map and recompute every session's `host`
-   * (ARCH-settings-local-store.md). Mirrors `updatePricing`: a relabel via
-   * `PUT /api/config` takes effect on the next read, no restart or
-   * re-ingest needed since `sessionRoot` (the immutable part) is untouched.
+   * Swap the root->label map and refresh every session's `host` in place
+   * (ARCH-settings-local-store.md). Mirrors `updatePricing`'s "relabel takes
+   * effect on next read, no restart needed" contract, but — unlike
+   * `updatePricing`, where every derived field can depend on the new
+   * pricing — `host` is the *only* field `deriveSession` derives from
+   * `hostLabels` (see derive-session.ts). Patching it directly skips a full
+   * `deriveTurns`/`deriveSession` recompute for every session on a pure
+   * display-label rename, which would otherwise redo real derivation work
+   * for a change that doesn't touch any session's calls/turns/pricing.
    */
   updateHostLabels(hostLabels: Map<string, string>): void {
     this.hostLabels = hostLabels;
-    for (const sessionId of this.sessions.keys()) {
-      this.invalidator.markDirty(sessionId);
+    for (const [sessionId, state] of this.sessions) {
+      if (!state.session) continue;
+      const rootPath = this.sessionRoot.get(sessionId);
+      const host = rootPath ? (hostLabels.get(rootPath) ?? rootPath) : undefined;
+      state.session = { ...state.session, host: host ?? "unlabeled" };
     }
   }
 
