@@ -85,13 +85,13 @@ lanes concurrently unless their start-time plans prove the edits are isolated.
 | #P4-2 / #34 Dashboard | #84 | 6 | solo, Dashboard | ✅ closed |
 | #P4-4 / #36 Sessions | #34 | 4 | Sessions | ✅ closed |
 | #P4-5 / #37 Session Detail | #34 | 5 | Session Detail | ✅ closed |
-| #P4-7 / #39 Projects | #34 | 3 | Projects | ⚪ open |
+| #P4-7 / #39 Projects | #34 | 3 | Projects | ✅ closed |
 | #P4-8 / #40 Models | #34 | 4 | Models | ✅ closed |
 | #P4-9 / #41 Cache Lab | #34 | 5 | Cache Lab | ✅ closed |
 | #P4-10 / #42 Trends/Budget | #34 | 4 | Dashboard, config | ✅ closed |
 | #P4-3 / #35 Search | #36 and #37 | 2 | Sessions | ⚪ open |
 | #P4-6 / #38 Turn Inspector | #37 | 4 | Turn Inspector | 🟠 In progress (`feat/38/turn-inspector`) |
-| #P4-11 / #43 Gates engine | #41 | 4 | gate/config plumbing | ⚪ open |
+| #P4-11 / #43 Gates engine | #41 | 4 | gate/config plumbing | ✅ closed |
 | #P4-12 / #44 Report Card UI | #36, #37, #38, #39, #42, and #43 | 2 | cross-page integration | ⚪ open |
 | #P4-13 / #45 Premium upgrades | #36, #37, #38, #40, and #41 | 3 | cross-page integration | ⚪ open |
 | #P4-14 / #46 Data Health | #45 | 2 | Data Health | ⚪ open |
@@ -437,6 +437,8 @@ Do not parallelize it. Each task consumes the prior task's output.
 
 Informational only; always refresh using §6.
 
+- 2026-07-19 (updated again): #39 and #43 have also merged and been archived since the prior
+  2026-07-19 entry. Remaining open: #35, #38, #44, #45, #46, #47, #48, #49, #50.
 - 2026-07-19 (updated): #40 and #42 have also merged and been archived since the earlier
   2026-07-19 entry below. Remaining open: #35, #38, #39, #43, #44, #45, #46, #47, #48, #49,
   #50. #38 is still in flight on `feat/38/turn-inspector` (worktree `.worktrees/38`, no PR
