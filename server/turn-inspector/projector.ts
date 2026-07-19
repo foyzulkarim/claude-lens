@@ -71,9 +71,12 @@ function buildSummary(
     fleetTurnCostsSortedAsc.length === 0
       ? null
       : (fleetTurnCostsSortedAsc[fleetMedianIndex] ?? null);
-  const percentile = percentileRank(fleetTurnCostsSortedAsc, cost);
+  // Contract: percentile is null when the fleet baseline has fewer than
+  // two entries — a single sample has no rank among itself.
+  const percentile =
+    fleetTurnCostsSortedAsc.length < 2 ? null : percentileRank(fleetTurnCostsSortedAsc, cost);
 
-  return {
+  const summary: TurnInspectorSummary = {
     sessionId: snapshot.session.sessionId,
     turnNumber: group.turnNumber,
     totalTurns,
@@ -89,6 +92,16 @@ function buildSummary(
     fleetPercentile: percentile === null ? null : roundCost(percentile),
     isAnomaly: fleetMedian !== null && fleetMedian > 0 && cost > fleetMedian * ANOMALY_FACTOR,
   };
+  // Optional premium fields — surfaced only when present on the source
+  // Turn record (mirrors `server/session-detail/projector.ts`). The Store
+  // doesn't populate them yet (#P4-13), so today these slots are always
+  // absent, but the shape is reserved. `apiMs` isn't on Turn yet, but the
+  // wire field stays reserved in the contract for the same future capture.
+  const sourceTurn = group.main ?? group.sidechains[0];
+  if (sourceTurn) {
+    if (sourceTurn.wallMs !== undefined) summary.wallMs = sourceTurn.wallMs;
+  }
+  return summary;
 }
 
 // ---------------------------------------------------------------------------
@@ -272,6 +285,10 @@ export function projectTurnInspector(
     totalTurns: logicalTurns.length,
   };
 
+  const availability: TurnInspectorResponse["meta"]["availability"] = [];
+  if (summary.wallMs !== undefined) availability.push("summary.wallMs");
+  if (summary.apiMs !== undefined) availability.push("summary.apiMs");
+
   return {
     summary,
     waterfall,
@@ -280,7 +297,7 @@ export function projectTurnInspector(
     nav,
     meta: {
       costBasis: snapshot.session.tier.costBasis,
-      availability: [],
+      availability,
       fleetBaselineSize: fleetTurnCostsSortedAsc.length,
     },
   };

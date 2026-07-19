@@ -48,9 +48,10 @@ export function Waterfall({ calls }: WaterfallProps): React.JSX.Element {
         <h2 className="text-sm font-semibold text-slate-900 dark:text-[#E8EDF2]">
           API-call waterfall
         </h2>
-        <div className="flex gap-1">
+        <fieldset aria-label="Waterfall metric" className="flex gap-1 border-0 p-0">
           <button
             type="button"
+            aria-pressed={mode === "time"}
             className={mode === "time" ? `${TOGGLE_CLASS} ${TOGGLE_ACTIVE_CLASS}` : TOGGLE_CLASS}
             onClick={() => setMode("time")}
           >
@@ -58,12 +59,13 @@ export function Waterfall({ calls }: WaterfallProps): React.JSX.Element {
           </button>
           <button
             type="button"
+            aria-pressed={mode === "tokens"}
             className={mode === "tokens" ? `${TOGGLE_CLASS} ${TOGGLE_ACTIVE_CLASS}` : TOGGLE_CLASS}
             onClick={() => setMode("tokens")}
           >
             by tokens
           </button>
-        </div>
+        </fieldset>
       </div>
 
       <ul aria-label="Calls" className="mt-3 space-y-1.5">

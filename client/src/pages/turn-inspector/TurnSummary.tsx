@@ -4,7 +4,7 @@ import type {
   TurnInspectorSummary,
 } from "../../../../shared/turn-inspector-contract.js";
 import { Badge } from "../../components/Badge.js";
-import { formatCost, formatPercentile, formatTokens, shortId } from "./format.js";
+import { formatCost, formatDuration, formatPercentile, formatTokens, shortId } from "./format.js";
 
 export interface TurnSummaryProps {
   summary: TurnInspectorSummary;
@@ -82,7 +82,7 @@ export function TurnSummary({ summary, nav }: TurnSummaryProps): React.JSX.Eleme
 
       <p className="mt-2 font-mono text-[11px] text-slate-400 dark:text-[#5A6675]">
         {summary.wallMs !== undefined ? (
-          `wall ${formatTokens(summary.wallMs)}ms`
+          `wall ${formatDuration(summary.wallMs)}`
         ) : (
           <>
             api/wall time <Badge variant="premium">needs cost capture</Badge> — widths below use
