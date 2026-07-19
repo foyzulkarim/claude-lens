@@ -172,6 +172,32 @@ describe("live-window cards — stable default time", () => {
     }
   });
 
+  it("sends the true, unrounded extent to the server — flooring is cache-key-only (#P4-20 review follow-up)", async () => {
+    installWindowSeries();
+    // A `to` that deliberately doesn't land on a minute boundary. Regression
+    // guard: the real request must carry this exact value. If it regresses
+    // to sending the floored (cache-key) value instead, live usage figures
+    // silently undercount for up to 59s after every minute boundary, since
+    // the engine filters calls strictly against `range.to`
+    // (server/metrics/engine.ts's `ts > rangeToMs` check).
+    listSessionsMock.mockResolvedValue({
+      ...WINDOW_EXTENT,
+      meta: {
+        ...WINDOW_EXTENT.meta,
+        matchedExtent: { from: "2026-07-01T00:00:00.000Z", to: "2026-07-10T12:00:45.000Z" },
+      },
+    });
+
+    renderCard(<SubscriptionWindow />);
+
+    await screen.findByLabelText("5h window: 150 tokens");
+    expect(postMetricsMock).toHaveBeenCalledTimes(4);
+    for (const [rawQuery] of postMetricsMock.mock.calls) {
+      const query = rawQuery as SeriesMetricsQuery;
+      expect(query.range.to).toBe("2026-07-10T12:00:45.000Z");
+    }
+  });
+
   it("keeps the configured ceiling as the ARIA maximum and clamps only the range value", async () => {
     installWindowSeries();
 
