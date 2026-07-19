@@ -16,10 +16,12 @@ import { TOGGLE_CLASS } from "../ui/toggleStyles.js";
  * has a tabular current view to export. Copy-permalink is always
  * available — it's just the current URL.
  */
+type PermalinkStatus = "idle" | "copied" | "error";
+
 export function GlobalActionsBar() {
   const [location] = useLocation();
   const search = useSearch();
-  const [copied, setCopied] = useState(false);
+  const [permalinkStatus, setPermalinkStatus] = useState<PermalinkStatus>("idle");
 
   const isSessionsList = location === "/sessions";
 
@@ -29,6 +31,8 @@ export function GlobalActionsBar() {
     const url = buildExportUrl(pageState, filters, format, new Date());
     const link = document.createElement("a");
     link.href = url;
+    // download="": let the browser infer the filename from the response's
+    // Content-Disposition header rather than hardcoding one here.
     link.download = "";
     document.body.appendChild(link);
     link.click();
@@ -36,25 +40,50 @@ export function GlobalActionsBar() {
   }
 
   async function copyPermalink(): Promise<void> {
-    await navigator.clipboard.writeText(window.location.href);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setPermalinkStatus("copied");
+    } catch {
+      setPermalinkStatus("error");
+    }
+    setTimeout(() => setPermalinkStatus("idle"), 1500);
   }
 
+  const permalinkLabel =
+    permalinkStatus === "copied"
+      ? "Copied!"
+      : permalinkStatus === "error"
+        ? "Copy failed"
+        : "Copy permalink";
+
   return (
-    <div className="flex items-center gap-2 border-b border-slate-200 bg-white px-4 py-2 dark:border-[#232B36] dark:bg-[#0B0F14]">
+    <div
+      role="toolbar"
+      aria-label="Export actions"
+      className="flex items-center gap-2 border-b border-slate-200 bg-white px-4 py-2 dark:border-[#232B36] dark:bg-[#0B0F14]"
+    >
       {isSessionsList && (
         <>
-          <button type="button" onClick={() => triggerExport("csv")} className={TOGGLE_CLASS}>
+          <button
+            type="button"
+            onClick={() => triggerExport("csv")}
+            className={TOGGLE_CLASS}
+            aria-label="Export CSV"
+          >
             Export CSV
           </button>
-          <button type="button" onClick={() => triggerExport("json")} className={TOGGLE_CLASS}>
+          <button
+            type="button"
+            onClick={() => triggerExport("json")}
+            className={TOGGLE_CLASS}
+            aria-label="Export JSON"
+          >
             Export JSON
           </button>
         </>
       )}
       <button type="button" onClick={() => void copyPermalink()} className={TOGGLE_CLASS}>
-        {copied ? "Copied!" : "Copy permalink"}
+        <span aria-live="polite">{permalinkLabel}</span>
       </button>
     </div>
   );

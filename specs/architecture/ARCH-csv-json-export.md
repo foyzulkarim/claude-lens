@@ -191,6 +191,11 @@ None.
   - **Impact if unresolved:** the client receives a truncated file with no explicit "export failed" signal — an inherent limitation of streaming HTTP downloads, not specific to this feature.
   - **Suggested default:** accept this as the honest state of the art (same as any streaming download from any web app); do not add complexity (e.g., checksums, trailers) to work around it unless real-world truncation turns out to be a problem post-ship.
 
+## Known Limits (review PR #101)
+
+- **Date-span bound:** `from..to` is capped at 90 days (`MAX_SPAN_MS` in `export.ts`) to keep a single request from forcing an unbounded full-store scan. Filter array params (`project`, `model`, `branch`, `host`, `entrypoint`) are capped at 20 comma-separated values each (`MAX_FILTER_VALUES_PER_KEY`). Both are generous defaults for a local single-user tool, not hard product requirements — revisit if real usage needs a wider range or more values.
+- **Full-set memory materialization:** `store.listSessions()` is filtered, sorted, and projected to `SessionPageItem[]` entirely in memory before the response starts streaming (same cost profile as `GET /api/sessions?view=page`). Only the *serialized text* is streamed row-by-row; a very large matched population still holds its full row array in memory first. Acceptable at today's expected data volumes; would need a cursor/paginated population read to remove entirely.
+
 ## Out of Scope
 
 - Export support for pages other than Sessions (Dashboard, Models, Projects, etc.) — the pages spec lists "Export current view" as a global-layer capability, but only Sessions has a tabular "current view" today; other pages are chart-composition pages with no equivalent row-level export target yet. Revisit per-page when/if a page defines its own exportable table.

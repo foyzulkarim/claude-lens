@@ -37,6 +37,21 @@ export interface ExportParams {
 
 const ORDER_KEYS = new Set<ExportOrder>(["asc", "desc"]);
 
+// Loose but bounded ISO 8601 date/datetime — rejects bare-word or
+// obviously-malformed strings that `Date.parse` alone would still accept
+// (SEC-3, review PR #101).
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})?)?$/;
+
+// Upper bound on a single export request's date span, to keep a single
+// request from forcing a full-store scan (SEC-1, review PR #101). Generous
+// for a local single-user tool; not a hard product requirement.
+const MAX_SPAN_MS = 90 * 24 * 60 * 60 * 1000;
+
+// Cap on comma-separated values per filter param, so a pathological query
+// string can't inflate the parsed filter arrays unboundedly (SEC-2, review
+// PR #101).
+const MAX_FILTER_VALUES_PER_KEY = 20;
+
 /**
  * Parses the Fastify query object into a typed `ExportParams`. Same
  * "string-on-error, never-throws" contract as `parseSessionsPageQuery`.
@@ -53,20 +68,31 @@ export function parseExportQuery(raw: unknown): ExportParams | string {
   }
   const format = q.format;
 
-  if (typeof q.from !== "string" || !Number.isFinite(Date.parse(q.from))) {
-    return "from is required and must be a parseable ISO date string";
+  if (
+    typeof q.from !== "string" ||
+    !ISO_DATE_RE.test(q.from) ||
+    !Number.isFinite(Date.parse(q.from))
+  ) {
+    return "from is required and must be an ISO 8601 date string";
   }
-  if (typeof q.to !== "string" || !Number.isFinite(Date.parse(q.to))) {
-    return "to is required and must be a parseable ISO date string";
+  if (typeof q.to !== "string" || !ISO_DATE_RE.test(q.to) || !Number.isFinite(Date.parse(q.to))) {
+    return "to is required and must be an ISO 8601 date string";
   }
   if (Date.parse(q.from) > Date.parse(q.to)) {
     return "from must be <= to";
+  }
+  if (Date.parse(q.to) - Date.parse(q.from) > MAX_SPAN_MS) {
+    return "from..to must not span more than 90 days";
   }
   const from = q.from;
   const to = q.to;
 
   let sort: ExportSortKey = "lastAt";
   if (q.sort !== undefined) {
+    // sort must be one of PAGE_SORT_KEYS (server/routes/sessions.ts) — any
+    // sort key added there is automatically exportable; keep that list the
+    // single source of truth for "safe to expose" sort keys (SEC-4, review
+    // PR #101).
     if (typeof q.sort !== "string" || !PAGE_SORT_KEYS.has(q.sort as ExportSortKey)) {
       return "sort must be one of the supported Sessions-page sort keys";
     }
@@ -94,6 +120,9 @@ export function parseExportQuery(raw: unknown): ExportParams | string {
         .filter((s) => s.length > 0);
       if (items.length === 0) {
         return `${key} must contain at least one non-empty value`;
+      }
+      if (items.length > MAX_FILTER_VALUES_PER_KEY) {
+        return `${key} must contain at most ${MAX_FILTER_VALUES_PER_KEY} values`;
       }
       params[key] = items;
     }

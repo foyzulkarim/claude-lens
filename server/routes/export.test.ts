@@ -147,6 +147,34 @@ describe("GET /api/export — validation", () => {
     });
     expect(response.statusCode).toBe(400);
   });
+
+  it("rejects a bare-word date that Date.parse would otherwise accept", async () => {
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/export?format=csv&from=today&to=2026-07-19T00:00:00.000Z",
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ error: expect.stringContaining("from") });
+  });
+
+  it("rejects a from..to span exceeding the 90-day cap", async () => {
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/export?format=csv&from=1970-01-01T00:00:00.000Z&to=2099-01-01T00:00:00.000Z",
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ error: expect.stringContaining("90 days") });
+  });
+
+  it("rejects more than 20 comma-separated values for a filter param", async () => {
+    const project = Array.from({ length: 21 }, (_, i) => `p${i}`).join(",");
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/export?format=csv&from=2026-07-01T00:00:00.000Z&to=2026-07-19T00:00:00.000Z&project=${project}`,
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ error: expect.stringContaining("at most 20 values") });
+  });
 });
 
 describe("GET /api/export — CSV", () => {

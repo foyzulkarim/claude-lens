@@ -47,17 +47,17 @@ describe("GlobalActionsBar — route gating", () => {
 });
 
 describe("GlobalActionsBar — export href construction", () => {
-  let clickSpy: ReturnType<typeof vi.fn<() => void>>;
+  let clickSpy: ReturnType<typeof vi.spyOn>;
   let appendSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
-    clickSpy = vi.fn<() => void>();
-    HTMLAnchorElement.prototype.click = clickSpy;
+    clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
     appendSpy = vi.spyOn(document.body, "appendChild");
   });
 
   afterEach(() => {
     appendSpy.mockRestore();
+    clickSpy.mockRestore();
   });
 
   function lastAppendedAnchor(): HTMLAnchorElement | undefined {
@@ -103,5 +103,21 @@ describe("GlobalActionsBar — copy permalink", () => {
 
     await screen.findByRole("button", { name: "Copied!" });
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(window.location.href);
+  });
+});
+
+describe("GlobalActionsBar — copy permalink failure", () => {
+  beforeEach(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText: vi.fn().mockRejectedValue(new Error("permission denied")) },
+      configurable: true,
+    });
+  });
+
+  it("shows an error message instead of silently reporting success", async () => {
+    renderAt("/sessions", "?range=30d");
+    fireEvent.click(screen.getByRole("button", { name: "Copy permalink" }));
+
+    await screen.findByRole("button", { name: "Copy failed" });
   });
 });
