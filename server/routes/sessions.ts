@@ -68,7 +68,7 @@ const SUMMARY_SORT_KEYS = new Set<NonNullable<SessionListParams["sort"]>>([
   "cacheSavingsComputed",
   "maxTurnCostComputed",
 ]);
-const PAGE_SORT_KEYS = new Set<NonNullable<SessionPageParams["sort"]>>([
+export const PAGE_SORT_KEYS = new Set<NonNullable<SessionPageParams["sort"]>>([
   "lastAt",
   "costComputed",
   "costObserved",
@@ -576,7 +576,7 @@ function projectItem(session: Session, trace: TracePoint[] | undefined): Session
 /** Numeric/date/string extraction for every supported page sort key. The
  * exhaustive switch throws on a future SortKey addition rather than silently
  * falling through (review #18 pattern from the summary projection). */
-function pageSortValue(session: Session, key: PageSortKey): number | string {
+export function pageSortValue(session: Session, key: PageSortKey): number | string {
   switch (key) {
     case "lastAt":
       return session.lastAt;
@@ -609,7 +609,7 @@ function pageSortValue(session: Session, key: PageSortKey): number | string {
   }
 }
 
-function comparePageSessions(
+export function comparePageSessions(
   a: Session,
   b: Session,
   key: PageSortKey,
@@ -659,7 +659,7 @@ function pagePopulationFilter(params: SessionPageParams): SessionPopulationFilte
 /** Strict page-row projection (ARCH `SessionPageItem`). Keeps every
  * transcript-tier field mandatory and surfaces optional premium / gate /
  * tag fields exactly when present (no fabrication). */
-function projectPageItem(session: Session): SessionPageItem {
+export function projectPageItem(session: Session): SessionPageItem {
   return {
     sessionId: session.sessionId,
     startedAt: session.firstAt,

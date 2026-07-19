@@ -6,6 +6,7 @@ import fastifyWebsocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from "fastify";
 import { registerCacheLabRoute } from "./routes/cache-lab.js";
 import { registerConfigRoute } from "./routes/config.js";
+import { registerExportRoute } from "./routes/export.js";
 import { registerGatesRoute } from "./routes/gates.js";
 import { registerMetricsRoute } from "./routes/metrics.js";
 import { registerSessionDetailRoute } from "./routes/session-detail.js";
@@ -113,6 +114,8 @@ export function buildApp({
   );
 
   registerCacheLabRoute(app, store, metadata?.pricing ? { pricing: metadata.pricing } : undefined);
+
+  registerExportRoute(app, store);
 
   registerConfigRoute(app, configPath ? { configPath } : undefined);
 

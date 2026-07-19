@@ -389,6 +389,44 @@ export function buildScatterQuery(
 }
 
 /**
+ * Builds the `/api/export` URL for the current Sessions-page view (ARCH
+ * A6). Mirrors `buildListQuery`'s field mapping minus pagination/include/
+ * compare — export always returns the full matched population, not a page
+ * or a compare selection.
+ */
+export function buildExportUrl(
+  state: SessionsPageState,
+  filters: FilterState,
+  format: "csv" | "json",
+  now: Date,
+): string {
+  const range = resolveRange(filters.range, now);
+  const params = new URLSearchParams();
+  params.set("format", format);
+  params.set("from", range.from);
+  params.set("to", range.to);
+  params.set("sort", state.sort);
+  params.set("order", state.order);
+  if (filters.project.length > 0) params.set("project", [...filters.project].sort().join(","));
+  if (filters.model.length > 0) params.set("model", [...filters.model].sort().join(","));
+  if (filters.branch.length > 0) params.set("branch", [...filters.branch].sort().join(","));
+  if (filters.host.length > 0) params.set("host", [...filters.host].sort().join(","));
+  if (state.entrypoint && state.entrypoint.length > 0) {
+    params.set("entrypoint", [...state.entrypoint].sort().join(","));
+  }
+  if (state.minCostComputed !== undefined) {
+    params.set("minCostComputed", String(state.minCostComputed));
+  }
+  if (state.maxCostComputed !== undefined) {
+    params.set("maxCostComputed", String(state.maxCostComputed));
+  }
+  if (state.hasDrilldown !== undefined) {
+    params.set("hasDrilldown", state.hasDrilldown ? "true" : "false");
+  }
+  return `/api/export?${params.toString()}`;
+}
+
+/**
  * Build the canonical `SessionPopulationCriteria` (metrics-query shape)
  * from page state + global filters. Used by distribution + scatter queries
  * — one helper so the population is identical across sections.
