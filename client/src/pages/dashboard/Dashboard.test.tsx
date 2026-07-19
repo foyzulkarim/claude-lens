@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Router } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
 import type { Series } from "../../../../shared/metrics-contract.js";
+import type { AppConfig } from "../../../../shared/settings-contract.js";
 import type { SessionListResponse } from "../../../../shared/sessions-contract.js";
 import type { ChartProps } from "../../charts/Chart.js";
 
@@ -23,6 +24,13 @@ vi.mock("../../api/sessions.js", () => ({
 const postMetricsMock = vi.fn<(query: unknown) => Promise<Series[]>>();
 vi.mock("../../api/metrics.js", () => ({
   postMetrics: (query: unknown) => postMetricsMock(query),
+}));
+
+// #P4-10: Dashboard now also reads GET /api/config to thread a configured
+// budget into BurnRateCard (ARCH-trends-calendar-budget.md decision A6).
+const getConfigMock = vi.fn<() => Promise<AppConfig>>();
+vi.mock("../../api/config.js", () => ({
+  getConfig: () => getConfigMock(),
 }));
 
 // Same real-ECharts-avoidance pattern as ChartCard.test.tsx: jsdom has no
@@ -68,6 +76,8 @@ beforeEach(() => {
   listSessionsMock.mockResolvedValue(emptySessionsResponse());
   postMetricsMock.mockReset();
   postMetricsMock.mockResolvedValue([]);
+  getConfigMock.mockReset();
+  getConfigMock.mockResolvedValue({ budget: null });
 });
 
 afterEach(() => {
@@ -121,5 +131,13 @@ describe("Dashboard — 12-section smoke composition", () => {
     expect(screen.getByTestId("burn-rate-card")).toBeInTheDocument();
     expect(screen.getByTestId("savings-decomposition")).toBeInTheDocument();
     expect(screen.getByText("Failed work")).toBeInTheDocument();
+  });
+
+  it("threads a configured budget from GET /api/config into BurnRateCard (#P4-10)", async () => {
+    getConfigMock.mockResolvedValue({ budget: 300 });
+    renderDashboard();
+    await waitFor(() =>
+      expect(screen.getByTestId("burn-rate-card")).toHaveTextContent("of $300.00 budget"),
+    );
   });
 });

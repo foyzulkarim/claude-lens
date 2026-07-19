@@ -1,18 +1,44 @@
-import type { BarSeriesOption, LineSeriesOption, ScatterSeriesOption } from "echarts/charts";
-import { BarChart, LineChart, ScatterChart } from "echarts/charts";
-import type { GridComponentOption, TooltipComponentOption } from "echarts/components";
-import { GridComponent, TooltipComponent } from "echarts/components";
+import type {
+  BarSeriesOption,
+  HeatmapSeriesOption,
+  LineSeriesOption,
+  ScatterSeriesOption,
+} from "echarts/charts";
+import { BarChart, HeatmapChart, LineChart, ScatterChart } from "echarts/charts";
+import type {
+  CalendarComponentOption,
+  GridComponentOption,
+  TooltipComponentOption,
+  VisualMapComponentOption,
+} from "echarts/components";
+import {
+  CalendarComponent,
+  GridComponent,
+  TooltipComponent,
+  VisualMapComponent,
+} from "echarts/components";
 import type { ComposeOption, ECElementEvent } from "echarts/core";
 import * as echarts from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
 import { useEffect, useRef } from "react";
 import type { TimeseriesOption } from "./timeseries.js";
 
-// Register the time-series + scatter chart families (ARCH A9). The scatter
-// addition is purely additive — existing line/bar consumers are untouched,
-// and the lifecycle (`init`/`resize`/`setOption`/`on`/`dispose`) is shared
+// Register the time-series + scatter + heatmap/calendar chart families
+// (ARCH A9; ARCH-trends-calendar-budget.md A4). Every addition here is
+// purely additive — existing line/bar/scatter consumers are untouched, and
+// the lifecycle (`init`/`resize`/`setOption`/`on`/`dispose`) is shared
 // across families.
-echarts.use([LineChart, BarChart, ScatterChart, GridComponent, TooltipComponent, CanvasRenderer]);
+echarts.use([
+  LineChart,
+  BarChart,
+  ScatterChart,
+  HeatmapChart,
+  GridComponent,
+  TooltipComponent,
+  CalendarComponent,
+  VisualMapComponent,
+  CanvasRenderer,
+]);
 
 /**
  * The widened chart option type — ARCH A9: "reusable unchanged by future
@@ -23,8 +49,11 @@ export type ChartOption = ComposeOption<
   | LineSeriesOption
   | BarSeriesOption
   | ScatterSeriesOption
+  | HeatmapSeriesOption
   | GridComponentOption
   | TooltipComponentOption
+  | CalendarComponentOption
+  | VisualMapComponentOption
 >;
 
 export interface ChartProps {

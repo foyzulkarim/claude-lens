@@ -5,6 +5,7 @@ import fastifyStatic from "@fastify/static";
 import fastifyWebsocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from "fastify";
 import { registerCacheLabRoute } from "./routes/cache-lab.js";
+import { registerConfigRoute } from "./routes/config.js";
 import { registerMetricsRoute } from "./routes/metrics.js";
 import { registerSessionDetailRoute } from "./routes/session-detail.js";
 import { registerSessionsRoute } from "./routes/sessions.js";
@@ -62,6 +63,12 @@ export interface BuildAppOptions {
    * accumulate across a suite that builds many apps (MaxListeners warning).
    */
   logger?: FastifyServerOptions["logger"];
+  /**
+   * Overrides `~/.claude-lens/config.json`'s path for `GET/PUT /api/config`
+   * (#P4-10). Tests point this at a temp file so route tests never touch
+   * the real user config; production (`cli.ts`) never sets it.
+   */
+  configPath?: string;
 }
 
 export function buildApp({
@@ -69,6 +76,7 @@ export function buildApp({
   broadcaster = createBroadcaster(),
   metadata,
   logger,
+  configPath,
 }: BuildAppOptions): FastifyInstance {
   const app = Fastify({
     logger: logger ?? {
@@ -96,6 +104,8 @@ export function buildApp({
   );
 
   registerCacheLabRoute(app, store, metadata?.pricing ? { pricing: metadata.pricing } : undefined);
+
+  registerConfigRoute(app, configPath ? { configPath } : undefined);
 
   registerSessionDetailRoute(
     app,

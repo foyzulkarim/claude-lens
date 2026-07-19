@@ -20,8 +20,14 @@ vi.mock("echarts/charts", () => ({
   LineChart: {},
   BarChart: {},
   ScatterChart: {},
+  HeatmapChart: {},
 }));
-vi.mock("echarts/components", () => ({ GridComponent: {}, TooltipComponent: {} }));
+vi.mock("echarts/components", () => ({
+  GridComponent: {},
+  TooltipComponent: {},
+  CalendarComponent: {},
+  VisualMapComponent: {},
+}));
 vi.mock("echarts/renderers", () => ({ CanvasRenderer: {} }));
 
 const { Chart } = await import("./Chart.js");

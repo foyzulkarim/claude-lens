@@ -1,3 +1,6 @@
+import { useQuery } from "@tanstack/react-query";
+import { getConfig } from "../api/config.js";
+import { qk } from "../api/queryKeys.js";
 import { ChartCard } from "../charts/ChartCard.js";
 import { AnomalyFeed } from "./dashboard/AnomalyFeed.js";
 import { BurnRateCard } from "./dashboard/BurnRateCard.js";
@@ -30,6 +33,15 @@ import { SubscriptionWindow } from "./dashboard/SubscriptionWindow.js";
  * section's own error text and leaves the rest of the page intact.
  */
 export function Dashboard() {
+  // #P4-10: the config-sourced monthly budget, threaded into BurnRateCard's
+  // existing `budget` prop — its over-budget red state already *is* the
+  // Dashboard threshold alert (ARCH-trends-calendar-budget.md decision A6),
+  // so no new AnomalyFeedItem kind is introduced for this.
+  const { data: config } = useQuery({
+    queryKey: qk.config(),
+    queryFn: ({ signal }) => getConfig(signal),
+  });
+
   return (
     <div className="flex flex-col gap-4 p-6">
       <h1 className="text-xl font-semibold text-slate-900 dark:text-[#E8EDF2]">Dashboard</h1>
@@ -47,7 +59,7 @@ export function Dashboard() {
 
       {/* 3. Burn-rate card + 5. Leaderboards */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <BurnRateCard />
+        <BurnRateCard budget={config?.budget ?? undefined} />
         <LeaderboardsCard />
       </div>
 

@@ -11,6 +11,15 @@ export type TimeseriesOption = ComposeOption<
 export interface BuildTimeseriesOptions {
   family: "area" | "bars";
   unit: Unit;
+  /**
+   * Stacks `"bars"`-family series onto one shared stack (ECharts `stack:
+   * "total"`) — the Trends stacked-weekly-bars panel's project/model
+   * breakdown (ARCH-trends-calendar-budget.md A4). Ignored for the `"area"`
+   * family and for the `compareGhost` overlay, which never stacks against
+   * the primary series. Defaults to `false` so every existing bar-family
+   * call site (unstacked) is unaffected.
+   */
+  stacked?: boolean;
 }
 
 // Muted/dashed styling for the previous-period ghost line — visually
@@ -30,7 +39,7 @@ function toData(points: Series["points"]): [string, number | null][] {
  */
 export function buildTimeseriesOption(
   series: Series[],
-  { family, unit }: BuildTimeseriesOptions,
+  { family, unit, stacked = false }: BuildTimeseriesOptions,
 ): TimeseriesOption {
   const seriesOption: (LineSeriesOption | BarSeriesOption)[] = [];
 
@@ -40,6 +49,7 @@ export function buildTimeseriesOption(
         type: "bar",
         name: s.label,
         data: toData(s.points),
+        ...(stacked ? { stack: "total" } : {}),
       });
     } else {
       seriesOption.push({

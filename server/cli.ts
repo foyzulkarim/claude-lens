@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { createServer } from "node:net";
+import { join } from "node:path";
 import type { FastifyInstance } from "fastify";
 import open from "open";
 import { buildApp } from "./app.js";
@@ -15,6 +16,13 @@ interface CliOptions {
   port?: number;
   open: boolean;
   roots: string[];
+  /**
+   * Overrides `~/.claude-lens`'s directory for `GET/PUT /api/config`
+   * (#P4-10). Undocumented/internal — `scripts/e2e.ts` passes this pointed
+   * at its already-isolated fixture temp dir so an e2e run's budget writes
+   * never touch a developer's real `~/.claude-lens/config.json`.
+   */
+  configDir?: string;
 }
 
 class CliUsageError extends Error {}
@@ -46,6 +54,12 @@ function parseArgs(argv: string[]): CliOptions {
       while (argv[i + 1] && !argv[i + 1].startsWith("--")) {
         options.roots.push(argv[++i]);
       }
+    } else if (flag === "--config-dir") {
+      const raw = inlineValue ?? argv[++i];
+      if (raw === undefined) {
+        throw new CliUsageError("--config-dir requires a directory path");
+      }
+      options.configDir = raw;
     } else {
       throw new CliUsageError(`Unrecognized option: ${arg}`);
     }
@@ -119,7 +133,12 @@ async function main() {
   const config = resolveScanConfig({ roots: options.roots });
   const broadcaster = createBroadcaster();
   const ingest = startIngest(config, { onInvalidate: broadcaster.broadcast, metadata });
-  const app = buildApp({ store: ingest.store, broadcaster, metadata });
+  const app = buildApp({
+    store: ingest.store,
+    broadcaster,
+    metadata,
+    configPath: options.configDir ? join(options.configDir, "config.json") : undefined,
+  });
 
   // Ingest now holds real poller/tailer timers and open file handles; tear it
   // down on signals so Ctrl-C doesn't leak them. stop() is a hard boundary
