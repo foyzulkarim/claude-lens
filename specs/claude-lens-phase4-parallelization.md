@@ -78,27 +78,29 @@ There are three dependency types:
 queue to protect the finish date. `Reservation` names shared surfaces that must not be edited by two
 lanes concurrently unless their start-time plans prove the edits are isolated.
 
-| Plan / GitHub | Start only after these issues close | Depth | Reservation |
-|---|---|---:|---|
-| #P4-1 / #33 Primitives | #32 and #85 | 8 | solo |
-| #P4-19 / #84 Accessible charts | #33 | 7 | solo |
-| #P4-2 / #34 Dashboard | #84 | 6 | solo, Dashboard |
-| #P4-4 / #36 Sessions | #34 | 4 | Sessions |
-| #P4-5 / #37 Session Detail | #34 | 5 | Session Detail |
-| #P4-7 / #39 Projects | #34 | 3 | Projects |
-| #P4-8 / #40 Models | #34 | 4 | Models |
-| #P4-9 / #41 Cache Lab | #34 | 5 | Cache Lab |
-| #P4-10 / #42 Trends/Budget | #34 | 4 | Dashboard, config |
-| #P4-3 / #35 Search | #36 and #37 | 2 | Sessions |
-| #P4-6 / #38 Turn Inspector | #37 | 4 | Turn Inspector |
-| #P4-11 / #43 Gates engine | #41 | 4 | gate/config plumbing |
-| #P4-12 / #44 Report Card UI | #36, #37, #38, #39, #42, and #43 | 2 | cross-page integration |
-| #P4-13 / #45 Premium upgrades | #36, #37, #38, #40, and #41 | 3 | cross-page integration |
-| #P4-14 / #46 Data Health | #45 | 2 | Data Health |
-| #P4-15 / #47 Settings | #36, #37, #42, and #43 | 3 | Sessions, config |
-| #P4-16 / #48 Explore | #47 | 2 | Dashboard |
-| #P4-17 / #49 Export | #36 | 2 | global export |
-| #P4-18 / #50 Cross-page E2E | every issue #35–#49 | 1 | solo terminal gate |
+| Plan / GitHub | Start only after these issues close | Depth | Reservation | Status |
+|---|---|---:|---|---|
+| #P4-1 / #33 Primitives | #32 and #85 | 8 | solo | ✅ closed |
+| #P4-19 / #84 Accessible charts | #33 | 7 | solo | ✅ closed |
+| #P4-2 / #34 Dashboard | #84 | 6 | solo, Dashboard | ✅ closed |
+| #P4-4 / #36 Sessions | #34 | 4 | Sessions | ✅ closed |
+| #P4-5 / #37 Session Detail | #34 | 5 | Session Detail | ✅ closed |
+| #P4-7 / #39 Projects | #34 | 3 | Projects | ⚪ open |
+| #P4-8 / #40 Models | #34 | 4 | Models | ⚪ open |
+| #P4-9 / #41 Cache Lab | #34 | 5 | Cache Lab | ✅ closed |
+| #P4-10 / #42 Trends/Budget | #34 | 4 | Dashboard, config | ⚪ open |
+| #P4-3 / #35 Search | #36 and #37 | 2 | Sessions | ⚪ open |
+| #P4-6 / #38 Turn Inspector | #37 | 4 | Turn Inspector | 🟠 In progress (`feat/38/turn-inspector`) |
+| #P4-11 / #43 Gates engine | #41 | 4 | gate/config plumbing | ⚪ open |
+| #P4-12 / #44 Report Card UI | #36, #37, #38, #39, #42, and #43 | 2 | cross-page integration | ⚪ open |
+| #P4-13 / #45 Premium upgrades | #36, #37, #38, #40, and #41 | 3 | cross-page integration | ⚪ open |
+| #P4-14 / #46 Data Health | #45 | 2 | Data Health | ⚪ open |
+| #P4-15 / #47 Settings | #36, #37, #42, and #43 | 3 | Sessions, config | ⚪ open |
+| #P4-16 / #48 Explore | #47 | 2 | Dashboard | ⚪ open |
+| #P4-17 / #49 Export | #36 | 2 | global export | ⚪ open |
+| #P4-18 / #50 Cross-page E2E | every issue #35–#49 | 1 | solo terminal gate | ⚪ open |
+
+`Status` reflects live GitHub state as of the §13 snapshot date — it is informational here; the orchestrator must still verify against §6 before opening a lane.
 
 The integration waits are deliberate:
 
@@ -397,6 +399,11 @@ Do not parallelize it. Each task consumes the prior task's output.
 
 Informational only; always refresh using §6.
 
+- 2026-07-19: The serial spine (#33 → #84 → #34) has fully landed. Closed since the
+  2026-07-17 snapshot: #33, #84, #34, #36, #37, #41. Remaining open: #35, #38, #39, #40,
+  #42, #43, #44, #45, #46, #47, #48, #49, #50. #38 is in flight on
+  `feat/38/turn-inspector` (worktree `.worktrees/38`); the orchestrator should schedule
+  the next wave from the §4 ready queue, not the serial spine.
 - 2026-07-17: #32 and #85 are closed as completed.
 - All Phase 4 task issues #33–#50 and #84 are open.
 - The serial next issue is #33; #84 and then #34 follow.
