@@ -161,6 +161,7 @@ const PAGE_QUERY_KEYS = [
   "scatterSize",
   "compare",
   "tags",
+  "q",
 ] as const;
 
 type PageQueryKey = (typeof PAGE_QUERY_KEYS)[number];
@@ -271,6 +272,11 @@ export function parseSessionsPageState(search: string): SessionsPageState {
       .filter((v) => v.length > 0);
     if (items.length > 0) state.tags = items;
   }
+
+  // Free-text search query (#P4-3) — page-local, not a global filter. We
+  // deliberately do NOT parse it into the `state` object (the
+  // PromptSearchPanel owns its own debounced input state) — this parser
+  // just preserves it across reloads via the pageOwnedKeys round-trip.
 
   return state;
 }
