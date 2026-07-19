@@ -32,6 +32,27 @@ export const qk = {
   session: (id: string) => ["session", id] as const,
 
   /**
+   * Canonical key for one Turn Inspector resource (#P4-6). Returns
+   * `["turn-inspector", sessionId, turnNumber]` — a distinct prefix from
+   * `qk.session` so a session-scoped invalidation and a turn-scoped one
+   * never collide. The session-scoped companion `qk.prefixes.turnInspectorForSession(id)`
+   * targets every mounted turn query for that one session (for the
+   * `session-updated` socket action), while `qk.prefixes.turnInspector`
+   * is a wider invalidation target (socket reconnect, app-wide refresh).
+   */
+  turnInspector: (sessionId: string, turnNumber: number) =>
+    ["turn-inspector", sessionId, turnNumber] as const,
+
+  /**
+   * Canonical key for the lazy transcript-peek resource (#P4-6). Kept
+   * under its own literal segment so invalidating `qk.prefixes.turnInspector`
+   * doesn't also refetch the (expensive, on-demand) raw-file read for every
+   * mounted peek panel.
+   */
+  turnTranscript: (sessionId: string, turnNumber: number) =>
+    ["turn-inspector", "transcript", sessionId, turnNumber] as const,
+
+  /**
    * Cache Lab key. Lives under the existing `metrics` prefix on purpose
    * (ARCH §A9 / decision A9): the existing WebSocket invalidation bus
    * already targets `qk.prefixes.metrics`, so Cache Lab refreshes on
@@ -54,5 +75,17 @@ export const qk = {
     session: ["session"] as const,
     sessions: ["sessions"] as const,
     config: ["config"] as const,
+    turnInspector: ["turn-inspector"] as const,
+    /**
+     * Per-session Turn Inspector prefix. Matches every mounted turn query
+     * (`qk.turnInspector(id, n)`) AND the lazy transcript peek
+     * (`qk.turnTranscript(id, n)`), because both keys share the leading
+     * `["turn-inspector", sessionId]` pair. The 3-tuple peek key
+     * `["turn-inspector", "transcript", sessionId, n]` deliberately
+     * diverges here — a session-wide invalidation does NOT refetch the
+     * on-demand raw-file read, since that cost only makes sense after a
+     * user click (see `qk.turnTranscript` rationale above).
+     */
+    turnInspectorForSession: (sessionId: string) => ["turn-inspector", sessionId] as const,
   },
 };
