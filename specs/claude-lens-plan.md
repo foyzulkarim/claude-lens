@@ -176,7 +176,7 @@ Pages are cheap by design: filter state + preset `MetricsQuery`s + layout. The H
 - [ ] **#P4-6 — Turn Inspector page** *(§4)*
   Turn summary, API-call waterfall (timestamp-delta fallback widths), cache narrative, transcript peek (lazy raw-file read route), sidechain breakdown. Needs `GET /api/sessions/:id/turns/:n` and `/transcript?turn=n`.
   *Acceptance:* matches `turn-inspector.html`; reachable from Session Detail and gate evidence links.
-- [ ] **#P4-7 — Projects page** *(§5)*
+- [x] **#P4-7 — Projects page** *(§5)*
   Spend + WoW, stacked-area composition, efficiency table, per-branch breakdown, → Sessions links. Gate pass-rate column in the efficiency table stubs until #P4-12.
   *Acceptance:* matches `projects.html`.
 - [x] **#P4-8 — Models page** *(§6)*
