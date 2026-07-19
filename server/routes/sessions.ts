@@ -14,6 +14,7 @@ import type {
 } from "../../shared/sessions-contract.js";
 import { isValidTagList } from "../../shared/local-store-contract.js";
 import type { Session } from "../../shared/types.js";
+import type { GatesCache } from "../cache/gates-cache.js";
 import { mutateLocalStore, readLocalStore } from "../local-store.js";
 import type { PricingTable } from "../metrics/measures.js";
 import { applyRange, totalTokensForSession } from "../metrics/session-population.js";
@@ -64,6 +65,13 @@ export interface RegisterSessionsRouteOptions {
   pricer?: Pricer;
   /** Overrides `~/.claude-lens/local.json`'s path (#P4-15) — tests only; production always uses the real path. */
   localStorePath?: string;
+  /**
+   * Per-session gate summary cache (ARCH-p4-12 §Cross-Cutting). Populates
+   * `gateStatus`/`gateScore` on every row projection; cold cache misses
+   * trigger a one-shot `evaluateSessionGates` (the cache itself is
+   * single-flight via `server/cache/gates-cache.ts`).
+   */
+  gatesCache?: GatesCache;
 }
 
 const SUMMARY_SORT_KEYS = new Set<NonNullable<SessionListParams["sort"]>>([
@@ -567,7 +575,11 @@ function buildTrace(store: Store, session: Session, pricer: Pricer | undefined):
 }
 
 /** Project one Store Session into the wire `SessionListItem`. */
-function projectItem(session: Session, trace: TracePoint[] | undefined): SessionListItem {
+function projectItem(
+  session: Session,
+  trace: TracePoint[] | undefined,
+  gateSummary: { score: number; status: string } | null,
+): SessionListItem {
   return {
     sessionId: session.sessionId,
     startedAt: session.firstAt,
@@ -587,6 +599,11 @@ function projectItem(session: Session, trace: TracePoint[] | undefined): Session
     cacheSavingsComputed: session.cacheSavingsComputed,
     maxTurnCostComputed: session.maxTurnCostComputed,
     contextPctEstimated: session.contextPctEstimated,
+    // Gate summary fields (#P4-12) — populated only when the cache has a
+    // summary, absent otherwise; the Dashboard gate-failure feed and
+    // the Sessions gate column both rely on this wire shape.
+    gateScore: gateSummary?.score,
+    gateStatus: gateSummary?.status,
     trace,
   };
 }
@@ -686,8 +703,20 @@ function pagePopulationFilter(params: SessionPageParams): SessionPopulationFilte
  * row shapes in lock-step (review #19 merge with main). The `tags`
  * parameter is optional: export callers don't have per-session tag data
  * handy at the moment, while the on-screen page route threads it
- * through from `readLocalStore`. */
-export function projectPageItem(session: Session, tags?: string[]): SessionPageItem {
+ * through from `readLocalStore`.
+ *
+ * `gateSummary` carries the per-session Report Card summary (#P4-12);
+ * absent summaries leave `gateStatus` unset (the established "no
+ * fabrication" rule for reserved optional fields). The `gateScore`
+ * pre-population from `session.gateScore` is overwritten by the summary
+ * when available — the two sources are identical in the steady state,
+ * but the summary is what keeps the per-row value in lock-step with the
+ * Report Card on Session Detail. */
+export function projectPageItem(
+  session: Session,
+  tags?: string[],
+  gateSummary?: { score: number; status: string } | null,
+): SessionPageItem {
   return {
     sessionId: session.sessionId,
     startedAt: session.firstAt,
@@ -708,8 +737,11 @@ export function projectPageItem(session: Session, tags?: string[]): SessionPageI
     linesRemoved: session.linesRemoved,
     contextPctEstimated: session.contextPctEstimated,
     contextPctObserved: undefined,
-    gateScore: session.gateScore,
-    gateStatus: undefined,
+    gateScore: gateSummary?.score ?? session.gateScore,
+    // Session.gateStatus is not a field on `Session` (only Turn.gateStatus
+    // is — gates.md §1 has session-scoped E1/E2 + turn-scoped V1/V2/P3/C3/K2).
+    // The summary is the only source of a session-level status string today.
+    gateStatus: gateSummary?.status,
     tags,
     hasDrilldown: session.turnCount > 0,
     tier: session.tier,
@@ -832,7 +864,7 @@ export function registerSessionsRoute(
         reply.code(400);
         return { error: parsed };
       }
-      return handlePageRequest(store, parsed, reply, options.localStorePath);
+      return handlePageRequest(store, parsed, reply, options.localStorePath, options.gatesCache);
     }
 
     const parsed = parseSessionsQuery(query);
@@ -840,7 +872,7 @@ export function registerSessionsRoute(
       reply.code(400);
       return { error: parsed };
     }
-    return handleSummaryRequest(store, parsed, reply, pricer);
+    return handleSummaryRequest(store, parsed, reply, pricer, options.gatesCache);
   });
 
   app.put<{ Params: { id: string } }>(
@@ -872,12 +904,13 @@ export function registerSessionsRoute(
   );
 }
 
-function handleSummaryRequest(
+async function handleSummaryRequest(
   store: Store,
   parsed: SessionListParams,
   reply: import("fastify").FastifyReply,
   pricer: Pricer | undefined,
-): SessionListResponse | { error: string } {
+  gatesCache: GatesCache | undefined,
+): Promise<SessionListResponse | { error: string }> {
   const sort = parsed.sort ?? "lastAt";
   const order = parsed.order ?? "desc";
   const offset = parsed.offset ?? 0;
@@ -914,9 +947,19 @@ function handleSummaryRequest(
 
   const page = matched.slice(offset, offset + effectiveLimit);
 
+  // Single batch gate lookup for the page (#P4-12). The cache
+  // single-flights per id, so concurrent evaluation is bounded; a cold
+  // cache still pays O(N) engine evaluations on first load, exactly the
+  // case the Open Question OQ1 in the ARCH flags as the next-step
+  // optimization (lazy + memoized is the right MVP shape).
+  const gateSummariesById = gatesCache
+    ? await gatesCache.getSummariesBatch(page.map((s) => s.sessionId))
+    : new Map<string, { score: number; status: string }>();
+
   const items: SessionListItem[] = page.map((session) => {
     const trace = parsed.include === "trace" ? buildTrace(store, session, pricer) : undefined;
-    return projectItem(session, trace);
+    const gateSummary = gateSummariesById.get(session.sessionId) ?? null;
+    return projectItem(session, trace, gateSummary);
   });
 
   return {
@@ -935,6 +978,7 @@ async function handlePageRequest(
   parsed: SessionPageParams,
   reply: import("fastify").FastifyReply,
   localStorePath: string | undefined,
+  gatesCache: GatesCache | undefined,
 ): Promise<SessionPageResponse> {
   const sort = parsed.sort ?? "lastAt";
   const order = parsed.order ?? "desc";
@@ -970,9 +1014,23 @@ async function handlePageRequest(
   const matchedExtent = computeMatchedExtent(matched);
 
   const { tags: tagsBySessionId } = await readLocalStore(localStorePath);
-  const pageItems = sorted
-    .slice(offset, offset + effectiveLimit)
-    .map((session) => projectPageItem(session, tagsBySessionId[session.sessionId]));
+
+  // Page handler is already async (it awaits readLocalStore), so we can
+  // await the gate batch lookup too — page rows surface gate data
+  // synchronously populated for every row.
+  const visiblePage = sorted.slice(offset, offset + effectiveLimit);
+  const gateSummariesById = gatesCache
+    ? await gatesCache.getSummariesBatch(visiblePage.map((s) => s.sessionId))
+    : new Map();
+
+  const pageItems = visiblePage.map((session) => {
+    const summary = gateSummariesById.get(session.sessionId);
+    return projectPageItem(
+      session,
+      tagsBySessionId[session.sessionId],
+      summary ? { score: summary.score, status: summary.status } : null,
+    );
+  });
 
   const response: SessionPageResponse = {
     items: pageItems,

@@ -30,13 +30,70 @@ export function SessionsFilters({ state, onStateChange }: SessionsFiltersProps) 
       <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
         <CostBoundsControl state={state} onChange={onStateChange} />
         <EntrypointControl state={state} onChange={onStateChange} />
+        <GateStatusControl state={state} onChange={onStateChange} />
         <DrilldownControl state={state} onChange={onStateChange} />
       </div>
       <p className="mt-3 text-xs text-slate-500 dark:text-[#8A96A5]">
-        Gate status filter will appear when Report Card lands (#P4-12). Tag filtering is in the Tags
-        section below.
+        Tag filtering is in the Tags section below.
       </p>
     </section>
+  );
+}
+
+function GateStatusControl({ state, onChange }: SessionsFiltersChildProps) {
+  // pass/warn/fail toggle — independent tri-state (multi-select). Maps to
+  // the server-validated `gateStatus` page param. Mutually exclusive with
+  // "Any" (clears the filter).
+  const selected = state.gateStatus ?? [];
+  function toggle(value: "pass" | "warn" | "fail") {
+    if (selected.includes(value)) {
+      const next = selected.filter((v) => v !== value);
+      onChange({ gateStatus: next.length > 0 ? next : undefined });
+    } else {
+      onChange({ gateStatus: [...selected, value] });
+    }
+  }
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-xs uppercase tracking-wider text-slate-500 dark:text-[#8A96A5]">
+        Gate status
+      </span>
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => onChange({ gateStatus: undefined })}
+          aria-pressed={selected.length === 0}
+          aria-label="Any gate status"
+          className={TOGGLE_CLASS}
+        >
+          Any
+        </button>
+        <button
+          type="button"
+          onClick={() => toggle("pass")}
+          aria-pressed={selected.includes("pass")}
+          className={TOGGLE_CLASS}
+        >
+          Pass
+        </button>
+        <button
+          type="button"
+          onClick={() => toggle("warn")}
+          aria-pressed={selected.includes("warn")}
+          className={TOGGLE_CLASS}
+        >
+          Warn
+        </button>
+        <button
+          type="button"
+          onClick={() => toggle("fail")}
+          aria-pressed={selected.includes("fail")}
+          className={TOGGLE_CLASS}
+        >
+          Fail
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -137,6 +194,7 @@ function DrilldownControl({ state, onChange }: SessionsFiltersChildProps) {
           type="button"
           onClick={() => onChange({ hasDrilldown: undefined })}
           aria-pressed={value === undefined}
+          aria-label="Any drilldown status"
           className={TOGGLE_CLASS}
         >
           Any

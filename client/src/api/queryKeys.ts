@@ -1,3 +1,4 @@
+import type { SessionPageParams } from "../../../shared/sessions-contract.js";
 import type { CacheLabQuery } from "../../../shared/cache-lab-contract.js";
 import type { MetricsQuery } from "../../../shared/metrics-contract.js";
 import type { SessionListParams } from "../../../shared/sessions-contract.js";
@@ -75,6 +76,22 @@ export const qk = {
   /** `GET /api/tags` key (#P4-15). Bare literal-array key — invalidated wholesale after rename/delete/attach. */
   tags: () => ["tags"] as const,
 
+  /**
+   * Canonical key for one session's gate report (#P4-11/#P4-12). Lives
+   * under its own literal segment so `qk.prefixes.gates` invalidates
+   * every mounted Report Card without also nuking the Sessions list
+   * (different consumer, different fetch shape).
+   */
+  gates: (id: string) => ["gates", id] as const,
+  /**
+   * Dashboard gate-failure feed (#P4-12). Keys on the same query
+   * params `fetchWorstGateFailures` sends — query keys must match
+   * the request shape so TanStack Query's structural dedupe works
+   * (and so refetches invalidate correctly on session-updated).
+   */
+  gateFailures: (params: Omit<SessionPageParams, "view" | "sort" | "order" | "limit"> = {}) =>
+    ["gates", "failures", params] as const,
+
   prefixes: {
     metrics: ["metrics"] as const,
     session: ["session"] as const,
@@ -82,6 +99,14 @@ export const qk = {
     config: ["config"] as const,
     views: ["views"] as const,
     tags: ["tags"] as const,
+    /**
+     * `["gates"]` prefix — invalidates every gate-keyed query (Report
+     * Card per session, Dashboard failure feed). The session-updated
+     * WS message invalidates this prefix on transcript append, the
+     * same way it does for sessions/sessions (review of the prefix
+     * shared invalidation pattern in ws.ts).
+     */
+    gates: ["gates"] as const,
     turnInspector: ["turn-inspector"] as const,
     /**
      * Per-session Turn Inspector prefix. Matches every mounted turn query

@@ -97,6 +97,11 @@ function isSessionListItem(value: unknown): value is SessionListItem {
     isFiniteOrUndefined(v.cacheSavingsComputed) &&
     isFiniteOrUndefined(v.maxTurnCostComputed) &&
     isFiniteOrUndefined(v.contextPctEstimated) &&
+    // Reserved #P4-12 — gate score and rolled-up gate status. Both
+    // optional; absent when the session's gate report has never been
+    // computed (cold cache + no consumer has triggered it yet).
+    isFiniteOrUndefined(v.gateScore) &&
+    isStringOrUndefined(v.gateStatus) &&
     // Optional TracePoint field: either missing or an array of well-formed points.
     (v.trace === undefined || (Array.isArray(v.trace) && v.trace.every(isTracePoint)))
   );

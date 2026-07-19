@@ -145,9 +145,13 @@ describe("dashboard cards — stable default time (review #4)", () => {
 
   it("AnomalyFeed fires exactly one sessions query + one config query after first paint", async () => {
     const queryClient = renderCard(<AnomalyFeed />);
-    await screen.findByText("Gate failure and capture-gap data not available yet.");
+    await screen.findByText("No anomalies or gate failures detected.");
     expect(listSessionsMock).toHaveBeenCalledTimes(1);
-    expect(queryClient.getQueryCache().getAll()).toHaveLength(2); // sessions + config (#P4-15)
+    // sessions + config (#P4-15) + gate-failures (#P4-12) — the third query
+    // is unmocked here (`listSessionsPage` isn't stubbed in this file) so it
+    // rejects, but AnomalyFeed degrades gracefully and still renders the
+    // empty state.
+    expect(queryClient.getQueryCache().getAll()).toHaveLength(3);
   });
 
   it("ChartCard fires exactly one query after first paint", async () => {

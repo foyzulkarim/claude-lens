@@ -23,6 +23,7 @@ const {
   AnomalyFeed,
   turnSamplesFromSessions,
   anomalyItemsFromSamples,
+  gateFailureItemsFromSessions,
 }: typeof import("./AnomalyFeed.js") = await import("./AnomalyFeed.js");
 type AnomalyFeedItem = import("./AnomalyFeed.js").AnomalyFeedItem;
 
@@ -67,14 +68,12 @@ afterEach(() => {
   cleanup();
 });
 
-describe("AnomalyFeed — default gate stub", () => {
-  it("has the anomaly-feed testid and shows the not-available message by default", async () => {
+describe("AnomalyFeed — default empty state", () => {
+  it("has the anomaly-feed testid and shows the empty-state message when no data is present", async () => {
     renderFeed();
     expect(screen.getByTestId("anomaly-feed")).toBeInTheDocument();
     await waitFor(() =>
-      expect(
-        screen.getByText(/Gate failure and capture-gap data not available yet/),
-      ).toBeInTheDocument(),
+      expect(screen.getByText(/No anomalies or gate failures detected/)).toBeInTheDocument(),
     );
   });
 
@@ -259,5 +258,64 @@ describe("anomalyItemsFromSamples — detector wiring", () => {
     ];
     expect(anomalyItemsFromSamples(samples, undefined, 5)).toEqual([]);
     expect(anomalyItemsFromSamples(samples, undefined, 1.5)).toHaveLength(1);
+  });
+});
+
+describe("gateFailureItemsFromSessions — feed wiring for #P4-12", () => {
+  it("skips pure-pass rows and surfaces fail/warn items", () => {
+    const out = gateFailureItemsFromSessions([
+      {
+        sessionId: "s1",
+        startedAt: "",
+        lastAt: "",
+        project: "",
+        models: [],
+        host: "default",
+        entrypoint: "",
+        version: "",
+        durationMs: 0,
+        turnCount: 0,
+        totalTokens: 0,
+        cacheHitPct: 0,
+        costComputed: 0,
+        gateScore: 0.2,
+        gateStatus: "fail",
+        hasDrilldown: false,
+        tier: {
+          hasCostSamples: false,
+          hasTurnBoundaries: false,
+          hasCostLog: false,
+          costBasis: "computed",
+        },
+      },
+      {
+        sessionId: "s2",
+        startedAt: "",
+        lastAt: "",
+        project: "",
+        models: [],
+        host: "default",
+        entrypoint: "",
+        version: "",
+        durationMs: 0,
+        turnCount: 0,
+        totalTokens: 0,
+        cacheHitPct: 0,
+        costComputed: 0,
+        gateScore: 1,
+        gateStatus: "pass",
+        hasDrilldown: false,
+        tier: {
+          hasCostSamples: false,
+          hasTurnBoundaries: false,
+          hasCostLog: false,
+          costBasis: "computed",
+        },
+      },
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0]?.kind).toBe("gateFailure");
+    expect(out[0]?.severity).toBe("high");
+    expect(out[0]?.drill).toBe("/sessions/s1#report-card");
   });
 });

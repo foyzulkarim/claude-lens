@@ -1,6 +1,6 @@
 import { BudgetForecastPanel } from "./trends/BudgetForecastPanel.js";
 import { CalendarHeatmapPanel } from "./trends/CalendarHeatmapPanel.js";
-import { GatePassRateStub } from "./trends/GatePassRateStub.js";
+import { GatePassRatePanel } from "./trends/GatePassRatePanel.js";
 import { HourWeekdayHeatmapPanel } from "./trends/HourWeekdayHeatmapPanel.js";
 import { ParetoPanel } from "./trends/ParetoPanel.js";
 import { RollingEfficiencyPanel } from "./trends/RollingEfficiencyPanel.js";
@@ -9,7 +9,7 @@ import { StackedWeeklyBarsPanel } from "./trends/StackedWeeklyBarsPanel.js";
 /**
  * Trends, Calendar & Budget page shell (#P4-10; ARCH-trends-calendar-budget.md).
  * Composes the 7 sections (5 from the mockup + the stacked-weekly-bars gap
- * fill, per the pages-spec §8 table, + the gate pass-rate stub) into one
+ * fill, per the pages-spec §8 table, + the gate pass-rate panel) into one
  * responsive page, same pattern as `Dashboard.tsx`: every section owns its
  * own query/loading/error state, this shell does no fetching of its own.
  */
@@ -34,7 +34,7 @@ export function Trends() {
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <RollingEfficiencyPanel />
-        <GatePassRateStub />
+        <GatePassRatePanel />
       </div>
     </div>
   );

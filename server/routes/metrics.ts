@@ -1,4 +1,6 @@
 import type { FastifyInstance } from "fastify";
+import type { Session } from "../../shared/types.js";
+import type { SessionPopulationCriteria } from "../../shared/sessions-contract.js";
 import {
   DIMENSIONS,
   type Dimension,
@@ -9,7 +11,6 @@ import {
   type ScatterMeasure,
   type ScatterMetricsQuery,
 } from "../../shared/metrics-contract.js";
-import type { SessionPopulationCriteria } from "../../shared/sessions-contract.js";
 import { metrics } from "../metrics/engine.js";
 import { DEFAULT_PRICING_TABLE, type PricingTable } from "../metrics/measures.js";
 import { metricsScatter } from "../metrics/scatter.js";
@@ -30,6 +31,14 @@ export interface RegisterMetricsRouteOptions {
    * tests), falls back to `DEFAULT_PRICING_TABLE`.
    */
   pricing?: PricingTable;
+  /**
+   * Per-session gate summary cache (ARCH-p4-12). When provided, the
+   * `gatePassRate` measure reads from this cache (one batch lookup per
+   * request); when omitted, every bucket resolves to `null` — the
+   * established unavailable-seam behavior. Production always passes
+   * the cache; tests may omit it for unit-level isolation.
+   */
+  gatesCache?: import("../cache/gates-cache.js").GatesCache;
 }
 
 const MEASURE_SET = new Set<Measure>(MEASURES);
@@ -277,6 +286,12 @@ export function registerMetricsRoute(
   // used to derive `costComputed`, exactly the regression T5 is here to
   // prevent.
   const pricing = options.pricing ?? DEFAULT_PRICING_TABLE;
+  // ARCH-p4-12 §Cross-Cutting: the per-session gate summaries map is
+  // resolved once per request from the cache and passed into the metrics
+  // engine for the `gatePassRate` measure. Optional — when omitted, the
+  // engine treats every bucket as "no data" and returns null for that
+  // measure (the established unavailable-seam behavior).
+  const gatesCache = options.gatesCache;
 
   app.post("/api/metrics", async (request, reply) => {
     const parsed = parseMetricsQuery(request.body);
@@ -285,11 +300,17 @@ export function registerMetricsRoute(
       return { error: parsed };
     }
 
+    const sessions = store.listSessions();
+    const gateSummaries: Map<string, { score: number; status: string }> = gatesCache
+      ? await collectGateSummaries(gatesCache, sessions)
+      : new Map();
+
     const input = {
       calls: store.listCalls(),
       turns: store.listTurns(),
-      sessions: store.listSessions(),
+      sessions,
       pricing,
+      gateSummaries,
     };
 
     // Scatter returns its own discriminated response (`ScatterMetricsResult`);
@@ -300,4 +321,23 @@ export function registerMetricsRoute(
     }
     return metrics(input, parsed);
   });
+}
+
+/**
+ * Map a `Map<sessionId, GateReportSummary>` into the
+ * `{ score, status }` shape `computeMeasure` reads from. Sessions
+ * present in the cache but absent from the input sessions list are
+ * ignored — the metric only sees summaries for sessions actually in
+ * scope.
+ */
+async function collectGateSummaries(
+  cache: import("../cache/gates-cache.js").GatesCache,
+  sessions: Session[],
+): Promise<Map<string, { score: number; status: string }>> {
+  const summaries = await cache.getSummariesBatch(sessions.map((s) => s.sessionId));
+  const out = new Map<string, { score: number; status: string }>();
+  for (const [id, summary] of summaries) {
+    out.set(id, { score: summary.score, status: summary.status });
+  }
+  return out;
 }

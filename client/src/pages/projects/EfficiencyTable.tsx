@@ -80,6 +80,26 @@ function sumMeasurePrev(serieses: Series[], measure: Series["measure"]): number 
   return seenAny ? sum : undefined;
 }
 
+/**
+ * Mean per-project gate pass rate (#P4-12). The engine emits
+ * `gatePassRate` as a session-mean per bucket (T5); averaging those
+ * bucket means per project gives a stable per-project rate. `null`
+ * buckets (no gate data) are excluded — never fabricated as 0.
+ */
+function avgGatePassRate(serieses: Series[]): number | null {
+  let total = 0;
+  let n = 0;
+  for (const s of serieses) {
+    if (s.measure !== "gatePassRate") continue;
+    for (const p of s.points) {
+      if (typeof p.value !== "number" || !Number.isFinite(p.value)) continue;
+      total += p.value;
+      n += 1;
+    }
+  }
+  return n > 0 ? total / n : null;
+}
+
 function lastBucketTimestamp(serieses: Series[]): string | undefined {
   let latest: string | undefined;
   for (const s of serieses) {
@@ -128,9 +148,10 @@ function deriveRows(serieses: Series[] | undefined): EfficiencyRow[] {
       tokensPerTurn: safeDivide(input + output, turns),
       dollarsPerSession: safeDivide(cost, sessions),
       lastActive: lastBucketTimestamp(projectSeries),
-      // Per #P4-12 stub: keeps the column shape stable. The cell
-      // renderer returns `—` when this is `null`.
-      gatePassRate: null,
+      // Per-project mean gate pass rate (T13, #P4-12). Cell renders
+      // "—" when the engine emits all-null buckets for the project
+      // (cold cache, no analyzed sessions).
+      gatePassRate: avgGatePassRate(projectSeries),
     });
   }
 

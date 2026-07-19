@@ -147,6 +147,10 @@ export interface SessionListItem {
   cacheSavingsComputed?: number;
   maxTurnCostComputed?: number;
   contextPctEstimated?: number;
+  /** Reserved for #P4-12 — gate score (Report Card letter as fraction). */
+  gateScore?: number;
+  /** Reserved for #P4-12 — rolled-up session gate status (`pass`/`warn`/`fail`). */
+  gateStatus?: string;
   /** Opt-in: cumulative priced turn values. Present only when include=trace. */
   trace?: TracePoint[];
 }

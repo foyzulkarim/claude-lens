@@ -5,6 +5,7 @@ import { ContextComposition } from "./ContextComposition.js";
 import { CostTimeline } from "./CostTimeline.js";
 import { Header } from "./Header.js";
 import { PromptList } from "./PromptList.js";
+import { ReportCard } from "./ReportCard.js";
 import { TokenFunnel } from "./TokenFunnel.js";
 import { ToolMix } from "./ToolMix.js";
 import { TurnsSection } from "./TurnsSection.js";
@@ -18,7 +19,8 @@ export interface SessionDetailViewProps {
  * Pure presentational composition of one session's detail response.
  * Owns no fetch/state — the page shell handles that. Each labelled
  * section corresponds to one binding spec section in
- * `claude-lens-pages.md` §3.
+ * `claude-lens-pages.md` §3. Report Card (#P4-12) is lazy-mounted; its
+ * component owns the gate fetch and the IntersectionObserver harness.
  */
 export function SessionDetailView({ data }: SessionDetailViewProps): ReactNode {
   return (
@@ -34,6 +36,7 @@ export function SessionDetailView({ data }: SessionDetailViewProps): ReactNode {
         turns={data.turns}
         distribution={data.turnDistribution}
       />
+      <ReportCard sessionId={data.header.sessionId} />
       <CacheStrip cache={data.cache} />
       <ToolMix toolMix={data.toolMix} toolTimeline={data.toolTimeline} />
       <PromptList prompts={data.prompts} />

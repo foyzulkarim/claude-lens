@@ -2,8 +2,14 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { Link } from "wouter";
 import { detectTurnCostAnomalies, type TurnCostSample } from "../../../../shared/anomaly.js";
-import type { SessionListItem, SessionListParams } from "../../../../shared/sessions-contract.js";
+import type { ScoreLetter } from "../../../../shared/gates-contract.js";
+import type {
+  SessionListItem,
+  SessionListParams,
+  SessionPageItem,
+} from "../../../../shared/sessions-contract.js";
 import { getConfig } from "../../api/config.js";
+import { fetchWorstGateFailures } from "../../api/gate-failures.js";
 import { qk } from "../../api/queryKeys.js";
 import { listSessions } from "../../api/sessions.js";
 import { formatUnitValue } from "../../charts/units.js";
@@ -87,6 +93,53 @@ export function anomalyItemsFromSamples(
     summary: `Turn cost ${formatUnitValue(sample.costComputed, "$")} is ${(sample.costComputed / baseline).toFixed(1)}x the session median (${formatUnitValue(baseline, "$")})`,
     drill: `/sessions/${sample.sessionId}`,
   }));
+}
+
+const LETTER_SEVERITY: Record<ScoreLetter, AnomalySeverity> = {
+  A: "low",
+  B: "low",
+  C: "medium",
+  D: "high",
+  F: "high",
+};
+
+function letterFromScore(score: number): ScoreLetter {
+  if (score >= 0.9) return "A";
+  if (score >= 0.75) return "B";
+  if (score >= 0.5) return "C";
+  if (score >= 0.25) return "D";
+  return "F";
+}
+
+/**
+ * Convert worst-scoring Sessions page rows into `gateFailure` feed items
+ * (ARCH-p4-12 §High-Level Structure; gated on the live `gateFailure`
+ * data the Dashboard feed exposes for the first time in #P4-12).
+ * Pure for testability — the fetch lives in the component.
+ */
+export function gateFailureItemsFromSessions(
+  sessions: readonly SessionPageItem[],
+  limit = MAX_ANOMALY_ITEMS,
+): AnomalyFeedItem[] {
+  const out: AnomalyFeedItem[] = [];
+  for (const s of sessions) {
+    if (s.gateScore === undefined || s.gateStatus === undefined) continue;
+    const letter = letterFromScore(s.gateScore);
+    const severity = LETTER_SEVERITY[letter];
+    // Skip pure-pass rows; mirror the engine's own rollup semantics
+    // (pass/warn/fail across six checks). The wire surface only carries
+    // the rolled-up status, so the data source is already filtered.
+    if (s.gateStatus === "pass") continue;
+    out.push({
+      kind: "gateFailure",
+      sessionId: s.sessionId,
+      severity,
+      summary: `Session scored ${letter} (${s.gateScore.toFixed(2)}) — ${s.gateStatus}`,
+      drill: `/sessions/${s.sessionId}#report-card`,
+    });
+    if (out.length >= limit) break;
+  }
+  return out;
 }
 
 export interface AnomalyFeedProps {
@@ -190,14 +243,41 @@ export function AnomalyFeed({ items, now: injectedNow }: AnomalyFeedProps) {
     enabled: items === undefined,
   });
 
+  // Live gate-failure feed (#P4-12). Reuses the Sessions list wire shape
+  // with `sort=gateScore&order=asc&limit=5`; the row projector (T4)
+  // populates `gateScore` from the gate cache. Same filter scope as the
+  // anomaly detector so the two feed lines stay aligned.
+  const gateParams = useMemo(
+    () => ({
+      from: range.from,
+      to: range.to,
+      project: filters.project,
+      model: filters.model,
+      branch: filters.branch,
+      host: filters.host,
+    }),
+    [range.from, range.to, filters.project, filters.model, filters.branch, filters.host],
+  );
+  const gateFailuresQuery = useQuery({
+    queryKey: qk.gateFailures(gateParams),
+    queryFn: ({ signal }) => fetchWorstGateFailures(gateParams, signal),
+    enabled: items === undefined,
+    staleTime: 60_000,
+  });
+
   const detectedItems = useMemo<AnomalyFeedItem[]>(() => {
     if (items !== undefined) return items;
     if (!sessionsQuery.data) return [];
     const samples = turnSamplesFromSessions(sessionsQuery.data.items);
-    return anomalyItemsFromSamples(samples, undefined, configQuery.data?.anomalyFactor);
-  }, [items, sessionsQuery.data, configQuery.data?.anomalyFactor]);
+    const anomalyItems = anomalyItemsFromSamples(
+      samples,
+      undefined,
+      configQuery.data?.anomalyFactor,
+    );
+    const gateItems = gateFailureItemsFromSessions(gateFailuresQuery.data ?? []);
+    return [...anomalyItems, ...gateItems];
+  }, [items, sessionsQuery.data, configQuery.data?.anomalyFactor, gateFailuresQuery.data]);
 
-  const showGateStub = items === undefined;
   const isLoading = items === undefined && sessionsQuery.isPending;
   const isError = items === undefined && sessionsQuery.isError;
 
@@ -237,16 +317,13 @@ export function AnomalyFeed({ items, now: injectedNow }: AnomalyFeedProps) {
             </ul>
           )}
 
-          {showGateStub && (
-            <p
-              role={detectedItems.length === 0 ? "status" : undefined}
-              className="mt-3 text-sm text-slate-500 dark:text-[#8B98A9]"
-            >
-              Gate failure and capture-gap data not available yet.
+          {items === undefined && detectedItems.length === 0 && (
+            <p role="status" className="mt-3 text-sm text-slate-500 dark:text-[#8B98A9]">
+              No anomalies or gate failures detected.
             </p>
           )}
 
-          {!showGateStub && detectedItems.length === 0 && (
+          {items !== undefined && detectedItems.length === 0 && (
             <p role="status" className="mt-3 text-sm text-slate-500 dark:text-[#8B98A9]">
               No anomalies detected.
             </p>

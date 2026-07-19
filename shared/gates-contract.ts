@@ -88,3 +88,27 @@ export interface GateReport {
   /** Echoed so the UI can label "evaluated with defaults" vs custom values. */
   thresholdsUsed: GateThresholds;
 }
+
+/**
+ * Compact per-session summary — the shape `server/cache/gates-cache.ts`
+ * serves to consumers that don't need evidence (Sessions list rows,
+ * Dashboard gate-failure feed, `MetricsQuery.gatePassRate`). Renamed or
+ * reshaped only as a wire break for the cache API surface (ARCH A9).
+ *
+ * Re-exported here so most call sites keep a single `gates-contract`
+ * import. The authoritative type lives in `gates-cache-contract.ts`.
+ */
+export type { GateReportSummary } from "./gates-cache-contract.js";
+
+/**
+ * Roll up six check statuses (V1, V2, P3, C3, K2, E1/E2 combined) into
+ * the single session-level `GateStatus` per gates.md §"Report Card
+ * scoring": any fail → fail; else any warn → warn; else pass. Used by
+ * `gatesCache` to derive `GateReportSummary.status` from `GateReport`
+ * without re-running the engine. Pure for testability.
+ */
+export function gateStatusFromChecks(checks: readonly GateStatus[]): GateStatus {
+  if (checks.some((s) => s === "fail")) return "fail";
+  if (checks.some((s) => s === "warn")) return "warn";
+  return "pass";
+}

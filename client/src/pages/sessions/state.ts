@@ -82,6 +82,13 @@ export interface SessionsPageState {
   maxCostComputed?: number;
   entrypoint?: string[];
   hasDrilldown?: boolean;
+  /**
+   * Report Card gate-status filter (#P4-12; ARCH-p4-12 §High-Level
+   * Structure). Server-validated — only `pass`/`warn`/`fail` accepted
+   * via `parseSessionsPageQuery`'s filter set. Lives on URL like every
+   * other filter so permalinks to "all failing sessions" work.
+   */
+  gateStatus?: string[];
   /** Distribution display toggle (histogram vs percentiles). */
   distributionView: SessionsDistributionView;
   /** Active scatter preset — drives xMeasure/yMeasure selection. */
@@ -156,6 +163,7 @@ const PAGE_QUERY_KEYS = [
   "maxCostComputed",
   "entrypoint",
   "hasDrilldown",
+  "gateStatus",
   "distView",
   "scatter",
   "scatterSize",
@@ -247,6 +255,18 @@ export function parseSessionsPageState(search: string): SessionsPageState {
   if (hasDrilldown === "true") state.hasDrilldown = true;
   else if (hasDrilldown === "false") state.hasDrilldown = false;
 
+  // gateStatus CSV (#P4-12) — server-validated to pass/warn/fail only;
+  // unknown values are silently dropped so a pasted URL with stale
+  // entries doesn't poison the filter set.
+  const gateStatus = params.get("gateStatus");
+  if (gateStatus) {
+    const items = gateStatus
+      .split(",")
+      .map((v) => v.trim())
+      .filter((v): v is "pass" | "warn" | "fail" => v === "pass" || v === "warn" || v === "fail");
+    if (items.length > 0) state.gateStatus = items;
+  }
+
   // Scatter size — accept any non-empty string; type-level guard lives in
   // the query builder below (server validates the actual Measure list).
   if (scatterSize && scatterSize.length > 0) state.scatterSize = scatterSize as ScatterMeasure;
@@ -302,6 +322,9 @@ export function serializeSessionsPageState(state: SessionsPageState): string {
   }
   if (state.hasDrilldown !== undefined) {
     params.set("hasDrilldown", state.hasDrilldown ? "true" : "false");
+  }
+  if (state.gateStatus && state.gateStatus.length > 0) {
+    params.set("gateStatus", [...state.gateStatus].sort().join(","));
   }
   if (state.distributionView !== DEFAULT_STATE.distributionView) {
     params.set("distView", state.distributionView);
@@ -360,6 +383,9 @@ export function buildListQuery(
   if (state.minCostComputed !== undefined) out.minCostComputed = state.minCostComputed;
   if (state.maxCostComputed !== undefined) out.maxCostComputed = state.maxCostComputed;
   if (state.hasDrilldown !== undefined) out.hasDrilldown = state.hasDrilldown;
+  if (state.gateStatus && state.gateStatus.length > 0) {
+    out.gateStatus = [...state.gateStatus].sort();
+  }
   if (state.compareIds.length > 0) out.sessionId = [...state.compareIds].sort();
   return out;
 }
@@ -445,6 +471,9 @@ export function buildExportUrl(
   if (state.hasDrilldown !== undefined) {
     params.set("hasDrilldown", state.hasDrilldown ? "true" : "false");
   }
+  if (state.gateStatus && state.gateStatus.length > 0) {
+    params.set("gateStatus", [...state.gateStatus].sort().join(","));
+  }
   return `/api/export?${params.toString()}`;
 }
 
@@ -468,6 +497,9 @@ function buildSessionPopulation(
   if (state.minCostComputed !== undefined) pop.minCostComputed = state.minCostComputed;
   if (state.maxCostComputed !== undefined) pop.maxCostComputed = state.maxCostComputed;
   if (state.hasDrilldown !== undefined) pop.hasDrilldown = state.hasDrilldown;
+  if (state.gateStatus && state.gateStatus.length > 0) {
+    pop.gateStatus = [...state.gateStatus].sort();
+  }
   return pop;
 }
 
