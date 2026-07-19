@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Router } from "wouter";
@@ -170,6 +170,85 @@ describe("live-window cards — stable default time", () => {
       expect(query.grain).toBe("hour");
       expect(query.range).toEqual(WINDOW_EXTENT.meta.matchedExtent);
     }
+  });
+
+  it("sends the true, unrounded extent to the server — flooring is cache-key-only (#P4-20 review follow-up)", async () => {
+    installWindowSeries();
+    // A `to` that deliberately doesn't land on a minute boundary. Regression
+    // guard: the real request must carry this exact value. If it regresses
+    // to sending the floored (cache-key) value instead, live usage figures
+    // silently undercount for up to 59s after every minute boundary, since
+    // the engine filters calls strictly against `range.to`
+    // (server/metrics/engine.ts's `ts > rangeToMs` check).
+    listSessionsMock.mockResolvedValue({
+      ...WINDOW_EXTENT,
+      meta: {
+        ...WINDOW_EXTENT.meta,
+        matchedExtent: { from: "2026-07-01T00:00:00.000Z", to: "2026-07-10T12:00:45.000Z" },
+      },
+    });
+
+    renderCard(<SubscriptionWindow />);
+
+    await screen.findByLabelText("5h window: 150 tokens");
+    expect(postMetricsMock).toHaveBeenCalledTimes(4);
+    for (const [rawQuery] of postMetricsMock.mock.calls) {
+      const query = rawQuery as SeriesMetricsQuery;
+      expect(query.range.to).toBe("2026-07-10T12:00:45.000Z");
+    }
+  });
+
+  it("keeps a stable metrics query key when the probe's matched extent shifts within the same minute (#P4-20 key-stability regression)", async () => {
+    installWindowSeries();
+    const queryClient = renderCard(<SubscriptionWindow />);
+
+    await screen.findByLabelText("5h window: 150 tokens");
+    expect(postMetricsMock).toHaveBeenCalledTimes(4);
+
+    // Disabled probe-pending queries (fired before the probe resolves, per
+    // `metricsEnabled`) also register cache entries under the "metrics"
+    // prefix without ever fetching — filter to queries that actually
+    // succeeded so this only tracks the four real token queries.
+    const successfulMetricsKeys = () =>
+      queryClient
+        .getQueryCache()
+        .getAll()
+        .filter((q) => q.queryKey[0] === "metrics" && q.state.status === "success")
+        .map((q) => JSON.stringify(q.queryKey))
+        .sort();
+
+    const metricsKeysBefore = successfulMetricsKeys();
+    expect(metricsKeysBefore).toHaveLength(4);
+
+    // A later `to` within the SAME minute — simulates a WS-driven probe
+    // refetch mid-minute (the #P4-20 fan-out scenario). If `keyExtentTo`
+    // regressed back to the raw, unfloored `extentTo`, this would mint 4
+    // brand-new query keys (a cache miss, not a refetch) — the exact
+    // mechanism behind the original loading-state flash.
+    listSessionsMock.mockResolvedValue({
+      ...WINDOW_EXTENT,
+      meta: {
+        ...WINDOW_EXTENT.meta,
+        matchedExtent: { from: "2026-07-01T00:00:00.000Z", to: "2026-07-10T12:00:45.000Z" },
+      },
+    });
+    // Resolves once the probe's refetch settles (invalidateQueries awaits
+    // active refetches). The floored key stays identical, so the token
+    // queries must NOT refetch at all — still 4 total `postMetrics` calls,
+    // not 8.
+    await queryClient.invalidateQueries({ queryKey: ["sessions"] });
+    await waitFor(() => {
+      const sessionsQuery = queryClient
+        .getQueryCache()
+        .getAll()
+        .find((q) => q.queryKey[0] === "sessions");
+      expect(sessionsQuery?.state.data).toMatchObject({
+        meta: { matchedExtent: { to: "2026-07-10T12:00:45.000Z" } },
+      });
+    });
+
+    expect(postMetricsMock).toHaveBeenCalledTimes(4);
+    expect(successfulMetricsKeys()).toEqual(metricsKeysBefore);
   });
 
   it("keeps the configured ceiling as the ARIA maximum and clamps only the range value", async () => {

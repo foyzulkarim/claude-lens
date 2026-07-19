@@ -7,6 +7,18 @@ const MAX_DELAY_MS = 10_000;
 const JITTER_RATIO = 0.2;
 
 /**
+ * Coalescing window for inbound WS messages (#P4-20): the store debounces
+ * invalidation *per session* (~300ms), so several concurrently-active
+ * sessions each independently emit a `session-updated` within roughly the
+ * same window. Routing every message straight into `invalidateQueries`
+ * turned N active sessions into N redundant dashboard-wide `metrics`/
+ * `sessions` prefix invalidations per window instead of one. Batching
+ * inbound messages over this window and deduping their resulting
+ * invalidation actions (below) collapses that back to one.
+ */
+export const INVALIDATION_COALESCE_MS = 200;
+
+/**
  * Structural mirror of the browser WebSocket API (assignable onopen/onclose/
  * onerror/onmessage + close()) — same "depend on nothing from the real
  * transport" approach as server/ws/broadcaster.ts's `WsSocket`, so this
@@ -41,39 +53,128 @@ function defaultCreateSocket(url: string): WsLike {
 }
 
 /**
- * Maps a server invalidation message to the query-key prefixes it stales
- * (ARCH-react-shell.md "Message → prefix table"). Exported standalone so the
- * mapping is unit-testable without a socket.
+ * One query-invalidation effect. Deliberately data, not a closure — a batch
+ * of messages (see `InvalidationBatcher` below) reduces to a `Map` keyed by
+ * `actionKey`, so N messages that resolve to the same action (e.g. every
+ * `session-updated` in a window wants the same `metrics` prefix) collapse to
+ * one `applyInvalidationAction` call instead of N.
  */
-export function invalidateForMessage(queryClient: QueryClient, message: WsServerMessage): void {
+type InvalidationAction =
+  | { kind: "all" }
+  | { kind: "metrics" }
+  | { kind: "sessions" }
+  | { kind: "session"; sessionId: string };
+
+function actionKey(action: InvalidationAction): string {
+  return action.kind === "session" ? `session:${action.sessionId}` : action.kind;
+}
+
+/**
+ * Maps a server invalidation message to the invalidation actions it implies
+ * (ARCH-react-shell.md "Message → prefix table").
+ */
+function actionsForMessage(message: WsServerMessage): InvalidationAction[] {
   switch (message.type) {
     case "scan-updated":
-      queryClient.invalidateQueries();
-      return;
+      return [{ kind: "all" }];
     case "session-added":
       // Aggregate metrics shift (a new session contributes to the spend /
       // turn-count series) and the session list itself is stale by
       // definition — invalidate both prefixes so every card refetches
       // without the page needing to thread its own subscriptions.
-      queryClient.invalidateQueries({ queryKey: qk.prefixes.metrics });
-      queryClient.invalidateQueries({ queryKey: qk.prefixes.sessions });
-      return;
+      return [{ kind: "metrics" }, { kind: "sessions" }];
     case "session-updated":
-      queryClient.invalidateQueries({ queryKey: qk.prefixes.metrics });
       // Per-session invalidation (ARCH T5, #P4-5): mounted detail queries
       // for THIS session refetch; the metrics/list paths invalidate too
       // because the row's badge/cost can shift as a side effect of the
       // append.
-      queryClient.invalidateQueries({ queryKey: qk.session(message.sessionId) });
-      queryClient.invalidateQueries({ queryKey: qk.prefixes.sessions });
-      return;
+      return [
+        { kind: "metrics" },
+        { kind: "session", sessionId: message.sessionId },
+        { kind: "sessions" },
+      ];
     default: {
       // Exhaustive check: a future 4th WsServerMessage variant fails
       // typecheck here instead of being silently dropped at runtime.
       const unhandled: never = message;
       console.warn("[ws] unrecognized message type", unhandled);
+      return [];
     }
   }
+}
+
+function applyInvalidationAction(queryClient: QueryClient, action: InvalidationAction): void {
+  switch (action.kind) {
+    case "all":
+      queryClient.invalidateQueries();
+      return;
+    case "metrics":
+      queryClient.invalidateQueries({ queryKey: qk.prefixes.metrics });
+      return;
+    case "sessions":
+      queryClient.invalidateQueries({ queryKey: qk.prefixes.sessions });
+      return;
+    case "session":
+      queryClient.invalidateQueries({ queryKey: qk.session(action.sessionId) });
+      return;
+    default: {
+      // Exhaustive check, mirroring actionsForMessage's switch above: a
+      // future 5th InvalidationAction variant fails typecheck here instead
+      // of silently no-oping at runtime.
+      const unhandled: never = action;
+      console.warn("[ws] unhandled invalidation action", unhandled);
+    }
+  }
+}
+
+/**
+ * Applies a single message's invalidation actions immediately, in the same
+ * order `actionsForMessage` returns them. Exported standalone (and kept
+ * synchronous/uncoalesced) so the message → action mapping stays
+ * unit-testable without a socket or fake timers; `connectWs` below batches
+ * multiple inbound messages through the same action layer instead of calling
+ * this per-message, so it isn't the one actually wired to `onmessage`.
+ */
+export function invalidateForMessage(queryClient: QueryClient, message: WsServerMessage): void {
+  for (const action of actionsForMessage(message)) {
+    applyInvalidationAction(queryClient, action);
+  }
+}
+
+/**
+ * Batches inbound messages over `INVALIDATION_COALESCE_MS` and flushes their
+ * deduped invalidation actions once per window (#P4-20) — the fix for
+ * per-session fan-out: N `session-updated` messages in one window still each
+ * get their own `session:<id>` detail invalidation, but only one shared
+ * `metrics`/`sessions` prefix invalidation instead of N.
+ */
+function createInvalidationBatcher(queryClient: QueryClient, delayMs: number) {
+  const pending = new Map<string, InvalidationAction>();
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  function flush(): void {
+    timer = null;
+    for (const action of pending.values()) applyInvalidationAction(queryClient, action);
+    pending.clear();
+  }
+
+  return {
+    enqueue(message: WsServerMessage): void {
+      for (const action of actionsForMessage(message)) {
+        pending.set(actionKey(action), action);
+      }
+      if (timer === null) {
+        timer = setTimeout(flush, delayMs);
+      }
+    },
+    dispose(): void {
+      if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      pending.clear();
+    },
+  };
 }
 
 /**
@@ -93,6 +194,7 @@ export function connectWs(queryClient: QueryClient, options: ConnectWsOptions = 
   let attempt = 0;
   let socket: WsLike | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  const batcher = createInvalidationBatcher(queryClient, INVALIDATION_COALESCE_MS);
 
   function open(): void {
     if (disposed) return;
@@ -111,7 +213,7 @@ export function connectWs(queryClient: QueryClient, options: ConnectWsOptions = 
         console.warn("[ws] malformed message", event.data);
         return;
       }
-      invalidateForMessage(queryClient, message);
+      batcher.enqueue(message);
     };
 
     socket.onclose = () => {
@@ -137,6 +239,7 @@ export function connectWs(queryClient: QueryClient, options: ConnectWsOptions = 
 
   return () => {
     disposed = true;
+    batcher.dispose();
     if (reconnectTimer !== null) clearTimeout(reconnectTimer);
     if (socket) {
       socket.onopen = null;

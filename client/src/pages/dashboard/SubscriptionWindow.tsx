@@ -13,6 +13,26 @@ import { useStableNow } from "./useStableNow.js";
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
+const MINUTE_MS = 60_000;
+
+/**
+ * Floors an ISO instant to the enclosing minute (#P4-20, review follow-up).
+ * Used ONLY for the metrics queries' cache-key identity, never for the
+ * `range.to` actually sent to `postMetrics` or for `extentEnd`'s math — the
+ * engine's range filter is strict on the raw call timestamp
+ * (`server/metrics/engine.ts`'s `ts > rangeToMs` check), so feeding a floored
+ * value into the real fetch would silently drop up to 59s of the very
+ * latest calls from every bucket's value each time a minute rolls over,
+ * undercounting `current`/`peak`. Under concurrent-session load `extentTo`
+ * otherwise advances on every WS-driven refetch (multiple times a minute),
+ * minting a brand-new query key each time instead of refetching an existing
+ * one, which is what produced the loading-state flash under load — flooring
+ * the *key* alone bounds that churn to at most once a minute without
+ * touching data freshness.
+ */
+function floorToMinute(iso: string): string {
+  return new Date(Math.floor(new Date(iso).getTime() / MINUTE_MS) * MINUTE_MS).toISOString();
+}
 
 // T10 scope boundary: "do NOT compute rolling windows server-side; current
 // scope derives client-side from hourly series". Per token — the four
@@ -234,6 +254,11 @@ export function SubscriptionWindow({ ceiling, now: injectedNow }: SubscriptionWi
   const { filters: categoricalFilters } = filtersToQuery(filters, now);
   const extentFrom = sessionsExtent?.from ?? extentTo;
   const metricsEnabled = probeQuery.isSuccess && sessionsExtent !== null;
+  // Cache-key-only identity (#P4-20 review follow-up) — the actual fetch
+  // below always uses the true, unrounded `extentTo`/`extentFrom` so data
+  // stays fresh; only the key is floored so it doesn't churn on every
+  // sub-minute append.
+  const keyExtentTo = floorToMinute(extentTo);
 
   const tokenQueries = useQueries({
     queries: TOKEN_MEASURES.map(
@@ -243,7 +268,7 @@ export function SubscriptionWindow({ ceiling, now: injectedNow }: SubscriptionWi
             measures: [measure],
             dimensions: ["time"],
             grain: "hour",
-            range: { from: extentFrom, to: extentTo },
+            range: { from: extentFrom, to: keyExtentTo },
             filters: categoricalFilters,
           } as SeriesMetricsQuery),
           queryFn: ({ signal }: { signal: AbortSignal }) =>
