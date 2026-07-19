@@ -41,6 +41,7 @@ function sessionsResponse(item: SessionListItem | null): SessionListResponse {
         hasCostLog: false,
         costBasis: "computed",
       },
+      captureSummary: { capturingSessions: 0, lastCapturedAt: null },
     },
   };
 }

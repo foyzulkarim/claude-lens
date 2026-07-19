@@ -62,6 +62,8 @@ export interface StoreOptions {
   pricing?: PricingTable;
   /** Resolves context window for a model; used to compute contextPctEstimated. */
   contextResolver?: ContextResolver;
+  /** Root path -> label, used to resolve `Session.host` (ARCH-settings-local-store.md). Without one, sessions fall back to their raw root path. */
+  hostLabels?: Map<string, string>;
 }
 
 export class Store {
@@ -70,11 +72,17 @@ export class Store {
   private pricer: Pricer | undefined;
   private pricing: PricingTable | undefined;
   private contextResolver: ContextResolver | undefined;
+  private hostLabels: Map<string, string>;
+  // Root path a session was first tailed from (#P4-15). Set once per session
+  // — a session's files never move roots mid-life — and never overwritten by
+  // later `applyRecords` calls (e.g. a sidecar arriving after the transcript).
+  private readonly sessionRoot = new Map<string, string>();
 
   constructor(options: StoreOptions) {
     this.pricer = options.pricer;
     this.pricing = options.pricing;
     this.contextResolver = options.contextResolver;
+    this.hostLabels = options.hostLabels ?? new Map();
     this.invalidator = createInvalidator({
       debounceMs: options.debounceMs,
       onFlush: (message) => {
@@ -103,6 +111,19 @@ export class Store {
     }
   }
 
+  /**
+   * Swap the root->label map and recompute every session's `host`
+   * (ARCH-settings-local-store.md). Mirrors `updatePricing`: a relabel via
+   * `PUT /api/config` takes effect on the next read, no restart or
+   * re-ingest needed since `sessionRoot` (the immutable part) is untouched.
+   */
+  updateHostLabels(hostLabels: Map<string, string>): void {
+    this.hostLabels = hostLabels;
+    for (const sessionId of this.sessions.keys()) {
+      this.invalidator.markDirty(sessionId);
+    }
+  }
+
   private stateFor(sessionId: string): SessionState {
     let state = this.sessions.get(sessionId);
     if (!state) {
@@ -121,13 +142,22 @@ export class Store {
     return state;
   }
 
-  /** Append one tailer batch's parsed records for the given session. Only that session is marked dirty. */
-  applyRecords(sessionId: string, result: ParseTranscriptResult): void {
+  /**
+   * Append one tailer batch's parsed records for the given session. Only
+   * that session is marked dirty. `rootPath` (the scan root this file was
+   * discovered under) is recorded once, first-call-wins — a session's
+   * `host` is resolved from this at recompute time via the live
+   * `hostLabels` map, so relabeling never needs to touch `sessionRoot`.
+   */
+  applyRecords(sessionId: string, result: ParseTranscriptResult, rootPath?: string): void {
     const state = this.stateFor(sessionId);
     state.calls.push(...result.calls);
     state.prompts.push(...result.prompts);
     state.toolResultBytes.push(...result.toolResultBytes);
     state.compactions.push(...result.compactions);
+    if (rootPath && !this.sessionRoot.has(sessionId)) {
+      this.sessionRoot.set(sessionId, rootPath);
+    }
     this.invalidator.markDirty(sessionId);
   }
 
@@ -173,6 +203,8 @@ export class Store {
     const state = this.sessions.get(sessionId);
     if (!state) return;
     state.turns = deriveTurns(state.calls, state.prompts, state.toolResultBytes);
+    const rootPath = this.sessionRoot.get(sessionId);
+    const host = rootPath ? (this.hostLabels.get(rootPath) ?? rootPath) : undefined;
     state.session = deriveSession(
       sessionId,
       state.calls,
@@ -181,6 +213,7 @@ export class Store {
       this.pricer,
       this.pricing,
       this.contextResolver,
+      host,
     );
   }
 

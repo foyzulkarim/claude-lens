@@ -14,6 +14,7 @@ import {
   type SessionsPageState,
   serializeSessionsPageState,
 } from "./sessions/state.js";
+import { TagsSection } from "./sessions/TagsSection.js";
 
 /**
  * Sessions page composition (ARCH-sessions-page.md T8). Renders the 8
@@ -79,24 +80,9 @@ export function Sessions() {
       {/* 7. Compare mode (2–3 sessions side-by-side). */}
       <SessionCompare state={state} onStateChange={onStateChange} now={now} />
 
-      {/* 8. Tags seam — rendered as a stub section until #P4-15 lands. */}
-      <TagsStub />
+      {/* 8. Tags — filter chips fed from local.json; tags themselves are
+          created inline on table rows (#P4-15). */}
+      <TagsSection state={state} onStateChange={onStateChange} />
     </div>
-  );
-}
-
-function TagsStub() {
-  return (
-    <section
-      data-testid="tags-stub"
-      aria-label="Tags"
-      className="rounded-md border border-slate-200 bg-white p-4 dark:border-[#232B36] dark:bg-[#151A21]"
-    >
-      <h2 className="text-sm font-semibold text-slate-900 dark:text-[#E8EDF2]">Tags</h2>
-      <p className="mt-2 text-sm text-slate-600 dark:text-[#8A96A5]">
-        Manual tags light up once the local-store settings page (#P4-15) lands — this section
-        reserves the mount point so the binding spec order stays stable.
-      </p>
-    </section>
   );
 }

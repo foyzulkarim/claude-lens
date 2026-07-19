@@ -1,3 +1,6 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ApiCall, TokenUsage } from "../../shared/types.js";
@@ -174,5 +177,57 @@ describe("GET /api/sessions/:id — projector wiring", () => {
     expect(body.turns[0].hasSidechain).toBe(true);
     expect(body.turns[0].mainCost).toBeGreaterThan(0);
     expect(body.turns[0].sidechainCost).toBeGreaterThan(0);
+  });
+});
+
+describe("GET /api/sessions/:id — anomalyFactor is read live from config (#P4-15)", () => {
+  let dir: string;
+  let configPath: string;
+  let configApp: FastifyInstance;
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), "claude-lens-session-detail-anomaly-"));
+    configPath = join(dir, "config.json");
+    configApp = Fastify({ logger: false });
+    registerSessionDetailRoute(configApp, store, {
+      pricer: (u) => u.inputTokens * 0.001,
+      configPath,
+    });
+    await configApp.ready();
+
+    // Fleet baseline: s1's turn is cheap (0.01), s2's is expensive (1.0), so
+    // the fleet median lands at 1.0 — s1's turn only flags as anomalous once
+    // the configured factor is small enough that 0.01 > 1.0 * factor.
+    store.applyRecords(
+      "s1",
+      batch(
+        [call({ sessionId: "s1", messageId: "m1", usage: usage({ inputTokens: 10 }) })],
+        [{ sessionId: "s1", promptId: "p1", text: "hi", timestamp: "2026-07-13T00:00:00.000Z" }],
+      ),
+    );
+    store.applyRecords(
+      "s2",
+      batch(
+        [call({ sessionId: "s2", messageId: "m2", usage: usage({ inputTokens: 1000 }) })],
+        [{ sessionId: "s2", promptId: "p2", text: "hi", timestamp: "2026-07-13T00:00:00.000Z" }],
+      ),
+    );
+    store.flushAll();
+  });
+
+  afterEach(async () => {
+    await configApp.close();
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("uses the built-in default (5) when no config file exists", async () => {
+    const response = await configApp.inject({ method: "GET", url: "/api/sessions/s1" });
+    expect(response.json().turns[0].isAnomaly).toBe(false);
+  });
+
+  it("uses the configured anomalyFactor once PUT /api/config has set one", async () => {
+    await writeFile(configPath, JSON.stringify({ anomalyFactor: 0.001 }), "utf8");
+    const response = await configApp.inject({ method: "GET", url: "/api/sessions/s1" });
+    expect(response.json().turns[0].isAnomaly).toBe(true);
   });
 });

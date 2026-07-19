@@ -27,6 +27,7 @@ const EMPTY_RESPONSE: SessionListResponse = {
       hasCostLog: false,
       costBasis: "computed",
     },
+    captureSummary: { capturingSessions: 0, lastCapturedAt: null },
   },
 };
 
@@ -207,6 +208,7 @@ describe("listSessions — success path", () => {
           hasCostLog: false,
           costBasis: "observed",
         },
+        captureSummary: { capturingSessions: 0, lastCapturedAt: null },
       },
     };
     installFetch(async () => makeResponse(body));
@@ -258,6 +260,7 @@ describe("listSessions — response shape guard", () => {
           hasCostLog: false,
           costBasis: "computed",
         },
+        captureSummary: { capturingSessions: 0, lastCapturedAt: null },
       },
     };
   }
@@ -275,6 +278,7 @@ describe("listSessions — response shape guard", () => {
             hasCostLog: false,
             costBasis: "computed",
           },
+          captureSummary: { capturingSessions: 0, lastCapturedAt: null },
         },
       }),
     );
@@ -296,6 +300,7 @@ describe("listSessions — response shape guard", () => {
             hasCostLog: false,
             costBasis: "computed",
           },
+          captureSummary: { capturingSessions: 0, lastCapturedAt: null },
         },
       }),
     );
@@ -333,6 +338,7 @@ describe("listSessions — response shape guard", () => {
             hasCostLog: false,
             costBasis: "computed",
           },
+          captureSummary: { capturingSessions: 0, lastCapturedAt: null },
         },
       }),
     );
@@ -454,6 +460,7 @@ function pageResponseFixture(): SessionPageResponse {
         hasCostLog: false,
         costBasis: "computed",
       },
+      captureSummary: { capturingSessions: 0, lastCapturedAt: null },
     },
   };
 }
@@ -569,6 +576,7 @@ describe("listSessionsPage — response shape guard", () => {
             hasCostLog: false,
             costBasis: "computed",
           },
+          captureSummary: { capturingSessions: 0, lastCapturedAt: null },
         },
       }),
     );

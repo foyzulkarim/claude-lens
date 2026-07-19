@@ -81,7 +81,7 @@ describe("sessions smoke", () => {
       });
 
     // 8. Tags seam — visibly reserved for #P4-15.
-    cy.get('[data-testid="tags-stub"]')
+    cy.get('[data-testid="tags-section"]')
       .should("be.visible")
       .within(() => {
         cy.contains("h2", "Tags").should("be.visible");

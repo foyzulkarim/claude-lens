@@ -1,10 +1,15 @@
 import type { FastifyInstance } from "fastify";
 import {
   type AppConfig,
+  isValidAnomalyFactor,
   isValidBudget,
   isValidGateThresholds,
+  isValidPricingTable,
+  isValidScanRoots,
 } from "../../shared/settings-contract.js";
+import { buildHostLabels, buildRuntimeMetadata } from "../runtime.js";
 import { readConfig, writeConfig } from "../settings.js";
+import type { Store } from "../store/store.js";
 
 /**
  * GET/PUT /api/config — the budget + gate-thresholds config surface
@@ -49,12 +54,45 @@ export function parseConfigPatch(body: unknown): Partial<AppConfig> | string {
     patch.gateThresholds = b.gateThresholds;
   }
 
+  if ("pricing" in b) {
+    if (!isValidPricingTable(b.pricing)) {
+      return (
+        "pricing must be an object keyed by model name, each value a complete rate " +
+        "(input, output, cacheRead, cacheCreate — all finite numbers >= 0)"
+      );
+    }
+    patch.pricing = b.pricing;
+  }
+
+  if ("scanRoots" in b) {
+    if (!isValidScanRoots(b.scanRoots)) {
+      return "scanRoots must be an array of {path: string, label?: string} with non-empty values";
+    }
+    patch.scanRoots = b.scanRoots;
+  }
+
+  if ("anomalyFactor" in b) {
+    if (!isValidAnomalyFactor(b.anomalyFactor)) {
+      return "anomalyFactor must be a finite number greater than 0";
+    }
+    patch.anomalyFactor = b.anomalyFactor;
+  }
+
   return patch;
 }
 
 export interface RegisterConfigRouteOptions {
   /** Overrides the on-disk config path — tests only; production always uses `~/.claude-lens/config.json`. */
   configPath?: string;
+  /**
+   * When provided, a PUT that changes `pricing` or `scanRoots` propagates
+   * live into the running ingest Store (ARCH-settings-local-store.md A1) —
+   * `pricing` via `Store.updatePricing()`, `scanRoots` via
+   * `Store.updateHostLabels()`. Both mark every session dirty; the next
+   * read recomputes with the new inputs, no restart needed. Optional so
+   * route tests that don't care about live propagation can omit it.
+   */
+  store?: Store;
 }
 
 export function registerConfigRoute(
@@ -70,7 +108,16 @@ export function registerConfigRoute(
       return { error: parsed };
     }
     try {
-      return await writeConfig(parsed, options.configPath);
+      const merged = await writeConfig(parsed, options.configPath);
+      if (options.store) {
+        if (parsed.pricing !== undefined) {
+          options.store.updatePricing(buildRuntimeMetadata({ pricing: merged.pricing }));
+        }
+        if (parsed.scanRoots !== undefined) {
+          options.store.updateHostLabels(buildHostLabels(merged.scanRoots));
+        }
+      }
+      return merged;
     } catch (err) {
       app.log.error({ err }, "failed to write config");
       reply.code(500);

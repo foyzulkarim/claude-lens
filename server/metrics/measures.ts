@@ -1,20 +1,12 @@
 import type { Measure } from "../../shared/metrics-contract.js";
+import type { ModelRate, PricingTable } from "../../shared/pricing-contract.js";
 import type { ApiCall, Session, TokenUsage, Turn } from "../../shared/types.js";
 import { groupLogicalTurns } from "../store/logical-turns.js";
 
-export interface ModelRate {
-  /** $ per 1,000,000 input tokens */
-  input: number;
-  /** $ per 1,000,000 output tokens */
-  output: number;
-  /** $ per 1,000,000 cache-read tokens */
-  cacheRead: number;
-  /** $ per 1,000,000 cache-write tokens */
-  cacheCreate: number;
-}
-
-/** Keyed by exact `ApiCall.model`. A missing key means unpriced -> $0, never fabricated. */
-export type PricingTable = Record<string, ModelRate>;
+// ModelRate/PricingTable now live in shared/pricing-contract.ts (ARCH-settings-local-store.md
+// A3) since both the client pricing editor and this module need the shape. Re-exported here so
+// every existing importer of these types from this module keeps compiling unchanged.
+export type { ModelRate, PricingTable };
 
 // Placeholder values (V1's flat legacy rates), applied identically across all
 // four known model names for now — explicit decision this session: assume

@@ -20,7 +20,15 @@ vi.mock("../../api/sessions.js", () => ({
 const { CaptureBanner } = await import("./CaptureBanner.js");
 
 function responseFor(globalCapture: TierFlags): SessionListResponse {
-  return { items: [], total: 0, meta: { matchedExtent: null, globalCapture } };
+  return {
+    items: [],
+    total: 0,
+    meta: {
+      matchedExtent: null,
+      globalCapture,
+      captureSummary: { capturingSessions: 0, lastCapturedAt: null },
+    },
+  };
 }
 
 function renderBanner(search = "") {

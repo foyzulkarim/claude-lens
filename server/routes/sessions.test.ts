@@ -316,22 +316,22 @@ describe("GET /api/sessions — filtering and sorting", () => {
     expect(branchIds).toEqual(["s-b", "s-f"]);
   });
 
-  it("host filter matches the synthetic 'default' host (review #13)", async () => {
-    // Every session in this fixture is synthesized with host "default"
-    // (mirroring the metrics engine). The pre-fix code accepted `host` but
-    // never projected or filtered it, so a non-matching chip silently
-    // returned every session while `/api/metrics` returned none for the
-    // same chip. Post-fix both routes agree on the same synthetic host.
+  it("host filter matches the real per-session host (#P4-15, ARCH-settings-local-store.md A7)", async () => {
+    // This fixture's sessions are seeded via `store.applyRecords` with no
+    // `rootPath` (3rd arg omitted), so the Store's real host resolution
+    // (derive-session.ts) falls back to "unlabeled" — no scan root was ever
+    // recorded for them. That's a real value now, not the old synthetic
+    // "default" constant every session used to share pre-#P4-15.
 
-    // Match: include "default" in the chip → every session returns.
+    // Match: include "unlabeled" in the chip → every session returns.
     const matching = await app.inject({
       method: "GET",
-      url: "/api/sessions?host=default",
+      url: "/api/sessions?host=unlabeled",
     });
     expect(matching.statusCode).toBe(200);
     expect(matching.json().items).toHaveLength(6);
 
-    // Miss: any chip value that doesn't include "default" returns nothing.
+    // Miss: any chip value that doesn't match returns nothing.
     const nonMatching = await app.inject({
       method: "GET",
       url: "/api/sessions?host=other-host",
@@ -653,6 +653,21 @@ describe("GET /api/sessions — pagination, trace, and meta", () => {
     expect(filtered.statusCode).toBe(200);
     expect(filtered.json().meta.globalCapture.hasCostSamples).toBe(true);
     expect(filtered.json().total).toBeLessThan(20);
+  });
+
+  it("meta.captureSummary counts capturing sessions and the most recent capture (#P4-15)", async () => {
+    const noCapture = await app.inject({ method: "GET", url: "/api/sessions" });
+    expect(noCapture.json().meta.captureSummary).toEqual({
+      capturingSessions: 0,
+      lastCapturedAt: null,
+    });
+
+    store.markSidecarPresent("s-05", "cost");
+    store.flushAll();
+    const withCapture = await app.inject({ method: "GET", url: "/api/sessions" });
+    const summary = withCapture.json().meta.captureSummary;
+    expect(summary.capturingSessions).toBe(1);
+    expect(summary.lastCapturedAt).not.toBeNull();
   });
 });
 
@@ -1027,5 +1042,68 @@ describe("parseSessionsPageQuery — unit coverage", () => {
 
   it("rejects more than 3 session IDs", () => {
     expect(typeof parseSessionsPageQuery({ view: "page", sessionId: "a,b,c,d" })).toBe("string");
+  });
+});
+
+describe("PUT /api/sessions/:id/tags (#P4-15)", () => {
+  let app: FastifyInstance;
+  let store: Store;
+  let dir: string;
+  let localStorePath: string;
+
+  beforeEach(async () => {
+    const { mkdtemp } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    dir = await mkdtemp(join(tmpdir(), "claude-lens-sessions-tags-"));
+    localStorePath = join(dir, "local.json");
+
+    const metadata = buildRuntimeMetadata();
+    store = new Store({
+      onInvalidate: () => {},
+      pricer: metadata.pricer,
+      pricing: metadata.pricing,
+    });
+    addSession(store, { sessionId: "s1", timestamp: iso(2026, 6, 14, 10, 0) });
+    app = buildApp({ store, logger: false, localStorePath });
+  });
+
+  afterEach(async () => {
+    store.stop();
+    await app.close();
+    const { rm } = await import("node:fs/promises");
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("attaches tags to a known session and GET reflects them", async () => {
+    const put = await app.inject({
+      method: "PUT",
+      url: "/api/sessions/s1/tags",
+      payload: { tags: ["important", "follow-up"] },
+    });
+    expect(put.statusCode).toBe(200);
+    expect(put.json()).toEqual({ tags: ["important", "follow-up"] });
+
+    const get = await app.inject({ method: "GET", url: "/api/sessions?view=page&sessionId=s1" });
+    const item = get.json().items.find((i: { sessionId: string }) => i.sessionId === "s1");
+    expect(item.tags).toEqual(["important", "follow-up"]);
+  });
+
+  it("404s for an unknown session", async () => {
+    const put = await app.inject({
+      method: "PUT",
+      url: "/api/sessions/unknown/tags",
+      payload: { tags: ["x"] },
+    });
+    expect(put.statusCode).toBe(404);
+  });
+
+  it("400s on an invalid tag list", async () => {
+    const put = await app.inject({
+      method: "PUT",
+      url: "/api/sessions/s1/tags",
+      payload: { tags: ["", "ok"] },
+    });
+    expect(put.statusCode).toBe(400);
   });
 });

@@ -9,6 +9,7 @@
  * call `buildRuntimeMetadata(custom)` once with the user's overrides —
  * every downstream consumer reads the same shape.
  */
+import type { ScanRootConfig } from "../shared/settings-contract.js";
 import { DEFAULT_PRICING_TABLE, type PricingTable, priceUsage } from "./metrics/measures.js";
 import { resolveContextWindow } from "./metrics/model-metadata.js";
 import type { ContextResolver, Pricer } from "./store/derive-session.js";
@@ -52,4 +53,20 @@ export function buildRuntimeMetadata(overrides: Partial<RuntimeMetadata> = {}): 
   const pricer: Pricer = (usage, model) => priceUsage(usage, model, pricing);
   const contextResolver = overrides.contextResolver ?? ((model) => resolveContextWindow(model));
   return { pricing, pricer, contextResolver };
+}
+
+/**
+ * Builds the root-path -> label lookup the Store uses to resolve
+ * `Session.host` (ARCH-settings-local-store.md). Called once at CLI boot
+ * and again on every `PUT /api/config` that changes `scanRoots`, feeding
+ * `Store.updateHostLabels()` — a relabel takes effect on the next session
+ * recompute, no restart needed. Roots without a `label` are simply absent
+ * from the map; `deriveSession` falls back to the raw root path.
+ */
+export function buildHostLabels(scanRoots: ScanRootConfig[] = []): Map<string, string> {
+  const labels = new Map<string, string>();
+  for (const root of scanRoots) {
+    if (root.label) labels.set(root.path, root.label);
+  }
+  return labels;
 }

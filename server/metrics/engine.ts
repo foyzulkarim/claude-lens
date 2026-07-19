@@ -53,11 +53,31 @@ function buildCallToTurn(turns: Turn[]): Map<ApiCall, Turn> {
   return map;
 }
 
+/**
+ * sessionId -> host (ARCH-settings-local-store.md A7). `host` lives on
+ * `Session`, resolved once by the Store from the session's scan root — this
+ * map is how the per-call/per-turn dimension code below reaches that value
+ * without threading a `Session` lookup through every call site.
+ */
+function buildHostBySessionId(sessions: Session[]): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const session of sessions) map.set(session.sessionId, session.host);
+  return map;
+}
+
 /** Every dimension value a call belongs to, always as an array (single-valued dims wrap to length 1). */
-function valuesForCallDim(call: ApiCall, dim: Dimension, callToTurn: Map<ApiCall, Turn>): string[] {
+function valuesForCallDim(
+  call: ApiCall,
+  dim: Dimension,
+  callToTurn: Map<ApiCall, Turn>,
+  hostBySessionId: Map<string, string>,
+): string[] {
   if (dim === "gateStatus") {
     const turn = callToTurn.get(call);
     return [turn ? turnDimensionValue(turn, "gateStatus") : UNKNOWN];
+  }
+  if (dim === "host") {
+    return [hostBySessionId.get(call.sessionId) || UNKNOWN];
   }
   const value = callDimensionValue(call, dim as CallDimension);
   return Array.isArray(value) ? value : [value];
@@ -67,6 +87,7 @@ function callMatchesFilters(
   call: ApiCall,
   filters: MetricsQuery["filters"],
   callToTurn: Map<ApiCall, Turn>,
+  hostBySessionId: Map<string, string>,
 ): boolean {
   if (!filters) return true;
   // Object.keys widens to string[]; this cast trusts every key is a real
@@ -74,7 +95,7 @@ function callMatchesFilters(
   // every filter key/value shape before a query reaches here (#P2-10).
   for (const dim of Object.keys(filters) as Dimension[]) {
     if (dim === "time") continue;
-    const values = valuesForCallDim(call, dim, callToTurn);
+    const values = valuesForCallDim(call, dim, callToTurn, hostBySessionId);
     if (!matchesFilter(values, filters[dim])) return false;
   }
   return true;
@@ -97,10 +118,11 @@ function groupKeysForCall(
   call: ApiCall,
   breakdownDims: Dimension[],
   callToTurn: Map<ApiCall, Turn>,
+  hostBySessionId: Map<string, string>,
 ): GroupKeyEntry[][] {
   let combos: GroupKeyEntry[][] = [[]];
   for (const dim of breakdownDims) {
-    const values = valuesForCallDim(call, dim, callToTurn);
+    const values = valuesForCallDim(call, dim, callToTurn, hostBySessionId);
     const next: GroupKeyEntry[][] = [];
     for (const combo of combos) {
       for (const value of values) next.push([...combo, { dim, value }]);
@@ -121,6 +143,7 @@ function buildGroups(
   calls: ApiCall[],
   breakdownDims: Dimension[],
   callToTurn: Map<ApiCall, Turn>,
+  hostBySessionId: Map<string, string>,
 ): Group[] {
   const groups = new Map<string, Group>();
   if (breakdownDims.length === 0) {
@@ -128,7 +151,7 @@ function buildGroups(
     groups.set(dimensionKey, { dimensionKey, label, keyEntries: [], calls: [] });
   }
   for (const call of calls) {
-    for (const keyEntries of groupKeysForCall(call, breakdownDims, callToTurn)) {
+    for (const keyEntries of groupKeysForCall(call, breakdownDims, callToTurn, hostBySessionId)) {
       const { dimensionKey, label } = labelFor(keyEntries);
       let group = groups.get(dimensionKey);
       if (!group) {
@@ -145,11 +168,15 @@ function buildGroups(
 // of which calls landed in that group's `calls` list — via the turn's own
 // first call as a representative for call-level dims (architecture decision
 // A5), or turn.gateStatus directly for the gateStatus dimension.
-function turnMatchesGroup(turn: Turn, group: Group): boolean {
+function turnMatchesGroup(turn: Turn, group: Group, hostBySessionId: Map<string, string>): boolean {
   const representative = turn.calls[0];
   for (const { dim, value } of group.keyEntries) {
     if (dim === "gateStatus") {
       if (turnDimensionValue(turn, "gateStatus") !== value) return false;
+      continue;
+    }
+    if (dim === "host") {
+      if ((hostBySessionId.get(turn.sessionId) || UNKNOWN) !== value) return false;
       continue;
     }
     if (!representative) return false;
@@ -173,7 +200,7 @@ function sessionValueForDim(session: Session, dim: Dimension): string[] {
     case "model":
       return session.models.length > 0 ? session.models : [UNKNOWN];
     case "host":
-      return ["default"];
+      return [session.host || UNKNOWN];
     case "sidechain":
     case "tool":
     case "gateStatus":
@@ -198,6 +225,7 @@ function scopeFor(
   input: MetricsInput,
   rangeFromMs: number,
   rangeToMs: number,
+  hostBySessionId: Map<string, string>,
 ): MeasureScope {
   const calls =
     bucketStartMs === null
@@ -210,7 +238,7 @@ function scopeFor(
     const ts = Date.parse(turn.startedAt);
     if (!Number.isFinite(ts) || ts < rangeFromMs || ts > rangeToMs) return false;
     if (bucketStartMs !== null && bucketStart(ts, grain) !== bucketStartMs) return false;
-    return turnMatchesGroup(turn, group);
+    return turnMatchesGroup(turn, group, hostBySessionId);
   });
 
   const sessions = input.sessions.filter((session) => {
@@ -228,9 +256,15 @@ function filterAndGroup(
   input: MetricsInput,
   query: MetricsQuery,
   range: { from: string; to: string },
-): { groups: Group[]; rangeFromMs: number; rangeToMs: number } {
+): {
+  groups: Group[];
+  rangeFromMs: number;
+  rangeToMs: number;
+  hostBySessionId: Map<string, string>;
+} {
   const breakdownDims = query.dimensions.filter((d) => d !== "time");
   const callToTurn = buildCallToTurn(input.turns);
+  const hostBySessionId = buildHostBySessionId(input.sessions);
 
   const rangeFromMs = Date.parse(range.from);
   const rangeToMs = Date.parse(range.to);
@@ -242,11 +276,11 @@ function filterAndGroup(
     // field to "") would otherwise silently bypass the range filter instead
     // of being excluded by it (review finding H2). Exclude explicitly.
     if (!Number.isFinite(ts) || ts < rangeFromMs || ts > rangeToMs) return false;
-    return callMatchesFilters(call, query.filters, callToTurn);
+    return callMatchesFilters(call, query.filters, callToTurn, hostBySessionId);
   });
 
-  const groups = buildGroups(filteredCalls, breakdownDims, callToTurn);
-  return { groups, rangeFromMs, rangeToMs };
+  const groups = buildGroups(filteredCalls, breakdownDims, callToTurn, hostBySessionId);
+  return { groups, rangeFromMs, rangeToMs, hostBySessionId };
 }
 
 /** The `mode: "series"` pipeline, parameterized on `range` so it can also serve compare's shifted previous-period run (decision A7) — everything else (measures/dimensions/grain/filters) comes from `query`. */
@@ -255,7 +289,7 @@ function computeSeriesForRange(
   query: SeriesMetricsQuery | DistributionMetricsQuery,
   range: { from: string; to: string },
 ): Series[] {
-  const { groups, rangeFromMs, rangeToMs } = filterAndGroup(input, query, range);
+  const { groups, rangeFromMs, rangeToMs, hostBySessionId } = filterAndGroup(input, query, range);
   const bucketByTime = query.dimensions.includes("time");
   const buckets: (number | null)[] = bucketByTime ? enumerateBuckets(range, query.grain) : [null];
 
@@ -263,7 +297,15 @@ function computeSeriesForRange(
   for (const measure of query.measures) {
     for (const group of groups) {
       const points: SeriesPoint[] = buckets.map((bucketStartMs) => {
-        const scope = scopeFor(group, bucketStartMs, query.grain, input, rangeFromMs, rangeToMs);
+        const scope = scopeFor(
+          group,
+          bucketStartMs,
+          query.grain,
+          input,
+          rangeFromMs,
+          rangeToMs,
+          hostBySessionId,
+        );
         const value = computeMeasure(measure, scope, input.pricing);
         // `t` must be a machine-readable ISO-8601 instant, not a display
         // label: ECharts' `xAxis: { type: "time" }` parser requires an
@@ -399,7 +441,11 @@ function buildSessionScopeIndex(
 
 /** The `mode: "distribution"` pipeline (decision A9: `"time"` in `dimensions` is ignored — always one population per breakdown-dim group across the whole range). Entities where `computeMeasure` returns null are excluded from the population, which is what lets an all-premium-gated measure cascade to `computeDistribution([])`'s honest-null result with no special-casing here. */
 function computeDistributionSeries(input: MetricsInput, query: DistributionMetricsQuery): Series[] {
-  const { groups, rangeFromMs, rangeToMs } = filterAndGroup(input, query, query.range);
+  const { groups, rangeFromMs, rangeToMs, hostBySessionId } = filterAndGroup(
+    input,
+    query,
+    query.range,
+  );
 
   // Session-distribution path uses the indexed scopes (ARCH T1) — one
   // index per request, reused across every measure × group pair. The
@@ -420,7 +466,15 @@ function computeDistributionSeries(input: MetricsInput, query: DistributionMetri
         // indexed path is functionally identical but linear in C+T+S.
         entityScopes = sessionEntityScopesFromIndex(sessionIndex);
       } else {
-        const scope = scopeFor(group, null, query.grain, input, rangeFromMs, rangeToMs);
+        const scope = scopeFor(
+          group,
+          null,
+          query.grain,
+          input,
+          rangeFromMs,
+          rangeToMs,
+          hostBySessionId,
+        );
         entityScopes = entityScopesFor(query.distributionEntity, scope);
       }
       const values = entityScopes

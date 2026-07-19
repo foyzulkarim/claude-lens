@@ -57,9 +57,9 @@ describe("callDimensionValue — scalar dimensions", () => {
     expect(callDimensionValue(call({ isSidechain: false }), "sidechain")).toBe("main");
   });
 
-  it("host always returns the constant default (no real data source yet)", () => {
-    expect(callDimensionValue(call(), "host")).toBe("default");
-  });
+  // "host" is no longer a CallDimension (#P4-15, ARCH-settings-local-store.md
+  // A7) — it lives on Session, resolved by engine.ts's own
+  // buildHostBySessionId, exercised in engine.test.ts instead.
 });
 
 describe("callDimensionValue — tool (multi-valued)", () => {

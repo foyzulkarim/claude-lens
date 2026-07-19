@@ -26,6 +26,11 @@ vi.mock("../../api/metrics.js", () => ({
   postScatterMetrics: (query: unknown) => postScatterMetricsMock(query),
 }));
 
+const getTagsMock = vi.fn<() => Promise<{ tag: string; sessionCount: number }[]>>();
+vi.mock("../../api/localStore.js", () => ({
+  getTags: () => getTagsMock(),
+}));
+
 vi.mock("../../charts/Chart.js", () => ({
   Chart: (_props: ChartProps) => <div data-testid="chart-stub" />,
 }));
@@ -45,6 +50,7 @@ function emptyPageResponse(): SessionPageResponse {
         hasCostLog: false,
         costBasis: "computed",
       },
+      captureSummary: { capturingSessions: 0, lastCapturedAt: null },
     },
   };
 }
@@ -87,6 +93,8 @@ beforeEach(() => {
   postMetricsMock.mockResolvedValue([]);
   postScatterMetricsMock.mockReset();
   postScatterMetricsMock.mockResolvedValue(emptyScatterResult());
+  getTagsMock.mockReset();
+  getTagsMock.mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -110,13 +118,13 @@ describe("Sessions — binding-order composition (ARCH R1)", () => {
     // 7. Compare
     expect(screen.getByTestId("session-compare")).toBeInTheDocument();
     // 8. Tags seam
-    expect(screen.getByTestId("tags-stub")).toBeInTheDocument();
+    expect(screen.getByTestId("tags-section")).toBeInTheDocument();
   });
 
   it("compare/tags sections are present even though the mockup omits them (ARCH spec-vs-mockup gap)", async () => {
     renderSessions();
     expect(screen.getByTestId("session-compare")).toBeInTheDocument();
-    expect(screen.getByTestId("tags-stub")).toBeInTheDocument();
+    expect(screen.getByTestId("tags-section")).toBeInTheDocument();
   });
 
   it("keeps rendering every other section when the list query rejects", async () => {

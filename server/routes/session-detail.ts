@@ -4,6 +4,7 @@ import type {
   SessionDetailResponse,
 } from "../../shared/session-detail-contract.js";
 import { projectSessionDetail, type RuntimeMetadata } from "../session-detail/projector.js";
+import { readConfig } from "../settings.js";
 import type { Pricer } from "../store/derive-session.js";
 import { aggregateLogicalTurnCost, groupLogicalTurns } from "../store/logical-turns.js";
 import type { Store } from "../store/store.js";
@@ -20,6 +21,8 @@ export interface RegisterSessionDetailRouteOptions {
   pricer?: Pricer;
   /** Context-window resolver — when omitted, `timeline.contextPct` is null. */
   contextResolver?: (model: string) => number | null;
+  /** Overrides the on-disk config path — tests only; production always uses `~/.claude-lens/config.json`. */
+  configPath?: string;
 }
 
 function buildFleetBaselines(
@@ -47,10 +50,6 @@ export function registerSessionDetailRoute(
   options: RegisterSessionDetailRouteOptions = {},
 ): void {
   const pricer = options.pricer;
-  const runtime: RuntimeMetadata = {
-    pricer,
-    contextResolver: options.contextResolver,
-  };
 
   app.get<{ Params: { id: string } }>("/api/sessions/:id", async (request, reply) => {
     const sessionId = request.params.id;
@@ -61,6 +60,17 @@ export function registerSessionDetailRoute(
       const body: SessionDetailError = { error: "session not found", sessionId };
       return reply.code(404).send(body);
     }
+
+    // anomalyFactor is read fresh per request (#P4-15, ARCH-settings-local-store.md
+    // A1) — same live-config pattern as gates.ts's threshold resolution, since
+    // this is computed against a snapshot on every request rather than baked
+    // into the Store at derive time.
+    const config = await readConfig(options.configPath);
+    const runtime: RuntimeMetadata = {
+      pricer,
+      contextResolver: options.contextResolver,
+      anomalyFactor: config.anomalyFactor,
+    };
 
     const baselines = buildFleetBaselines(store, pricer);
     const response: SessionDetailResponse = projectSessionDetail(

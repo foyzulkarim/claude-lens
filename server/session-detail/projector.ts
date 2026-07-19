@@ -49,7 +49,11 @@ export interface RuntimeMetadata {
   pricer?: (usage: TokenUsage, model: string) => number;
   /** Resolves a model's context window in tokens. Optional. */
   contextResolver?: (model: string) => number | null;
+  /** Anomaly detector multiplier (#P4-15). Absent falls back to the documented default (5). */
+  anomalyFactor?: number;
 }
+
+const DEFAULT_ANOMALY_FACTOR = 5;
 
 // ---------------------------------------------------------------------------
 // Internal: small utilities
@@ -348,7 +352,7 @@ function buildTurns(
   fleetTurnCostsSortedAsc: number[],
   runtime: RuntimeMetadata,
 ): SessionDetailTurn[] {
-  const anomalyFactor = 5;
+  const anomalyFactor = runtime.anomalyFactor ?? DEFAULT_ANOMALY_FACTOR;
   const fleetMedian =
     fleetTurnCostsSortedAsc.length === 0
       ? null

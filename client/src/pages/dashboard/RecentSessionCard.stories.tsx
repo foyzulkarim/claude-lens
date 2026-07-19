@@ -62,6 +62,7 @@ function response(
         hasCostLog: false,
         costBasis: "computed",
       },
+      captureSummary: { capturingSessions: 0, lastCapturedAt: null },
     },
   };
 }
@@ -92,6 +93,7 @@ export const ObservedTier: Story = {
             hasCostLog: true,
             costBasis: "observed",
           },
+          captureSummary: { capturingSessions: 0, lastCapturedAt: null },
         },
       }),
     ),
@@ -121,6 +123,7 @@ export const Empty: Story = {
             hasCostLog: false,
             costBasis: "computed",
           },
+          captureSummary: { capturingSessions: 0, lastCapturedAt: null },
         },
       }),
     ),

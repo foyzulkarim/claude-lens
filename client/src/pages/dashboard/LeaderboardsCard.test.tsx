@@ -44,6 +44,7 @@ const sessionsResponse: SessionListResponse = {
       hasCostLog: false,
       costBasis: "computed",
     },
+    captureSummary: { capturingSessions: 0, lastCapturedAt: null },
   },
 };
 
@@ -161,6 +162,7 @@ describe("LeaderboardsCard — tabs", () => {
           hasCostLog: false,
           costBasis: "computed",
         },
+        captureSummary: { capturingSessions: 0, lastCapturedAt: null },
       },
     });
     renderCard();

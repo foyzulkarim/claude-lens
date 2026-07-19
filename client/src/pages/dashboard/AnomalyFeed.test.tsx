@@ -6,11 +6,17 @@ import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Router } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
+import type { AppConfig } from "../../../../shared/settings-contract.js";
 import type { SessionListItem, SessionListResponse } from "../../../../shared/sessions-contract.js";
 
 const listSessionsMock = vi.fn<(params: unknown) => Promise<SessionListResponse>>();
 vi.mock("../../api/sessions.js", () => ({
   listSessions: (params: unknown) => listSessionsMock(params),
+}));
+
+const getConfigMock = vi.fn<() => Promise<AppConfig>>();
+vi.mock("../../api/config.js", () => ({
+  getConfig: () => getConfigMock(),
 }));
 
 const {
@@ -32,6 +38,7 @@ function emptyResponse(): SessionListResponse {
         hasCostLog: false,
         costBasis: "computed",
       },
+      captureSummary: { capturingSessions: 0, lastCapturedAt: null },
     },
   };
 }
@@ -52,6 +59,8 @@ function renderFeed(props: { items?: AnomalyFeedItem[] } = {}) {
 beforeEach(() => {
   listSessionsMock.mockReset();
   listSessionsMock.mockResolvedValue(emptyResponse());
+  getConfigMock.mockReset();
+  getConfigMock.mockResolvedValue({ budget: null });
 });
 
 afterEach(() => {
@@ -237,5 +246,18 @@ describe("anomalyItemsFromSamples — detector wiring", () => {
       anomalyItemsFromSamples([{ sessionId: "s1", turnId: "turn-0", costComputed: 5 }]),
     ).toEqual([]);
     expect(anomalyItemsFromSamples([])).toEqual([]);
+  });
+
+  it("uses a custom factor (#P4-15) instead of the detector's default", () => {
+    // Same population as above, but a 2x outlier over a factor of 5 doesn't
+    // flag — with a configured factor of 1.5, it does.
+    const samples = [
+      { sessionId: "s1", turnId: "turn-0", costComputed: 1 },
+      { sessionId: "s1", turnId: "turn-1", costComputed: 1 },
+      { sessionId: "s2", turnId: "turn-0", costComputed: 1 },
+      { sessionId: "s2", turnId: "turn-1", costComputed: 2 },
+    ];
+    expect(anomalyItemsFromSamples(samples, undefined, 5)).toEqual([]);
+    expect(anomalyItemsFromSamples(samples, undefined, 1.5)).toHaveLength(1);
   });
 });

@@ -33,7 +33,8 @@ export function SessionsFilters({ state, onStateChange }: SessionsFiltersProps) 
         <DrilldownControl state={state} onChange={onStateChange} />
       </div>
       <p className="mt-3 text-xs text-slate-500 dark:text-[#8A96A5]">
-        Gate status and tag filters will appear when their respective page work lands.
+        Gate status filter will appear when Report Card lands (#P4-12). Tag filtering is in the Tags
+        section below.
       </p>
     </section>
   );

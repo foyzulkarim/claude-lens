@@ -25,6 +25,8 @@ export interface IngestPipelineOptions {
    */
   metadata?: RuntimeMetadata;
   debounceMs?: number;
+  /** Root path -> label, used to resolve `Session.host` (#P4-15). See `runtime.ts`'s `buildHostLabels`. */
+  hostLabels?: Map<string, string>;
 }
 
 export interface IngestPipeline {
@@ -41,6 +43,7 @@ export function startIngest(config: ScanConfig, options: IngestPipelineOptions):
     pricing: options.metadata?.pricing,
     contextResolver: options.metadata?.contextResolver,
     debounceMs: options.debounceMs,
+    hostLabels: options.hostLabels,
   });
 
   const inFlight = new Set<Promise<unknown>>();
@@ -57,7 +60,7 @@ export function startIngest(config: ScanConfig, options: IngestPipelineOptions):
     {
       onRecords(file, result) {
         if (!file.sessionId) return; // transcript files always have a sessionId (discovery derives it from the filename)
-        store.applyRecords(file.sessionId, result);
+        store.applyRecords(file.sessionId, result, file.root);
       },
       onFileReset(file) {
         if (!file.sessionId) return;

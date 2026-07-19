@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Router } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
 import type { Series } from "../../../../shared/metrics-contract.js";
+import type { AppConfig } from "../../../../shared/settings-contract.js";
 import type { SessionListResponse } from "../../../../shared/sessions-contract.js";
 
 const postMetricsMock = vi.fn<(query: unknown) => Promise<Series[]>>();
@@ -18,6 +19,11 @@ const listSessionsMock =
   vi.fn<(params?: unknown, signal?: unknown) => Promise<SessionListResponse>>();
 vi.mock("../../api/sessions.js", () => ({
   listSessions: (params: unknown, signal: unknown) => listSessionsMock(params, signal),
+}));
+
+const getConfigMock = vi.fn<() => Promise<AppConfig>>();
+vi.mock("../../api/config.js", () => ({
+  getConfig: () => getConfigMock(),
 }));
 
 // ChartCard renders real ECharts via <Chart>, which needs a ResizeObserver
@@ -62,6 +68,7 @@ const EMPTY_SESSION_LIST: SessionListResponse = {
       hasCostLog: false,
       costBasis: "computed",
     },
+    captureSummary: { capturingSessions: 0, lastCapturedAt: null },
   },
 };
 
@@ -77,6 +84,8 @@ beforeEach(() => {
   listSessionsMock.mockImplementation(
     () => new Promise((resolve) => setTimeout(() => resolve(EMPTY_SESSION_LIST), 5)),
   );
+  getConfigMock.mockReset();
+  getConfigMock.mockResolvedValue({ budget: null });
 });
 
 afterEach(() => {
@@ -134,11 +143,11 @@ describe("dashboard cards — stable default time (review #4)", () => {
     expect(postMetricsMock).toHaveBeenCalledTimes(0);
   });
 
-  it("AnomalyFeed fires exactly one query after first paint", async () => {
+  it("AnomalyFeed fires exactly one sessions query + one config query after first paint", async () => {
     const queryClient = renderCard(<AnomalyFeed />);
     await screen.findByText("Gate failure and capture-gap data not available yet.");
     expect(listSessionsMock).toHaveBeenCalledTimes(1);
-    expect(queryClient.getQueryCache().getAll()).toHaveLength(1);
+    expect(queryClient.getQueryCache().getAll()).toHaveLength(2); // sessions + config (#P4-15)
   });
 
   it("ChartCard fires exactly one query after first paint", async () => {

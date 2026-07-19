@@ -245,6 +245,14 @@ export interface SessionTimelineSet {
 export interface SessionListMeta {
   matchedExtent: { from: string; to: string } | null;
   globalCapture: TierFlags;
+  /**
+   * Cost-capture setup guide readout (#P4-15). `capturingSessions` counts
+   * sessions with `tier.hasCostSamples` true (the same signal
+   * `globalCapture` ORs across the fleet); `lastCapturedAt` is the most
+   * recent `lastAt` among them, or `null` when none are capturing yet.
+   * Computed alongside the existing `globalCapture` pass — no extra route.
+   */
+  captureSummary: { capturingSessions: number; lastCapturedAt: string | null };
 }
 
 export interface SessionListResponse {

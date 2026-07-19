@@ -156,4 +156,108 @@ describe("GET/PUT /api/config", () => {
     });
     expect(put.statusCode).toBe(400);
   });
+
+  it("PUT accepts pricing/scanRoots/anomalyFactor alongside budget and persists them (#P4-15)", async () => {
+    const put = await app.inject({
+      method: "PUT",
+      url: "/api/config",
+      payload: {
+        budget: 300,
+        pricing: { "claude-sonnet-5": { input: 3, output: 15, cacheRead: 0.3, cacheCreate: 3.75 } },
+        scanRoots: [{ path: "/x", label: "mac-mini-home" }],
+        anomalyFactor: 3,
+      },
+    });
+    expect(put.statusCode).toBe(200);
+    expect(put.json()).toEqual({
+      budget: 300,
+      pricing: { "claude-sonnet-5": { input: 3, output: 15, cacheRead: 0.3, cacheCreate: 3.75 } },
+      scanRoots: [{ path: "/x", label: "mac-mini-home" }],
+      anomalyFactor: 3,
+    });
+
+    const get = await app.inject({ method: "GET", url: "/api/config" });
+    expect(get.json()).toEqual({
+      budget: 300,
+      pricing: { "claude-sonnet-5": { input: 3, output: 15, cacheRead: 0.3, cacheCreate: 3.75 } },
+      scanRoots: [{ path: "/x", label: "mac-mini-home" }],
+      anomalyFactor: 3,
+    });
+  });
+
+  it("PUT rejects invalid pricing with 400", async () => {
+    const put = await app.inject({
+      method: "PUT",
+      url: "/api/config",
+      payload: { budget: 300, pricing: { "claude-sonnet-5": { input: -1 } } },
+    });
+    expect(put.statusCode).toBe(400);
+    expect(put.json().error).toContain("pricing");
+  });
+
+  it("PUT rejects invalid scanRoots with 400", async () => {
+    const put = await app.inject({
+      method: "PUT",
+      url: "/api/config",
+      payload: { budget: 300, scanRoots: [{ path: "" }] },
+    });
+    expect(put.statusCode).toBe(400);
+    expect(put.json().error).toContain("scanRoots");
+  });
+
+  it("PUT rejects invalid anomalyFactor with 400", async () => {
+    const put = await app.inject({
+      method: "PUT",
+      url: "/api/config",
+      payload: { budget: 300, anomalyFactor: -1 },
+    });
+    expect(put.statusCode).toBe(400);
+    expect(put.json().error).toContain("anomalyFactor");
+  });
+
+  it("PUT with scanRoots propagates live into the Store's host resolution (#P4-15)", async () => {
+    store.applyRecords(
+      "s1",
+      {
+        calls: [
+          {
+            uuid: "u1",
+            sessionId: "s1",
+            messageId: "m1",
+            timestamp: "2026-01-01T00:00:00.000Z",
+            model: "claude-sonnet-5",
+            usage: {
+              inputTokens: 0,
+              outputTokens: 0,
+              cacheReadTokens: 0,
+              cacheCreateTokens: 0,
+            },
+            isSidechain: false,
+            tools: [],
+            cwd: "/proj",
+            gitBranch: "main",
+            version: "1.0.0",
+            entrypoint: "cli",
+          },
+        ],
+        prompts: [],
+        toolResultBytes: [],
+        compactions: [],
+        duplicateCount: 0,
+        malformedCount: 0,
+      },
+      "/roots/a",
+    );
+    store.flushAll();
+    expect(store.getSession("s1")?.host).toBe("/roots/a");
+
+    const put = await app.inject({
+      method: "PUT",
+      url: "/api/config",
+      payload: { budget: 300, scanRoots: [{ path: "/roots/a", label: "mac-mini-home" }] },
+    });
+    expect(put.statusCode).toBe(200);
+    store.flushAll();
+    expect(store.getSession("s1")?.host).toBe("mac-mini-home");
+  });
 });
