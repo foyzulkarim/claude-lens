@@ -57,6 +57,44 @@ describe("GET/POST /api/views, DELETE /api/views/:id", () => {
     expect(post.statusCode).toBe(400);
   });
 
+  it("POST persists optional pinned:true (ARCH-explore-page.md A3)", async () => {
+    const post = await app.inject({
+      method: "POST",
+      url: "/api/views",
+      payload: {
+        name: "tokens by tool",
+        path: "/explore",
+        search: "?xp.measure=inputTokens",
+        pinned: true,
+      },
+    });
+    expect(post.statusCode).toBe(200);
+    const view = post.json();
+    expect(view.pinned).toBe(true);
+
+    const get = await app.inject({ method: "GET", url: "/api/views" });
+    expect(get.json()[0].pinned).toBe(true);
+  });
+
+  it("POST omits the pinned key when not provided (back-compat with old clients)", async () => {
+    const post = await app.inject({
+      method: "POST",
+      url: "/api/views",
+      payload: { name: "x", path: "/sessions", search: "" },
+    });
+    const view = post.json();
+    expect(view.pinned).toBeUndefined();
+  });
+
+  it("POST rejects a non-boolean pinned with 400", async () => {
+    const post = await app.inject({
+      method: "POST",
+      url: "/api/views",
+      payload: { name: "x", path: "/explore", search: "", pinned: "yes" },
+    });
+    expect(post.statusCode).toBe(400);
+  });
+
   it("DELETE removes a view by id", async () => {
     const post = await app.inject({
       method: "POST",

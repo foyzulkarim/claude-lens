@@ -30,6 +30,15 @@ describe("buildTimeseriesOption — family rendering", () => {
     expect(entry.type).toBe("bar");
   });
 
+  it("builds a lines-family option without area fill", () => {
+    const option = buildTimeseriesOption([series()], { family: "lines", unit: "$" });
+    const [entry] = option.series as { type: string; areaStyle?: object }[];
+    expect(entry.type).toBe("line");
+    // Line must not carry areaStyle — that's the entire point of having
+    // both "lines" and "area" families (Explore page's chart-type picker).
+    expect(entry.areaStyle).toBeUndefined();
+  });
+
   it("bars-family series are unstacked by default", () => {
     const option = buildTimeseriesOption([series()], { family: "bars", unit: "$" });
     const [entry] = option.series as { stack?: string }[];
