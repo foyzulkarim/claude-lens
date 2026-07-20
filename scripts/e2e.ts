@@ -10,6 +10,10 @@ import { loadRepoEnv, resolveE2ePort } from "./ports.js";
 const execFileAsync = promisify(execFile);
 const rootDir = dirname(dirname(fileURLToPath(import.meta.url)));
 const sourceFixtureRoot = join(rootDir, "test", "fixtures");
+// Premium C/B/L capture overlay (#P4-13). Copied on top of the isolated fixture
+// root for the premium (T+C/B/L) pass only, so the same specs can assert the
+// transcript-only (🟡) tier first and the observed (🟢) tier second.
+const premiumOverlayRoot = join(rootDir, "test", "fixtures-premium");
 const READY_TIMEOUT_MS = 30_000;
 const RETRY_INTERVAL_MS = 250;
 const STOP_TIMEOUT_MS = 5_000;
@@ -315,7 +319,18 @@ export function installInterruptHandlers(
   };
 }
 
-export async function runE2e(): Promise<void> {
+export interface RunE2eOptions {
+  /** Copy the premium C/B/L overlay on top of the fixtures and run only the
+   * premium spec asserting the observed (🟢) tier. Default false: transcript-
+   * only fixtures, the full spec suite asserting the estimated (🟡) tier. */
+  premium?: boolean;
+  /** Restrict Cypress to a single spec (used by the premium pass). */
+  spec?: string;
+  /** Skip `npm run build` — the caller already built once for a prior pass. */
+  skipBuild?: boolean;
+}
+
+export async function runE2e(options: RunE2eOptions = {}): Promise<void> {
   loadRepoEnv(rootDir);
   const port = parsePort();
   const baseUrl = `http://127.0.0.1:${port}`;
@@ -341,13 +356,27 @@ export async function runE2e(): Promise<void> {
   let primaryError: unknown;
 
   try {
-    build = startChild("build", process.platform === "win32" ? "npm.cmd" : "npm", ["run", "build"]);
-    await requireSuccess(build);
+    if (!options.skipBuild) {
+      build = startChild("build", process.platform === "win32" ? "npm.cmd" : "npm", [
+        "run",
+        "build",
+      ]);
+      await requireSuccess(build);
+    }
     await assertPortFree(port);
 
     runFixtureRoot = await mkdtemp(join(tmpdir(), "claude-lens-e2e-"));
     await cp(sourceFixtureRoot, runFixtureRoot, { recursive: true });
-    log(`copied fixtures into ${runFixtureRoot}`);
+    if (options.premium) {
+      // Overlay the C/B/L capture files onto the same root (#P4-13). The
+      // overlay mirrors the transcript tree, so each premium file lands beside
+      // its session and cost-log.jsonl at the root is picked up by the scan
+      // glob (its real ~/.claude home isn't reachable from a fixture root).
+      await cp(premiumOverlayRoot, runFixtureRoot, { recursive: true });
+      log(`copied fixtures + premium overlay into ${runFixtureRoot}`);
+    } else {
+      log(`copied fixtures into ${runFixtureRoot}`);
+    }
 
     server = startChild("CLI", process.execPath, [
       join(rootDir, "dist", "cli.js"),
@@ -366,21 +395,21 @@ export async function runE2e(): Promise<void> {
     await waitForReady(baseUrl, server);
     if (abort.signal.aborted) throw abort.signal.reason;
 
-    cypress = startChild(
-      "Cypress",
-      process.execPath,
-      [
-        join(rootDir, "node_modules", "cypress", "bin", "cypress"),
-        "run",
-        "--config",
-        `baseUrl=${baseUrl}`,
-      ],
-      {
-        ...process.env,
-        CLAUDE_LENS_E2E_BASE_URL: baseUrl,
-        CLAUDE_LENS_E2E_FIXTURE_ROOT: runFixtureRoot,
-      },
-    );
+    const cypressArgs = [
+      join(rootDir, "node_modules", "cypress", "bin", "cypress"),
+      "run",
+      "--config",
+      `baseUrl=${baseUrl}`,
+    ];
+    if (options.spec) cypressArgs.push("--spec", options.spec);
+    // Surface the tier to specs via Cypress.env("premium"); the premium spec
+    // branches its estimated-vs-observed assertions on it.
+    if (options.premium) cypressArgs.push("--env", "premium=true");
+    cypress = startChild("Cypress", process.execPath, cypressArgs, {
+      ...process.env,
+      CLAUDE_LENS_E2E_BASE_URL: baseUrl,
+      CLAUDE_LENS_E2E_FIXTURE_ROOT: runFixtureRoot,
+    });
     const result = await Promise.race([
       cypress.done,
       // Keep this rejection branch attached after Cypress wins: Promise.race
@@ -413,10 +442,23 @@ export async function runE2e(): Promise<void> {
 }
 
 export async function main(): Promise<void> {
-  await runE2e().catch((error) => {
+  try {
+    // Pass 1 — transcript-only (T): the full spec suite, asserting the
+    // estimated (🟡) tier. Builds the app once.
+    log("=== e2e pass 1/2: transcript-only (T) ===");
+    await runE2e();
+    // Pass 2 — premium (T+C/B/L): overlay the capture files and run only the
+    // premium spec, asserting the observed (🟢) tier. Reuses the pass-1 build.
+    log("=== e2e pass 2/2: premium overlay (T+C/B/L) ===");
+    await runE2e({
+      premium: true,
+      spec: "cypress/e2e/premium-tier.cy.ts",
+      skipBuild: true,
+    });
+  } catch (error) {
     console.error("[e2e] failed", error);
     process.exitCode = 1;
-  });
+  }
 }
 
 const entryPath = process.argv[1];

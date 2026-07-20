@@ -47,9 +47,26 @@ fixture set — no task-specific fixture rewrite was needed:
   asserts the destination renders the live composed page (not the pre-#36
   `PageStub` placeholder) with fixture-matching rows.
 
-## Scope
+## Premium capture overlay (`../fixtures-premium/`, #P4-13)
 
-Out of scope for this tree (added later by their own tasks, under this same
-README convention):
+The premium tier's C/B/L capture files live in a **separate sibling tree**,
+`test/fixtures-premium/`, not in this transcript tree. Keeping them apart is
+what lets the Cypress harness run twice: a transcript-only (T) pass against
+`test/fixtures/` alone, then a premium (T+C/B/L) pass with the overlay copied
+*on top of* the same isolated fixture root (`scripts/e2e.ts`). The overlay's
+paths mirror this tree so the copy lands each file beside its transcript, plus
+a root-level `cost-log.jsonl` (the glob under the scan root catches it — the L
+file's real `~/.claude/` home isn't reachable from a fixture root).
 
-- Premium capture files (`.cost.jsonl`, `.turn-boundaries.jsonl`, `cost-log.jsonl`) — #P4-13.
+| Overlay file | Session | Exercises |
+|---|---|---|
+| `…/11111111….cost.jsonl` | `1111…` | **C, both index variants.** Turn-indexed lines for turn 1, then epoch-indexed (`epoch`+`sample`) lines for turn 2 — a CC-version switchover within one file. Observed totals: cost $0.22, +11/−3 lines, last ctx% 15. |
+| `…/11111111….turn-boundaries.jsonl` | `1111…` | **B.** Two `turn_end` markers → observed per-turn `wallMs`. |
+| `…/44444444….cost.jsonl` | `4444…` | **C over the anomaly turn.** Turn 2's $1.50 sample keeps the session's anomaly visible under observed cost. Observed total $1.85. |
+| `…/44444444….turn-boundaries.jsonl` | `4444…` | **B**, three boundaries. |
+| `cost-log.jsonl` (root) | `4444…`, `6666…` | **L.** `4444…` (also has C) verifies **C wins** for `costObserved` ($1.85, not L's $1.88); `6666…` has **no C**, so it exercises the **L-only** upgrade path (costBasis observed, $0.75). |
+
+Sessions without an overlay entry (e.g. `2222…`) stay transcript-only and are
+the control that the upgrade never leaks onto a T-only session.
+`server/ingest/premium-fixtures.test.ts` boots the merged tree through the real
+ingest pipeline and asserts each of these observed values.

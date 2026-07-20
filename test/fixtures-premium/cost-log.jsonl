@@ -1,0 +1,2 @@
+{"session_id":"44444444-4444-4444-8444-444444444444","timestamp":"2026-07-03T07:02:05.000Z","cost_usd":1.88,"duration_ms":125000,"model":"claude-sonnet-5","dir":"/Users/demo/project-alpha","context_pct":43,"cache_read":0,"cache_write":0,"lines_added":27,"lines_removed":7}
+{"session_id":"66666666-6664-4666-8666-666666666666","timestamp":"2026-07-03T05:00:00.000Z","cost_usd":0.75,"duration_ms":40000,"model":"claude-sonnet-5","dir":"/Users/demo/project-alpha","context_pct":22,"cache_read":0,"cache_write":0,"lines_added":9,"lines_removed":3}

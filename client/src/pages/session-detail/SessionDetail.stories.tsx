@@ -263,9 +263,9 @@ export const TranscriptOnly: Story = {
   args: { data: baseResponse() },
 };
 
-/** Premium-available: costObserved + drift + context sample present
- * (reserved fields populated), demonstrating the #P4-13 upgrade path
- * without implementing the parser here. */
+/** Premium-available (#P4-13): the full 🟢 upgrade — observed cost + drift
+ * badge, observed context %, and the turn table's observed Δlines / api-vs-wall
+ * columns populated. Contrast with `TranscriptOnly` for the estimated tier. */
 export const PremiumAvailable: Story = {
   args: {
     data: baseResponse({
@@ -274,13 +274,34 @@ export const PremiumAvailable: Story = {
         costObserved: 0.45,
         drift: { delta: 0.03, pct: 0.0714 },
         contextPctEstimated: 0.06,
-        tier: { ...baseTier, hasCostSamples: true, costBasis: "observed" },
+        contextPctObserved: 0.15,
+        tier: {
+          ...baseTier,
+          hasCostSamples: true,
+          hasTurnBoundaries: true,
+          costBasis: "observed",
+        },
       },
+      // Observed per-turn timing + line deltas light up the Δlines / api-vs-wall
+      // columns; the reconcile module produces these from C samples + B bounds.
+      turns: baseResponse().turns.map((turn, i) => ({
+        ...turn,
+        apiMs: i === 0 ? 5300 : 4400,
+        wallMs: i === 0 ? 9000 : 8000,
+        linesAdded: i === 0 ? 5 : 1,
+        linesRemoved: i === 0 ? 1 : 0,
+      })),
       meta: {
         costBasis: "observed",
         isEmpty: false,
         isLive: false,
-        availability: ["header.drift", "header.contextPct"],
+        availability: [
+          "header.drift",
+          "header.contextPct",
+          "turn.apiMs",
+          "turn.linesAdded",
+          "turn.linesRemoved",
+        ],
         fleetBaselineSize: 250,
       },
     }),
