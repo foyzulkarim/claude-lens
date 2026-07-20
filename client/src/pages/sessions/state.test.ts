@@ -5,6 +5,7 @@ import {
   buildListQuery,
   buildScatterQuery,
   DEFAULT_SESSIONS_PAGE_STATE,
+  pageOwnedKeys,
   parseSessionsPageState,
   resolveScatterPreset,
   scatterPresets,
@@ -293,5 +294,45 @@ describe("scatterPresets — preset catalog", () => {
 
   it("throws on an unknown preset id (forward-compat)", () => {
     expect(() => resolveScatterPreset("impossible" as never)).toThrow();
+  });
+});
+
+describe("pageOwnedKeys — free-text search (#P4-3)", () => {
+  it("does NOT include `q` — the search query is owned by PromptSearchPanel, not the page state", () => {
+    // Regression: adding `q` here would cause Sessions.tsx's onStateChange
+    // to strip it on every sibling-card interaction (sort, page, etc.),
+    // breaking the permalink story the search panel promises.
+    expect(pageOwnedKeys()).not.toContain("q");
+  });
+
+  it("ignores an unknown `q` key without throwing", () => {
+    const state = parseSessionsPageState("?q=refactor&sort=totalTokens&view=timeline");
+    // `q` is not parsed into state — the search panel reads it directly
+    // from the URL via its own `useSearch` hook.
+    expect(state.sort).toBe("totalTokens");
+    expect(state.browserView).toBe("timeline");
+  });
+
+  it("a round-trip through serialize/parse preserves every page-owned key alongside `q`", () => {
+    // Simulate the canonical permalink: a user types `refactor`, then
+    // a sibling card triggers onStateChange. The strip step (which
+    // iterates pageOwnedKeys) must leave `q` alone, and the
+    // serialize-merge-restore step must keep the new page-owned keys.
+    const search = "?q=refactor&sort=totalTokens&view=timeline&offset=25";
+    const state = parseSessionsPageState(search);
+    const serialized = serializeSessionsPageState(state);
+
+    // The serializer omits `q` (it's not in state), but re-merging the
+    // original search with the serialized output must keep `q`.
+    const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+    for (const key of pageOwnedKeys()) params.delete(key);
+    if (serialized) {
+      for (const [k, v] of new URLSearchParams(serialized)) params.set(k, v);
+    }
+    const merged = params.toString();
+    expect(merged).toContain("q=refactor");
+    expect(merged).toContain("sort=totalTokens");
+    expect(merged).toContain("view=timeline");
+    expect(merged).toContain("offset=25");
   });
 });

@@ -451,3 +451,140 @@ describe("Store — getSessionSnapshot (#P4-5 T2)", () => {
     expect(snap?.session.maxTurnCostComputed).toBeCloseTo(0.15);
   });
 });
+
+describe("Store — session-prompts-changed emit (#P4-3, ARCH A2/A8)", () => {
+  function promptBatch(sessionId: string, promptId: string, text: string): ParseTranscriptResult {
+    return {
+      calls: [call({ sessionId, messageId: `m-${promptId}`, promptId })],
+      prompts: [{ sessionId, promptId, text, timestamp: "2026-07-13T00:00:00.000Z" }],
+      toolResultBytes: [],
+      compactions: [],
+      duplicateCount: 0,
+      malformedCount: 0,
+    };
+  }
+
+  it("emits BOTH session-updated AND session-prompts-changed when prompts were appended", () => {
+    const { store, invalidations } = makeStore();
+    store.applyRecords("s1", promptBatch("s1", "p1", "first prompt"));
+    vi.advanceTimersByTime(300);
+
+    const types = invalidations.map((m) => m.type);
+    expect(types).toContain("session-updated");
+    expect(types).toContain("session-prompts-changed");
+
+    const promptMsg = invalidations.find((m) => m.type === "session-prompts-changed");
+    expect(promptMsg).toEqual({ type: "session-prompts-changed", sessionId: "s1" });
+  });
+
+  it("does NOT emit session-prompts-changed when applyRecords had zero prompts", () => {
+    const { store, invalidations } = makeStore();
+    // No prompts in the batch — just a follow-up call.
+    store.applyRecords("s1", {
+      calls: [call({ sessionId: "s1", messageId: "m2", promptId: "p1" })],
+      prompts: [],
+      toolResultBytes: [],
+      compactions: [],
+      duplicateCount: 0,
+      malformedCount: 0,
+    });
+    vi.advanceTimersByTime(300);
+
+    const types = invalidations.map((m) => m.type);
+    expect(types).toContain("session-updated");
+    expect(types).not.toContain("session-prompts-changed");
+  });
+
+  it("emits both messages only ONCE per debounce window even with multiple applyRecords", () => {
+    const { store, invalidations } = makeStore();
+    store.applyRecords("s1", promptBatch("s1", "p1", "first"));
+    store.applyRecords("s1", promptBatch("s1", "p2", "second"));
+    vi.advanceTimersByTime(300);
+
+    const promptMsgs = invalidations.filter((m) => m.type === "session-prompts-changed");
+    expect(promptMsgs).toHaveLength(1);
+  });
+});
+
+describe("Store — buildSearchSnapshot per-session error handling (#P4-3)", () => {
+  it("skips a session whose recompute throws — other healthy sessions still appear in the index", () => {
+    const { store } = makeStore();
+
+    // Two healthy sessions
+    store.applyRecords("s-ok-1", {
+      calls: [call({ sessionId: "s-ok-1", messageId: "m1", promptId: "p1" })],
+      prompts: [
+        {
+          sessionId: "s-ok-1",
+          promptId: "p1",
+          text: "healthy one",
+          timestamp: "2026-07-13T00:00:00.000Z",
+        },
+      ],
+      toolResultBytes: [],
+      compactions: [],
+      duplicateCount: 0,
+      malformedCount: 0,
+    });
+    store.applyRecords("s-ok-2", {
+      calls: [call({ sessionId: "s-ok-2", messageId: "m2", promptId: "p1" })],
+      prompts: [
+        {
+          sessionId: "s-ok-2",
+          promptId: "p1",
+          text: "healthy two",
+          timestamp: "2026-07-13T00:00:01.000Z",
+        },
+      ],
+      toolResultBytes: [],
+      compactions: [],
+      duplicateCount: 0,
+      malformedCount: 0,
+    });
+    // One corrupt session — make recompute() throw via spy
+    store.applyRecords("s-bad", {
+      calls: [call({ sessionId: "s-bad", messageId: "m3", promptId: "p1" })],
+      prompts: [
+        {
+          sessionId: "s-bad",
+          promptId: "p1",
+          text: "would be here",
+          timestamp: "2026-07-13T00:00:02.000Z",
+        },
+      ],
+      toolResultBytes: [],
+      compactions: [],
+      duplicateCount: 0,
+      malformedCount: 0,
+    });
+    vi.advanceTimersByTime(300);
+
+    // For the bad session, clear state.session so the build loop is
+    // forced to call recompute() — then patch the `recompute` method
+    // on the Store instance to throw for s-bad. The other sessions take
+    // the "already fresh" path and use their state.session as-is.
+    const storeAny = store as unknown as {
+      sessions: Map<string, { session: unknown; prompts: unknown; turns: unknown }>;
+      recompute(sessionId: string): void;
+    };
+    const badState = storeAny.sessions.get("s-bad");
+    if (badState) badState.session = null;
+
+    const origRecompute = storeAny.recompute.bind(store);
+    storeAny.recompute = (sessionId: string) => {
+      if (sessionId === "s-bad") throw new Error("simulated deriveTurns invariant");
+      origRecompute(sessionId);
+    };
+
+    const snap = store.buildSearchSnapshot();
+
+    // Restore the original method so the spy doesn't leak into other tests.
+    storeAny.recompute = origRecompute;
+
+    // Both healthy sessions appear; the bad one is dropped.
+    const sessionIds = snap.prompts.map((p) => p.sessionId);
+    expect(sessionIds).toContain("s-ok-1");
+    expect(sessionIds).toContain("s-ok-2");
+    expect(sessionIds).not.toContain("s-bad");
+  });
+});

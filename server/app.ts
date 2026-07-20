@@ -9,6 +9,7 @@ import { registerConfigRoute } from "./routes/config.js";
 import { registerExportRoute } from "./routes/export.js";
 import { registerGatesRoute } from "./routes/gates.js";
 import { registerMetricsRoute } from "./routes/metrics.js";
+import { registerSearchRoute } from "./routes/search.js";
 import { registerSessionDetailRoute } from "./routes/session-detail.js";
 import { registerSessionsRoute } from "./routes/sessions.js";
 import { registerTagsRoute } from "./routes/tags.js";
@@ -116,6 +117,8 @@ export function buildApp({
   app.get("/api/ping", async () => ({ ok: true }));
 
   registerMetricsRoute(app, store, metadata?.pricing ? { pricing: metadata.pricing } : undefined);
+
+  registerSearchRoute(app, store);
 
   registerSessionsRoute(app, store, {
     ...(metadata ? { pricing: metadata.pricing, pricer: metadata.pricer } : undefined),
