@@ -191,7 +191,7 @@ Pages are cheap by design: filter state + preset `MetricsQuery`s + layout. The H
 - [x] **#P4-11 — Gates engine** *(gates.md)*
   `gates/engine.ts` + six gate files (V1, V2, P3, C3, K2, E1/E2); shared preprocessing (dedupe, sidechain exclusion, edit/command call classification); evidence with Turn Inspector deep-links; session scoring per gates.md; configurable thresholds. Adds the gate-scenario fixtures (per-gate pass/fail transcripts) under the #P0-3 `test/fixtures/` README convention.
   *Acceptance:* per-gate fixture tests including N/A-turn denominators and E1/E2 filesystem checks (labeled "as of now"); E1/E2 follows `@import` one level; P3 treats user-message attachments containing the path as a prior read; V2 detects repeated failing commands via `tool_result.is_error` and exit-code markers.
-- [ ] **#P4-12 — Report Card UI + gate feeds**
+- [x] **#P4-12 — Report Card UI + gate feeds**
   Report Card section on Session Detail; anomaly & gate-failure feed on Dashboard; gate pass-rate trend on Trends; gate-status filter/column on Sessions; replace the Projects gate-pass-rate stub with live results.
   *Acceptance:* turn-keyed evidence (V1/V2/P3/C3/K2) deep-links to Turn Inspector at the exact turn; session-keyed E1/E2 evidence links to Session Detail with `filePath`+`detail` (it has no `turnN` — gates.md §1, decisions log 2026-07-06).
 - [ ] **#P4-13 — Premium tier: C/B/L parsers + upgrades**
