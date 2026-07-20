@@ -1,4 +1,5 @@
 import type { ApiCall, CompactionRecord, Session, Turn } from "../../shared/types.js";
+import type { SearchIndexResponse } from "../../shared/search-index-contract.js";
 import type { WsServerMessage } from "../../shared/ws-protocol.js";
 import type {
   ParseTranscriptResult,
@@ -14,6 +15,7 @@ import {
 } from "./derive-session.js";
 import { deriveTurns } from "./derive-turns.js";
 import { createInvalidator, type Invalidator } from "./invalidation.js";
+import { buildSearchSnapshot } from "./build-search-snapshot.js";
 
 // The in-memory columnar store (architecture §5.5, §6). Per-session raw
 // arrays plus cached derived Turn[]/Session. `ingest/` is the only writer
@@ -83,6 +85,16 @@ export class Store {
   // — a session's files never move roots mid-life — and never overwritten by
   // later `applyRecords` calls (e.g. a sidecar arriving after the transcript).
   private readonly sessionRoot = new Map<string, string>();
+  // Monotonic counter for `buildSearchSnapshot()` results (#P4-3). Bumps
+  // on every call so the client can detect a stale index if/when the
+  // server ships incremental updates.
+  private searchSnapshotVersion = 0;
+  // Sessions whose `applyRecords` appended at least one prompt since the
+  // last debounced flush (#P4-3, ARCH A8). After the existing
+  // `session-updated` fires, the onFlush hook below also emits a
+  // `session-prompts-changed` for any session in this set, then clears
+  // it. Bounded by the dirty-session set — never grows unboundedly.
+  private readonly pendingPromptChanges = new Set<string>();
 
   constructor(options: StoreOptions) {
     this.pricer = options.pricer;
@@ -94,6 +106,18 @@ export class Store {
       onFlush: (message) => {
         if (message.type === "session-updated") {
           this.recompute(message.sessionId);
+          // If this session's last debounce window appended prompts,
+          // emit the prompt-specific invalidation after the
+          // generic session-updated. The client can refetch the search
+          // index only — not metrics/sessions/detail — saving a round-
+          // trip on prompt-only mutations. ARCH A8: only when prompts
+          // were actually appended during the window.
+          if (this.pendingPromptChanges.delete(message.sessionId)) {
+            options.onInvalidate({
+              type: "session-prompts-changed",
+              sessionId: message.sessionId,
+            });
+          }
         }
         options.onInvalidate(message);
       },
@@ -190,6 +214,14 @@ export class Store {
     state.compactions.push(...result.compactions);
     if (rootPath && !this.sessionRoot.has(sessionId)) {
       this.sessionRoot.set(sessionId, rootPath);
+    }
+    // Mark this session for a prompt-specific invalidation iff prompts
+    // were actually appended. Reset (`resetSession`) wipes prompts but
+    // does NOT add to this set — truncations ride the existing
+    // `session-updated` so the client re-fetches the index naturally;
+    // we don't need a parallel "prompts-removed" message.
+    if (result.prompts.length > 0) {
+      this.pendingPromptChanges.add(sessionId);
     }
     this.invalidator.markDirty(sessionId);
   }
@@ -374,6 +406,64 @@ export class Store {
       result.push(...(this.sessions.get(sessionId)?.turns ?? []));
     }
     return result;
+  }
+
+  /**
+   * Build a snapshot of every session's prompts suitable for the client to
+   * build a MiniSearch index from (#P4-3, ARCH-p4-3-search-index.md §A1).
+   * Delegates the per-session work to the pure `buildSearchSnapshot` function
+   * (mirrors the cache-lab analysis convention — Store does no aggregation
+   * itself, only gathers state and hands off).
+   *
+   * Lazy-recomputes each dirty session before snapshotting so the
+   * derived `turns[]` used to resolve `turnNumber` is always fresh.
+   * Same caveat as `listSessions`/`listTurns`: a session mid-debounce
+   * reflects its last fully-derived state, never a half-written append.
+   *
+   * `version` is a monotonic per-process counter that bumps on every call
+   * — the wire shape carries it so a future incremental-update client can
+   * detect "the server has a fresher snapshot than the one I have."
+   *
+   * Per-session error handling: a single corrupted session's
+   * `recompute()` throwing (e.g. an `unreachable:` invariant in
+   * `deriveTurns`/`deriveSession`) is logged and skipped — search
+   * degrades to "missing that one session" rather than the whole
+   * 500 that would break search across every other healthy session.
+   */
+  buildSearchSnapshot(): SearchIndexResponse {
+    const sessions: Array<{
+      sessionId: string;
+      cwd?: string;
+      gitBranch?: string;
+      prompts: PromptTextRecord[];
+      turns: Turn[];
+    }> = [];
+    for (const [sessionId, state] of this.sessions) {
+      try {
+        if (!state.session) this.recompute(sessionId);
+        const reifiedState = this.sessions.get(sessionId);
+        const session = reifiedState?.session ?? state.session;
+        sessions.push({
+          sessionId,
+          cwd: session?.project, // session.project is the cwd path (derived)
+          gitBranch: session?.gitBranch,
+          prompts: state.prompts,
+          turns: state.turns,
+        });
+      } catch (err) {
+        // Single bad session must not take down the whole search index.
+        // The next `session-updated` for this session will re-attempt
+        // the snapshot — and a successful recompute will lift it back
+        // into the response on the next request.
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[search-index] skipping session ${sessionId} due to error:`,
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+    }
+    const version = ++this.searchSnapshotVersion;
+    return buildSearchSnapshot({ sessions }, { version });
   }
 
   scanDirty(): void {

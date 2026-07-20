@@ -20,12 +20,15 @@ describe("sessions smoke", () => {
     cy.visit(`/sessions${FIXTURE_RANGE}`);
     cy.contains("h1", "Sessions").should("be.visible");
 
-    // 1. Prompt search seam — visibly unavailable (ARCH R8/A11).
+    // 1. Prompt search (#P4-3) — real implementation, ARCH R8/A11 now
+    // resolved: the seam shows the search input + idle hint derived from
+    // fixture data, not the historical "unavailable" placeholder.
     cy.get('[data-testid="prompt-search-slot"]')
       .should("be.visible")
       .within(() => {
         cy.contains("Search prompts").should("be.visible");
-        cy.contains(/unavailable/i).should("be.visible");
+        cy.get('[data-testid="prompt-search-input"]').should("be.visible");
+        cy.contains(/type to search/i).should("be.visible");
       });
 
     // 2. Sessions filters (page-only: cost bounds, entrypoint, drilldown).

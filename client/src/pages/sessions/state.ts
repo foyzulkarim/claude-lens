@@ -301,6 +301,14 @@ export function parseSessionsPageState(search: string): SessionsPageState {
     if (items.length > 0) state.tags = items;
   }
 
+  // Free-text search query (#P4-3) — page-local, NOT in PAGE_QUERY_KEYS:
+  // the PromptSearchPanel owns its own debounced input state and writes
+  // `?q=` directly to the URL. Adding it to PAGE_QUERY_KEYS would cause
+  // the onStateChange `params.delete(key)` loop in Sessions.tsx to wipe
+  // the search term on every sibling-card interaction. The query string
+  // survives untouched because the strip step only iterates page-owned
+  // keys, of which `q` is not one.
+
   return state;
 }
 

@@ -65,7 +65,8 @@ type InvalidationAction =
   | { kind: "sessions" }
   | { kind: "session"; sessionId: string }
   | { kind: "turnInspectorSession"; sessionId: string }
-  | { kind: "gates" };
+  | { kind: "gates" }
+  | { kind: "searchIndex" };
 
 function actionKey(action: InvalidationAction): string {
   switch (action.kind) {
@@ -77,6 +78,7 @@ function actionKey(action: InvalidationAction): string {
     case "metrics":
     case "sessions":
     case "gates":
+    case "searchIndex":
       return action.kind;
   }
 }
@@ -115,6 +117,12 @@ function actionsForMessage(message: WsServerMessage): InvalidationAction[] {
         { kind: "sessions" },
         { kind: "gates" },
       ];
+    case "session-prompts-changed":
+      // Prompt-only mutation (#P4-3, ARCH A2): the search index is the
+      // only thing that depends on prompts, so we invalidate just that
+      // prefix instead of falling back to the coarse session-updated.
+      // Saves a round-trip on prompt-only appends during a live session.
+      return [{ kind: "searchIndex" }];
     default: {
       // Exhaustive check: a future 4th WsServerMessage variant fails
       // typecheck here instead of being silently dropped at runtime.
@@ -153,6 +161,9 @@ function applyInvalidationAction(queryClient: QueryClient, action: InvalidationA
       // triggers refetches so mounted consumers see the fresh score
       // within `staleTime` of the append, not after it.
       queryClient.invalidateQueries({ queryKey: qk.prefixes.gates });
+      return;
+    case "searchIndex":
+      queryClient.invalidateQueries({ queryKey: qk.prefixes.searchIndex });
       return;
     default: {
       // Exhaustive check, mirroring actionsForMessage's switch above: a

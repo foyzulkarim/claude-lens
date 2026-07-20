@@ -122,6 +122,19 @@ describe("invalidateForMessage", () => {
     warnSpy.mockRestore();
   });
 
+  it("invalidates only the search-index prefix on session-prompts-changed (#P4-3)", () => {
+    // Prompt-only mutation must not trigger metrics/sessions/detail churn
+    // — ARCH A2. This is the dedicated message that lets the search panel
+    // refresh without paying for a full session-updated fan-out.
+    const queryClient = new QueryClient();
+    const spy = vi.spyOn(queryClient, "invalidateQueries");
+    invalidateForMessage(queryClient, { type: "session-prompts-changed", sessionId: "s1" });
+    expect(spy).toHaveBeenCalledExactlyOnceWith({ queryKey: ["search-index"] });
+    expect(spy).not.toHaveBeenCalledWith({ queryKey: ["metrics"] });
+    expect(spy).not.toHaveBeenCalledWith({ queryKey: ["sessions"] });
+    expect(spy).not.toHaveBeenCalledWith({ queryKey: ["session", "s1"] });
+  });
+
   it("warns and does nothing for an unrecognized message type", () => {
     const queryClient = new QueryClient();
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");

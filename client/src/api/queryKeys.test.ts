@@ -96,6 +96,22 @@ describe("qk.prefixes", () => {
   });
 });
 
+describe("qk.searchIndex (#P4-3)", () => {
+  it("returns the canonical bare-literal key", () => {
+    expect(qk.searchIndex()).toEqual(["search-index"]);
+  });
+
+  it("lives under qk.prefixes.searchIndex (invalidation prefix match)", () => {
+    const key = qk.searchIndex();
+    expect(key[0]).toBe(qk.prefixes.searchIndex[0]);
+    expect(key).toEqual(qk.prefixes.searchIndex);
+  });
+
+  it("is hash-stable across repeated calls", () => {
+    expect(qk.searchIndex()).toEqual(qk.searchIndex());
+  });
+});
+
 describe("qk.session", () => {
   it("returns the canonical per-id detail key", () => {
     expect(qk.session("abc")).toEqual(["session", "abc"]);

@@ -91,6 +91,15 @@ export const qk = {
    */
   gateFailures: (params: Omit<SessionPageParams, "view" | "sort" | "order" | "limit"> = {}) =>
     ["gates", "failures", params] as const,
+  /**
+   * `GET /api/search-index` key (#P4-3). Bare literal-array key — the
+   * entire prompt corpus ships in one response, so a single key covers
+   * every mounted search panel. Invalidated wholesale on the
+   * `session-prompts-changed` WS message (see ws.ts), not on
+   * `session-updated`, so prompt-only mutations don't churn metrics /
+   * sessions / detail queries.
+   */
+  searchIndex: () => ["search-index"] as const,
 
   prefixes: {
     metrics: ["metrics"] as const,
@@ -108,6 +117,8 @@ export const qk = {
      */
     gates: ["gates"] as const,
     turnInspector: ["turn-inspector"] as const,
+    /** Matches every mounted search panel. Used by ws.ts on `session-prompts-changed`. */
+    searchIndex: ["search-index"] as const,
     /**
      * Per-session Turn Inspector prefix. Matches every mounted turn query
      * (`qk.turnInspector(id, n)`) AND the lazy transcript peek

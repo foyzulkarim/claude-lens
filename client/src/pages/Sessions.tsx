@@ -4,7 +4,7 @@ import { useFilters } from "../filters/useFilters.js";
 import { useStableNow } from "./dashboard/useStableNow.js";
 import { CostDistributionCard } from "./sessions/CostDistributionCard.js";
 import { EfficiencyScatterCard } from "./sessions/EfficiencyScatterCard.js";
-import { PromptSearchSlot } from "./sessions/PromptSearchSlot.js";
+import { PromptSearchPanel } from "./sessions/PromptSearchPanel.js";
 import { SessionBrowser } from "./sessions/SessionBrowser.js";
 import { SessionCompare } from "./sessions/SessionCompare.js";
 import { SessionsFilters } from "./sessions/SessionsFilters.js";
@@ -59,8 +59,11 @@ export function Sessions() {
     <div className="flex flex-col gap-4 p-6">
       <h1 className="text-xl font-semibold text-slate-900 dark:text-[#E8EDF2]">Sessions</h1>
 
-      {/* 1. Prompt search seam (ARCH R8) — placeholder for #P4-3. */}
-      <PromptSearchSlot />
+      {/* 1. Full-text prompt search (#P4-3) — replaces the ARCH R8 placeholder
+          with a real implementation: lazy MiniSearch index built from
+          /api/search-index, search-as-you-type, results deep-link to
+          Session Detail at the matching turn. */}
+      <PromptSearchPanel />
 
       {/* 2. Sessions filters (cost / entrypoint / drilldown). */}
       <SessionsFilters state={state} onStateChange={onStateChange} globalRange={filters.range} />
