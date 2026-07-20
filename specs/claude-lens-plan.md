@@ -164,7 +164,7 @@ Pages are cheap by design: filter state + preset `MetricsQuery`s + layout. The H
 - [x] **#P4-2 — Dashboard page** *(pages spec §1)*
   All 12 sections incl. stat cards, burn-rate, leaderboards, records strip, subscription window tracker, leverage ratio, savings decomposition, failed-work stat, capture CTA. Anomaly/gate-feed items may stub until #P4-12. The anomaly detector itself (turn > N× the user's median turn cost; thresholds configurable in #P4-15) is built here — it feeds this feed and #P4-5's red bars.
   *Acceptance:* matches `specs/pages/dashboard.html` against real data; every card deep-links per the spec's "→" column.
-- [ ] **#P4-3 — Search index + prompt search**
+- [x] **#P4-3 — Search index + prompt search**
   `GET /api/search-index` + MiniSearch client integration; results deep-link to Session Detail at the matching turn.
   *Acceptance:* search-as-you-type over full history with no server round-trip per keystroke.
 - [x] **#P4-4 — Sessions page** *(§2)*
