@@ -320,16 +320,19 @@ export interface GalleryItem {
 }
 
 /**
- * One session's token-estimated input-context curve — one point per
- * derived turn (largest input tokens seen in that turn), main chain
- * only. `basis` is always `"token-estimated"` today; future observed
- * (#P4-13) values land as a separate variant once premium capture is
- * parsed.
+ * One session's input-context curve — one point per derived turn, main chain
+ * only. `inputTokens` (the largest input seen in the turn) is the always-present
+ * token-estimated proxy. `contextPct` is the observed context-window percentage
+ * (0-100) reconciled from C cost samples (#P4-13); present only when the
+ * session has premium capture. The section's `basis` reports which the panel is
+ * showing.
  */
 export interface ContextGrowthPoint {
   turnIndex: number;
   timestamp: string;
   inputTokens: number;
+  /** Observed context-window percentage (0-100) from C cost samples (#P4-13). */
+  contextPct?: number;
 }
 
 export interface ContextGrowthCurve {
@@ -341,7 +344,13 @@ export interface ContextGrowthSection {
   curves: ContextGrowthCurve[];
   total: number;
   truncated: boolean;
-  basis: "token-estimated";
+  /**
+   * `"observed"` (🟢) when every shown curve carries observed `contextPct`
+   * (premium capture present for all of them), otherwise `"token-estimated"`
+   * (🟡, the `inputTokens` proxy). Panel-level so the tier badge never
+   * over-claims a mixed fleet. (#P4-13)
+   */
+  basis: "token-estimated" | "observed";
 }
 
 /**

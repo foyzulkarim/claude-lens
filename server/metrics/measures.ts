@@ -101,6 +101,24 @@ function sumBy(calls: ApiCall[], pick: (call: ApiCall) => number): number {
 }
 
 /**
+ * Sums an optional observed field (#P4-13) over the scope's calls, returning
+ * `null` when no call carries the field — the "no observed data → no claim"
+ * convention. A call whose field is a genuine 0 still counts, so a present-but-
+ * zero bucket returns 0, never null.
+ */
+function sumObserved(calls: ApiCall[], pick: (call: ApiCall) => number | undefined): number | null {
+  let sum = 0;
+  let seen = false;
+  for (const call of calls) {
+    const value = pick(call);
+    if (value === undefined) continue;
+    sum += value;
+    seen = true;
+  }
+  return seen ? sum : null;
+}
+
+/**
  * Aggregates one measure over an already-scoped group. Activity measures
  * (token/count/cost) return 0 for an empty scope — a true "no activity"
  * fact. Measures whose backing field doesn't exist in any shipped parser yet
@@ -206,11 +224,19 @@ export function computeMeasure(
       }
       return savings;
     }
+    // Observed premium measures (#P4-13). Each sums the per-call observed
+    // field that `reconcile-premium.ts` attributed from C samples. A bucket
+    // with no observed data returns `null` (no claim) rather than a fabricated
+    // 0 — only calls that actually carry the field contribute, so a genuine
+    // measured 0 (present but zero) still round-trips as 0.
     case "costObserved":
+      return sumObserved(scope.calls, (call) => call.costObserved);
     case "apiMs":
+      return sumObserved(scope.calls, (call) => call.apiMs);
     case "linesAdded":
+      return sumObserved(scope.calls, (call) => call.linesAdded);
     case "linesRemoved":
-      return null;
+      return sumObserved(scope.calls, (call) => call.linesRemoved);
     case "gatePassRate": {
       // ARCH-p4-12 §"Metrics engine `gatePassRate` measure de-null":
       // bucket value = mean(score) across sessions in `scope.sessions`

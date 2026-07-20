@@ -30,6 +30,14 @@ interface ThroughputRow {
   model: string;
   tokensPerSecond: number | null;
   totalOutputTokens: number;
+  /** True when this row's throughput came from observed `apiMs` (#P4-13). */
+  observed: boolean;
+}
+
+interface ThroughputResult {
+  rows: ThroughputRow[];
+  /** True when every row with output used observed `apiMs` — drives the panel's tier badge. */
+  observed: boolean;
 }
 
 function sumMeasure(serieses: Series[], measure: Series["measure"]): number {
@@ -43,30 +51,41 @@ function sumMeasure(serieses: Series[], measure: Series["measure"]): number {
   return sum;
 }
 
-function deriveRows(data: Series[] | undefined): ThroughputRow[] {
-  if (!data || data.length === 0) return [];
+function deriveResult(data: Series[] | undefined): ThroughputResult {
+  if (!data || data.length === 0) return { rows: [], observed: false };
   const modelKeys = new Set(data.map((s) => s.label || s.dimensionKey).filter((k) => k.length > 0));
   const rows: ThroughputRow[] = [];
   for (const model of modelKeys) {
     const modelSeries = data.filter((s) => (s.label || s.dimensionKey) === model);
     const output = sumMeasure(modelSeries, "outputTokens");
-    const wallMinutes = sumMeasure(modelSeries, "wallMinutes");
-    const wallSeconds = wallMinutes * 60;
+    // Prefer observed api_duration (true generation-time throughput) over the
+    // wall-clock proxy, which bundles idle time and only lower-bounds it.
+    const apiMs = sumMeasure(modelSeries, "apiMs");
+    if (apiMs > 0) {
+      rows.push({
+        model,
+        tokensPerSecond: output / (apiMs / 1000),
+        totalOutputTokens: output,
+        observed: true,
+      });
+      continue;
+    }
+    const wallSeconds = sumMeasure(modelSeries, "wallMinutes") * 60;
     if (wallSeconds === 0) {
-      rows.push({ model, tokensPerSecond: null, totalOutputTokens: output });
+      rows.push({ model, tokensPerSecond: null, totalOutputTokens: output, observed: false });
       continue;
     }
     rows.push({
       model,
       tokensPerSecond: output / wallSeconds,
       totalOutputTokens: output,
+      observed: false,
     });
   }
-  return rows.sort((a, b) => {
-    const aV = a.tokensPerSecond ?? 0;
-    const bV = b.tokensPerSecond ?? 0;
-    return bV - aV;
-  });
+  rows.sort((a, b) => (b.tokensPerSecond ?? 0) - (a.tokensPerSecond ?? 0));
+  const withOutput = rows.filter((r) => r.totalOutputTokens > 0);
+  const observed = withOutput.length > 0 && withOutput.every((r) => r.observed);
+  return { rows, observed };
 }
 
 const COMPACT_INT = new Intl.NumberFormat("en-US", {
@@ -110,7 +129,7 @@ export function ThroughputByModel({
     ],
     [],
   );
-  const rows = useMemo(() => deriveRows(data), [data]);
+  const { rows, observed } = useMemo(() => deriveResult(data), [data]);
 
   return (
     <section
@@ -125,11 +144,16 @@ export function ThroughputByModel({
         >
           Throughput by model (avg output tok/s)
         </h2>
-        <TierBadge level="estimated">timestamp fallback</TierBadge>
+        {observed ? (
+          <TierBadge level="exact">observed api_duration</TierBadge>
+        ) : (
+          <TierBadge level="estimated">timestamp fallback</TierBadge>
+        )}
       </div>
       <p className="mt-1 font-mono text-[11px] text-slate-600 dark:text-[#8A96A5]">
-        outputTokens ÷ wallMinutes · per-model proxy · premium capture upgrades to api_duration p50
-        / p95
+        {observed
+          ? "outputTokens ÷ api_duration_ms · observed generation throughput"
+          : "outputTokens ÷ wallMinutes · per-model proxy · premium capture upgrades to observed"}
       </p>
       <div className="mt-3">
         {isError ? (

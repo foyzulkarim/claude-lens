@@ -53,6 +53,23 @@ export function shortId(id: string): string {
   return id.slice(0, 8);
 }
 
+/** Format a duration in ms as ms/s, or "—" when unavailable (#P4-13). Used by
+ * the observed api-vs-wall timing column, which the server only supplies with
+ * premium capture. */
+export function formatDurationMs(value: number | undefined | null): string {
+  if (value === undefined || value === null) return "—";
+  if (value < 1000) return `${Math.round(value)}ms`;
+  return `${(value / 1000).toFixed(1)}s`;
+}
+
+/** Render an observed line delta as `+A/−R`, or "—" when neither is available
+ * (transcript-only turns). A present-but-zero delta still renders `+0/−0`
+ * (measured), never "—" (unavailable). (#P4-13) */
+export function formatLineDelta(added?: number, removed?: number): string {
+  if (added === undefined && removed === undefined) return "—";
+  return `+${added ?? 0}/−${removed ?? 0}`;
+}
+
 /** True if the Session Detail page has an honest "premium data missing"
  * state to surface — at minimum the cost-observed fields aren't available.
  * The page renders a single tier banner explaining what's absent. */

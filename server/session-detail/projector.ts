@@ -30,7 +30,7 @@ import type {
   SessionDetailTurn,
   SessionDetailWorkflow,
 } from "../../shared/session-detail-contract.js";
-import type { ApiCall, CompactionRecord, Session, TokenUsage } from "../../shared/types.js";
+import type { ApiCall, CompactionRecord, Session, TokenUsage, Turn } from "../../shared/types.js";
 import type { PromptTextRecord, ToolResultBytesRecord } from "../ingest/parse-transcript.js";
 import {
   aggregateLogicalTurnCost,
@@ -183,6 +183,12 @@ function buildHeader(
   }
   if (session.contextPctEstimated !== undefined) {
     header.contextPctEstimated = session.contextPctEstimated;
+  }
+  // Observed context % from C samples (#P4-13) — the true value that upgrades
+  // the header's estimated ctx%. Kept as a separate field so the client can
+  // prefer it while still labeling the transcript-only case honestly.
+  if (session.contextPctObserved !== undefined) {
+    header.contextPctObserved = session.contextPctObserved;
   }
   return header;
 }
@@ -437,14 +443,45 @@ function buildTurns(
       primaryModel: models[0] ?? "",
       models,
     };
-    // Optional premium fields — surfaced only when present on the source
-    // Turn record. The Store doesn't populate them yet (#P4-13), so today
-    // these slots are always absent, but the shape is reserved.
-    const sourceTurn = group.main ?? group.sidechains[0];
-    if (sourceTurn) {
-      if (sourceTurn.wallMs !== undefined) turn.wallMs = sourceTurn.wallMs;
-      if (sourceTurn.gateStatus !== undefined) turn.gateStatus = sourceTurn.gateStatus;
+    // Observed premium fields (#P4-13), reconciled onto the source Turn
+    // records by `reconcile-premium.ts`. `apiMs` / lines are summed across all
+    // of this logical turn's segments (main + sidechains); observed `wallMs`
+    // comes from the main segment's turn-boundary (reconcile sets it on main
+    // turns only, since the Stop hook fires on the main thread). Each stays
+    // absent unless C/B content was attributed, preserving "undefined =
+    // unavailable" (api-vs-wall then renders partial).
+    const segments: Turn[] = [];
+    if (group.main) segments.push(group.main);
+    segments.push(...group.sidechains);
+
+    let apiMs = 0;
+    let linesAdded = 0;
+    let linesRemoved = 0;
+    let sawApiMs = false;
+    let sawLines = false;
+    for (const seg of segments) {
+      if (seg.apiMs !== undefined) {
+        apiMs += seg.apiMs;
+        sawApiMs = true;
+      }
+      if (seg.linesAdded !== undefined) {
+        linesAdded += seg.linesAdded;
+        sawLines = true;
+      }
+      if (seg.linesRemoved !== undefined) {
+        linesRemoved += seg.linesRemoved;
+        sawLines = true;
+      }
     }
+    if (sawApiMs) turn.apiMs = apiMs;
+    if (sawLines) {
+      turn.linesAdded = linesAdded;
+      turn.linesRemoved = linesRemoved;
+    }
+    if (group.main?.wallMs !== undefined) turn.wallMs = group.main.wallMs;
+
+    const sourceTurn = group.main ?? group.sidechains[0];
+    if (sourceTurn?.gateStatus !== undefined) turn.gateStatus = sourceTurn.gateStatus;
     return turn;
   });
 }
@@ -678,8 +715,22 @@ function buildMeta(
 ): SessionDetailMeta {
   const availability: SessionDetailField[] = [];
   if (snapshot.session.costObserved !== undefined) availability.push("header.drift");
-  if (snapshot.session.contextPctEstimated !== undefined) {
+  // Observed ctx% (#P4-13) supersedes the estimate; either presence means the
+  // header can show a context %, so the transcript-only estimate still counts.
+  if (
+    snapshot.session.contextPctEstimated !== undefined ||
+    snapshot.session.contextPctObserved !== undefined
+  ) {
     availability.push("header.contextPct");
+  }
+  // Observed turn timing / line-delta columns (#P4-13) — advertised when any
+  // logical turn segment carries reconciled C data.
+  const segmentsOf = (t: LogicalTurn): Turn[] => [...(t.main ? [t.main] : []), ...t.sidechains];
+  if (logicalTurns.some((t) => segmentsOf(t).some((s) => s.apiMs !== undefined))) {
+    availability.push("turn.apiMs");
+  }
+  if (logicalTurns.some((t) => segmentsOf(t).some((s) => s.linesAdded !== undefined))) {
+    availability.push("turn.linesAdded", "turn.linesRemoved");
   }
 
   return {

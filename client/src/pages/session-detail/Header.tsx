@@ -70,7 +70,10 @@ export function Header({ header }: HeaderProps): React.JSX.Element {
         <Stat label="vs median" value={formatMedianDelta(header)} />
         <Stat label="Logical turns" value={String(header.logicalTurnCount)} />
         <Stat label="Calls" value={String(header.callCount)} />
-        <Stat label="Context (est.)" value={formatPercent(header.contextPctEstimated ?? null)} />
+        <Stat
+          label={header.contextPctObserved !== undefined ? "Context (observed)" : "Context (est.)"}
+          value={formatPercent(header.contextPctObserved ?? header.contextPctEstimated ?? null)}
+        />
         <Stat label="Drift (computed vs observed)" value={formatCost(header.drift?.delta)} />
         <Stat
           label="Started"
@@ -89,7 +92,7 @@ export function Header({ header }: HeaderProps): React.JSX.Element {
           className="mt-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-700/50 dark:bg-amber-900/20 dark:text-amber-200"
         >
           Cost observed, drift, and context samples require premium capture (<code>cost.jsonl</code>
-          , <code>turn-boundaries.jsonl</code>,<code>cost-log.jsonl</code>) — landing in #P4-13.
+          , <code>turn-boundaries.jsonl</code>, <code>cost-log.jsonl</code>).
         </p>
       ) : null}
     </section>

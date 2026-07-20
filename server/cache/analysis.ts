@@ -603,6 +603,10 @@ function computeContextGrowth({
       if (turnCalls.length === 0) continue;
       let maxInput = 0;
       let representativeTimestamp = "";
+      // Observed context% (#P4-13): peak observed `contextPct` across the
+      // turn's calls (parallels the max-input proxy). Undefined unless
+      // reconcile attributed C samples to at least one call in the turn.
+      let observedPct: number | undefined;
       for (const call of turnCalls) {
         if (Number.isFinite(call.usage.inputTokens) && call.usage.inputTokens > maxInput) {
           maxInput = call.usage.inputTokens;
@@ -610,13 +614,19 @@ function computeContextGrowth({
         if (representativeTimestamp === "" || call.timestamp > representativeTimestamp) {
           representativeTimestamp = call.timestamp;
         }
+        if (call.contextPct !== undefined) {
+          observedPct =
+            observedPct === undefined ? call.contextPct : Math.max(observedPct, call.contextPct);
+        }
       }
       if (maxInput <= 0) continue;
-      points.push({
+      const point: ContextGrowthPoint = {
         turnIndex,
         timestamp: representativeTimestamp,
         inputTokens: maxInput,
-      });
+      };
+      if (observedPct !== undefined) point.contextPct = observedPct;
+      points.push(point);
       turnIndex++;
     }
     if (points.length === 0) continue;
@@ -637,11 +647,18 @@ function computeContextGrowth({
     CACHE_LAB_LIMITS.CONTEXT_MAX_CURVES,
     (a, b) => (peaks.get(b) ?? 0) - (peaks.get(a) ?? 0),
   );
+  // The panel is "observed" only when every shown curve carries observed
+  // context% on all its points (premium capture present for all) — so the
+  // tier badge never over-claims a mixed fleet (#P4-13).
+  const basis =
+    trimmed.length > 0 && trimmed.every((c) => c.points.every((p) => p.contextPct !== undefined))
+      ? "observed"
+      : "token-estimated";
   return {
     curves: trimmed,
     total,
     truncated: total > trimmed.length,
-    basis: "token-estimated",
+    basis,
   };
 }
 

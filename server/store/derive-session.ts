@@ -3,12 +3,13 @@ import type { PricingTable } from "../metrics/measures.js";
 import { priceCall, uncachedPrice } from "../metrics/measures.js";
 import { resolveContextWindow } from "../metrics/model-metadata.js";
 import { aggregateLogicalTurnCost, groupLogicalTurns } from "./logical-turns.js";
+import type { PremiumRollup } from "./reconcile-premium.js";
 import { addUsage, emptyUsage } from "./token-usage.js";
 
 // Per-session tier detection (architecture §4): which sidecar files exist for
-// this session. Full C/B/L *parsing* (turning those files into observed
-// costs) is #P4-13's job — here we only know presence, so costBasis is always
-// "computed" until #P4-13 wires observed values through.
+// this session. Presence of a C (`.cost.jsonl`) or L (`cost-log.jsonl`) sidecar
+// flips `costBasis` to "observed"; the observed *values* are reconciled by
+// `reconcile-premium.ts` and threaded in via the `premium` rollup (#P4-13).
 export interface SessionSidecarFlags {
   hasCostSamples: boolean;
   hasTurnBoundaries: boolean;
@@ -32,6 +33,8 @@ export function deriveSession(
   pricing?: PricingTable,
   contextResolver?: ContextResolver,
   host?: string,
+  /** Observed values reconciled from C/B/L sidecars (#P4-13). Absent for transcript-only sessions. */
+  premium?: PremiumRollup,
 ): Session {
   const usage = emptyUsage();
   const models = new Set<string>();
@@ -118,11 +121,15 @@ export function deriveSession(
   const cacheEligible = usage.inputTokens + usage.cacheReadTokens + usage.cacheCreateTokens;
   const cacheHitPct = cacheEligible > 0 ? usage.cacheReadTokens / cacheEligible : 0;
 
+  // costBasis is "observed" whenever a C or L capture file is present for the
+  // session (architecture §4: "'observed' when C/L present"). Presence — not
+  // whether a $ value happened to be captured — is the tier signal; an
+  // empty-but-present cost file still marks the session observed (#P4-13).
   const tier: TierFlags = {
     hasCostSamples: sidecars.hasCostSamples,
     hasTurnBoundaries: sidecars.hasTurnBoundaries,
     hasCostLog: sidecars.hasCostLog,
-    costBasis: "computed",
+    costBasis: sidecars.hasCostSamples || sidecars.hasCostLog ? "observed" : "computed",
   };
 
   const durationMs =
@@ -165,5 +172,13 @@ export function deriveSession(
     cacheSavingsComputed: pricing ? cacheSavingsComputed : undefined,
     maxTurnCostComputed: pricer ? maxTurnCostComputed : undefined,
     contextPctEstimated,
+    // Observed values reconciled from C/B/L sidecars (#P4-13). Each stays
+    // undefined for transcript-only sessions, preserving the "undefined =
+    // unavailable" invariant; `costObserved` being set is what lights up the
+    // Session Detail drift badge and the Sessions-table observed-$ column.
+    costObserved: premium?.costObserved,
+    linesAdded: premium?.linesAdded,
+    linesRemoved: premium?.linesRemoved,
+    contextPctObserved: premium?.contextPctObserved,
   };
 }

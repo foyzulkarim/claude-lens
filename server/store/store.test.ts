@@ -588,3 +588,77 @@ describe("Store — buildSearchSnapshot per-session error handling (#P4-3)", () 
     expect(sessionIds).not.toContain("s-bad");
   });
 });
+
+describe("Store — premium sidecars (#P4-13)", () => {
+  const costSample = (overrides: Record<string, unknown> = {}) => ({
+    sessionId: "s1",
+    timestamp: "2026-07-13T00:00:01.000Z",
+    costDeltaUsd: 0.25,
+    cumulativeCostUsd: 0.25,
+    apiDurationMs: 4200,
+    contextPct: 33,
+    linesAdded: 5,
+    linesRemoved: 2,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    ...overrides,
+  });
+
+  it("applyCostSamples flips costBasis to observed and threads costObserved through", () => {
+    const { store } = makeStore();
+    store.applyRecords("s1", batch([call({ sessionId: "s1", messageId: "m1" })]));
+    vi.advanceTimersByTime(300);
+    expect(store.getSession("s1")?.tier.costBasis).toBe("computed");
+    expect(store.getSession("s1")?.costObserved).toBeUndefined();
+
+    store.applyCostSamples("s1", [costSample()]);
+    vi.advanceTimersByTime(300);
+
+    const s = store.getSession("s1");
+    expect(s?.tier.costBasis).toBe("observed");
+    expect(s?.tier.hasCostSamples).toBe(true);
+    expect(s?.costObserved).toBeCloseTo(0.25);
+    expect(s?.linesAdded).toBe(5);
+    expect(s?.contextPctObserved).toBeCloseTo(0.33);
+    // The observed apiMs is attributed onto the fleet-visible call too.
+    expect(store.getCalls("s1")[0]?.apiMs).toBe(4200);
+  });
+
+  it("applyCostLog fans a global row out to its session and flips costBasis", () => {
+    const { store } = makeStore();
+    store.applyRecords("s1", batch([call({ sessionId: "s1", messageId: "m1" })]));
+    vi.advanceTimersByTime(300);
+
+    store.applyCostLog([
+      {
+        sessionId: "s1",
+        timestamp: "2026-07-13T00:00:00.000Z",
+        costUsd: 1.75,
+        durationMs: 5000,
+        model: "claude-sonnet-5",
+        dir: "/repo",
+        contextPct: 40,
+        cacheRead: 0,
+        cacheWrite: 0,
+        linesAdded: 9,
+        linesRemoved: 3,
+      },
+    ]);
+    vi.advanceTimersByTime(300);
+
+    const s = store.getSession("s1");
+    expect(s?.tier.costBasis).toBe("observed");
+    expect(s?.tier.hasCostLog).toBe(true);
+    expect(s?.costObserved).toBeCloseTo(1.75);
+  });
+
+  it("leaves transcript-only sessions with no observed fields", () => {
+    const { store } = makeStore();
+    store.applyRecords("s2", batch([call({ sessionId: "s2", messageId: "m2" })]));
+    vi.advanceTimersByTime(300);
+    const s = store.getSession("s2");
+    expect(s?.tier.costBasis).toBe("computed");
+    expect(s?.costObserved).toBeUndefined();
+    expect(store.getCalls("s2")[0]?.apiMs).toBeUndefined();
+  });
+});

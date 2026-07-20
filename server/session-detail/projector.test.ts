@@ -200,6 +200,68 @@ describe("projectSessionDetail — header", () => {
   });
 });
 
+describe("projectSessionDetail — observed turn fields (#P4-13)", () => {
+  it("surfaces reconciled apiMs / lines / wallMs on turns and advertises availability", () => {
+    const c1 = call("m1", "2026-07-14T10:00:00.000Z", { promptId: "p1" });
+    const mainTurn = turn("p1", false, [c1], {
+      apiMs: 4200,
+      linesAdded: 7,
+      linesRemoved: 3,
+      wallMs: 9000,
+    });
+    const session = sessionWithTier({
+      turnCount: 1,
+      tier: {
+        hasCostSamples: true,
+        hasTurnBoundaries: true,
+        hasCostLog: false,
+        costBasis: "observed",
+      },
+    });
+    const snap = snapshotWith(
+      session,
+      [c1],
+      [mainTurn],
+      [{ sessionId: "s1", promptId: "p1", text: "hi", timestamp: "2026-07-14T10:00:00.000Z" }],
+    );
+    const result = projectSessionDetail(snap, [], [], { pricer: flatPricer });
+
+    const row = result.turns[0];
+    expect(row?.apiMs).toBe(4200);
+    expect(row?.linesAdded).toBe(7);
+    expect(row?.linesRemoved).toBe(3);
+    expect(row?.wallMs).toBe(9000);
+    expect(result.meta.availability).toContain("turn.apiMs");
+    expect(result.meta.availability).toContain("turn.linesAdded");
+  });
+
+  it("leaves observed turn fields and availability absent for transcript-only turns", () => {
+    const c1 = call("m1", "2026-07-14T10:00:00.000Z", { promptId: "p1" });
+    const mainTurn = turn("p1", false, [c1]);
+    const snap = snapshotWith(
+      sessionWithTier({ turnCount: 1 }),
+      [c1],
+      [mainTurn],
+      [{ sessionId: "s1", promptId: "p1", text: "hi", timestamp: "2026-07-14T10:00:00.000Z" }],
+    );
+    const result = projectSessionDetail(snap, [], [], { pricer: flatPricer });
+
+    const row = result.turns[0];
+    expect(row?.apiMs).toBeUndefined();
+    expect(row?.linesAdded).toBeUndefined();
+    expect(result.meta.availability).not.toContain("turn.apiMs");
+    expect(result.meta.availability).not.toContain("turn.linesAdded");
+  });
+
+  it("exposes observed context % on the header when reconciled", () => {
+    const session = sessionWithTier({ contextPctObserved: 0.42 });
+    const snap = snapshotWith(session, [], [], []);
+    const result = projectSessionDetail(snap, [], [], { pricer: flatPricer });
+    expect(result.header.contextPctObserved).toBeCloseTo(0.42);
+    expect(result.meta.availability).toContain("header.contextPct");
+  });
+});
+
 describe("projectSessionDetail — timeline", () => {
   it("produces cumulative cost/tokens and marks logical turn boundaries", () => {
     const calls = [

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { TurnInspectorWaterfallCall } from "../../../../shared/turn-inspector-contract.js";
+import { TierBadge } from "../../components/TierBadge.js";
 import { TOGGLE_ACTIVE_CLASS, TOGGLE_CLASS } from "../../ui/toggleStyles.js";
 import { formatDuration, formatTokens } from "./format.js";
 
@@ -34,7 +35,12 @@ export function Waterfall({ calls }: WaterfallProps): React.JSX.Element {
     );
   }
 
+  // Observed per-call api_duration (#P4-13) upgrades "by time" from the
+  // timestamp-delta fallback to real per-call durations. Only when every call
+  // carries it — a partial mix would mis-scale the bars against each other.
+  const observed = calls.every((c) => c.apiMs !== undefined);
   const maxOffset = Math.max(...calls.map((c) => c.offsetMs), 1);
+  const maxApiMs = Math.max(...calls.map((c) => c.apiMs ?? 0), 1);
   const maxTokens = Math.max(...calls.map((c) => c.tokens), 1);
   const rows = mode === "tokens" ? [...calls].sort((a, b) => b.tokens - a.tokens) : calls;
 
@@ -45,9 +51,18 @@ export function Waterfall({ calls }: WaterfallProps): React.JSX.Element {
       className="rounded-md border border-slate-200 bg-white p-4 dark:border-[#232B36] dark:bg-[#151A21]"
     >
       <div className="flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold text-slate-900 dark:text-[#E8EDF2]">
-          API-call waterfall
-        </h2>
+        <div className="flex items-center gap-2">
+          <h2 className="text-sm font-semibold text-slate-900 dark:text-[#E8EDF2]">
+            API-call waterfall
+          </h2>
+          {mode === "time" ? (
+            observed ? (
+              <TierBadge level="exact">observed api_duration</TierBadge>
+            ) : (
+              <TierBadge level="estimated">timestamp fallback</TierBadge>
+            )
+          ) : null}
+        </div>
         <fieldset aria-label="Waterfall metric" className="flex gap-1 border-0 p-0">
           <button
             type="button"
@@ -70,10 +85,13 @@ export function Waterfall({ calls }: WaterfallProps): React.JSX.Element {
 
       <ul aria-label="Calls" className="mt-3 space-y-1.5">
         {rows.map((call) => {
+          // In time mode, size by observed api_duration when present, else the
+          // offset fallback.
+          const timeWidth = observed
+            ? ((call.apiMs ?? 0) / maxApiMs) * 100
+            : (call.offsetMs / maxOffset) * 100;
           const width =
-            mode === "time"
-              ? Math.max((call.offsetMs / maxOffset) * 100, 4)
-              : Math.max((call.tokens / maxTokens) * 100, 4);
+            mode === "time" ? Math.max(timeWidth, 4) : Math.max((call.tokens / maxTokens) * 100, 4);
           const primaryTool = call.tools[0];
           const label = primaryTool
             ? `${primaryTool.name}${call.tools.length > 1 ? ` ×${call.tools.length}` : ""}`
@@ -101,7 +119,9 @@ export function Waterfall({ calls }: WaterfallProps): React.JSX.Element {
                 {label}
               </span>
               <span className="w-14 shrink-0 text-right font-mono text-slate-400 dark:text-[#5A6675]">
-                {mode === "time" ? formatDuration(call.offsetMs) : formatTokens(call.tokens)}
+                {mode === "time"
+                  ? formatDuration(observed ? (call.apiMs ?? 0) : call.offsetMs)
+                  : formatTokens(call.tokens)}
               </span>
             </li>
           );

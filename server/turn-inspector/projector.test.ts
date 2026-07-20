@@ -200,6 +200,22 @@ describe("projectTurnInspector — summary", () => {
     expect(result?.meta.availability).toContain("summary.wallMs");
   });
 
+  it("surfaces observed apiMs (summed) and wallMs when reconciled onto the Turn (#P4-13)", () => {
+    const calls = [
+      call("m1", "2026-07-14T10:00:00.000Z", { usage: usage({ inputTokens: 100 }), apiMs: 3000 }),
+    ];
+    const turns = [turn("p1", false, calls, { apiMs: 3000, wallMs: 8000 })];
+    const snap = snapshotWith(sessionWithTier(), calls, turns, []);
+
+    const result = projectTurnInspector(snap, 1, [], {});
+
+    expect(result?.summary.apiMs).toBe(3000);
+    expect(result?.summary.wallMs).toBe(8000);
+    expect(result?.meta.availability).toContain("summary.apiMs");
+    // The waterfall bar carries the observed per-call duration too.
+    expect(result?.waterfall.calls[0]?.apiMs).toBe(3000);
+  });
+
   it("aggregates cost and tokens across main + sidechain calls", () => {
     const mainCall = call("m1", "2026-07-14T10:00:00.000Z", {
       usage: usage({ inputTokens: 100 }),

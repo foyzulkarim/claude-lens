@@ -250,16 +250,45 @@ describe("computeMeasure — wallMinutes (real today, not premium-gated)", () =>
   });
 });
 
-describe("computeMeasure — premium-gated measures return null today", () => {
+describe("computeMeasure — observed premium measures (#P4-13)", () => {
   it.each([
     "costObserved",
     "linesAdded",
     "linesRemoved",
-    "gatePassRate",
     "apiMs",
-  ] as const)("%s returns null regardless of scope contents", (measure) => {
+  ] as const)("%s returns null when no call carries observed data", (measure) => {
     const scope: MeasureScope = { calls: [call()], turns: [turn()], sessions: [session()] };
     expect(computeMeasure(measure, scope, DEFAULT_PRICING_TABLE)).toBeNull();
+  });
+
+  it("sums observed fields across the scope's calls once reconcile has attributed them", () => {
+    const scope: MeasureScope = {
+      calls: [
+        call({ costObserved: 0.2, apiMs: 1500, linesAdded: 3, linesRemoved: 1 }),
+        call({ costObserved: 0.3, apiMs: 2500, linesAdded: 4, linesRemoved: 2 }),
+        call(), // transcript-only call contributes nothing, is not counted as a 0
+      ],
+      turns: [],
+      sessions: [],
+    };
+    expect(computeMeasure("costObserved", scope, DEFAULT_PRICING_TABLE)).toBeCloseTo(0.5);
+    expect(computeMeasure("apiMs", scope, DEFAULT_PRICING_TABLE)).toBe(4000);
+    expect(computeMeasure("linesAdded", scope, DEFAULT_PRICING_TABLE)).toBe(7);
+    expect(computeMeasure("linesRemoved", scope, DEFAULT_PRICING_TABLE)).toBe(3);
+  });
+
+  it("returns a measured 0 (not null) when an observed field is present but zero", () => {
+    const scope: MeasureScope = {
+      calls: [call({ linesAdded: 0 })],
+      turns: [],
+      sessions: [],
+    };
+    expect(computeMeasure("linesAdded", scope, DEFAULT_PRICING_TABLE)).toBe(0);
+  });
+
+  it("gatePassRate still returns null without gate summaries", () => {
+    const scope: MeasureScope = { calls: [call()], turns: [turn()], sessions: [session()] };
+    expect(computeMeasure("gatePassRate", scope, DEFAULT_PRICING_TABLE)).toBeNull();
   });
 });
 

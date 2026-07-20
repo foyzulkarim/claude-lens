@@ -7,7 +7,13 @@ import type {
   SessionDetailTurn,
 } from "../../../../shared/session-detail-contract.js";
 import { DataTable } from "../../components/DataTable.js";
-import { formatCost, formatPercent, formatTokens } from "./format.js";
+import {
+  formatCost,
+  formatDurationMs,
+  formatLineDelta,
+  formatPercent,
+  formatTokens,
+} from "./format.js";
 
 export interface TurnsSectionProps {
   sessionId: string;
@@ -185,6 +191,20 @@ function TurnTable({
       {
         header: "models",
         cell: ({ row }) => row.original.primaryModel || "—",
+        meta: { mono: true },
+      },
+      {
+        // Observed line delta (#P4-13) — "—" for transcript-only turns.
+        header: "Δlines",
+        cell: ({ row }) => formatLineDelta(row.original.linesAdded, row.original.linesRemoved),
+        meta: { mono: true },
+      },
+      {
+        // Observed api-vs-wall timing (#P4-13) — api duration over wall time.
+        // Renders partial ("—" on either side) when only one of C/B is present.
+        header: "api/wall",
+        cell: ({ row }) =>
+          `${formatDurationMs(row.original.apiMs)} / ${formatDurationMs(row.original.wallMs)}`,
         meta: { mono: true },
       },
       {

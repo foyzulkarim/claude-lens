@@ -21,6 +21,7 @@ export function ContextGrowthPanel({
   data: ContextGrowthSection | undefined;
   error?: Error | null;
 }) {
+  const observed = data?.basis === "observed";
   const option = useMemo(
     () => (data ? buildContextGrowthOption(data.curves) : buildContextGrowthOption([])),
     [data],
@@ -51,10 +52,10 @@ export function ContextGrowthPanel({
           id="context-growth-heading"
           className="text-sm font-semibold text-slate-900 dark:text-[#E8EDF2]"
         >
-          Context growth (token-estimated)
+          Context growth ({observed ? "observed" : "token-estimated"})
         </h2>
         <div className="flex items-center gap-2">
-          <TierBadge level="estimated" />
+          {observed ? <TierBadge level="exact" /> : <TierBadge level="estimated" />}
           <p className="font-mono text-xs text-slate-600 dark:text-[#8A96A5]">
             {data
               ? data.truncated
@@ -99,6 +100,7 @@ export function ContextGrowthPanel({
                   <th>Turn</th>
                   <th>Timestamp</th>
                   <th>Input tokens</th>
+                  {observed ? <th>Context %</th> : null}
                 </tr>
               </thead>
               <tbody>
@@ -109,6 +111,9 @@ export function ContextGrowthPanel({
                       <td>{point.turnIndex + 1}</td>
                       <td>{point.timestamp}</td>
                       <td>{point.inputTokens}</td>
+                      {observed ? (
+                        <td>{point.contextPct === undefined ? "—" : `${point.contextPct}%`}</td>
+                      ) : null}
                     </tr>
                   )),
                 )}

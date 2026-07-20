@@ -1,8 +1,14 @@
+import { readFile } from "node:fs/promises";
 import type { WsServerMessage } from "../../shared/ws-protocol.js";
 import type { RuntimeMetadata } from "../runtime.js";
 import { Store } from "../store/store.js";
 import type { ScanConfig } from "./discovery.js";
-import { Poller } from "./poller.js";
+import {
+  parseCostLogLines,
+  parseCostSampleLines,
+  parseTurnBoundaryLines,
+} from "./parse-premium.js";
+import { Poller, type RegisteredFile } from "./poller.js";
 import { Tailer } from "./tailer.js";
 import type { WarmCache } from "./warm-cache.js";
 
@@ -74,6 +80,39 @@ export function startIngest(config: ScanConfig, options: IngestPipelineOptions):
     options.warmCache,
   );
 
+  // Read a premium C/B/L sidecar whole and apply it with full-replace store
+  // semantics (#P4-13, plan D5). These files are small (one session for C/B;
+  // one row per session for L), so re-reading the entire file on every change
+  // — no byte-offset tailing, no dedupe — is both simpler and cheap. Never
+  // rejects: read failures (a file that vanished between the poll and this
+  // read) are swallowed and retried on the next poll; the parsers count
+  // malformed lines rather than throwing.
+  async function readPremiumFile(file: RegisteredFile): Promise<void> {
+    let content: string;
+    try {
+      content = await readFile(file.path, "utf8");
+    } catch {
+      return;
+    }
+    const lines = content.split("\n");
+    if (file.class === "cost") {
+      if (!file.sessionId) return;
+      store.applyCostSamples(file.sessionId, parseCostSampleLines(lines).samples);
+    } else if (file.class === "turn-boundaries") {
+      if (!file.sessionId) return;
+      store.applyTurnBoundaries(file.sessionId, parseTurnBoundaryLines(lines).boundaries);
+    } else if (file.class === "cost-log") {
+      store.applyCostLog(parseCostLogLines(lines).rows);
+    }
+  }
+
+  // Defensive .catch so `track()`'s "never rejects" precondition holds even if
+  // a store apply method throws unexpectedly (readPremiumFile already swallows
+  // read errors, but the store call is outside that try).
+  function trackPremium(file: RegisteredFile): void {
+    track(readPremiumFile(file).catch((err) => console.error("[ingest] premium read failed", err)));
+  }
+
   const poller = new Poller(config, {
     onFileAdded(file) {
       if (file.class === "transcript") {
@@ -81,24 +120,26 @@ export function startIngest(config: ScanConfig, options: IngestPipelineOptions):
         track(tailer.onFileAdded(file));
         return;
       }
-      if (file.sessionId && (file.class === "cost" || file.class === "turn-boundaries")) {
-        store.markSidecarPresent(file.sessionId, file.class);
-      }
-      // "cost-log" is a single global file, not per-session — presence
-      // wiring for it is deferred to #P4-13 (see Store.markSidecarPresent).
+      // C/B/L sidecars (cost, turn-boundaries, cost-log) — parse content now
+      // (#P4-13). cost-log is a single global file with no per-file sessionId;
+      // Store.applyCostLog fans its rows out to their sessions.
+      trackPremium(file);
     },
     onFileChanged(file) {
       if (file.class === "transcript") {
         if (file.sessionId) store.setTranscriptPath(file.sessionId, file.path);
         track(tailer.onFileChanged(file));
+        return;
       }
-      // Sidecar file content changes (cost/turn-boundaries/cost-log) are not
-      // parsed until #P4-13 — presence was already recorded on add.
+      trackPremium(file);
     },
     onFileRemoved(file) {
       if (file.class === "transcript") {
         tailer.onFileRemoved(file);
       }
+      // A removed premium file leaves the session's last observed values in
+      // place — same "state kept even if its file disappears" stance as
+      // transcript removal above; no cleanup requirement in #P4-13 scope.
     },
   });
 

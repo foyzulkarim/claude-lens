@@ -122,6 +122,36 @@ const pageColumns: ColumnDef<SessionPageItem, any>[] = [
     meta: { align: "right", mono: true },
     cell: (info) => formatUnitValue(info.getValue(), "$"),
   }),
+  // Premium-tier columns (#P4-13) — light up only for sessions with a C/L
+  // capture file; "—" (never a fabricated 0) otherwise.
+  helper.accessor("costObserved", {
+    header: "Obs $",
+    meta: { align: "right", mono: true },
+    cell: (info) => {
+      const value = info.getValue();
+      return value === undefined || value === null ? "—" : formatUnitValue(value, "$");
+    },
+  }),
+  helper.accessor("linesAdded", {
+    header: "Δlines",
+    meta: { align: "right", mono: true },
+    cell: (info) => {
+      const added = info.getValue();
+      const removed = info.row.original.linesRemoved;
+      if (added === undefined && removed === undefined) return "—";
+      return `+${added ?? 0}/−${removed ?? 0}`;
+    },
+  }),
+  helper.accessor("contextPctObserved", {
+    header: "Ctx %",
+    meta: { align: "right", mono: true },
+    cell: (info) => {
+      // Prefer the observed value; fall back to the transcript-tier estimate.
+      const observed = info.getValue();
+      const value = observed ?? info.row.original.contextPctEstimated;
+      return value === undefined || value === null ? "—" : `${Math.round(value * 100)}%`;
+    },
+  }),
   helper.accessor("cacheHitPct", {
     header: "Cache %",
     meta: { align: "right", mono: true },

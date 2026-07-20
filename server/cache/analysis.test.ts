@@ -544,6 +544,38 @@ describe("analyzeCacheLab — context growth bounds + finite data", () => {
     expect(result.contextGrowth.curves[0]?.points[0]?.inputTokens).toBe(30_000);
   });
 
+  it("flips context-growth basis to observed and carries context_pct when reconciled (#P4-13)", () => {
+    const c = call({
+      uuid: "m1",
+      sessionId: "s1",
+      messageId: "m1",
+      promptId: "p1",
+      timestamp: "2026-06-10T10:00:00.000Z",
+      usage: { ...call().usage, inputTokens: 5000 },
+      contextPct: 37,
+    });
+    const turns: Turn[] = [
+      {
+        promptId: "p1",
+        sessionId: "s1",
+        isSidechain: false,
+        startedAt: c.timestamp,
+        endedAt: c.timestamp,
+        calls: [c],
+        usage: c.usage,
+        toolResultBytes: 0,
+      },
+    ];
+    const result = analyzeCacheLab(
+      { calls: [c], turns, sessions: [], pricing: DEFAULT_PRICING_TABLE },
+      baseQuery(),
+    );
+    expect(result.contextGrowth.basis).toBe("observed");
+    expect(result.contextGrowth.curves[0]?.points[0]?.contextPct).toBe(37);
+    // The token proxy stays present as a fallback alongside the observed value.
+    expect(result.contextGrowth.curves[0]?.points[0]?.inputTokens).toBe(5000);
+  });
+
   it("keeps every chart point finite (no NaN / Infinity)", () => {
     // A pathological call with parseable timestamp but no input/output
     // tokens must not poison the curve point math.

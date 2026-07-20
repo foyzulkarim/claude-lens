@@ -81,6 +81,9 @@ export interface SessionDetailHeader {
    * Null when the fleet baseline has < 2 sessions. */
   fleetCostRankPct: number | null;
   contextPctEstimated?: number;
+  /** Observed context-window fraction (0-1) from C cost samples (#P4-13) —
+   * the true value that supersedes `contextPctEstimated` when present. */
+  contextPctObserved?: number;
   tier: TierFlags;
   /** Computed-vs-observed divergence (premium only). Absent when #P4-13
    * hasn't supplied observed costs. */

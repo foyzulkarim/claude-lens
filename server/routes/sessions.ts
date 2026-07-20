@@ -737,7 +737,7 @@ export function projectPageItem(
     linesAdded: session.linesAdded,
     linesRemoved: session.linesRemoved,
     contextPctEstimated: session.contextPctEstimated,
-    contextPctObserved: undefined,
+    contextPctObserved: session.contextPctObserved,
     gateScore: gateSummary?.score ?? session.gateScore,
     // Session.gateStatus is not a field on `Session` (only Turn.gateStatus
     // is — gates.md §1 has session-scoped E1/E2 + turn-scoped V1/V2/P3/C3/K2).

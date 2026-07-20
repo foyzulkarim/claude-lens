@@ -6,6 +6,7 @@ import type {
   PromptTextRecord,
   ToolResultBytesRecord,
 } from "../ingest/parse-transcript.js";
+import type { CostLogRow, CostSample, TurnBoundary } from "../ingest/parse-premium.js";
 import type { PricingTable } from "../metrics/measures.js";
 import {
   type ContextResolver,
@@ -14,6 +15,7 @@ import {
   type SessionSidecarFlags,
 } from "./derive-session.js";
 import { deriveTurns } from "./derive-turns.js";
+import { reconcilePremium } from "./reconcile-premium.js";
 import { createInvalidator, type Invalidator } from "./invalidation.js";
 import { buildSearchSnapshot } from "./build-search-snapshot.js";
 
@@ -30,6 +32,19 @@ interface SessionState {
   toolResultBytes: ToolResultBytesRecord[];
   compactions: CompactionRecord[];
   sidecars: SessionSidecarFlags;
+  /**
+   * Parsed premium capture-file content (#P4-13). Written whole (full-replace)
+   * by the pipeline on each cost/turn-boundaries/cost-log file change, and
+   * consumed by `reconcile-premium.ts` during recompute to produce observed
+   * values. Empty/undefined until a matching sidecar is discovered; kept
+   * independent of the transcript arrays so a transcript truncation
+   * (`resetSession`) never wipes premium data (they are separate files with
+   * their own change events).
+   */
+  costSamples: CostSample[];
+  turnBoundaries: TurnBoundary[];
+  /** This session's row from the global `cost-log.jsonl` (L), if present. */
+  costLogRow?: CostLogRow;
   turns: Turn[];
   session: Session | null;
   /** Absolute path of this session's transcript `.jsonl` file, set by the
@@ -179,6 +194,8 @@ export class Store {
         toolResultBytes: [],
         compactions: [],
         sidecars: emptySidecars(),
+        costSamples: [],
+        turnBoundaries: [],
         turns: [],
         session: null,
       };
@@ -241,6 +258,50 @@ export class Store {
   }
 
   /**
+   * Replace a session's parsed C (`<uuid>.cost.jsonl`) cost samples (#P4-13).
+   * Full-replace, not append: premium files are small and the pipeline
+   * re-reads the whole file on every change, so there is no offset/dedupe
+   * bookkeeping (parse-premium.ts). Setting the samples also flips the
+   * `hasCostSamples` tier flag — the file's presence is what tier detection
+   * means, so an empty-but-present cost file still upgrades the session's
+   * `costBasis` to observed (with a $0 observed total, the honest value).
+   */
+  applyCostSamples(sessionId: string, samples: CostSample[]): void {
+    const state = this.stateFor(sessionId);
+    state.costSamples = samples;
+    state.sidecars.hasCostSamples = true;
+    this.invalidator.markDirty(sessionId);
+  }
+
+  /** Replace a session's parsed B (`<uuid>.turn-boundaries.jsonl`) boundaries (#P4-13). Full-replace, mirrors `applyCostSamples`. */
+  applyTurnBoundaries(sessionId: string, boundaries: TurnBoundary[]): void {
+    const state = this.stateFor(sessionId);
+    state.turnBoundaries = boundaries;
+    state.sidecars.hasTurnBoundaries = true;
+    this.invalidator.markDirty(sessionId);
+  }
+
+  /**
+   * Route the parsed global `cost-log.jsonl` (L) rows to their sessions
+   * (#P4-13). L has no file-level sessionId, so each row is fanned out by its
+   * own `session_id`, creating session state for a session not yet seen via a
+   * transcript (mirrors `markSidecarPresent`). The whole file re-parses on
+   * every change, so a single L mutation re-fans across every referenced
+   * session and marks each dirty — a recompute burst. L changes rarely (one
+   * row per finished session), so this is accepted (#P4-13 R2); revisit only
+   * if L files turn hot. Rows dropped from a later L revision leave a stale
+   * `costLogRow` on their session (L is append-mostly, so not handled).
+   */
+  applyCostLog(rows: CostLogRow[]): void {
+    for (const row of rows) {
+      const state = this.stateFor(row.sessionId);
+      state.costLogRow = row;
+      state.sidecars.hasCostLog = true;
+      this.invalidator.markDirty(row.sessionId);
+    }
+  }
+
+  /**
    * Record the absolute path of a session's transcript file (#P4-6, Turn
    * Inspector's lazy transcript-peek route). Overwrites rather than
    * appends, so a rotated/replaced file's new path always wins. Does
@@ -286,7 +347,22 @@ export class Store {
   recompute(sessionId: string): void {
     const state = this.sessions.get(sessionId);
     if (!state) return;
-    state.turns = deriveTurns(state.calls, state.prompts, state.toolResultBytes);
+    const turns = deriveTurns(state.calls, state.prompts, state.toolResultBytes);
+    // Reconcile premium C/B/L content into observed annotations before
+    // deriving the session (#P4-13). With no sidecar content this returns the
+    // same arrays untouched (zero-cost transcript-only path); otherwise it
+    // returns annotated copies of the calls/turns carrying observed fields.
+    // We persist the annotated calls back onto state so fleet reads
+    // (`listCalls` → metrics engine) see observed `apiMs`/`costObserved`/lines
+    // too. Idempotent across recomputes: reconcile recomputes absolute values
+    // from the raw samples each time, never incrementing.
+    const reconciled = reconcilePremium(state.calls, turns, {
+      costSamples: state.costSamples,
+      turnBoundaries: state.turnBoundaries,
+      costLogRow: state.costLogRow,
+    });
+    state.calls = reconciled.calls;
+    state.turns = reconciled.turns;
     const rootPath = this.sessionRoot.get(sessionId);
     const host = rootPath ? (this.hostLabels.get(rootPath) ?? rootPath) : undefined;
     state.session = deriveSession(
@@ -298,6 +374,7 @@ export class Store {
       this.pricing,
       this.contextResolver,
       host,
+      reconciled.session,
     );
   }
 
