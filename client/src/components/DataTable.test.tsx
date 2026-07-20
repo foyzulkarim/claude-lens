@@ -13,7 +13,12 @@ interface Row {
 }
 
 const helper = createColumnHelper<Row>();
-const columns: ColumnDef<Row, unknown>[] = [
+// Mirrors `DataTable`'s prop type: TanStack's `ColumnDef` is invariant in
+// `TValue`, so a heterogeneous column array (string/number accessors) can
+// only be typed with `any` here, not `unknown` — same reason `DataTable.tsx`
+// uses `any` for its `columns` prop.
+// biome-ignore lint/suspicious/noExplicitAny: intentional, matches DataTable prop contract
+const columns: ColumnDef<Row, any>[] = [
   helper.accessor("project", { header: "Project" }),
   helper.accessor("cost", {
     header: "Cost",
