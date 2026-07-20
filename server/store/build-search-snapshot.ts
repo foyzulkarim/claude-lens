@@ -57,7 +57,7 @@ export function buildSearchSnapshot(
     for (const prompt of session.prompts) {
       const id = `${prompt.sessionId}:${prompt.promptId}`;
       docs.push({
-        id,
+        id, // provisional — disambiguated by the dedupe pass below
         sessionId: prompt.sessionId,
         promptId: prompt.promptId,
         turnNumber: turnByPrompt.get(prompt.promptId) ?? fallbackTurn,
@@ -81,6 +81,19 @@ export function buildSearchSnapshot(
     if (a.sessionId !== b.sessionId) return a.sessionId < b.sessionId ? -1 : 1;
     return a.promptId < b.promptId ? -1 : a.promptId > b.promptId ? 1 : 0;
   });
+
+  // `sessionId:promptId` is unique for the common case, but real transcripts
+  // can carry the same promptId twice in one session (a retried or
+  // multi-part user line) — MiniSearch requires a unique doc id and throws
+  // on a duplicate, which would crash the whole search panel client-side.
+  // Disambiguate every repeat with an ordinal suffix; the first occurrence
+  // keeps the plain `sessionId:promptId` id so the common case is unaffected.
+  const seen = new Map<string, number>();
+  for (const doc of docs) {
+    const occurrence = seen.get(doc.id) ?? 0;
+    seen.set(doc.id, occurrence + 1);
+    if (occurrence > 0) doc.id = `${doc.id}:${occurrence}`;
+  }
 
   return { prompts: docs, version: options.version ?? 1 };
 }

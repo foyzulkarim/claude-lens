@@ -175,6 +175,27 @@ describe("buildSearchSnapshot — multi-session", () => {
   });
 });
 
+describe("buildSearchSnapshot — duplicate promptId within a session", () => {
+  it("disambiguates repeated promptId with an ordinal suffix so every id is unique", () => {
+    const out = buildSearchSnapshot({
+      sessions: [
+        {
+          sessionId: "s1",
+          prompts: [
+            mkPrompt("p1", "first attempt", "2026-06-10T10:00:00.000Z"),
+            mkPrompt("p1", "retried attempt", "2026-06-10T10:00:05.000Z"),
+            mkPrompt("p1", "third attempt", "2026-06-10T10:00:10.000Z"),
+          ],
+          turns: [mkTurn("p1")],
+        },
+      ],
+    });
+    const ids = out.prompts.map((d) => d.id);
+    expect(ids).toEqual(["s1:p1", "s1:p1:1", "s1:p1:2"]);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
 describe("buildSearchSnapshot — version", () => {
   it("accepts an explicit version override", () => {
     const out = buildSearchSnapshot({ sessions: [] }, { version: 42 });
