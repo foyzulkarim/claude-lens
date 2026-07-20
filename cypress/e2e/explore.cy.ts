@@ -56,4 +56,40 @@ describe("explore smoke", () => {
     cy.get('[data-testid="xp-size"]').should("be.visible");
     cy.location("search").should("include", "xp.chart=scatter");
   });
+
+  // Phase 4 standing rule: every curated page must have at least one
+  // drill-link that lands on a filtered downstream view (R4). We exercise
+  // the table-cell drill path — it's deterministic in jsdom/ECharts-free
+  // canvas environments, and the same handler also services the chart
+  // canvas click via `onPointClick`.
+  it("drills from a pivot table cell to a filtered Sessions destination", () => {
+    cy.visit(`/explore${FIXTURE_RANGE}`);
+
+    // Switch to the Table view so the drill button is a real DOM control
+    // (the canvas click is also wired, but Cypress can't reliably
+    // synthesize ECharts canvas clicks without a chart-instance seam).
+    cy.get('[data-testid="xp-chart-table"]').click();
+    cy.get('[data-testid="pivot-result"]').within(() => {
+      // First slice in the result — the underlying dim is `tool` (default),
+      // so the resulting URL should land on `/sessions?tool=…` or the
+      // dimension-equivalent slice key (R4's "filtered Sessions" contract).
+      cy.get("button[data-testid^='drill-slice-']").first().click();
+    });
+
+    cy.location("pathname").should("eq", "/sessions");
+    cy.location("search").should("include", "view=page");
+    // The slice label must appear in the destination URL — the precise key
+    // depends on whether the dim is a chip dim (project/model/branch/host)
+    // or a generic `slice.<dim>=value` key. We assert at least one of
+    // them is present, so a future addition of arbitrary-dim support is
+    // free to change which key the drill emits.
+    cy.location("search").then((search) => {
+      const hasChipOrSlice =
+        /(^|[&?])tool=/.test(search) ||
+        /(^|[&?])slice\.tool=/.test(search) ||
+        /(^|[&?])project=/.test(search) ||
+        /(^|[&?])slice\./.test(search);
+      expect(hasChipOrSlice, `expected a slice key in ${search}`).to.equal(true);
+    });
+  });
 });

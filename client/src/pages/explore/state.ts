@@ -10,6 +10,7 @@ import type {
   SeriesMetricsQuery,
 } from "../../../../shared/metrics-contract.js";
 import { DIMENSIONS, GRAINS, MEASURES } from "../../../../shared/metrics-contract.js";
+import type { SessionPopulationCriteria } from "../../../../shared/sessions-contract.js";
 
 /**
  * Pure URL ↔ state core of the Explore page (ARCH-explore-page.md).
@@ -214,6 +215,14 @@ export function mergePivotState(search: string, state: PivotState): string {
  *   • mode=distribution       → DistributionMetricsQuery
  *   • otherwise               → SeriesMetricsQuery
  *
+ * The Grain control maps to the `"time"` dimension — every series /
+ * distribution query gets `["time", <breakdown>]` so the engine buckets by
+ * time (per `query.grain`) and breaks the totals across the selected
+ * dimension. This is what makes "any curated chart reproducible" real
+ * (ARCH R1) — model-mix-over-time, project-cost-over-day, etc. all
+ * derive from the same shape. The breakdown dimension is omitted
+ * (dimensions = ["time"]) when the user hasn't picked one yet.
+ *
  * For scatter, `sessionPopulation` is built from the same filter context —
  * the engine reconciles it with the query's `range` per the metrics
  * contract.
@@ -246,11 +255,16 @@ export function buildPivotQuery(
     return scatterQuery;
   }
 
+  // `"time"` is the engine's signal for "bucket by the grain". Adding the
+  // optional breakdown dimension on top is what makes the chart a
+  // multi-series breakdown instead of a single aggregate line.
+  const dimensions: Dimension[] = state.dim === "time" ? ["time"] : ["time", state.dim];
+
   if (state.mode === "distribution") {
     const distQuery: DistributionMetricsQuery = {
       mode: "distribution",
       measures: [state.measure],
-      dimensions: [state.dim],
+      dimensions,
       distributionEntity: state.entity,
       grain: state.grain,
       range,
@@ -262,7 +276,7 @@ export function buildPivotQuery(
   const seriesQuery: SeriesMetricsQuery = {
     mode: "series",
     measures: [state.measure],
-    dimensions: [state.dim],
+    dimensions,
     grain: state.grain,
     range,
     ...(filters ? { filters } : {}),
@@ -271,21 +285,105 @@ export function buildPivotQuery(
 }
 
 /**
- * Narrows the metrics `filters` shape (whose values are typed as
- * `(string | number)[]`) down to `SessionPopulationCriteria`'s
- * `string[]`-only fields. Every filter value the engine emits here is a
- * string (dimension values, not measure values), so the runtime guard is
- * a no-op in practice — but it lets TypeScript prove the assignment
- * without `as`.
+ * Narrow the metrics `filters` shape (whose values are typed as
+ * `(string | number)[]`) down to a `SessionPopulationCriteria` — the
+ * session-scoped population shape consumed by the scatter endpoint and the
+ * server's `session-population` matcher. Two material differences from the
+ * raw metrics `filters` shape:
+ *
+ *   1. The contract's `gitBranch` dimension is renamed to the `branch` key
+ *      the population matcher reads (`server/metrics/session-population.ts`
+ *      does `criteria.branch`). Without this remap the branch chip is
+ *      silently dropped at runtime — TS permits the mis-assignment only
+ *      by weak-type compatibility across two all-optional Partial shapes.
+ *   2. Non-array values (defensive guard) are coerced to `string[]` —
+ *      every dimension value the metrics endpoint emits is a string, but
+ *      the union widens to `(string | number)[]` so we narrow back here.
  */
 function filtersToStringCriteria(
   filters: Partial<Record<Dimension, (string | number)[]>> | undefined,
-): Partial<Record<Dimension, string[]>> {
-  if (!filters) return {};
-  const out: Partial<Record<Dimension, string[]>> = {};
-  for (const [dim, values] of Object.entries(filters) as [Dimension, (string | number)[]][]) {
-    if (!Array.isArray(values)) continue;
-    out[dim] = values.map((v) => String(v));
+): SessionPopulationCriteria {
+  const out: SessionPopulationCriteria = {};
+  if (!filters) return out;
+  for (const [dim, values] of Object.entries(filters)) {
+    if (!Array.isArray(values) || values.length === 0) continue;
+    const strings = values.map((v) => String(v));
+    if (dim === "gitBranch") {
+      out.branch = strings;
+    } else if (dim === "project" || dim === "model" || dim === "host" || dim === "entrypoint") {
+      out[dim] = strings;
+    }
+    // Other Dimension keys (time, version, sidechain, tool, gateStatus)
+    // are not part of SessionPopulationCriteria — they belong on the
+    // metrics `filters` shape consumed upstream, not the population. Drop.
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Drill links (R4 — Phase 4 DoD: one drill-link lands filtered)
+// ---------------------------------------------------------------------------
+
+/**
+ * The four dimensions that already have a corresponding global filter chip.
+ * When a pivot slice drill lands on `/sessions` for one of these, we encode
+ * the value via the matching chip key (so the existing Sessions page
+ * filter bar picks it up with zero coordination). Other dimensions fall
+ * through to a generic `slice.<dim>=value` key — not yet honored by
+ * Sessions but reserved for a follow-up that lifts the dim filter out of
+ * the global filter bar.
+ */
+const CHIP_DIMENSION_KEY: Partial<Record<Dimension, string>> = {
+  project: "project",
+  model: "model",
+  gitBranch: "branch",
+  host: "host",
+};
+
+/**
+ * Build the `/sessions?…` URL search string for a pivot slice drill — the
+ * destination a bar/line/area/table/distribution click should navigate to.
+ *
+ * Preserves every existing global filter key (`range`/`from`/`to`/
+ * `project`/`model`/`branch`/`host`) so the drill lands on a filtered
+ * Sessions page (R4 / Phase 4 DoD). When the pivot's `dim` is one of the
+ * four chip dimensions, the clicked value is merged into that chip; for
+ * any other dimension it's appended as `slice.<dim>=value` for a future
+ * Sessions-page reader.
+ */
+export function buildSliceDrillSearch(
+  currentSearch: string,
+  pivot: Pick<PivotState, "dim">,
+  sliceValue: string,
+): string {
+  const params = new URLSearchParams(
+    currentSearch.startsWith("?") ? currentSearch.slice(1) : currentSearch,
+  );
+  const chipKey = CHIP_DIMENSION_KEY[pivot.dim];
+  if (chipKey) {
+    // Merge with the existing chip values (deduped + sorted) so a global
+    // filter applied before the drill doesn't get silently dropped.
+    const existing = (params.get(chipKey) ?? "")
+      .split(",")
+      .map((v) => v.trim())
+      .filter((v) => v.length > 0);
+    const next = Array.from(new Set([...existing, sliceValue])).sort();
+    params.set(chipKey, next.join(","));
+  } else {
+    params.set(`slice.${pivot.dim}`, sliceValue);
+  }
+  // Force the Sessions page's strict projection — without this the
+  // dashboard's compact projection would render and the drill would
+  // silently land on a different shape.
+  params.set("view", "page");
+  return params.toString();
+}
+
+/** Build the `/sessions/<sessionId>` URL for a scatter-point drill. The
+ * scatter's `points[].sessionId` is the canonical identity, so the drill
+ * is a simple path navigation with the search string preserved for
+ * global-filter parity with the source Explore view. */
+export function buildScatterDrillPath(sessionId: string, currentSearch: string): string {
+  const trimmed = currentSearch.startsWith("?") ? currentSearch.slice(1) : currentSearch;
+  return trimmed ? `/sessions/${sessionId}?${trimmed}` : `/sessions/${sessionId}`;
 }

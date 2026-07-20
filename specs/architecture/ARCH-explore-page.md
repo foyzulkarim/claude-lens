@@ -186,13 +186,14 @@ Rules:
 |---|---|---|
 | `client/src/pages/explore/Explore.tsx` | Page shell: FilterBar (global) → PivotBuilder → PivotResult → SavedViewsGrid | `client/src/pages/models/Models.tsx` |
 | `client/src/pages/explore/PivotBuilder.tsx` | Controlled UI: Measure/Dim/Grain/Chart + Distribution toggle + Scatter X/Y/Size pickers | `client/src/charts/ChartCard.tsx` (toggle-group pattern) |
-| `client/src/pages/explore/PivotResult.tsx` | Dispatches by chart-type; renders ECharts / DataTable / scatter / distribution | `client/src/pages/sessions/CostDistributionCard.tsx` + `EfficiencyScatterCard.tsx` |
-| `client/src/pages/explore/SavedViewsGrid.tsx` | Lists pinned Explore-origin views from `qk.views()`, click restores URL | `client/src/pages/settings/SavedViewsTagsPanel.tsx` (list rendering) |
-| `client/src/pages/explore/usePivotState.ts` | URL ↔ pivot state; builds `MetricsQuery` (series/distribution/scatter) | `client/src/filters/useFilters.ts` (URL-state pattern) |
-| `client/src/pages/explore/usePivotState.test.ts` | Parser + dispatcher unit tests | existing `client/src/filters/state.test.ts` |
-| `client/src/pages/explore/Explore.test.tsx` | RTL: defaults render, toggle refetches, save round-trips | `client/src/pages/sessions/Sessions.test.tsx` |
+| `client/src/pages/explore/PivotResult.tsx` | Dispatches by chart-type; renders ECharts / DataTable / scatter / distribution + drill-anywhere (slice → `/sessions?…`, scatter point → `/sessions/<id>`) | `client/src/pages/sessions/CostDistributionCard.tsx` + `EfficiencyScatterCard.tsx` |
+| `client/src/pages/explore/SavedViewsGrid.tsx` | Lists pinned Explore-origin views from `qk.views()`, click restores URL; Delete control with post-delete focus restoration (WCAG 2.4.3) | `client/src/pages/settings/SavedViewsTagsPanel.tsx` (list rendering) |
+| `client/src/pages/explore/state.ts` | Pure URL ↔ state core: `parsePivotState` / `serializePivotState` / `mergePivotState` / `buildPivotQuery` / `summarizePivotSearch` / `buildSliceDrillSearch` / `buildScatterDrillPath` | `client/src/filters/state.ts` (URL-state pattern) |
+| `client/src/pages/explore/usePivotState.ts` | Hook: URL ↔ pivot state; wires `useStableNow()` for rolling preset ranges | `client/src/filters/useFilters.ts` (URL-state hook pattern) |
+| `client/src/pages/explore/state.test.ts` | Parser + dispatcher unit tests | existing `client/src/filters/state.test.ts` |
+| `client/src/pages/explore/Explore.test.tsx` | RTL: defaults render, toggle refetches, save round-trips, result/saved-view coverage | `client/src/pages/sessions/Sessions.test.tsx` |
 | `client/src/pages/explore/PivotBuilder.stories.tsx` | Storybook: empty, with-data, loading, error, distribution-mode, scatter-mode | `client/src/charts/ChartCard.stories.tsx` |
-| `cypress/e2e/explore.cy.ts` | Smoke spec per DoD | `cypress/e2e/cache-lab.cy.ts` |
+| `cypress/e2e/explore.cy.ts` | Smoke + drill spec per DoD (Phase 4 R4 — drill lands on filtered Sessions) | `cypress/e2e/cache-lab.cy.ts` |
 | `specs/architecture/ARCH-explore-page.md` | This document | — |
 
 ### Modified files / modules
@@ -204,6 +205,10 @@ Rules:
 | `server/routes/views.ts` | `POST /api/views` reads optional `pinned` from body, passes it through to the persisted `SavedView` |
 | `client/src/api/localStore.ts` | `createView` signature: `createView(input: { name, path, search, pinned?: boolean }, signal?)` |
 | `client/src/filters/FilterBar.tsx` | `SaveViewButton` keeps existing call shape (no `pinned` arg → defaults undefined → not pinned). No behavior change. |
+| `client/src/charts/timeseries.ts` | New `"lines"` family added to `BuildTimeseriesOptions` (no `areaStyle`) so the Explore Line chart is distinct from Area (was previously rendering identically) |
+| `client/src/charts/scatterOption.ts` | Honors `hasSize` flag: scales `symbolSize` linearly across `[MIN, MAX]` bounded by the visible-point max, falls back to constant `DEFAULT_SYMBOL_SIZE` when unset |
+| `client/src/charts/units.ts` | New `MEASURE_UNIT` mapping + `unitForMeasure(measure)` helper (single source of truth for the inverse of `UNIT_MEASURES`, expanded to cover every `Measure` literal) |
+| `client/src/pages/dashboard/useStableNow.ts` | Read-only consumer (no change). `usePivotState` imports this so `range=7d` rolls forward every minute. |
 
 ### Deleted / replaced
 
@@ -219,10 +224,16 @@ Rules:
 | `server/routes/views.ts` tests | May need a new test for `pinned` round-trip; existing per-test contract literals without `pinned` are still valid (optional field). |
 | `server/local-store.ts` | Already deep-validates per-element via `isValidSavedView`; the validator widening auto-extends — no code change. |
 | `client/src/pages/Trends.tsx`, `client/src/pages/CacheLab.tsx`, `client/src/pages/sessions/Sessions.tsx` | All call `postMetrics` / `postScatterMetrics`. `MetricsQuery` shape is unchanged (Explore uses the existing discriminator union), so their `as const` literals stay valid. |
-| `client/src/charts/Chart.tsx`, `client/src/charts/timeseries.ts`, `client/src/charts/scatterOption.ts`, `client/src/charts/units.ts` | PivotResult reuses these. No changes; verify imports compile. |
+| `client/src/charts/Chart.tsx` | `onPointClick` prop was already supported — Explore reuses it for both slice-drill (ECharts bar/line click) and scatter-drill (point click). No changes; verify imports compile. |
 | `cypress/e2e/settings.cy.ts` | Saved-views smoke spec exists but doesn't pin/unpin — should keep passing. Re-run after the contract change. |
 | `client/src/api/queryKeys.ts` | Existing `qk.metrics` and `qk.views` keys cover Explore's needs; no new prefix required. WS invalidation bus continues to refresh both unchanged. |
 | `client/src/api/metrics.ts` | `postMetrics` and `postScatterMetrics` already handle all three modes. No new wrapper needed. |
+
+### Scope expansion vs. original plan
+
+| Change | Why it was added post-review |
+|---|---|
+| `SavedViewsGrid` Delete control + post-delete focus restoration | The original spec assigned saved-view management to Settings, but a Delete control here reduces round-tripping for the common case (user saves a view they don't want pinned). Focus management is required to keep the keyboard user oriented after the tile unmounts (WCAG 2.4.3). Settings remains the canonical list/rename/tag surface for *all* views. |
 
 ## Areas of Impact
 
@@ -266,7 +277,7 @@ Rules:
 | A4 | Reuse `EfficiencyScatterCard` and `CostDistributionCard` patterns (ECharts option builders, `qk.metrics`, `useFilters` for range). | Build parallel Explore-specific chart components | Visual drift risk; existing components already ship. | R4 |
 | A5 | Saved Views list on Explore surfaces pinned views; click restores URL via `navigate(`${path}${search}`)`. | Modal picker; in-place replace | Matches the mockup's third panel; URL round-trip is the canonical pattern. | R2 |
 | A6 | No new server route. | New `/api/explore` route | Memory `metrics-engine-covers-curated-pages`: Phase 4 pages reduce to `/api/metrics` queries; no new server route needed. | R5 |
-| A7 | Shim `client/src/pages/Explore.tsx` re-exports `./explore/Explore.js` (Models/Trends/CacheLab pattern). | Inline page in `Explore.tsx` | Directory layout keeps helper/panel files together; top-level shim preserves the import path in `routes.ts`. | R5, R6 |
+| A7 | Shim `client/src/pages/Explore.tsx` re-exports `./explore/Explore.js` (Models pattern). | Inline page in `Explore.tsx` | Directory layout keeps helper/panel files together; top-level shim preserves the import path in `routes.ts`. Trends and CacheLab are page shells, not shims — only Models uses the shim pattern. | R5, R6 |
 
 ## Risk & Stress-Test Scenarios
 

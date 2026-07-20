@@ -9,9 +9,9 @@ import type {
 import { DIMENSIONS, GRAINS, MEASURES } from "../../../../shared/metrics-contract.js";
 import { TOGGLE_ACTIVE_CLASS, TOGGLE_CLASS } from "../../ui/toggleStyles.js";
 import {
-  type PivotChart,
   PIVOT_CHARTS,
   PIVOT_MODES,
+  type PivotChart,
   type PivotMode,
   type PivotState,
 } from "./state.js";
@@ -156,7 +156,7 @@ export function PivotBuilder({
               onChange={(e) => onDimChange(e.target.value as Dimension)}
               className={SELECT_CLASS}
             >
-              {DIMENSIONS.filter((d) => d !== "time").map((d) => (
+              {DIMENSIONS.map((d) => (
                 <option key={d} value={d}>
                   {DIMENSION_LABEL[d]}
                 </option>

@@ -9,15 +9,15 @@ export type TimeseriesOption = ComposeOption<
 >;
 
 export interface BuildTimeseriesOptions {
-  family: "area" | "bars";
+  family: "area" | "bars" | "lines";
   unit: Unit;
   /**
    * Stacks `"bars"`-family series onto one shared stack (ECharts `stack:
    * "total"`) — the Trends stacked-weekly-bars panel's project/model
    * breakdown (ARCH-trends-calendar-budget.md A4). Ignored for the `"area"`
-   * family and for the `compareGhost` overlay, which never stacks against
-   * the primary series. Defaults to `false` so every existing bar-family
-   * call site (unstacked) is unaffected.
+   * and `"lines"` families and for the `compareGhost` overlay, which never
+   * stacks against the primary series. Defaults to `false` so every
+   * existing bar-family call site (unstacked) is unaffected.
    */
   stacked?: boolean;
 }
@@ -36,6 +36,14 @@ function toData(points: Series["points"]): [string, number | null][] {
  * still returns a valid, renderable option. Null points are passed through
  * as `null` (never coerced to 0), matching the engine's "never fabricate 0"
  * convention (server/metrics/measures.ts).
+ *
+ * Three rendering families:
+ *   • `"bars"`  — bar series (with optional `stacked` for the Trends
+ *     stacked-weekly breakdown)
+ *   • `"area"`  — line with filled `areaStyle` (the previous-period ghost
+ *     overlay rides on this same shape)
+ *   • `"lines"` — plain line without area fill (Explore page's Line chart
+ *     selection; distinct from Area per the page's five-chart contract)
  */
 export function buildTimeseriesOption(
   series: Series[],
@@ -50,6 +58,12 @@ export function buildTimeseriesOption(
         name: s.label,
         data: toData(s.points),
         ...(stacked ? { stack: "total" } : {}),
+      });
+    } else if (family === "lines") {
+      seriesOption.push({
+        type: "line",
+        name: s.label,
+        data: toData(s.points),
       });
     } else {
       seriesOption.push({

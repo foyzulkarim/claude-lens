@@ -71,11 +71,11 @@ export function Explore() {
           type="button"
           onClick={handleSave}
           disabled={saveMutation.isPending}
-          aria-label="Save this view (pinned to dashboard)"
+          aria-label="Save view (pins to dashboard)"
           data-testid="explore-save-view"
           className={TOGGLE_CLASS}
         >
-          ★ Save view
+          <span aria-hidden="true">★</span> Save view
         </button>
       </header>
 

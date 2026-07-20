@@ -3,13 +3,14 @@ import { useLocation, useSearch } from "wouter";
 import type { MetricsQuery } from "../../../../shared/metrics-contract.js";
 import { filtersToQuery } from "../../filters/state.js";
 import { useFilters } from "../../filters/useFilters.js";
+import { useStableNow } from "../dashboard/useStableNow.js";
 import {
   buildPivotQuery,
   mergePivotState,
-  parsePivotState,
   type PivotChart,
   type PivotMode,
   type PivotState,
+  parsePivotState,
 } from "./state.js";
 
 /**
@@ -25,6 +26,12 @@ import {
  * `query` is the pre-built `MetricsQuery` (the discriminated union) ready
  * to pass to `qk.metrics(query)` + `postMetrics` / `postScatterMetrics`
  * depending on `state.chart`.
+ *
+ * `now` comes from `useStableNow()` so a `range=7d` preset keeps rolling
+ * forward every minute (mirrors CacheLab, Models, Sessions, dashboard's
+ * `StatCardsRow`). A plain `new Date()` inside the `useMemo` would freeze
+ * the range at mount, turning the live "last 7 days" affordance into a
+ * load-time snapshot.
  */
 export interface UsePivotStateResult {
   state: PivotState;
@@ -45,12 +52,13 @@ export function usePivotState(): UsePivotStateResult {
   const search = useSearch();
   const [, navigate] = useLocation();
   const { filters } = useFilters();
+  const now = useStableNow();
 
   const state = useMemo(() => parsePivotState(search), [search]);
 
   const query = useMemo(
-    () => buildPivotQuery(state, filtersToQuery(filters, new Date())),
-    [state, filters],
+    () => buildPivotQuery(state, filtersToQuery(filters, now)),
+    [state, filters, now],
   );
 
   const commit = useCallback(
