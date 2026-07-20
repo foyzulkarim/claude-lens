@@ -26,6 +26,15 @@ vi.mock("../../api/config.js", () => ({
   getConfig: () => getConfigMock(),
 }));
 
+// AnomalyFeed's gate-failure feed (#P4-12 / review #13/#29): the new
+// `gateFailuresQuery` would otherwise fail to resolve and trip the
+// loading-state branch the test wasn't expecting. Mirror the same
+// settled-empty default the AnomalyFeed.test.tsx uses.
+const fetchWorstGateFailuresMock = vi.fn<() => Promise<unknown[]>>();
+vi.mock("../../api/gate-failures.js", () => ({
+  fetchWorstGateFailures: () => fetchWorstGateFailuresMock(),
+}));
+
 // ChartCard renders real ECharts via <Chart>, which needs a ResizeObserver
 // and real layout jsdom doesn't provide — stub it out like ChartCard.test.tsx
 // does, so these tests exercise ChartCard's query wiring, not the canvas.
@@ -86,6 +95,8 @@ beforeEach(() => {
   );
   getConfigMock.mockReset();
   getConfigMock.mockResolvedValue({ budget: null });
+  fetchWorstGateFailuresMock.mockReset();
+  fetchWorstGateFailuresMock.mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -145,9 +156,13 @@ describe("dashboard cards — stable default time (review #4)", () => {
 
   it("AnomalyFeed fires exactly one sessions query + one config query after first paint", async () => {
     const queryClient = renderCard(<AnomalyFeed />);
-    await screen.findByText("Gate failure and capture-gap data not available yet.");
+    await screen.findByText("No anomalies or gate failures detected.");
     expect(listSessionsMock).toHaveBeenCalledTimes(1);
-    expect(queryClient.getQueryCache().getAll()).toHaveLength(2); // sessions + config (#P4-15)
+    // sessions + config (#P4-15) + gate-failures (#P4-12) — the third query
+    // is unmocked here (`listSessionsPage` isn't stubbed in this file) so it
+    // rejects, but AnomalyFeed degrades gracefully and still renders the
+    // empty state.
+    expect(queryClient.getQueryCache().getAll()).toHaveLength(3);
   });
 
   it("ChartCard fires exactly one query after first paint", async () => {

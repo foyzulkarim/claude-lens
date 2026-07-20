@@ -88,3 +88,50 @@ export interface GateReport {
   /** Echoed so the UI can label "evaluated with defaults" vs custom values. */
   thresholdsUsed: GateThresholds;
 }
+
+/**
+ * Compact per-session summary — the shape `server/cache/gates-cache.ts`
+ * serves to consumers that don't need evidence (Sessions list rows,
+ * Dashboard gate-failure feed, `MetricsQuery.gatePassRate`). Renamed or
+ * reshaped only as a wire break for the cache API surface (ARCH A9).
+ *
+ * Re-exported here so most call sites keep a single `gates-contract`
+ * import. The authoritative type lives in `gates-cache-contract.ts`.
+ */
+export type { GateReportSummary } from "./gates-cache-contract.js";
+
+/**
+ * Roll up six check statuses (V1, V2, P3, C3, K2, E1/E2 combined) into
+ * the single session-level `GateStatus` per gates.md §"Report Card
+ * scoring": any fail → fail; else any warn → warn; else pass. Used by
+ * `gatesCache` to derive `GateReportSummary.status` from `GateReport`
+ * without re-running the engine. Pure for testability.
+ */
+export function gateStatusFromChecks(checks: readonly GateStatus[]): GateStatus {
+  if (checks.some((s) => s === "fail")) return "fail";
+  if (checks.some((s) => s === "warn")) return "warn";
+  return "pass";
+}
+
+/**
+ * Bucket a `score` (a fraction in [0,1]) into the five-letter
+ * `ScoreLetter` per gates.md §"Report Card scoring":
+ *   A ≥ 0.9, B ≥ 0.75, C ≥ 0.5, D ≥ 0.25, F otherwise.
+ *
+ * Single source of truth (#P4-12 review finding #9): previously
+ * duplicated in `client/src/pages/sessions/SessionBrowser.tsx` and
+ * `client/src/pages/dashboard/AnomalyFeed.tsx`. A future threshold
+ * shift in `gates.md` would otherwise have to update four files in
+ * lockstep. The engine already emits `scoreLetter` on `GateReport` /
+ * `GateReportSummary`, so the client ideally reads that directly —
+ * this helper exists for the few callers that bucket a numeric score
+ * outside the engine's view (e.g. precomputed `gateScore` summaries
+ * when the engine didn't run).
+ */
+export function letterFromScore(score: number): ScoreLetter {
+  if (score >= 0.9) return "A";
+  if (score >= 0.75) return "B";
+  if (score >= 0.5) return "C";
+  if (score >= 0.25) return "D";
+  return "F";
+}

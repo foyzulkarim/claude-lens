@@ -1,5 +1,5 @@
 import type { FilterState } from "../../filters/state.js";
-import { TOGGLE_CLASS } from "../../ui/toggleStyles.js";
+import { TOGGLE_ACTIVE_CLASS, TOGGLE_CLASS } from "../../ui/toggleStyles.js";
 import type { SessionsPageState } from "./state.js";
 
 export interface SessionsFiltersProps {
@@ -30,13 +30,76 @@ export function SessionsFilters({ state, onStateChange }: SessionsFiltersProps) 
       <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
         <CostBoundsControl state={state} onChange={onStateChange} />
         <EntrypointControl state={state} onChange={onStateChange} />
+        <GateStatusControl state={state} onChange={onStateChange} />
         <DrilldownControl state={state} onChange={onStateChange} />
       </div>
       <p className="mt-3 text-xs text-slate-500 dark:text-[#8A96A5]">
-        Gate status filter will appear when Report Card lands (#P4-12). Tag filtering is in the Tags
-        section below.
+        Tag filtering is in the Tags section below.
       </p>
     </section>
+  );
+}
+
+function GateStatusControl({ state, onChange }: SessionsFiltersChildProps) {
+  // pass/warn/fail toggle — independent tri-state (multi-select). Maps to
+  // the server-validated `gateStatus` page param. Mutually exclusive with
+  // "Any" (clears the filter).
+  const selected = state.gateStatus ?? [];
+  function toggle(value: "pass" | "warn" | "fail") {
+    if (selected.includes(value)) {
+      const next = selected.filter((v) => v !== value);
+      onChange({ gateStatus: next.length > 0 ? next : undefined });
+    } else {
+      onChange({ gateStatus: [...selected, value] });
+    }
+  }
+  // `#P4-12 review finding #22`: previously the only "selected" signal
+  // was `aria-pressed`, with no visible difference. We now concat
+  // `TOGGLE_ACTIVE_CLASS` when the value is in `selected` so a
+  // high-contrast active state matches the ViewToggle sibling. The
+  // `fieldset`/`legend` pairing replaces the `role="group"` we used
+  // pre-fix (lint flagged it as redundant with a semantic element).
+  return (
+    <fieldset aria-label="Gate status" className="flex flex-col gap-1">
+      <legend className="text-xs uppercase tracking-wider text-slate-500 dark:text-[#8A96A5]">
+        Gate status
+      </legend>
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => onChange({ gateStatus: undefined })}
+          aria-pressed={selected.length === 0}
+          aria-label="Any gate status"
+          className={`${TOGGLE_CLASS} ${selected.length === 0 ? TOGGLE_ACTIVE_CLASS : ""}`}
+        >
+          Any
+        </button>
+        <button
+          type="button"
+          onClick={() => toggle("pass")}
+          aria-pressed={selected.includes("pass")}
+          className={`${TOGGLE_CLASS} ${selected.includes("pass") ? TOGGLE_ACTIVE_CLASS : ""}`}
+        >
+          Pass
+        </button>
+        <button
+          type="button"
+          onClick={() => toggle("warn")}
+          aria-pressed={selected.includes("warn")}
+          className={`${TOGGLE_CLASS} ${selected.includes("warn") ? TOGGLE_ACTIVE_CLASS : ""}`}
+        >
+          Warn
+        </button>
+        <button
+          type="button"
+          onClick={() => toggle("fail")}
+          aria-pressed={selected.includes("fail")}
+          className={`${TOGGLE_CLASS} ${selected.includes("fail") ? TOGGLE_ACTIVE_CLASS : ""}`}
+        >
+          Fail
+        </button>
+      </div>
+    </fieldset>
   );
 }
 
@@ -137,6 +200,7 @@ function DrilldownControl({ state, onChange }: SessionsFiltersChildProps) {
           type="button"
           onClick={() => onChange({ hasDrilldown: undefined })}
           aria-pressed={value === undefined}
+          aria-label="Any drilldown status"
           className={TOGGLE_CLASS}
         >
           Any

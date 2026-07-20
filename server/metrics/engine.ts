@@ -8,6 +8,7 @@ import type {
   SeriesMetricsQuery,
   SeriesPoint,
 } from "../../shared/metrics-contract.js";
+import type { GateSummaryLite } from "../../shared/gates-cache-contract.js";
 import type { ApiCall, Session, Turn } from "../../shared/types.js";
 import { groupLogicalTurns, type LogicalTurn } from "../store/logical-turns.js";
 import {
@@ -31,6 +32,15 @@ export interface MetricsInput {
   turns: Turn[];
   sessions: Session[];
   pricing: PricingTable;
+  /**
+   * Per-session gate summaries (`sessionId → { score, status }`) for the
+   * `gatePassRate` measure (#P4-12). The route layer resolves this map
+   * from `gatesCache.getSummariesBatch(...)` once per request, so the
+   * engine stays Store-independent. Default empty Map (engine callers
+   * without a cache see `gatePassRate` resolve to `null`) keeps the
+   * unit tests that don't exercise the measure unchanged.
+   */
+  gateSummaries?: Map<string, GateSummaryLite>;
 }
 
 interface GroupKeyEntry {
@@ -316,7 +326,7 @@ function computeSeriesForRange(
           rangeToMs,
           hostBySessionId,
         );
-        const value = computeMeasure(measure, scope, input.pricing);
+        const value = computeMeasure(measure, scope, input.pricing, input.gateSummaries);
         // `t` must be a machine-readable ISO-8601 instant, not a display
         // label: ECharts' `xAxis: { type: "time" }` parser requires an
         // ISO-shaped string (or a Date/number) and silently drops any point
@@ -488,7 +498,9 @@ function computeDistributionSeries(input: MetricsInput, query: DistributionMetri
         entityScopes = entityScopesFor(query.distributionEntity, scope);
       }
       const values = entityScopes
-        .map((entityScope) => computeMeasure(measure, entityScope, input.pricing))
+        .map((entityScope) =>
+          computeMeasure(measure, entityScope, input.pricing, input.gateSummaries),
+        )
         .filter((value): value is number => value !== null);
       series.push({
         measure,

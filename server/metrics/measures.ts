@@ -1,4 +1,5 @@
 import type { Measure } from "../../shared/metrics-contract.js";
+import type { GateSummaryLite } from "../../shared/gates-cache-contract.js";
 import {
   DEFAULT_MODEL_KEYS,
   type ModelRate,
@@ -112,6 +113,14 @@ export function computeMeasure(
   measure: Measure,
   scope: MeasureScope,
   pricing: PricingTable,
+  /**
+   * Per-session `gateSummaries` for the `gatePassRate` measure (#P4-12,
+   * ARCH-p4-12 §"Metrics engine `gatePassRate` measure de-null").
+   * Sessions present in `scope.sessions` but absent from this map
+   * contribute 0 (no gate data) — `null` is only returned when *no*
+   * session in `scope.sessions` has a summary at all.
+   */
+  gateSummaries: Map<string, GateSummaryLite> = new Map(),
 ): number | null {
   switch (measure) {
     case "costComputed":
@@ -201,7 +210,22 @@ export function computeMeasure(
     case "apiMs":
     case "linesAdded":
     case "linesRemoved":
-    case "gatePassRate":
       return null;
+    case "gatePassRate": {
+      // ARCH-p4-12 §"Metrics engine `gatePassRate` measure de-null":
+      // bucket value = mean(score) across sessions in `scope.sessions`
+      // that have a cached summary. `null` when no sessions in scope have
+      // a summary (no data → no claim). Sessions without a summary simply
+      // don't contribute — never fabricate a 0.
+      let total = 0;
+      let n = 0;
+      for (const session of scope.sessions) {
+        const summary = gateSummaries.get(session.sessionId);
+        if (!summary) continue;
+        total += summary.score;
+        n += 1;
+      }
+      return n > 0 ? total / n : null;
+    }
   }
 }

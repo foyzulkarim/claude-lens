@@ -3,6 +3,7 @@ import { type ColumnDef, createColumnHelper } from "@tanstack/react-table";
 import clsx from "clsx";
 import type { MouseEvent } from "react";
 import { useLocation } from "wouter";
+import { letterFromScore } from "../../../../shared/gates-contract.js";
 import type {
   SessionListParams,
   SessionPageItem,
@@ -15,10 +16,14 @@ import { listSessionsPage } from "../../api/sessions.js";
 import { formatDuration, formatUnitValue } from "../../charts/units.js";
 import { DataTable } from "../../components/DataTable.js";
 import { EmptyState } from "../../components/EmptyState.js";
+import { GateStatusBadge } from "../../components/GateStatusBadge.js";
 import { useFilters } from "../../filters/useFilters.js";
 import { TOGGLE_ACTIVE_CLASS, TOGGLE_CLASS } from "../../ui/toggleStyles.js";
 import { useStableNow } from "../dashboard/useStableNow.js";
 import { buildListQuery, type SessionsPageState } from "./state.js";
+
+// `letterFromScore` is exported by `gates-contract.ts` (#P4-12 review
+// finding #9) — we used to keep a local copy here.
 
 export interface SessionBrowserProps {
   state: SessionsPageState;
@@ -121,6 +126,19 @@ const pageColumns: ColumnDef<SessionPageItem, any>[] = [
     header: "Cache %",
     meta: { align: "right", mono: true },
     cell: (info) => `${Math.round(info.getValue() * 100)}%`,
+  }),
+  helper.accessor("gateScore", {
+    // #P4-12 Report Card letter column. Sort key is already declared in
+    // ALLOWED_PAGE_SORT; this column is purely a render path. Shows
+    // "—" when the gate cache hasn't populated the row yet (cold
+    // cache + fresh ingest, narrow filter, etc.).
+    header: "Report Card",
+    meta: { align: "right", mono: true },
+    cell: (info) => {
+      const score = info.getValue();
+      if (score === undefined || score === null) return "—";
+      return <GateStatusBadge letter={letterFromScore(score)} />;
+    },
   }),
   helper.accessor("hasDrilldown", {
     header: "Drilldown",

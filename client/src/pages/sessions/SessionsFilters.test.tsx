@@ -22,9 +22,14 @@ describe("SessionsFilters — page-only controls", () => {
     expect(screen.getByLabelText(/min cost/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/max cost/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/entrypoint/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /any/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Any drilldown status" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^yes$/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^no$/i })).toBeInTheDocument();
+    // Gate status filter (#P4-12).
+    expect(screen.getByRole("button", { name: "Any gate status" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Pass" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Warn" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Fail" })).toBeInTheDocument();
   });
 
   it("preloads the active filter values", () => {

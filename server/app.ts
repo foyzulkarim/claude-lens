@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 import fastifyStatic from "@fastify/static";
 import fastifyWebsocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from "fastify";
+import { createGatesCache, type GatesCache } from "./cache/gates-cache.js";
+import { getGateThresholds } from "./gates/thresholds.js";
 import { registerCacheLabRoute } from "./routes/cache-lab.js";
 import { registerConfigRoute } from "./routes/config.js";
 import { registerExportRoute } from "./routes/export.js";
@@ -16,6 +18,7 @@ import { registerTagsRoute } from "./routes/tags.js";
 import { registerTurnInspectorRoute } from "./routes/turn-inspector.js";
 import { registerViewsRoute } from "./routes/views.js";
 import type { RuntimeMetadata } from "./runtime.js";
+import { readConfig } from "./settings.js";
 import type { Store } from "./store/store.js";
 import { type Broadcaster, createBroadcaster } from "./ws/broadcaster.js";
 
@@ -88,6 +91,14 @@ export interface BuildAppOptions {
    * local-store; production (`cli.ts`) never sets it.
    */
   localStorePath?: string;
+  /**
+   * Override the gates cache (ARCH-p4-12 §API Contracts; #P4-11/#P4-12).
+   * Tests pass a cache wired to a deterministic threshold resolver and
+   * `userHomeDir` so the engine never reads the real user's home
+   * config; production (`cli.ts`) never sets it — `buildApp` constructs
+   * the default and subscribes it to the broadcaster.
+   */
+  gatesCache?: GatesCache;
 }
 
 export function buildApp({
@@ -98,6 +109,7 @@ export function buildApp({
   configPath,
   userHomeDir,
   localStorePath,
+  gatesCache,
 }: BuildAppOptions): FastifyInstance {
   const app = Fastify({
     logger: logger ?? {
@@ -108,6 +120,41 @@ export function buildApp({
     },
   });
 
+  // ARCH-p4-12 §Cross-Cutting: the gates cache is the only per-session
+  // memo between the engine and the Sessions / Dashboard / Trends
+  // consumers. Production wires it through the broadcaster so the same
+  // WS-debounced `session-updated` bus that the sockets read evicts
+  // the cache; tests pass an explicit `gatesCache` to avoid filesystem
+  // IO on the threshold resolver.
+  const activeCache: GatesCache =
+    gatesCache ??
+    createGatesCache({
+      store,
+      resolveThresholds: async () => {
+        // Re-read the config each miss so a Settings edit is observed
+        // without a restart — matches `routes/gates.ts:67-68`. The
+        // `readConfig` call is wrapped to never throw (it catches
+        // internally), so this resolver never poisons the cache.
+        return getGateThresholds(await readConfig(configPath));
+      },
+      ...(userHomeDir !== undefined ? { userHomeDir } : {}),
+    });
+  // Capture the unsubscribe function returned by `subscribe` —
+  // (`#P4-12 review finding #15`): a future rollback path can call it
+  // to detach the cache invalidator without rebroadcasting. The
+  // broadcaster's in-process subscriber Set is the source of truth
+  // for active subscribers; holding the unsubscribe in a module-scope
+  // const keeps the rollback seam available without polluting the
+  // production hot path.
+  const unsubscribeCacheInvalidator = broadcaster.subscribe((message) => {
+    if (message.type === "session-updated") {
+      activeCache.invalidate(message.sessionId);
+    }
+  });
+  // Reference the unsubscribe function so an unused-var lint doesn't
+  // discard it; this is the documented rollback seam.
+  void unsubscribeCacheInvalidator;
+
   app.register(fastifyWebsocket);
 
   if (hasStaticAssets) {
@@ -116,13 +163,20 @@ export function buildApp({
 
   app.get("/api/ping", async () => ({ ok: true }));
 
-  registerMetricsRoute(app, store, metadata?.pricing ? { pricing: metadata.pricing } : undefined);
+  registerMetricsRoute(
+    app,
+    store,
+    metadata?.pricing
+      ? { pricing: metadata.pricing, gatesCache: activeCache }
+      : { gatesCache: activeCache },
+  );
 
   registerSearchRoute(app, store);
 
   registerSessionsRoute(app, store, {
     ...(metadata ? { pricing: metadata.pricing, pricer: metadata.pricer } : undefined),
     localStorePath,
+    gatesCache: activeCache,
   });
 
   registerCacheLabRoute(app, store, metadata?.pricing ? { pricing: metadata.pricing } : undefined);
@@ -164,6 +218,14 @@ export function buildApp({
   // try/catch around `evaluateSessionGates`; this top-level handler is
   // the catch-all for anything that escapes a route's local handling
   // (defense-in-depth, review H2).
+  //
+  // `#P4-12 review finding #14`: shape consistency across handlers.
+  // The gates route returns `{ error, cause, sessionId }` because the
+  // route knows the session; the top-level handler has no session
+  // context (the request may not be session-scoped), so it returns
+  // `{ error, cause }` only. Documented here so the asymmetry is
+  // deliberate — clients decoding both shapes should treat
+  // `sessionId` as optional.
   app.setErrorHandler((err, _request, reply) => {
     app.log.error({ err }, "unhandled route error");
     reply.code(500).send({

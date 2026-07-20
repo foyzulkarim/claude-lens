@@ -89,11 +89,16 @@ describe("session detail smoke", () => {
       cy.contains("Bash").should("exist");
     });
 
-    // No Report Card section or claim anywhere on the page (#P4-5 scope:
-    // Report Card lands in #P4-12).
-    cy.get('[data-testid="session-detail-view"]')
-      .invoke("text")
-      .should("not.match", /report card/i);
+    // #P4-12: the Report Card section now lands on Session Detail
+    // (lazy-mounted, so the placeholder renders until the section
+    // scrolls into view; either the placeholder or the rendered card
+    // proves the wiring is present). Pre-#P4-12 this assertion was
+    // a "no report card" check that was correct at the time.
+    cy.get('[data-testid="session-detail-view"]').within(() => {
+      cy.get('[data-testid="report-card-placeholder"], [data-testid="report-card"]').should(
+        "exist",
+      );
+    });
   });
 
   it("drills from a turn row to the canonical one-based Turn Inspector address", () => {

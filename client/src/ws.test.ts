@@ -51,7 +51,7 @@ describe("invalidateForMessage", () => {
     expect(spy).toHaveBeenCalledWith({ queryKey: ["sessions"] });
   });
 
-  it("invalidates metrics, the session prefix, the turn-inspector prefix, AND the sessions prefix on session-updated", () => {
+  it("invalidates metrics, the session prefix, the turn-inspector prefix, the sessions prefix, AND the gates prefix on session-updated", () => {
     const queryClient = new QueryClient();
     const spy = vi.spyOn(queryClient, "invalidateQueries");
     invalidateForMessage(queryClient, { type: "session-updated", sessionId: "s1" });
@@ -59,7 +59,22 @@ describe("invalidateForMessage", () => {
     expect(spy).toHaveBeenNthCalledWith(2, { queryKey: ["session", "s1"] });
     expect(spy).toHaveBeenNthCalledWith(3, { queryKey: ["turn-inspector", "s1"] });
     expect(spy).toHaveBeenNthCalledWith(4, { queryKey: ["sessions"] });
-    expect(spy).toHaveBeenCalledTimes(4);
+    // Gates prefix invalidation — Report Card + Dashboard failure feed
+    // (PR title's "live gate feeds" claim is broken without this).
+    expect(spy).toHaveBeenNthCalledWith(5, { queryKey: ["gates"] });
+    expect(spy).toHaveBeenCalledTimes(5);
+  });
+
+  it("invalidates the gates prefix on session-updated so Report Card + failure feed refetch", () => {
+    // Pins the central claim of the PR title (#P4-12): a transcript append
+    // for ANY session must invalidate the gates prefix so both the
+    // per-session Report Card (`qk.gates(id)`) and the Dashboard failure
+    // feed (`qk.gateFailures(...)`) refetch within their staleTime window
+    // — not after it.
+    const queryClient = new QueryClient();
+    const spy = vi.spyOn(queryClient, "invalidateQueries");
+    invalidateForMessage(queryClient, { type: "session-updated", sessionId: "s1" });
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["gates"] });
   });
 
   it("invalidates only the matching detail key when two session IDs are mounted", () => {
@@ -209,8 +224,13 @@ describe("connectWs", () => {
     expect(spy).toHaveBeenCalledWith({ queryKey: ["turn-inspector", "s1"] });
     expect(spy).toHaveBeenCalledWith({ queryKey: ["turn-inspector", "s2"] });
     expect(spy).toHaveBeenCalledWith({ queryKey: ["turn-inspector", "s3"] });
-    // 1 metrics + 1 sessions + 3 session detail + 3 turn-inspector = 8.
-    expect(spy).toHaveBeenCalledTimes(8);
+    // The gates prefix collapses across sessions (one shared invalidation).
+    const gatesCalls = spy.mock.calls.filter(
+      ([arg]) => JSON.stringify(arg) === JSON.stringify({ queryKey: ["gates"] }),
+    );
+    expect(gatesCalls).toHaveLength(1);
+    // 1 metrics + 1 sessions + 1 gates + 3 session detail + 3 turn-inspector = 9.
+    expect(spy).toHaveBeenCalledTimes(9);
   });
 
   it("includes a message that arrives mid-window (after the timer is scheduled but before it fires)", () => {
@@ -259,7 +279,8 @@ describe("connectWs", () => {
     expect(spy).toHaveBeenCalledWith({ queryKey: ["sessions"] });
     expect(spy).toHaveBeenCalledWith({ queryKey: ["session", "s1"] });
     expect(spy).toHaveBeenCalledWith({ queryKey: ["turn-inspector", "s1"] });
-    expect(spy).toHaveBeenCalledTimes(4);
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["gates"] });
+    expect(spy).toHaveBeenCalledTimes(5);
   });
 
   it("does not apply pending batched invalidations after dispose", () => {

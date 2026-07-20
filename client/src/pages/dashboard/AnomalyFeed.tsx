@@ -2,8 +2,14 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { Link } from "wouter";
 import { detectTurnCostAnomalies, type TurnCostSample } from "../../../../shared/anomaly.js";
-import type { SessionListItem, SessionListParams } from "../../../../shared/sessions-contract.js";
+import { letterFromScore, type ScoreLetter } from "../../../../shared/gates-contract.js";
+import type {
+  SessionListItem,
+  SessionListParams,
+  SessionPageItem,
+} from "../../../../shared/sessions-contract.js";
 import { getConfig } from "../../api/config.js";
+import { fetchWorstGateFailures } from "../../api/gate-failures.js";
 import { qk } from "../../api/queryKeys.js";
 import { listSessions } from "../../api/sessions.js";
 import { formatUnitValue } from "../../charts/units.js";
@@ -87,6 +93,48 @@ export function anomalyItemsFromSamples(
     summary: `Turn cost ${formatUnitValue(sample.costComputed, "$")} is ${(sample.costComputed / baseline).toFixed(1)}x the session median (${formatUnitValue(baseline, "$")})`,
     drill: `/sessions/${sample.sessionId}`,
   }));
+}
+
+const LETTER_SEVERITY: Record<ScoreLetter, AnomalySeverity> = {
+  A: "low",
+  B: "low",
+  C: "medium",
+  D: "high",
+  F: "high",
+};
+
+// `letterFromScore` lives in `gates-contract.ts` (#P4-12 review
+// finding #9) — we used to keep a local copy here.
+
+/**
+ * Convert worst-scoring Sessions page rows into `gateFailure` feed items
+ * (ARCH-p4-12 §High-Level Structure; gated on the live `gateFailure`
+ * data the Dashboard feed exposes for the first time in #P4-12).
+ * Pure for testability — the fetch lives in the component.
+ */
+export function gateFailureItemsFromSessions(
+  sessions: readonly SessionPageItem[],
+  limit = MAX_ANOMALY_ITEMS,
+): AnomalyFeedItem[] {
+  const out: AnomalyFeedItem[] = [];
+  for (const s of sessions) {
+    if (s.gateScore === undefined || s.gateStatus === undefined) continue;
+    const letter = letterFromScore(s.gateScore);
+    const severity = LETTER_SEVERITY[letter];
+    // Skip pure-pass rows; mirror the engine's own rollup semantics
+    // (pass/warn/fail across six checks). The wire surface only carries
+    // the rolled-up status, so the data source is already filtered.
+    if (s.gateStatus === "pass") continue;
+    out.push({
+      kind: "gateFailure",
+      sessionId: s.sessionId,
+      severity,
+      summary: `Session scored ${letter} (${s.gateScore.toFixed(2)}) — ${s.gateStatus}`,
+      drill: `/sessions/${s.sessionId}#report-card`,
+    });
+    if (out.length >= limit) break;
+  }
+  return out;
 }
 
 export interface AnomalyFeedProps {
@@ -190,16 +238,67 @@ export function AnomalyFeed({ items, now: injectedNow }: AnomalyFeedProps) {
     enabled: items === undefined,
   });
 
-  const detectedItems = useMemo<AnomalyFeedItem[]>(() => {
+  // Live gate-failure feed (#P4-12). Reuses the Sessions list wire shape
+  // with `sort=gateScore&order=asc&limit=5`; the row projector (T4)
+  // populates `gateScore` from the gate cache. Same filter scope as the
+  // anomaly detector so the two feed lines stay aligned.
+  const gateParams = useMemo(
+    () => ({
+      from: range.from,
+      to: range.to,
+      project: filters.project,
+      model: filters.model,
+      branch: filters.branch,
+      host: filters.host,
+    }),
+    [range.from, range.to, filters.project, filters.model, filters.branch, filters.host],
+  );
+  const gateFailuresQuery = useQuery({
+    queryKey: qk.gateFailures(gateParams),
+    queryFn: ({ signal }) => fetchWorstGateFailures(gateParams, signal),
+    enabled: items === undefined,
+    staleTime: 60_000,
+  });
+
+  // Compute anomaly items and gate-failure items INDEPENDENTLY
+  // (#P4-12 review finding #28): the previous shape short-circuited
+  // both lists behind `if (!sessionsQuery.data) return [];`, which
+  // blocked `gateItems` from rendering on the slower `gateFailuresQuery`
+  // by coupling it to the slower `sessionsQuery`. Splitting the
+  // computations lets the gate-failure list show as soon as the gate
+  // endpoint resolves, and lets the anomaly list show as soon as the
+  // session endpoint resolves.
+  const anomalyItems = useMemo<AnomalyFeedItem[]>(() => {
     if (items !== undefined) return items;
     if (!sessionsQuery.data) return [];
     const samples = turnSamplesFromSessions(sessionsQuery.data.items);
     return anomalyItemsFromSamples(samples, undefined, configQuery.data?.anomalyFactor);
   }, [items, sessionsQuery.data, configQuery.data?.anomalyFactor]);
 
-  const showGateStub = items === undefined;
-  const isLoading = items === undefined && sessionsQuery.isPending;
-  const isError = items === undefined && sessionsQuery.isError;
+  const gateItems = useMemo<AnomalyFeedItem[]>(() => {
+    if (items !== undefined) return [];
+    if (!gateFailuresQuery.data) return [];
+    return gateFailureItemsFromSessions(gateFailuresQuery.data);
+  }, [items, gateFailuresQuery.data]);
+
+  const detectedItems = useMemo<AnomalyFeedItem[]>(
+    () => [...anomalyItems, ...gateItems],
+    [anomalyItems, gateItems],
+  );
+
+  // Surface errors from BOTH queries (#P4-12 review findings #13/#29):
+  // the pre-fix shape only checked `sessionsQuery.isError`, so a failed
+  // gate fetch was silently swallowed. Show whichever fired first.
+  // Use `useQuery`'s `isError` (a real boolean) rather than `error !==
+  // undefined` — TanStack Query's `error` is `null` on success, and
+  // `null !== undefined` would otherwise trip `isError` even on a
+  // resolved query.
+  const sessionsError = items === undefined && sessionsQuery.isError ? sessionsQuery.error : null;
+  const gateError =
+    items === undefined && gateFailuresQuery.isError ? gateFailuresQuery.error : null;
+  const errorMessage = sessionsError?.message ?? gateError?.message ?? "";
+  const isLoading = items === undefined && (sessionsQuery.isPending || gateFailuresQuery.isPending);
+  const isError = sessionsError !== null || gateError !== null;
 
   return (
     <div
@@ -213,9 +312,9 @@ export function AnomalyFeed({ items, now: injectedNow }: AnomalyFeedProps) {
           Loading…
         </p>
       )}
-      {isError && (
+      {isError && errorMessage && (
         <p role="alert" className="mt-3 text-sm text-[#B23A3A] dark:text-[#E05252]">
-          {sessionsQuery.error.message}
+          {errorMessage}
         </p>
       )}
 
@@ -237,16 +336,13 @@ export function AnomalyFeed({ items, now: injectedNow }: AnomalyFeedProps) {
             </ul>
           )}
 
-          {showGateStub && (
-            <p
-              role={detectedItems.length === 0 ? "status" : undefined}
-              className="mt-3 text-sm text-slate-500 dark:text-[#8B98A9]"
-            >
-              Gate failure and capture-gap data not available yet.
+          {items === undefined && detectedItems.length === 0 && (
+            <p role="status" className="mt-3 text-sm text-slate-500 dark:text-[#8B98A9]">
+              No anomalies or gate failures detected.
             </p>
           )}
 
-          {!showGateStub && detectedItems.length === 0 && (
+          {items !== undefined && detectedItems.length === 0 && (
             <p role="status" className="mt-3 text-sm text-slate-500 dark:text-[#8B98A9]">
               No anomalies detected.
             </p>

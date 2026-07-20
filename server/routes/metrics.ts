@@ -1,4 +1,7 @@
 import type { FastifyInstance } from "fastify";
+import type { Session } from "../../shared/types.js";
+import type { SessionPopulationCriteria } from "../../shared/sessions-contract.js";
+import type { GateSummaryLite } from "../../shared/gates-cache-contract.js";
 import {
   DIMENSIONS,
   type Dimension,
@@ -9,7 +12,6 @@ import {
   type ScatterMeasure,
   type ScatterMetricsQuery,
 } from "../../shared/metrics-contract.js";
-import type { SessionPopulationCriteria } from "../../shared/sessions-contract.js";
 import { metrics } from "../metrics/engine.js";
 import { DEFAULT_PRICING_TABLE, type PricingTable } from "../metrics/measures.js";
 import { metricsScatter } from "../metrics/scatter.js";
@@ -30,6 +32,14 @@ export interface RegisterMetricsRouteOptions {
    * tests), falls back to `DEFAULT_PRICING_TABLE`.
    */
   pricing?: PricingTable;
+  /**
+   * Per-session gate summary cache (ARCH-p4-12). When provided, the
+   * `gatePassRate` measure reads from this cache (one batch lookup per
+   * request); when omitted, every bucket resolves to `null` — the
+   * established unavailable-seam behavior. Production always passes
+   * the cache; tests may omit it for unit-level isolation.
+   */
+  gatesCache?: import("../cache/gates-cache.js").GatesCache;
 }
 
 const MEASURE_SET = new Set<Measure>(MEASURES);
@@ -277,6 +287,12 @@ export function registerMetricsRoute(
   // used to derive `costComputed`, exactly the regression T5 is here to
   // prevent.
   const pricing = options.pricing ?? DEFAULT_PRICING_TABLE;
+  // ARCH-p4-12 §Cross-Cutting: the per-session gate summaries map is
+  // resolved once per request from the cache and passed into the metrics
+  // engine for the `gatePassRate` measure. Optional — when omitted, the
+  // engine treats every bucket as "no data" and returns null for that
+  // measure (the established unavailable-seam behavior).
+  const gatesCache = options.gatesCache;
 
   app.post("/api/metrics", async (request, reply) => {
     const parsed = parseMetricsQuery(request.body);
@@ -285,11 +301,27 @@ export function registerMetricsRoute(
       return { error: parsed };
     }
 
+    const sessions = store.listSessions();
+    // Only resolve gate summaries when the query asks for `gatePassRate`
+    // (#P4-12 review finding #6): on every non-gate query this would
+    // otherwise evaluate summaries across the entire fleet, paying the
+    // cold-cache miss for sessions that contribute nothing to the answer.
+    // We additionally scope the resolution to in-range, filter-matching
+    // sessions — the engine re-filters per-bucket inside `scopeFor`, but
+    // narrowing the *upfront* batch from N sessions to N' ≈ in-scope
+    // sessions removes the O(N) fleet-wide cost entirely.
+    const needsGateSummaries = parsed.measures.includes("gatePassRate");
+    const gateSummaries: Map<string, GateSummaryLite> =
+      gatesCache && needsGateSummaries
+        ? await collectGateSummaries(gatesCache, sessions, parsed)
+        : new Map();
+
     const input = {
       calls: store.listCalls(),
       turns: store.listTurns(),
-      sessions: store.listSessions(),
+      sessions,
       pricing,
+      gateSummaries,
     };
 
     // Scatter returns its own discriminated response (`ScatterMetricsResult`);
@@ -300,4 +332,87 @@ export function registerMetricsRoute(
     }
     return metrics(input, parsed);
   });
+}
+
+/**
+ * Filter `sessions` down to those the query could possibly include (range
+ * + filters), then batch-resolve their gate summaries. The engine does
+ * its own per-bucket re-filter via `scopeFor` / `sessionMatchesGroup`,
+ * but a fleet-wide upfront lookup is wasted work — on a 10M-session
+ * fleet filtered to one project this drops the batch from 10M to ~100
+ * ids (#P4-12 review finding #6). For `scatter` mode the same range/
+ * filter logic applies (the engine still scopes by callMatchesFilters +
+ * sessionMatchesGroup); we share the filter step rather than duplicating
+ * it on the route.
+ */
+function sessionsInScope(sessions: Session[], query: MetricsQuery): Session[] {
+  const rangeFromMs = Date.parse(query.range.from);
+  const rangeToMs = Date.parse(query.range.to);
+  if (!Number.isFinite(rangeFromMs) || !Number.isFinite(rangeToMs)) return sessions;
+
+  const filters = query.filters;
+  const filterDims = filters
+    ? (Object.keys(filters) as Array<keyof NonNullable<typeof filters>>)
+    : [];
+
+  return sessions.filter((s) => {
+    const ts = Date.parse(s.firstAt);
+    if (!Number.isFinite(ts) || ts < rangeFromMs || ts > rangeToMs) return false;
+    for (const dim of filterDims) {
+      const allowed = filters?.[dim];
+      if (!allowed || allowed.length === 0) continue;
+      const value = sessionValueForScopeFilter(s, dim as Dimension);
+      if (!value.some((v) => allowed.includes(v))) return false;
+    }
+    return true;
+  });
+}
+
+function sessionValueForScopeFilter(session: Session, dim: Dimension): string[] {
+  switch (dim) {
+    case "project":
+      return [session.project || UNKNOWN];
+    case "model":
+      return session.models.length > 0 ? session.models : [UNKNOWN];
+    case "gitBranch":
+      return [session.gitBranch || UNKNOWN];
+    case "host":
+      return [session.host || UNKNOWN];
+    case "entrypoint":
+      return [session.entrypoint || UNKNOWN];
+    case "version":
+      return [session.version || UNKNOWN];
+    // `tool`, `sidechain`, `time`, `gateStatus` have no session-level
+    // meaning — by setting an unreachable filter dimension the engine
+    // will simply produce no results; the session-list filter is an
+    // upper bound on cost, not a strict reducer.
+    case "tool":
+    case "sidechain":
+    case "time":
+    case "gateStatus":
+      return [UNKNOWN];
+  }
+}
+
+const UNKNOWN = "__unknown__";
+
+/**
+ * Map a `Map<sessionId, GateReportSummary>` into the
+ * `{ score, status }` shape `computeMeasure` reads from. Sessions
+ * present in the cache but absent from the input sessions list are
+ * ignored — the metric only sees summaries for sessions actually in
+ * scope.
+ */
+async function collectGateSummaries(
+  cache: import("../cache/gates-cache.js").GatesCache,
+  sessions: Session[],
+  query: MetricsQuery,
+): Promise<Map<string, GateSummaryLite>> {
+  const inScope = sessionsInScope(sessions, query);
+  const summaries = await cache.getSummariesBatch(inScope.map((s) => s.sessionId));
+  const out = new Map<string, GateSummaryLite>();
+  for (const [id, summary] of summaries) {
+    out.set(id, { score: summary.score, status: summary.status });
+  }
+  return out;
 }
