@@ -160,6 +160,37 @@ describe("PromptSearchPanel — deep-link shape", () => {
     const last = history.at(-1) ?? "";
     expect(last.startsWith("/sessions/s1?turn=")).toBe(true);
   });
+
+  it("typing debounces into a `?q=…` URL entry (RP-5 regression guard)", async () => {
+    // Regression guard: prior versions of this panel wrote the search
+    // query only to window.history.pushState, which bypassed wouter's
+    // `useSearch()` and silently broke the `?q=` permalink story
+    // (the user's typed query was lost on reload). After the fix, the
+    // panel routes through wouter's `navigate`, so memoryLocation's
+    // `history` array observes each typed query as its own entry.
+    const user = userEvent.setup();
+    const { hook, searchHook, history } = memoryLocation({
+      path: "/sessions",
+      record: true,
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <Router hook={hook} searchHook={searchHook}>
+          <PromptSearchPanel />
+        </Router>
+      </QueryClientProvider>,
+    );
+
+    const input = await waitFor(() => screen.getByTestId("prompt-search-input"));
+    await user.type(input, "refactor");
+
+    // Wait past the SEARCH_DEBOUNCE_MS (100ms) so the URL write fires.
+    await waitFor(() => {
+      const entries = (history as readonly string[]).join("\n");
+      expect(entries).toMatch(/\?.*q=refactor/);
+    });
+  });
 });
 
 describe("PromptSearchPanel — keyboard navigation (A-2, A-7)", () => {

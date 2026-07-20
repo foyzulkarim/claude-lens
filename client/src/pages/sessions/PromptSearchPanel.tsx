@@ -245,6 +245,11 @@ export function PromptSearchPanel() {
       </h2>
       <input
         ref={inputRef}
+        // `type="search"` is the semantic element (lint enforces this).
+        // Note: WebKit/Blink ship a native clear affordance inside the
+        // input. In modern browsers it dispatches a real `input` event,
+        // so React state stays in sync. Escape clears the query and
+        // returns focus to the input — the documented user-facing path.
         type="search"
         value={input}
         onChange={(e) => setInput(e.target.value)}
