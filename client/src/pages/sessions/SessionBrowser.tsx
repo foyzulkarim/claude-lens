@@ -3,7 +3,7 @@ import { type ColumnDef, createColumnHelper } from "@tanstack/react-table";
 import clsx from "clsx";
 import type { MouseEvent } from "react";
 import { useLocation } from "wouter";
-import type { ScoreLetter } from "../../../../shared/gates-contract.js";
+import { letterFromScore } from "../../../../shared/gates-contract.js";
 import type {
   SessionListParams,
   SessionPageItem,
@@ -22,13 +22,8 @@ import { TOGGLE_ACTIVE_CLASS, TOGGLE_CLASS } from "../../ui/toggleStyles.js";
 import { useStableNow } from "../dashboard/useStableNow.js";
 import { buildListQuery, type SessionsPageState } from "./state.js";
 
-function letterFromScore(score: number): ScoreLetter {
-  if (score >= 0.9) return "A";
-  if (score >= 0.75) return "B";
-  if (score >= 0.5) return "C";
-  if (score >= 0.25) return "D";
-  return "F";
-}
+// `letterFromScore` is exported by `gates-contract.ts` (#P4-12 review
+// finding #9) — we used to keep a local copy here.
 
 export interface SessionBrowserProps {
   state: SessionsPageState;

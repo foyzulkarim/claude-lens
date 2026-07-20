@@ -41,3 +41,13 @@ export interface GateReportSummary {
   /** ISO-8601 timestamp stamped by the route layer that produced the underlying report. */
   evaluatedAt: string;
 }
+
+/**
+ * Slim projection of `GateReportSummary` — the two fields the metrics
+ * engine (`server/metrics/engine.ts`, `server/metrics/measures.ts`) and
+ * the Sessions row hydration actually read. Exists so the
+ * `Map<sessionId, GateSummaryLite>` plumbing doesn't inline
+ * `{ score: number; status: string }` across six call sites, which
+ * widens `GateStatus` to `string` (#P4-12 review finding #16).
+ */
+export type GateSummaryLite = Pick<GateReportSummary, "score" | "status">;

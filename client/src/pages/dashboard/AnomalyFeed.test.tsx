@@ -19,6 +19,11 @@ vi.mock("../../api/config.js", () => ({
   getConfig: () => getConfigMock(),
 }));
 
+const fetchWorstGateFailuresMock = vi.fn<() => Promise<SessionListItem[]>>();
+vi.mock("../../api/gate-failures.js", () => ({
+  fetchWorstGateFailures: () => fetchWorstGateFailuresMock(),
+}));
+
 const {
   AnomalyFeed,
   turnSamplesFromSessions,
@@ -62,6 +67,11 @@ beforeEach(() => {
   listSessionsMock.mockResolvedValue(emptyResponse());
   getConfigMock.mockReset();
   getConfigMock.mockResolvedValue({ budget: null });
+  fetchWorstGateFailuresMock.mockReset();
+  // Default to no gate-failures so the empty-state message renders
+  // without flipping the new `gateFailuresQuery.isPending` branch on
+  // (review #13/#29 / #28 split `anomalyItems` and `gateItems`).
+  fetchWorstGateFailuresMock.mockResolvedValue([]);
 });
 
 afterEach(() => {

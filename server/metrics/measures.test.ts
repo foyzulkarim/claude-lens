@@ -664,10 +664,54 @@ describe("computeMeasure — premium-gated measures return null today", () => {
     "costObserved",
     "linesAdded",
     "linesRemoved",
-    "gatePassRate",
     "apiMs",
   ] as const)("%s returns null regardless of scope contents", (measure) => {
     const scope: MeasureScope = { calls: [call()], turns: [turn()], sessions: [session()] };
     expect(computeMeasure(measure, scope, DEFAULT_PRICING_TABLE)).toBeNull();
+  });
+});
+
+describe("computeMeasure — gatePassRate", () => {
+  // #P4-12 wired the cache → engine contract so the measure de-nulled
+  // once summaries arrive. The earlier "returns null regardless of
+  // scope contents" assertion was correct pre-PR but became factually
+  // wrong the moment `gateSummaries` started flowing through
+  // `MetricsInput`. This block pins the new semantics (#P4-12 review
+  // finding #17): mean(score) across sessions with summaries, null
+  // when none have a summary, and a single 0 contribution from a
+  // "pass" summary (not fabricated from missing data).
+  const s = session();
+
+  it("returns the mean of summary scores for sessions in scope", () => {
+    const scope: MeasureScope = { calls: [], turns: [], sessions: [s] };
+    const gateSummaries = new Map([["s1", { score: 0.6, status: "pass" as const }]]);
+    expect(computeMeasure("gatePassRate", scope, DEFAULT_PRICING_TABLE, gateSummaries)).toBe(0.6);
+  });
+
+  it("averages across multiple summaries in scope", () => {
+    const s2 = { ...s, sessionId: "s2" };
+    const scope: MeasureScope = { calls: [], turns: [], sessions: [s, s2] };
+    const gateSummaries = new Map([
+      ["s1", { score: 0.4, status: "warn" as const }],
+      ["s2", { score: 0.8, status: "pass" as const }],
+    ]);
+    expect(computeMeasure("gatePassRate", scope, DEFAULT_PRICING_TABLE, gateSummaries)).toBeCloseTo(
+      0.6,
+      10,
+    );
+  });
+
+  it("returns null when no sessions in scope have a summary", () => {
+    const scope: MeasureScope = { calls: [], turns: [], sessions: [s] };
+    expect(computeMeasure("gatePassRate", scope, DEFAULT_PRICING_TABLE)).toBeNull();
+  });
+
+  it("ignores scope sessions whose summary is absent (never fabricates 0)", () => {
+    const sMissing = { ...s, sessionId: "s2" };
+    const scope: MeasureScope = { calls: [], turns: [], sessions: [s, sMissing] };
+    const gateSummaries = new Map([["s1", { score: 0.6, status: "pass" as const }]]);
+    // Only s1 contributes; s2 is in scope but has no summary and is
+    // dropped from the mean (not added as 0).
+    expect(computeMeasure("gatePassRate", scope, DEFAULT_PRICING_TABLE, gateSummaries)).toBe(0.6);
   });
 });

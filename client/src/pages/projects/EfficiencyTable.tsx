@@ -2,6 +2,7 @@ import { type ColumnDef, createColumnHelper } from "@tanstack/react-table";
 import { useMemo } from "react";
 import { useLocation } from "wouter";
 import type { Series } from "../../../../shared/metrics-contract.js";
+import { meanMeasure, sumMeasure as sumMeasureAll, sumPoints } from "../../charts/series-math.js";
 import { DataTable } from "../../components/DataTable.js";
 import type { FilterState } from "../../filters/state.js";
 import { projectHref } from "./drilldown.js";
@@ -48,23 +49,10 @@ function safeDivide(numerator: number, denominator: number): number | null {
   return numerator / denominator;
 }
 
-/** Sums the `points` of every series in `serieses` that match
- * `measure`, ignoring non-finite values. Mirrors the same helper
- * inside `models/EfficiencyTable.tsx`; kept inline here rather
- * than promoted to a shared module until a third panel needs it. */
-function sumMeasure(serieses: Series[], measure: Series["measure"]): number {
-  let sum = 0;
-  for (const s of serieses) {
-    if (s.measure !== measure) continue;
-    for (const p of s.points) {
-      sum += typeof p.value === "number" && Number.isFinite(p.value) ? p.value : 0;
-    }
-  }
-  return sum;
-}
-
-/** Same as `sumMeasure` but on `compareGhost` (the engine's
- * previous-equal-period points). Used to derive the WoW delta. */
+/** Same as `sumMeasure` (now in `series-math.ts`) but on
+ * `compareGhost` (the engine's previous-equal-period points). Used
+ * to derive the WoW delta. Kept inline because no other panel uses
+ * the compare-ghost sum. */
 function sumMeasurePrev(serieses: Series[], measure: Series["measure"]): number | undefined {
   let seenAny = false;
   let sum = 0;
@@ -73,31 +61,9 @@ function sumMeasurePrev(serieses: Series[], measure: Series["measure"]): number 
     const ghost = s.compareGhost;
     if (!ghost) continue;
     seenAny = true;
-    for (const p of ghost) {
-      sum += typeof p.value === "number" && Number.isFinite(p.value) ? p.value : 0;
-    }
+    sum += sumPoints(ghost);
   }
   return seenAny ? sum : undefined;
-}
-
-/**
- * Mean per-project gate pass rate (#P4-12). The engine emits
- * `gatePassRate` as a session-mean per bucket (T5); averaging those
- * bucket means per project gives a stable per-project rate. `null`
- * buckets (no gate data) are excluded — never fabricated as 0.
- */
-function avgGatePassRate(serieses: Series[]): number | null {
-  let total = 0;
-  let n = 0;
-  for (const s of serieses) {
-    if (s.measure !== "gatePassRate") continue;
-    for (const p of s.points) {
-      if (typeof p.value !== "number" || !Number.isFinite(p.value)) continue;
-      total += p.value;
-      n += 1;
-    }
-  }
-  return n > 0 ? total / n : null;
 }
 
 function lastBucketTimestamp(serieses: Series[]): string | undefined {
@@ -123,18 +89,31 @@ function deriveRows(serieses: Series[] | undefined): EfficiencyRow[] {
     if (label) labels.add(label);
   }
 
+  // `#P4-12 review finding #25`: pre-bucket `serieses` by label once
+  // rather than re-scanning the whole array per project. Previous
+  // shape was O(M²) (M projects × M series); this is O(M). At
+  // M=200 projects that's 40K iterations down to 200.
+  const byLabel = new Map<string, Series[]>();
+  for (const s of serieses) {
+    const label = s.label || s.dimensionKey;
+    if (!label) continue;
+    const bucket = byLabel.get(label);
+    if (bucket) bucket.push(s);
+    else byLabel.set(label, [s]);
+  }
+
   const rows: EfficiencyRow[] = [];
   for (const project of labels) {
-    const projectSeries = serieses.filter((s) => (s.label || s.dimensionKey) === project);
+    const projectSeries = byLabel.get(project) ?? [];
 
-    const cost = sumMeasure(projectSeries, "costComputed");
+    const cost = sumMeasureAll(projectSeries, "costComputed");
     const costPrev = sumMeasurePrev(projectSeries, "costComputed");
-    const sessions = sumMeasure(projectSeries, "sessions");
-    const input = sumMeasure(projectSeries, "inputTokens");
-    const output = sumMeasure(projectSeries, "outputTokens");
-    const cacheRead = sumMeasure(projectSeries, "cacheReadTokens");
-    const cacheCreate = sumMeasure(projectSeries, "cacheCreateTokens");
-    const turns = sumMeasure(projectSeries, "turns");
+    const sessions = sumMeasureAll(projectSeries, "sessions");
+    const input = sumMeasureAll(projectSeries, "inputTokens");
+    const output = sumMeasureAll(projectSeries, "outputTokens");
+    const cacheRead = sumMeasureAll(projectSeries, "cacheReadTokens");
+    const cacheCreate = sumMeasureAll(projectSeries, "cacheCreateTokens");
+    const turns = sumMeasureAll(projectSeries, "turns");
 
     const eligible = input + cacheRead + cacheCreate;
     const cacheHitPct = eligible > 0 ? cacheRead / eligible : null;
@@ -151,7 +130,7 @@ function deriveRows(serieses: Series[] | undefined): EfficiencyRow[] {
       // Per-project mean gate pass rate (T13, #P4-12). Cell renders
       // "—" when the engine emits all-null buckets for the project
       // (cold cache, no analyzed sessions).
-      gatePassRate: avgGatePassRate(projectSeries),
+      gatePassRate: meanMeasure(projectSeries, "gatePassRate"),
     });
   }
 
@@ -228,7 +207,10 @@ export function EfficiencyTable({
       columnHelper.accessor("gatePassRate", {
         header: "Gate pass",
         meta: { align: "right", mono: true },
-        cell: () => "—",
+        // Render the live aggregate; `formatPercentFraction` already
+        // maps a `null` (engine emitted no buckets) to "—" so the
+        // cold-cache state stays honest (#P4-12 review finding #5).
+        cell: (info) => formatPercentFraction(info.getValue()),
       }),
       columnHelper.accessor("lastActive", {
         header: "Last active",

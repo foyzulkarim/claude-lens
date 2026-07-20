@@ -112,3 +112,26 @@ export function gateStatusFromChecks(checks: readonly GateStatus[]): GateStatus 
   if (checks.some((s) => s === "warn")) return "warn";
   return "pass";
 }
+
+/**
+ * Bucket a `score` (a fraction in [0,1]) into the five-letter
+ * `ScoreLetter` per gates.md §"Report Card scoring":
+ *   A ≥ 0.9, B ≥ 0.75, C ≥ 0.5, D ≥ 0.25, F otherwise.
+ *
+ * Single source of truth (#P4-12 review finding #9): previously
+ * duplicated in `client/src/pages/sessions/SessionBrowser.tsx` and
+ * `client/src/pages/dashboard/AnomalyFeed.tsx`. A future threshold
+ * shift in `gates.md` would otherwise have to update four files in
+ * lockstep. The engine already emits `scoreLetter` on `GateReport` /
+ * `GateReportSummary`, so the client ideally reads that directly —
+ * this helper exists for the few callers that bucket a numeric score
+ * outside the engine's view (e.g. precomputed `gateScore` summaries
+ * when the engine didn't run).
+ */
+export function letterFromScore(score: number): ScoreLetter {
+  if (score >= 0.9) return "A";
+  if (score >= 0.75) return "B";
+  if (score >= 0.5) return "C";
+  if (score >= 0.25) return "D";
+  return "F";
+}

@@ -1,5 +1,5 @@
 import type { FilterState } from "../../filters/state.js";
-import { TOGGLE_CLASS } from "../../ui/toggleStyles.js";
+import { TOGGLE_ACTIVE_CLASS, TOGGLE_CLASS } from "../../ui/toggleStyles.js";
 import type { SessionsPageState } from "./state.js";
 
 export interface SessionsFiltersProps {
@@ -53,18 +53,24 @@ function GateStatusControl({ state, onChange }: SessionsFiltersChildProps) {
       onChange({ gateStatus: [...selected, value] });
     }
   }
+  // `#P4-12 review finding #22`: previously the only "selected" signal
+  // was `aria-pressed`, with no visible difference. We now concat
+  // `TOGGLE_ACTIVE_CLASS` when the value is in `selected` so a
+  // high-contrast active state matches the ViewToggle sibling. The
+  // `fieldset`/`legend` pairing replaces the `role="group"` we used
+  // pre-fix (lint flagged it as redundant with a semantic element).
   return (
-    <div className="flex flex-col gap-1">
-      <span className="text-xs uppercase tracking-wider text-slate-500 dark:text-[#8A96A5]">
+    <fieldset aria-label="Gate status" className="flex flex-col gap-1">
+      <legend className="text-xs uppercase tracking-wider text-slate-500 dark:text-[#8A96A5]">
         Gate status
-      </span>
+      </legend>
       <div className="flex items-center gap-1">
         <button
           type="button"
           onClick={() => onChange({ gateStatus: undefined })}
           aria-pressed={selected.length === 0}
           aria-label="Any gate status"
-          className={TOGGLE_CLASS}
+          className={`${TOGGLE_CLASS} ${selected.length === 0 ? TOGGLE_ACTIVE_CLASS : ""}`}
         >
           Any
         </button>
@@ -72,7 +78,7 @@ function GateStatusControl({ state, onChange }: SessionsFiltersChildProps) {
           type="button"
           onClick={() => toggle("pass")}
           aria-pressed={selected.includes("pass")}
-          className={TOGGLE_CLASS}
+          className={`${TOGGLE_CLASS} ${selected.includes("pass") ? TOGGLE_ACTIVE_CLASS : ""}`}
         >
           Pass
         </button>
@@ -80,7 +86,7 @@ function GateStatusControl({ state, onChange }: SessionsFiltersChildProps) {
           type="button"
           onClick={() => toggle("warn")}
           aria-pressed={selected.includes("warn")}
-          className={TOGGLE_CLASS}
+          className={`${TOGGLE_CLASS} ${selected.includes("warn") ? TOGGLE_ACTIVE_CLASS : ""}`}
         >
           Warn
         </button>
@@ -88,12 +94,12 @@ function GateStatusControl({ state, onChange }: SessionsFiltersChildProps) {
           type="button"
           onClick={() => toggle("fail")}
           aria-pressed={selected.includes("fail")}
-          className={TOGGLE_CLASS}
+          className={`${TOGGLE_CLASS} ${selected.includes("fail") ? TOGGLE_ACTIVE_CLASS : ""}`}
         >
           Fail
         </button>
       </div>
-    </div>
+    </fieldset>
   );
 }
 

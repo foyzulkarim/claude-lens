@@ -12,6 +12,7 @@
  *    population vocabulary the page needs.
  */
 
+import type { GateStatus } from "./gates-contract.js";
 import type { TierFlags } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -150,7 +151,7 @@ export interface SessionListItem {
   /** Reserved for #P4-12 — gate score (Report Card letter as fraction). */
   gateScore?: number;
   /** Reserved for #P4-12 — rolled-up session gate status (`pass`/`warn`/`fail`). */
-  gateStatus?: string;
+  gateStatus?: GateStatus;
   /** Opt-in: cumulative priced turn values. Present only when include=trace. */
   trace?: TracePoint[];
 }
@@ -202,7 +203,7 @@ export interface SessionPageItem {
   contextPctObserved?: number;
   /** Reserved for #P4-12 — gate score and status. */
   gateScore?: number;
-  gateStatus?: string;
+  gateStatus?: GateStatus;
   /** Reserved for #P4-15 — user-set tags. */
   tags?: string[];
   /** `turnCount > 0`. Computed from `Session.turnCount`. */

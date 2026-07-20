@@ -8,6 +8,7 @@ import type {
   SeriesMetricsQuery,
   SeriesPoint,
 } from "../../shared/metrics-contract.js";
+import type { GateSummaryLite } from "../../shared/gates-cache-contract.js";
 import type { ApiCall, Session, Turn } from "../../shared/types.js";
 import { groupLogicalTurns, type LogicalTurn } from "../store/logical-turns.js";
 import {
@@ -39,7 +40,7 @@ export interface MetricsInput {
    * without a cache see `gatePassRate` resolve to `null`) keeps the
    * unit tests that don't exercise the measure unchanged.
    */
-  gateSummaries?: Map<string, { score: number; status: string }>;
+  gateSummaries?: Map<string, GateSummaryLite>;
 }
 
 interface GroupKeyEntry {

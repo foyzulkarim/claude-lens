@@ -26,6 +26,15 @@ vi.mock("../../api/config.js", () => ({
   getConfig: () => getConfigMock(),
 }));
 
+// AnomalyFeed's gate-failure feed (#P4-12 / review #13/#29): the new
+// `gateFailuresQuery` would otherwise fail to resolve and trip the
+// loading-state branch the test wasn't expecting. Mirror the same
+// settled-empty default the AnomalyFeed.test.tsx uses.
+const fetchWorstGateFailuresMock = vi.fn<() => Promise<unknown[]>>();
+vi.mock("../../api/gate-failures.js", () => ({
+  fetchWorstGateFailures: () => fetchWorstGateFailuresMock(),
+}));
+
 // ChartCard renders real ECharts via <Chart>, which needs a ResizeObserver
 // and real layout jsdom doesn't provide — stub it out like ChartCard.test.tsx
 // does, so these tests exercise ChartCard's query wiring, not the canvas.
@@ -86,6 +95,8 @@ beforeEach(() => {
   );
   getConfigMock.mockReset();
   getConfigMock.mockResolvedValue({ budget: null });
+  fetchWorstGateFailuresMock.mockReset();
+  fetchWorstGateFailuresMock.mockResolvedValue([]);
 });
 
 afterEach(() => {

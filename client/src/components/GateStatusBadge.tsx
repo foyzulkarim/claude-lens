@@ -69,9 +69,17 @@ export function GateStatusBadge({ status, letter, label, className }: GateStatus
   }
   const resolved = (status ?? (letter ? statusForLetter(letter) : "pass")) as GateStatus;
   const text = label ?? status ?? (letter as string | undefined) ?? "";
+  // `#P4-12 review finding #23`: the visible text in `mode="letter"`
+  // is the bare letter ("A"/"F"), which screen-readers announce
+  // letter-by-letter with no context. When the consumer is the
+  // Report Card overall score, surface an explicit announcement that
+  // ties the letter to the status ("Score: F, Gate status: fail").
+  const ariaLabel = letter
+    ? `Score: ${letter}, Gate status: ${statusForLetter(letter)}`
+    : undefined;
   return (
     <span className={clsx("inline-flex", className)}>
-      <Badge variant={STATUS_VARIANT[resolved]}>
+      <Badge variant={STATUS_VARIANT[resolved]} aria-label={ariaLabel}>
         <span className="font-mono">{text}</span>
       </Badge>
     </span>

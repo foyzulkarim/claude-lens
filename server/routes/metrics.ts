@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { Session } from "../../shared/types.js";
 import type { SessionPopulationCriteria } from "../../shared/sessions-contract.js";
+import type { GateSummaryLite } from "../../shared/gates-cache-contract.js";
 import {
   DIMENSIONS,
   type Dimension,
@@ -301,9 +302,19 @@ export function registerMetricsRoute(
     }
 
     const sessions = store.listSessions();
-    const gateSummaries: Map<string, { score: number; status: string }> = gatesCache
-      ? await collectGateSummaries(gatesCache, sessions)
-      : new Map();
+    // Only resolve gate summaries when the query asks for `gatePassRate`
+    // (#P4-12 review finding #6): on every non-gate query this would
+    // otherwise evaluate summaries across the entire fleet, paying the
+    // cold-cache miss for sessions that contribute nothing to the answer.
+    // We additionally scope the resolution to in-range, filter-matching
+    // sessions — the engine re-filters per-bucket inside `scopeFor`, but
+    // narrowing the *upfront* batch from N sessions to N' ≈ in-scope
+    // sessions removes the O(N) fleet-wide cost entirely.
+    const needsGateSummaries = parsed.measures.includes("gatePassRate");
+    const gateSummaries: Map<string, GateSummaryLite> =
+      gatesCache && needsGateSummaries
+        ? await collectGateSummaries(gatesCache, sessions, parsed)
+        : new Map();
 
     const input = {
       calls: store.listCalls(),
@@ -324,6 +335,68 @@ export function registerMetricsRoute(
 }
 
 /**
+ * Filter `sessions` down to those the query could possibly include (range
+ * + filters), then batch-resolve their gate summaries. The engine does
+ * its own per-bucket re-filter via `scopeFor` / `sessionMatchesGroup`,
+ * but a fleet-wide upfront lookup is wasted work — on a 10M-session
+ * fleet filtered to one project this drops the batch from 10M to ~100
+ * ids (#P4-12 review finding #6). For `scatter` mode the same range/
+ * filter logic applies (the engine still scopes by callMatchesFilters +
+ * sessionMatchesGroup); we share the filter step rather than duplicating
+ * it on the route.
+ */
+function sessionsInScope(sessions: Session[], query: MetricsQuery): Session[] {
+  const rangeFromMs = Date.parse(query.range.from);
+  const rangeToMs = Date.parse(query.range.to);
+  if (!Number.isFinite(rangeFromMs) || !Number.isFinite(rangeToMs)) return sessions;
+
+  const filters = query.filters;
+  const filterDims = filters
+    ? (Object.keys(filters) as Array<keyof NonNullable<typeof filters>>)
+    : [];
+
+  return sessions.filter((s) => {
+    const ts = Date.parse(s.firstAt);
+    if (!Number.isFinite(ts) || ts < rangeFromMs || ts > rangeToMs) return false;
+    for (const dim of filterDims) {
+      const allowed = filters?.[dim];
+      if (!allowed || allowed.length === 0) continue;
+      const value = sessionValueForScopeFilter(s, dim as Dimension);
+      if (!value.some((v) => allowed.includes(v))) return false;
+    }
+    return true;
+  });
+}
+
+function sessionValueForScopeFilter(session: Session, dim: Dimension): string[] {
+  switch (dim) {
+    case "project":
+      return [session.project || UNKNOWN];
+    case "model":
+      return session.models.length > 0 ? session.models : [UNKNOWN];
+    case "gitBranch":
+      return [session.gitBranch || UNKNOWN];
+    case "host":
+      return [session.host || UNKNOWN];
+    case "entrypoint":
+      return [session.entrypoint || UNKNOWN];
+    case "version":
+      return [session.version || UNKNOWN];
+    // `tool`, `sidechain`, `time`, `gateStatus` have no session-level
+    // meaning — by setting an unreachable filter dimension the engine
+    // will simply produce no results; the session-list filter is an
+    // upper bound on cost, not a strict reducer.
+    case "tool":
+    case "sidechain":
+    case "time":
+    case "gateStatus":
+      return [UNKNOWN];
+  }
+}
+
+const UNKNOWN = "__unknown__";
+
+/**
  * Map a `Map<sessionId, GateReportSummary>` into the
  * `{ score, status }` shape `computeMeasure` reads from. Sessions
  * present in the cache but absent from the input sessions list are
@@ -333,9 +406,11 @@ export function registerMetricsRoute(
 async function collectGateSummaries(
   cache: import("../cache/gates-cache.js").GatesCache,
   sessions: Session[],
-): Promise<Map<string, { score: number; status: string }>> {
-  const summaries = await cache.getSummariesBatch(sessions.map((s) => s.sessionId));
-  const out = new Map<string, { score: number; status: string }>();
+  query: MetricsQuery,
+): Promise<Map<string, GateSummaryLite>> {
+  const inScope = sessionsInScope(sessions, query);
+  const summaries = await cache.getSummariesBatch(inScope.map((s) => s.sessionId));
+  const out = new Map<string, GateSummaryLite>();
   for (const [id, summary] of summaries) {
     out.set(id, { score: summary.score, status: summary.status });
   }

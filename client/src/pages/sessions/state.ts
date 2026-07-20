@@ -118,7 +118,13 @@ const DEFAULT_STATE: SessionsPageState = {
   compareIds: [],
 };
 
-const ALLOWED_PAGE_SORT: ReadonlySet<NonNullable<SessionPageParams["sort"]>> = new Set([
+// Allow-list of valid `sort` values for the Sessions page
+// (`#P4-12 review finding #27`): single source of truth that
+// `ALLOWED_PAGE_SORT` derives from. The previous shape declared the
+// full triple (typed `Set` + parser Set) in two places; a sort-key
+// addition would have to update both. The `as const satisfies` array
+// gives the same runtime Set AND a typed tuple — both at once.
+const PAGE_SORT_KEYS = [
   "lastAt",
   "costComputed",
   "costObserved",
@@ -131,18 +137,21 @@ const ALLOWED_PAGE_SORT: ReadonlySet<NonNullable<SessionPageParams["sort"]>> = n
   "gateScore",
   "branch",
   "version",
-]);
+] as const satisfies readonly NonNullable<SessionPageParams["sort"]>[];
+
+const ALLOWED_PAGE_SORT: ReadonlySet<NonNullable<SessionPageParams["sort"]>> = new Set(
+  PAGE_SORT_KEYS,
+);
 
 // Type-narrowed Sets keyed on string — `NonNullable<SessionPageParams["sort"]>`
 // is a type, not a value, so we keep the runtime set typed as string and
 // narrow at the call site. `browserView` and `distributionView` are
 // two-literal unions checked inline in the parser instead (no Set needed).
 const ALLOWED_ORDER = new Set<string>(["asc", "desc"]);
-const ALLOWED_SCATTER_PRESET = new Set<string>([
-  "cost-vs-duration",
-  "tokens-vs-turns",
-  "cache-vs-cost",
-]);
+// Derive the allowed scatter preset Set from the SCATTER_PRESETS table
+// (single source of truth for `#P4-12 review finding #27`). Adding a
+// preset to SCATTER_PRESETS now automatically extends the allow-list.
+const ALLOWED_SCATTER_PRESET: ReadonlySet<string> = new Set(SCATTER_PRESETS.map((p) => p.id));
 
 /** Hard cap on compare IDs (server-validated; client side mirrors it
  * so the user can't even author a URL with four). */

@@ -41,8 +41,12 @@ describe("trends smoke", () => {
       "be.visible",
     );
 
-    cy.get('[data-testid="gate-pass-rate-stub"]').should("be.visible");
-    cy.contains('[data-testid="gate-pass-rate-stub"]', "#P4-12").should("be.visible");
+    // #P4-12 wired the live `gatePassRate` measure — the previous
+    // `gate-pass-rate-stub` was a placeholder panel with no fetch.
+    cy.get('[data-testid="gate-pass-rate-panel"]').should("be.visible");
+    cy.contains('[data-testid="gate-pass-rate-panel"] h2', "Gate pass rate per week").should(
+      "be.visible",
+    );
   });
 
   it("drills from the calendar heatmap to a filtered Sessions view", () => {

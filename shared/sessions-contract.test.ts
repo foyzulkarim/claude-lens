@@ -109,6 +109,27 @@ describe("SessionListItem", () => {
     expect(item.trace).toHaveLength(2);
     expect(item.trace?.[0].turnIndex).toBe(0);
   });
+
+  it("gateScore and gateStatus can be populated with a GateStatus value (#P4-12 review finding #20)", () => {
+    // Pins the populated half of the gate fields contract: the
+    // `gateStatus` literal is `GateStatus` ("pass" | "warn" | "fail"),
+    // not a free string — a wire-shape drift would no longer compile
+    // (see #P4-12 review finding #8, which tightened this).
+    const item: SessionListItem = {
+      sessionId: "sess-001",
+      startedAt: "2024-01-01T10:00:00Z",
+      lastAt: "2024-01-01T10:10:00Z",
+      project: "my-project",
+      model: "gpt-4o",
+      durationMs: 0,
+      turnCount: 2,
+      costComputed: 0.08,
+      gateScore: 0.65,
+      gateStatus: "warn",
+    };
+    expect(item.gateScore).toBe(0.65);
+    expect(item.gateStatus).toBe("warn");
+  });
 });
 
 describe("SessionListResponse", () => {
@@ -299,6 +320,40 @@ describe("SessionPageItem — strict page-row projection", () => {
     expect(item.gateScore).toBeUndefined();
     expect(item.gateStatus).toBeUndefined();
     expect(item.tags).toBeUndefined();
+  });
+
+  it("gateScore and gateStatus can be populated with a GateStatus value (#P4-12 review finding #20)", () => {
+    // Companion to the absent-fields test above: pins the populated
+    // shape so a future regression that drops the `gateStatus`/`gateScore`
+    // wire emission breaks here rather than only at runtime.
+    const item: SessionPageItem = {
+      sessionId: "s1",
+      startedAt: "2026-07-01T00:00:00Z",
+      lastAt: "2026-07-01T00:05:00Z",
+      project: "alpha",
+      models: ["claude-sonnet-5"],
+      host: "default",
+      entrypoint: "cli",
+      version: "1.2.3",
+      durationMs: 300_000,
+      turnCount: 4,
+      totalTokens: 12_345,
+      cacheHitPct: 0.42,
+      costComputed: 1.25,
+      hasDrilldown: true,
+      gateScore: 0.42,
+      gateStatus: "fail",
+      tags: ["hotfix"],
+      tier: {
+        hasCostSamples: false,
+        hasTurnBoundaries: false,
+        hasCostLog: false,
+        costBasis: "computed",
+      },
+    };
+    expect(item.gateScore).toBe(0.42);
+    expect(item.gateStatus).toBe("fail");
+    expect(item.tags).toEqual(["hotfix"]);
   });
 });
 

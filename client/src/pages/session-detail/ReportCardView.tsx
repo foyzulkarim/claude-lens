@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { Link } from "wouter";
 import type { GateEvidence, GateReport, GateResult } from "../../../../shared/gates-contract.js";
 import { GateStatusBadge } from "../../components/GateStatusBadge.js";
@@ -24,13 +24,37 @@ export interface ReportCardViewProps {
  * Score letter uses the new `GateStatusBadge` (single source of color
  * across the five surfaces). Per-gate row repeats the same badge so
  * a fail E1 row reads the same red as a fail Report Card F letter.
+ *
+ * Hash anchor + focus: the AnomalyFeed deep-links to
+ * `/sessions/:id#report-card`; without `id="report-card"` the browser
+ * silently fails to scroll, and screen-reader users get no focus
+ * target (#P4-12 review finding #21). The `tabIndex={-1}` lets the
+ * section programmatically receive focus without putting it in the
+ * tab order; the `useEffect` on the route hash focuses it on mount
+ * when the URL contains the matching fragment.
  */
 export function ReportCardView({ data }: ReportCardViewProps): ReactNode {
+  const sectionRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const hash = window.location.hash.replace(/^#/, "");
+    if (hash !== "report-card") return;
+    const node = sectionRef.current;
+    if (node && typeof node.focus === "function") node.focus();
+    // Run once on mount — the only way the hash changes post-mount is
+    // via a parent re-render that re-mounts this view, which would
+    // re-fire the effect anyway.
+  }, []);
+
   return (
     <section
+      ref={sectionRef}
+      id="report-card"
+      tabIndex={-1}
       data-testid="report-card"
       aria-label={`Report Card for session ${data.sessionId}`}
-      className="flex flex-col gap-4 rounded-md border border-slate-200 bg-white p-4 dark:border-[#232B36] dark:bg-[#151A21]"
+      className="flex flex-col gap-4 rounded-md border border-slate-200 bg-white p-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#96631E] dark:border-[#232B36] dark:bg-[#151A21] dark:focus-visible:ring-[#E8A33D]"
     >
       <header className="flex flex-wrap items-baseline justify-between gap-3">
         <h2 className="text-sm font-semibold text-slate-900 dark:text-[#E8EDF2]">Report Card</h2>

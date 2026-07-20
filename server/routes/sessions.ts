@@ -12,6 +12,7 @@ import type {
   SessionTimelineSet,
   TracePoint,
 } from "../../shared/sessions-contract.js";
+import type { GateSummaryLite } from "../../shared/gates-cache-contract.js";
 import { isValidTagList } from "../../shared/local-store-contract.js";
 import type { Session } from "../../shared/types.js";
 import type { GatesCache } from "../cache/gates-cache.js";
@@ -578,7 +579,7 @@ function buildTrace(store: Store, session: Session, pricer: Pricer | undefined):
 function projectItem(
   session: Session,
   trace: TracePoint[] | undefined,
-  gateSummary: { score: number; status: string } | null,
+  gateSummary: GateSummaryLite | null,
 ): SessionListItem {
   return {
     sessionId: session.sessionId,
@@ -715,7 +716,7 @@ function pagePopulationFilter(params: SessionPageParams): SessionPopulationFilte
 export function projectPageItem(
   session: Session,
   tags?: string[],
-  gateSummary?: { score: number; status: string } | null,
+  gateSummary?: GateSummaryLite | null,
 ): SessionPageItem {
   return {
     sessionId: session.sessionId,
@@ -954,7 +955,7 @@ async function handleSummaryRequest(
   // optimization (lazy + memoized is the right MVP shape).
   const gateSummariesById = gatesCache
     ? await gatesCache.getSummariesBatch(page.map((s) => s.sessionId))
-    : new Map<string, { score: number; status: string }>();
+    : new Map<string, GateSummaryLite>();
 
   const items: SessionListItem[] = page.map((session) => {
     const trace = parsed.include === "trace" ? buildTrace(store, session, pricer) : undefined;

@@ -64,7 +64,8 @@ type InvalidationAction =
   | { kind: "metrics" }
   | { kind: "sessions" }
   | { kind: "session"; sessionId: string }
-  | { kind: "turnInspectorSession"; sessionId: string };
+  | { kind: "turnInspectorSession"; sessionId: string }
+  | { kind: "gates" };
 
 function actionKey(action: InvalidationAction): string {
   switch (action.kind) {
@@ -75,6 +76,7 @@ function actionKey(action: InvalidationAction): string {
     case "all":
     case "metrics":
     case "sessions":
+    case "gates":
       return action.kind;
   }
 }
@@ -101,11 +103,17 @@ function actionsForMessage(message: WsServerMessage): InvalidationAction[] {
       // `["turn-inspector", sessionId, ...]` prefix (not `qk.session`), so
       // it needs its own action — without this, an open inspector would
       // stay stale until a manual remount or a `scan-updated` arrived.
+      // The gates prefix invalidates both the per-session Report Card
+      // (`qk.gates(id)`) AND the Dashboard failure feed
+      // (`qk.gateFailures(...)`) — without this, the PR title's
+      // "live gate feeds" claim is broken (Report Card `staleTime: 5min`,
+      // Dashboard feed `staleTime: 60s`).
       return [
         { kind: "metrics" },
         { kind: "session", sessionId: message.sessionId },
         { kind: "turnInspectorSession", sessionId: message.sessionId },
         { kind: "sessions" },
+        { kind: "gates" },
       ];
     default: {
       // Exhaustive check: a future 4th WsServerMessage variant fails
@@ -135,6 +143,16 @@ function applyInvalidationAction(queryClient: QueryClient, action: InvalidationA
       queryClient.invalidateQueries({
         queryKey: qk.prefixes.turnInspectorForSession(action.sessionId),
       });
+      return;
+    case "gates":
+      // Invalidate every gate-keyed query: per-session Report Cards
+      // (`qk.gates(id)`) and the Dashboard failure feed
+      // (`qk.gateFailures(...)`). Both share the `["gates"]` literal
+      // prefix in queryKeys.ts. Server-side the cache is already
+      // evicted by the broadcaster — this client-side invalidation
+      // triggers refetches so mounted consumers see the fresh score
+      // within `staleTime` of the append, not after it.
+      queryClient.invalidateQueries({ queryKey: qk.prefixes.gates });
       return;
     default: {
       // Exhaustive check, mirroring actionsForMessage's switch above: a

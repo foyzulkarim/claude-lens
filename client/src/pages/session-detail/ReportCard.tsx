@@ -47,10 +47,15 @@ export function ReportCard({ sessionId }: ReportCardProps): React.JSX.Element {
           Loading Report Card…
         </p>
       ) : query.isError ? (
+        // CLAUDE.md mandates an EmptyState-style error WITH a retry
+        // affordance. The EmptyState component already accepts
+        // `action: {label, onClick}` — `query.refetch` triggers a
+        // re-fetch without remounting the placeholder slot.
         <EmptyState
           message={`Couldn't load Report Card: ${
             query.error instanceof Error ? query.error.message : "Unknown error"
           }`}
+          action={{ label: "Retry", onClick: () => void query.refetch() }}
         />
       ) : (
         <ReportCardView data={query.data} />

@@ -6,6 +6,7 @@ import {
   type GateStatus,
   type GateThresholds,
 } from "../../shared/gates-contract.js";
+import type { GateSummaryLite } from "../../shared/gates-cache-contract.js";
 import { evaluateSessionGates } from "../gates/engine.js";
 import { DEFAULT_GATE_THRESHOLDS, getGateThresholds } from "../gates/thresholds.js";
 import { readConfig } from "../settings.js";
@@ -99,6 +100,10 @@ export interface GatesCache {
    * the `MetricsQuery.gatePassRate` aggregation). Returns a Map containing
    * only the ids that resolved — known-unknown sessions are absent.
    * Each entry shares a per-id in-flight evaluation with `getSummary`.
+   * Partial-failure tolerant (#P4-12 review finding #11): one bad session
+   * does not 500 the entire batch — the resolved summaries for every
+   * successful id are returned, and the failed ids are simply absent
+   * (matching the "known-unknown → absent" contract above).
    */
   getSummariesBatch(ids: readonly string[]): Promise<Map<string, GateReportSummary>>;
   /** Drop the cached entry for one session. Called by the WS invalidation hook. */
@@ -106,6 +111,24 @@ export interface GatesCache {
   /** Test seam — drops every entry. Production never calls this. */
   clear(): void;
 }
+
+/** Soft concurrency cap on the batch evaluator. Each id's evaluation
+ * awaits a `resolveThresholds()` call + filesystem checks (E1/E2), so
+ * launching N concurrent evaluators on a cold cache with N=10K+ risks
+ * OOM and thundering-herd config reads (#P4-12 review finding #7). The
+ * number is small enough to keep the work in-flight cheap, large
+ * enough to overlap I/O without serializing the whole fleet.
+ * ARCH OQ1 flags unbounded fan-out as the 10M-row follow-up — this is
+ * the bounded MVP. */
+const BATCH_CONCURRENCY = 32;
+
+/** LRU cap on the per-session cache Map (#P4-12 review finding #24).
+ * Mirrors the established `analysis.ts` upper bound — the cache is
+ * hot enough that on a long-running process an unbounded Map would
+ * silently grow until process pressure triggered GC pauses. Each
+ * insert evicts the oldest entry; the WS invalidation bus already
+ * keeps summary freshness on its own. */
+const CACHE_MAX_ENTRIES = 50_000;
 
 /**
  * Default threshold resolver — reads the user's config and falls back to
@@ -131,7 +154,22 @@ export function createGatesCache(deps: GatesCacheDeps): GatesCache {
   // re-runs cleanly; we don't poison the cache with a sentinel on error
   // (defense-in-depth: a transient config read failure shouldn't pin a
   // session to "stale" forever).
+  //
+  // LRU cap (#P4-12 review finding #24): `Map` iteration order is insertion
+  // order, so on insert past the cap we evict the oldest entry by
+  // re-inserting (Map.delete + set) which promotes the new entry to the
+  // "most-recently-inserted" position. This is O(1) per insert and bounds
+  // memory at `CACHE_MAX_ENTRIES` entries on long-running processes.
   const cache = new Map<string, Promise<GateReportSummary | null>>();
+
+  function setCached(sessionId: string, promise: Promise<GateReportSummary | null>): void {
+    if (cache.size >= CACHE_MAX_ENTRIES) {
+      // Evict the oldest entry (Map iteration order = insertion order).
+      const oldest = cache.keys().next().value;
+      if (oldest !== undefined) cache.delete(oldest);
+    }
+    cache.set(sessionId, promise);
+  }
 
   function evaluate(sessionId: string): Promise<GateReportSummary | null> {
     const promise = (async (): Promise<GateReportSummary | null> => {
@@ -164,7 +202,7 @@ export function createGatesCache(deps: GatesCacheDeps): GatesCache {
       cache.delete(sessionId);
       throw err;
     });
-    cache.set(sessionId, promise);
+    setCached(sessionId, promise);
     return promise;
   }
 
@@ -177,20 +215,41 @@ export function createGatesCache(deps: GatesCacheDeps): GatesCache {
 
     async getSummariesBatch(ids) {
       const out = new Map<string, GateReportSummary>();
-      // Kick off (or join) every id's evaluation concurrently — the cache
-      // already single-flights per id, so any overlap is harmless.
-      const settled = await Promise.allSettled(
-        ids.map(async (id) => {
-          const summary = await this.getSummary(id);
-          if (summary) out.set(id, summary);
-        }),
-      );
-      // If any individual id rejected, surface the first error so callers
-      // (the metrics engine / the Sessions route) can decide whether to
-      // 500 or degrade. Match the contract of `getSummary` — a reject is
-      // an error, not a sentinel.
-      for (const result of settled) {
-        if (result.status === "rejected") throw result.reason;
+      // Concurrency cap (#P4-12 review finding #7): launch at most
+      // BATCH_CONCURRENCY evaluators at a time. The cache already
+      // single-flights per-id (concurrent calls for the same id share
+      // the in-flight promise), so chunking is the only knob left.
+      const chunks: string[][] = [];
+      for (let i = 0; i < ids.length; i += BATCH_CONCURRENCY) {
+        chunks.push(ids.slice(i, i + BATCH_CONCURRENCY));
+      }
+      for (const chunk of chunks) {
+        const settled = await Promise.allSettled(
+          chunk.map(async (id) => {
+            const summary = await this.getSummary(id);
+            if (summary) out.set(id, summary);
+          }),
+        );
+        // Partial-failure tolerance (#P4-12 review finding #11): a single
+        // bad id no longer 500s the entire batch. We previously surfaced
+        // the first rejection, which made one malformed session take down
+        // a 10K-row page. Instead, we log and drop — the resolved entries
+        // still ship to the caller, matching the "known-unknown → absent"
+        // shape already documented for `null`/missing sessions.
+        for (const result of settled) {
+          if (result.status === "rejected") {
+            // Drop on the floor with a tagged log; callers see one fewer
+            // entry in the Map, not an HTTP 500. The `console.warn` is
+            // intentional (not a debug print) — pino is not threaded
+            // through this module and a partial-batch failure is a
+            // sign of a real underlying issue (malformed session) that
+            // operators should see.
+            console.warn("[gates-cache] partial batch failure", {
+              reason:
+                result.reason instanceof Error ? result.reason.message : String(result.reason),
+            });
+          }
+        }
       }
       return out;
     },
@@ -210,4 +269,4 @@ export function createGatesCache(deps: GatesCacheDeps): GatesCache {
 // thresholds module directly.
 export { DEFAULT_GATE_THRESHOLDS, getGateThresholds };
 
-export type { GateReportSummary, GateThresholds };
+export type { GateReportSummary, GateSummaryLite, GateThresholds };

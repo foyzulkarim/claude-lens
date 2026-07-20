@@ -1,4 +1,5 @@
 import type { Measure } from "../../shared/metrics-contract.js";
+import type { GateSummaryLite } from "../../shared/gates-cache-contract.js";
 import {
   DEFAULT_MODEL_KEYS,
   type ModelRate,
@@ -119,7 +120,7 @@ export function computeMeasure(
    * contribute 0 (no gate data) — `null` is only returned when *no*
    * session in `scope.sessions` has a summary at all.
    */
-  gateSummaries: Map<string, { score: number; status: string }> = new Map(),
+  gateSummaries: Map<string, GateSummaryLite> = new Map(),
 ): number | null {
   switch (measure) {
     case "costComputed":

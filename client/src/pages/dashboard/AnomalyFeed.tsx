@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { Link } from "wouter";
 import { detectTurnCostAnomalies, type TurnCostSample } from "../../../../shared/anomaly.js";
-import type { ScoreLetter } from "../../../../shared/gates-contract.js";
+import { letterFromScore, type ScoreLetter } from "../../../../shared/gates-contract.js";
 import type {
   SessionListItem,
   SessionListParams,
@@ -103,13 +103,8 @@ const LETTER_SEVERITY: Record<ScoreLetter, AnomalySeverity> = {
   F: "high",
 };
 
-function letterFromScore(score: number): ScoreLetter {
-  if (score >= 0.9) return "A";
-  if (score >= 0.75) return "B";
-  if (score >= 0.5) return "C";
-  if (score >= 0.25) return "D";
-  return "F";
-}
+// `letterFromScore` lives in `gates-contract.ts` (#P4-12 review
+// finding #9) — we used to keep a local copy here.
 
 /**
  * Convert worst-scoring Sessions page rows into `gateFailure` feed items
@@ -265,21 +260,45 @@ export function AnomalyFeed({ items, now: injectedNow }: AnomalyFeedProps) {
     staleTime: 60_000,
   });
 
-  const detectedItems = useMemo<AnomalyFeedItem[]>(() => {
+  // Compute anomaly items and gate-failure items INDEPENDENTLY
+  // (#P4-12 review finding #28): the previous shape short-circuited
+  // both lists behind `if (!sessionsQuery.data) return [];`, which
+  // blocked `gateItems` from rendering on the slower `gateFailuresQuery`
+  // by coupling it to the slower `sessionsQuery`. Splitting the
+  // computations lets the gate-failure list show as soon as the gate
+  // endpoint resolves, and lets the anomaly list show as soon as the
+  // session endpoint resolves.
+  const anomalyItems = useMemo<AnomalyFeedItem[]>(() => {
     if (items !== undefined) return items;
     if (!sessionsQuery.data) return [];
     const samples = turnSamplesFromSessions(sessionsQuery.data.items);
-    const anomalyItems = anomalyItemsFromSamples(
-      samples,
-      undefined,
-      configQuery.data?.anomalyFactor,
-    );
-    const gateItems = gateFailureItemsFromSessions(gateFailuresQuery.data ?? []);
-    return [...anomalyItems, ...gateItems];
-  }, [items, sessionsQuery.data, configQuery.data?.anomalyFactor, gateFailuresQuery.data]);
+    return anomalyItemsFromSamples(samples, undefined, configQuery.data?.anomalyFactor);
+  }, [items, sessionsQuery.data, configQuery.data?.anomalyFactor]);
 
-  const isLoading = items === undefined && sessionsQuery.isPending;
-  const isError = items === undefined && sessionsQuery.isError;
+  const gateItems = useMemo<AnomalyFeedItem[]>(() => {
+    if (items !== undefined) return [];
+    if (!gateFailuresQuery.data) return [];
+    return gateFailureItemsFromSessions(gateFailuresQuery.data);
+  }, [items, gateFailuresQuery.data]);
+
+  const detectedItems = useMemo<AnomalyFeedItem[]>(
+    () => [...anomalyItems, ...gateItems],
+    [anomalyItems, gateItems],
+  );
+
+  // Surface errors from BOTH queries (#P4-12 review findings #13/#29):
+  // the pre-fix shape only checked `sessionsQuery.isError`, so a failed
+  // gate fetch was silently swallowed. Show whichever fired first.
+  // Use `useQuery`'s `isError` (a real boolean) rather than `error !==
+  // undefined` — TanStack Query's `error` is `null` on success, and
+  // `null !== undefined` would otherwise trip `isError` even on a
+  // resolved query.
+  const sessionsError = items === undefined && sessionsQuery.isError ? sessionsQuery.error : null;
+  const gateError =
+    items === undefined && gateFailuresQuery.isError ? gateFailuresQuery.error : null;
+  const errorMessage = sessionsError?.message ?? gateError?.message ?? "";
+  const isLoading = items === undefined && (sessionsQuery.isPending || gateFailuresQuery.isPending);
+  const isError = sessionsError !== null || gateError !== null;
 
   return (
     <div
@@ -293,9 +312,9 @@ export function AnomalyFeed({ items, now: injectedNow }: AnomalyFeedProps) {
           Loading…
         </p>
       )}
-      {isError && (
+      {isError && errorMessage && (
         <p role="alert" className="mt-3 text-sm text-[#B23A3A] dark:text-[#E05252]">
-          {sessionsQuery.error.message}
+          {errorMessage}
         </p>
       )}
 
