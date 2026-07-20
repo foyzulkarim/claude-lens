@@ -55,6 +55,35 @@ export function unitForMeasure(measure: Measure): Unit {
   return MEASURE_UNIT[measure];
 }
 
+/**
+ * Human-readable name per `Measure` — used to disambiguate ECharts series
+ * names when a chart requests more than one measure (e.g. the `tokens` unit's
+ * `inputTokens`+`outputTokens` pair, per `UNIT_MEASURES` above). A `Record`
+ * (not a partial map) so adding a `Measure` without a label here is a
+ * compile error rather than a silently blank legend entry.
+ */
+export const MEASURE_LABELS: Record<Measure, string> = {
+  costComputed: "Cost (computed)",
+  costObserved: "Cost (observed)",
+  inputTokens: "Input tokens",
+  outputTokens: "Output tokens",
+  cacheReadTokens: "Cache read tokens",
+  cacheCreateTokens: "Cache create tokens",
+  apiCalls: "API calls",
+  turns: "Turns",
+  sessions: "Sessions",
+  toolCalls: "Tool calls",
+  cacheHitPct: "Cache hit %",
+  wallMinutes: "Wall minutes",
+  apiMs: "API ms",
+  linesAdded: "Lines added",
+  linesRemoved: "Lines removed",
+  gatePassRate: "Gate pass rate",
+  toolErrors: "Tool errors",
+  cacheSavingsComputed: "Cache savings (computed)",
+  routingSavingsComputed: "Routing savings (computed)",
+};
+
 const CURRENCY_FORMAT = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 const COMPACT_FORMAT = new Intl.NumberFormat("en-US", { notation: "compact" });
 const INTEGER_FORMAT = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
