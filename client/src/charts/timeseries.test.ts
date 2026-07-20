@@ -131,3 +131,31 @@ describe("buildTimeseriesOption — multiple series", () => {
     expect(entries.map((e) => e.name)).toEqual(["claude-lens", "claude-code"]);
   });
 });
+
+describe("buildTimeseriesOption — multi-measure disambiguation", () => {
+  it("folds the measure's human name into the series name when the chart requests more than one measure (e.g. the tokens unit's inputTokens+outputTokens pair) and every series shares the generic 'All' group label", () => {
+    const input = series({ measure: "inputTokens", label: "All" });
+    const output = series({ measure: "outputTokens", label: "All" });
+    const option = buildTimeseriesOption([input, output], { family: "bars", unit: "tokens" });
+    const entries = option.series as { name?: string }[];
+    expect(entries.map((e) => e.name)).toEqual(["Input tokens", "Output tokens"]);
+  });
+
+  it("combines a real group label with the measure name instead of just the measure name", () => {
+    const input = series({ measure: "inputTokens", label: "claude-lens" });
+    const output = series({ measure: "outputTokens", label: "claude-lens" });
+    const option = buildTimeseriesOption([input, output], { family: "bars", unit: "tokens" });
+    const entries = option.series as { name?: string }[];
+    expect(entries.map((e) => e.name)).toEqual([
+      "claude-lens · Input tokens",
+      "claude-lens · Output tokens",
+    ]);
+  });
+
+  it("leaves the plain group label alone when only one measure is present, even if it's 'All'", () => {
+    const input = series({ measure: "costComputed", label: "All" });
+    const option = buildTimeseriesOption([input], { family: "bars", unit: "$" });
+    const entries = option.series as { name?: string }[];
+    expect(entries.map((e) => e.name)).toEqual(["All"]);
+  });
+});
