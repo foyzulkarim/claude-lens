@@ -3,50 +3,11 @@ import "@testing-library/jest-dom/vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
-import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Router } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
-import type { SearchIndexResponse } from "../../../../shared/search-index-contract.js";
 import { PromptSearchPanel } from "./PromptSearchPanel.js";
-
-const SAMPLE_INDEX: SearchIndexResponse = {
-  prompts: [
-    {
-      id: "s1:p1",
-      sessionId: "s1",
-      promptId: "p1",
-      turnNumber: 1,
-      text: "How do I budget my Claude Code usage across a 5-hour subscription window?",
-      timestamp: "2026-07-15T10:00:00.000Z",
-      cwd: "/Users/me/personal/claude-lens",
-      gitBranch: "main",
-    },
-    {
-      id: "s1:p2",
-      sessionId: "s1",
-      promptId: "p2",
-      turnNumber: 2,
-      text: "Refactor the parser to handle partial trailing lines more carefully.",
-      timestamp: "2026-07-15T10:05:00.000Z",
-      cwd: "/Users/me/personal/claude-lens",
-      gitBranch: "feat/search-index",
-    },
-    {
-      id: "s2:p1",
-      sessionId: "s2",
-      promptId: "p1",
-      turnNumber: 1,
-      text: "Add a MiniSearch-backed full-text search across every user prompt.",
-      timestamp: "2026-07-12T14:30:00.000Z",
-      cwd: "/Users/me/personal/claude-lens",
-      gitBranch: "feat/search-index",
-    },
-  ],
-  version: 1,
-};
-
-const EMPTY_INDEX: SearchIndexResponse = { prompts: [], version: 1 };
+import { EMPTY_INDEX, SAMPLE_INDEX } from "./prompt-search.fixtures.js";
 
 function installFetch(responder: () => Promise<Response>): void {
   const fakeFetch = vi.fn((): Promise<Response> => responder());
@@ -60,14 +21,13 @@ function renderPanel(initialSearch = "") {
     searchPath: initialSearch,
     static: true,
   });
-  const tree = (
+  return render(
     <QueryClientProvider client={queryClient}>
       <Router hook={hook} searchHook={searchHook}>
         <PromptSearchPanel />
       </Router>
-    </QueryClientProvider>
-  ) as ReactElement;
-  return render(tree);
+    </QueryClientProvider>,
+  );
 }
 
 beforeEach(() => {
@@ -80,7 +40,7 @@ afterEach(() => {
 });
 
 describe("PromptSearchPanel — display states (#P4-3)", () => {
-  it("shows the idle hint before the user types", async () => {
+  it("shows the idle hint after the index loads and the user hasn't typed", async () => {
     renderPanel();
     const input = screen.getByTestId("prompt-search-input");
     expect(input).toBeInTheDocument();
@@ -104,6 +64,25 @@ describe("PromptSearchPanel — display states (#P4-3)", () => {
       expect(screen.getByText(/Prompt search unavailable/i)).toBeInTheDocument();
     });
   });
+
+  it("announces state changes via an aria-live region (A-1, WCAG 4.1.3)", async () => {
+    renderPanel();
+    await waitFor(() => {
+      const status = screen.getByTestId("prompt-search-status");
+      // Loading/empty/idle/no-match use role="status" + aria-live="polite".
+      expect(status.getAttribute("role")).toBe("status");
+      expect(status.getAttribute("aria-live")).toBe("polite");
+    });
+  });
+
+  it("promotes the error state to role=alert so screen readers hear it (A-1)", async () => {
+    installFetch(() => Promise.resolve(new Response("boom", { status: 500 })));
+    renderPanel();
+    await waitFor(() => {
+      const status = screen.getByTestId("prompt-search-status");
+      expect(status.getAttribute("role")).toBe("alert");
+    });
+  });
 });
 
 describe("PromptSearchPanel — search-as-you-type", () => {
@@ -118,7 +97,6 @@ describe("PromptSearchPanel — search-as-you-type", () => {
       const results = screen.getAllByTestId("prompt-search-result");
       expect(results.length).toBeGreaterThan(0);
     });
-    // The refactor prompt should appear in the result list.
     expect(screen.getByText(/Refactor the parser/i)).toBeInTheDocument();
   });
 
@@ -163,17 +141,14 @@ describe("PromptSearchPanel — deep-link shape", () => {
       record: true,
     });
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    const tree = (
+    render(
       <QueryClientProvider client={queryClient}>
         <Router hook={hook} searchHook={searchHook}>
           <PromptSearchPanel />
         </Router>
-      </QueryClientProvider>
-    ) as ReactElement;
-    render(tree);
+      </QueryClientProvider>,
+    );
 
-    // Type a query that matches the "Refactor the parser" prompt in the
-    // sample fixture; the click below should navigate to its session.
     const input = await waitFor(() => screen.getByTestId("prompt-search-input"));
     await user.type(input, "refactor");
 
@@ -182,10 +157,94 @@ describe("PromptSearchPanel — deep-link shape", () => {
     expect(results.length).toBeGreaterThan(0);
     await user.click(results[0] as HTMLElement);
 
-    // memoryLocation's recorded history captures every navigation;
-    // the latest entry should be the Session Detail deep-link at
-    // /sessions/:id?turn=N (ARCH A3).
     const last = history.at(-1) ?? "";
     expect(last.startsWith("/sessions/s1?turn=")).toBe(true);
+  });
+});
+
+describe("PromptSearchPanel — keyboard navigation (A-2, A-7)", () => {
+  it("ArrowDown moves the activeIndex through results; Enter navigates", async () => {
+    const user = userEvent.setup();
+    const { hook, searchHook, history } = memoryLocation({
+      path: "/sessions",
+      record: true,
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <Router hook={hook} searchHook={searchHook}>
+          <PromptSearchPanel />
+        </Router>
+      </QueryClientProvider>,
+    );
+
+    const input = await waitFor(() => screen.getByTestId("prompt-search-input"));
+    await user.type(input, "refactor");
+    await waitFor(() => screen.getAllByTestId("prompt-search-result"));
+
+    // Focus the first result button (tabIndex=0 after roving-tabindex sets it).
+    const first = screen.getAllByTestId("prompt-search-result")[0] as HTMLElement;
+    first.focus();
+    // Move to second result and press Enter.
+    await user.keyboard("{ArrowDown}");
+    await user.keyboard("{Enter}");
+
+    const last = history.at(-1) ?? "";
+    expect(last.startsWith("/sessions/")).toBe(true);
+    expect(last).toContain("?turn=");
+  });
+
+  it("Escape clears the query and returns focus to the input", async () => {
+    const user = userEvent.setup();
+    renderPanel();
+
+    const input = (await waitFor(() =>
+      screen.getByTestId("prompt-search-input"),
+    )) as HTMLInputElement;
+    await user.type(input, "refactor");
+    await waitFor(() => screen.getAllByTestId("prompt-search-result"));
+
+    // Focus a result and press Escape.
+    const first = screen.getAllByTestId("prompt-search-result")[0] as HTMLElement;
+    first.focus();
+    await user.keyboard("{Escape}");
+
+    // Input is cleared and focused.
+    await waitFor(() => {
+      expect((screen.getByTestId("prompt-search-input") as HTMLInputElement).value).toBe("");
+    });
+    expect(document.activeElement).toBe(screen.getByTestId("prompt-search-input"));
+  });
+});
+
+describe("PromptSearchPanel — build error defense-in-depth (EH-1, ARCH §Risks)", () => {
+  it("renders the empty-state when the MiniSearch index build throws", async () => {
+    // Stub a malformed index that survives the response guard but trips
+    // MiniSearch's addAll. The component's defensive try should catch it
+    // and render the build-error state instead of unmounting the section.
+    installFetch(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            // Two docs with the same id — the previous buildSearchSnapshot
+            // would have deduped, but if the server (or a future regression)
+            // ships a duplicate-id payload, MiniSearch's addAll throws.
+            // This is the exact "pathological input" scenario ARCH §Risks
+            // contracts the useMemo try to handle.
+            prompts: [
+              { ...SAMPLE_INDEX.prompts[0] },
+              { ...SAMPLE_INDEX.prompts[0], text: "duplicate" },
+            ],
+            version: 1,
+          }),
+        ),
+      ),
+    );
+    renderPanel();
+    await waitFor(() => {
+      // The error message mentions "index failed to build" so users can
+      // tell this is a client-side bug, not a server outage.
+      expect(screen.getByText(/index failed to build/i)).toBeInTheDocument();
+    });
   });
 });

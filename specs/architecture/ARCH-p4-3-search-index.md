@@ -226,7 +226,7 @@ Used by:
 |-------------------------------------------------------|------------------------------------------------------------------------------------------------------------|
 | `server/store/store.ts`                               | Add `buildSearchSnapshot(): SearchIndexResponse` method; delegates to `build-search-snapshot.ts`          |
 | `server/app.ts`                                       | Import + call `registerSearchRoute(app, store)` between `registerMetricsRoute` and `registerSessionsRoute` |
-| `server/ingest/pipeline.ts`                           | In the per-session debounce that already emits `session-updated`, additionally emit `session-prompts-changed` if `result.prompts.length` is non-empty |
+| `server/ingest/pipeline.ts` *(not modified — see footnote below)* | The ARCH originally specified the A8 emit in the per-session debounce, but the implementation lives in `server/store/store.ts` instead — the `Store`'s `onFlush` invalidator hook is the actual integration point for WS emit, and adding the prompt-specific emit there keeps both messages routed through the same callback. Functionally equivalent; `pendingPromptChanges` is set in `applyRecords` and read in `onFlush`. |
 | `shared/ws-protocol.ts`                               | Add `SessionPromptsChanged` interface; append to `WsServerMessage` union                                    |
 | `client/src/ws.ts`                                    | Add `case "session-prompts-changed"` → `queryClient.invalidateQueries({ queryKey: qk.prefixes.searchIndex })` |
 | `client/src/api/queryKeys.ts`                         | Add `qk.searchIndex()` and `qk.prefixes.searchIndex`                                                       |

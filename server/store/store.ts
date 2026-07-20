@@ -423,20 +423,45 @@ export class Store {
    * `version` is a monotonic per-process counter that bumps on every call
    * — the wire shape carries it so a future incremental-update client can
    * detect "the server has a fresher snapshot than the one I have."
+   *
+   * Per-session error handling: a single corrupted session's
+   * `recompute()` throwing (e.g. an `unreachable:` invariant in
+   * `deriveTurns`/`deriveSession`) is logged and skipped — search
+   * degrades to "missing that one session" rather than the whole
+   * 500 that would break search across every other healthy session.
    */
   buildSearchSnapshot(): SearchIndexResponse {
-    const sessions = Array.from(this.sessions.entries()).map(([sessionId, state]) => {
-      if (!state.session) this.recompute(sessionId);
-      const reifiedState = this.sessions.get(sessionId);
-      const session = reifiedState?.session ?? state.session;
-      return {
-        sessionId,
-        cwd: session?.project, // session.project is the cwd path (derived)
-        gitBranch: session?.gitBranch,
-        prompts: state.prompts,
-        turns: state.turns,
-      };
-    });
+    const sessions: Array<{
+      sessionId: string;
+      cwd?: string;
+      gitBranch?: string;
+      prompts: PromptTextRecord[];
+      turns: Turn[];
+    }> = [];
+    for (const [sessionId, state] of this.sessions) {
+      try {
+        if (!state.session) this.recompute(sessionId);
+        const reifiedState = this.sessions.get(sessionId);
+        const session = reifiedState?.session ?? state.session;
+        sessions.push({
+          sessionId,
+          cwd: session?.project, // session.project is the cwd path (derived)
+          gitBranch: session?.gitBranch,
+          prompts: state.prompts,
+          turns: state.turns,
+        });
+      } catch (err) {
+        // Single bad session must not take down the whole search index.
+        // The next `session-updated` for this session will re-attempt
+        // the snapshot — and a successful recompute will lift it back
+        // into the response on the next request.
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[search-index] skipping session ${sessionId} due to error:`,
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+    }
     const version = ++this.searchSnapshotVersion;
     return buildSearchSnapshot({ sessions }, { version });
   }

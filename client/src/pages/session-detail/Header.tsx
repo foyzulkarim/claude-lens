@@ -34,7 +34,17 @@ export function Header({ header }: HeaderProps): React.JSX.Element {
     >
       <div className="flex flex-wrap items-baseline justify-between gap-3">
         <div className="flex flex-wrap items-baseline gap-3">
-          <h1 className="font-mono text-[22px] font-semibold text-slate-900 dark:text-[#E8EDF2]">
+          <h1
+            // Focus target for deep-link arrivals (PromptSearchPanel → Session
+            // Detail). tabIndex=-1 makes the heading programmatically
+            // focusable without putting it in the tab order, so keyboard
+            // users land on a meaningful landmark after a deep-link click.
+            // The id is referenced by SessionDetail.tsx's focus-on-mount
+            // effect when `?turn=` is present in the URL.
+            id="session-detail-heading"
+            tabIndex={-1}
+            className="font-mono text-[22px] font-semibold text-slate-900 outline-none focus-visible:ring-1 focus-visible:ring-slate-400 dark:text-[#E8EDF2] dark:focus-visible:ring-slate-500"
+          >
             {shortId(header.sessionId)}
           </h1>
           <span className="font-mono text-xs text-slate-500 dark:text-[#8A96A5]">

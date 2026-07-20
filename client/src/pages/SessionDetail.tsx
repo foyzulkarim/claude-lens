@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { useParams } from "wouter";
+import { useEffect } from "react";
+import { useParams, useSearch } from "wouter";
 import { qk } from "../api/queryKeys.js";
 import { getSessionDetail, SessionDetailApiError } from "../api/session-detail.js";
 import { SessionDetailView } from "./session-detail/SessionDetailView.js";
@@ -24,12 +25,33 @@ import { SessionDetailView } from "./session-detail/SessionDetailView.js";
  */
 export function SessionDetail() {
   const { id } = useParams<{ id: string }>();
+  const search = useSearch();
 
   const query = useQuery({
     queryKey: qk.session(id ?? ""),
     queryFn: ({ signal }) => getSessionDetail(id ?? "", signal),
     enabled: typeof id === "string" && id.length > 0,
   });
+
+  // Deep-link focus management (#P4-3 / A-4): when the user arrives on
+  // Session Detail via a PromptSearchPanel result, the URL carries
+  // `?turn=N` and the source button is unmounted. Move focus to the page
+  // heading so keyboard users land on a meaningful landmark rather than
+  // on `<body>`. Skipped when there's no `?turn=` so we don't steal focus
+  // from a direct navigation (browser back/forward, address-bar entry).
+  // The heading carries `id="session-detail-heading"` and `tabIndex={-1}`.
+  useEffect(() => {
+    if (!query.data) return;
+    const turnParam = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search).get(
+      "turn",
+    );
+    if (turnParam === null) return;
+    // Defer to the next paint so the heading has rendered before focus.
+    const handle = requestAnimationFrame(() => {
+      document.getElementById("session-detail-heading")?.focus();
+    });
+    return () => cancelAnimationFrame(handle);
+  }, [query.data, search]);
 
   if (typeof id !== "string" || id.length === 0) {
     return (

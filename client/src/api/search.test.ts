@@ -117,4 +117,90 @@ describe("getSearchIndex — error handling (#P4-3)", () => {
     const result = await getSearchIndex();
     expect(result.prompts).toEqual([]);
   });
+
+  // Adversarial array-element cases — every doc must validate, not just the
+  // first. MiniSearch's addAll is all-or-nothing: a malformed doc[N] would
+  // otherwise escape the guard and crash the index build.
+
+  it("rejects a 2xx response with a null doc as SearchIndexResponseShapeError", async () => {
+    installFetch(async () => makeResponse({ prompts: [null], version: 1 }));
+    await expect(getSearchIndex()).rejects.toBeInstanceOf(SearchIndexResponseShapeError);
+  });
+
+  it("rejects a 2xx response with a malformed later doc as SearchIndexResponseShapeError", async () => {
+    installFetch(async () =>
+      makeResponse({
+        prompts: [VALID_DOC, { text: "bad" }], // doc[1] missing all required fields
+        version: 1,
+      }),
+    );
+    await expect(getSearchIndex()).rejects.toBeInstanceOf(SearchIndexResponseShapeError);
+  });
+
+  it("rejects a 2xx response with a non-finite turnNumber as SearchIndexResponseShapeError", async () => {
+    installFetch(async () =>
+      makeResponse({
+        prompts: [{ ...VALID_DOC, turnNumber: Number.NaN }],
+        version: 1,
+      }),
+    );
+    await expect(getSearchIndex()).rejects.toBeInstanceOf(SearchIndexResponseShapeError);
+  });
+
+  it("rejects a 2xx response with cwd of wrong type as SearchIndexResponseShapeError", async () => {
+    installFetch(async () =>
+      makeResponse({
+        prompts: [{ ...VALID_DOC, cwd: 42 }],
+        version: 1,
+      }),
+    );
+    await expect(getSearchIndex()).rejects.toBeInstanceOf(SearchIndexResponseShapeError);
+  });
+
+  it("rejects a 2xx response with a non-array `prompts` field as SearchIndexResponseShapeError", async () => {
+    installFetch(async () => makeResponse({ prompts: "not-an-array", version: 1 }));
+    await expect(getSearchIndex()).rejects.toBeInstanceOf(SearchIndexResponseShapeError);
+  });
+
+  it("rejects a 2xx response with a non-finite `version` as SearchIndexResponseShapeError", async () => {
+    installFetch(async () =>
+      makeResponse({ prompts: [VALID_DOC], version: Number.POSITIVE_INFINITY }),
+    );
+    await expect(getSearchIndex()).rejects.toBeInstanceOf(SearchIndexResponseShapeError);
+  });
+});
+
+describe("getSearchIndex — non-2xx body shape (#P4-3)", () => {
+  it("composes the server's {error, cause} body into the SearchIndexApiError message", async () => {
+    installFetch(async () =>
+      makeResponse(
+        { error: "internal server error", cause: "Store.buildSearchSnapshot failed: timeout" },
+        { status: 500 },
+      ),
+    );
+    await expect(getSearchIndex()).rejects.toMatchObject({
+      name: "SearchIndexApiError",
+      status: 500,
+      validation: "internal server error",
+      message:
+        "GET /api/search-index failed (500): internal server error: Store.buildSearchSnapshot failed: timeout",
+    });
+  });
+
+  it("falls back to statusText when both error and cause are missing", async () => {
+    installFetch(
+      async () =>
+        new Response("not-json", {
+          status: 503,
+          statusText: "Service Unavailable",
+          headers: { "Content-Type": "text/plain" },
+        }),
+    );
+    await expect(getSearchIndex()).rejects.toMatchObject({
+      name: "SearchIndexApiError",
+      status: 503,
+      validation: null,
+      message: "GET /api/search-index failed (503): Service Unavailable",
+    });
+  });
 });

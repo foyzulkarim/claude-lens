@@ -42,41 +42,65 @@ export class SearchIndexResponseShapeError extends Error {
 // Response shape guard
 // ---------------------------------------------------------------------------
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isPromptSearchDoc(value: unknown, index: number): value is PromptSearchDoc {
+  if (!isRecord(value)) {
+    throw new SearchIndexResponseShapeError(
+      `prompts[${index}] is not an object (got ${value === null ? "null" : typeof value})`,
+    );
+  }
+  // Required string fields
+  for (const field of ["id", "sessionId", "promptId", "text", "timestamp"] as const) {
+    if (typeof value[field] !== "string") {
+      throw new SearchIndexResponseShapeError(
+        `prompts[${index}].${field} must be a string (got ${typeof value[field]})`,
+      );
+    }
+  }
+  // Required number field
+  if (typeof value.turnNumber !== "number" || !Number.isFinite(value.turnNumber)) {
+    throw new SearchIndexResponseShapeError(
+      `prompts[${index}].turnNumber must be a finite number (got ${typeof value.turnNumber})`,
+    );
+  }
+  // Optional fields: must be string when present
+  for (const field of ["cwd", "gitBranch"] as const) {
+    if (value[field] !== undefined && typeof value[field] !== "string") {
+      throw new SearchIndexResponseShapeError(
+        `prompts[${index}].${field} must be a string when present (got ${typeof value[field]})`,
+      );
+    }
+  }
+  return true;
+}
+
 /**
  * Asserts `value` is a well-formed `SearchIndexResponse`. The server
  * already type-checks at emit time, but a too-trusting client would
  * crash inside MiniSearch's `addAll` on a malformed/empty/v1 payload
  * from a future server — this guard turns that into a typed throw
- * the panel can render as a recoverable error state.
+ * the panel can render as a recoverable error state. Validates every
+ * doc, not just the first, because `addAll` is all-or-nothing: one
+ * malformed element aborts the whole index build with an unhandled
+ * `MiniSearch: document does not have ID field "id"`.
  */
 function assertSearchIndexResponse(value: unknown): asserts value is SearchIndexResponse {
-  if (typeof value !== "object" || value === null) {
+  if (!isRecord(value)) {
     throw new SearchIndexResponseShapeError("expected object at the response root");
   }
-  const v = value as Record<string, unknown>;
-  if (!Array.isArray(v.prompts)) {
+  if (!Array.isArray(value.prompts)) {
     throw new SearchIndexResponseShapeError("missing required field 'prompts' (expected array)");
   }
-  if (typeof v.version !== "number") {
-    throw new SearchIndexResponseShapeError("missing required field 'version' (expected number)");
+  if (typeof value.version !== "number" || !Number.isFinite(value.version)) {
+    throw new SearchIndexResponseShapeError(
+      `missing required field 'version' (expected finite number, got ${typeof value.version})`,
+    );
   }
-  // Spot-check the first doc so we catch "server returned [{...wrong shape}]"
-  // before MiniSearch's addAll throws. We don't recursively validate — that
-  // belongs at the wire boundary, not the client.
-  if (v.prompts.length > 0) {
-    const first = v.prompts[0] as Partial<PromptSearchDoc>;
-    if (
-      typeof first.id !== "string" ||
-      typeof first.sessionId !== "string" ||
-      typeof first.promptId !== "string" ||
-      typeof first.turnNumber !== "number" ||
-      typeof first.text !== "string" ||
-      typeof first.timestamp !== "string"
-    ) {
-      throw new SearchIndexResponseShapeError(
-        "first prompt doc is missing required fields (id/sessionId/promptId/turnNumber/text/timestamp)",
-      );
-    }
+  for (let i = 0; i < value.prompts.length; i++) {
+    isPromptSearchDoc(value.prompts[i], i);
   }
 }
 
@@ -98,13 +122,20 @@ function assertSearchIndexResponse(value: unknown): asserts value is SearchIndex
 export async function getSearchIndex(signal?: AbortSignal): Promise<SearchIndexResponse> {
   const response = await fetch("/api/search-index", { signal });
   if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as { error?: unknown } | null;
+    const body = (await response.json().catch(() => null)) as {
+      error?: unknown;
+      cause?: unknown;
+    } | null;
     const validation = body && typeof body.error === "string" ? body.error : null;
-    const detail = validation ?? response.statusText;
+    const cause = body && typeof body.cause === "string" ? body.cause : null;
+    // Compose: server's high-level error first, then the underlying cause
+    // (set by the Fastify setErrorHandler wrapper) so the user sees the
+    // real failure mode rather than "Internal Server Error" alone.
+    const detail = [validation, cause].filter((s): s is string => s !== null).join(": ");
     throw new SearchIndexApiError(
       response.status,
       validation,
-      `GET /api/search-index failed (${response.status}): ${detail}`,
+      `GET /api/search-index failed (${response.status}): ${detail || response.statusText}`,
     );
   }
   const body: unknown = await response.json();

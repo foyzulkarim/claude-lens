@@ -17,6 +17,12 @@
  * `turns.length + 1`, so the deep-link still lands on the next panel.
  * This is the "honest trailing-edge" behavior — never fabricate a turn
  * the session didn't produce, never silently drop a prompt.
+ *
+ * Duplicate-promptId disambiguation: real transcripts can carry the same
+ * promptId twice in one session (a retried or multi-part user line).
+ * MiniSearch requires unique doc ids, so we add an ordinal suffix to
+ * repeats. The first occurrence keeps the plain `sessionId:promptId`
+ * id so the common case is unaffected.
  */
 
 import type { PromptSearchDoc, SearchIndexResponse } from "../../shared/search-index-contract.js";
@@ -40,12 +46,18 @@ export interface SearchSnapshotInput {
  * `version` is a monotonic counter seeded at 1; callers that maintain
  * a long-lived process can pass a higher seed to skip ahead — currently
  * unused, reserved for incremental updates.
+ *
+ * Single-pass: docs are built with their final disambiguated id
+ * (using a per-session `Map<promptId, occurrence>`) and the global
+ * sort is applied once at the end. Avoids the two-pass shape of
+ * mutating a provisional id after the array is already populated.
  */
 export function buildSearchSnapshot(
   input: SearchSnapshotInput,
   options: { version?: number } = {},
 ): SearchIndexResponse {
   const docs: PromptSearchDoc[] = [];
+
   for (const session of input.sessions) {
     const turnByPrompt = new Map<string, number>();
     session.turns.forEach((turn, idx) => {
@@ -54,10 +66,26 @@ export function buildSearchSnapshot(
     });
     const fallbackTurn = session.turns.length + 1;
 
+    // Per-session occurrence counter — keys are the canonical
+    // `sessionId:promptId` so two sessions with the same promptId never
+    // collide, and within one session each repeat gets a fresh suffix.
+    const occurrences = new Map<string, number>();
+    const sessionContext =
+      session.cwd !== undefined || session.gitBranch !== undefined
+        ? {
+            ...(session.cwd !== undefined ? { cwd: session.cwd } : {}),
+            ...(session.gitBranch !== undefined ? { gitBranch: session.gitBranch } : {}),
+          }
+        : null;
+
     for (const prompt of session.prompts) {
-      const id = `${prompt.sessionId}:${prompt.promptId}`;
-      docs.push({
-        id, // provisional — disambiguated by the dedupe pass below
+      const baseId = `${prompt.sessionId}:${prompt.promptId}`;
+      const occurrence = occurrences.get(baseId) ?? 0;
+      occurrences.set(baseId, occurrence + 1);
+      const id = occurrence === 0 ? baseId : `${baseId}:${occurrence}`;
+
+      const doc: PromptSearchDoc = {
+        id,
         sessionId: prompt.sessionId,
         promptId: prompt.promptId,
         turnNumber: turnByPrompt.get(prompt.promptId) ?? fallbackTurn,
@@ -67,33 +95,21 @@ export function buildSearchSnapshot(
         // (Today the parser doesn't carry cwd/branch on PromptTextRecord — the
         // session-level values are the authoritative context, matching what
         // Session Detail renders.)
-        ...(session.cwd !== undefined ? { cwd: session.cwd } : {}),
-        ...(session.gitBranch !== undefined ? { gitBranch: session.gitBranch } : {}),
-      });
+        ...(sessionContext ?? {}),
+      };
+      docs.push(doc);
     }
   }
 
   // Stable sort: timestamp first, then sessionId, then promptId — ensures
   // identical inputs across calls produce identical payloads (snapshot-test
-  // friendly).
+  // friendly). The dedupe pass is gone — disambiguation already happened
+  // during the build pass.
   docs.sort((a, b) => {
     if (a.timestamp !== b.timestamp) return a.timestamp < b.timestamp ? -1 : 1;
     if (a.sessionId !== b.sessionId) return a.sessionId < b.sessionId ? -1 : 1;
     return a.promptId < b.promptId ? -1 : a.promptId > b.promptId ? 1 : 0;
   });
-
-  // `sessionId:promptId` is unique for the common case, but real transcripts
-  // can carry the same promptId twice in one session (a retried or
-  // multi-part user line) — MiniSearch requires a unique doc id and throws
-  // on a duplicate, which would crash the whole search panel client-side.
-  // Disambiguate every repeat with an ordinal suffix; the first occurrence
-  // keeps the plain `sessionId:promptId` id so the common case is unaffected.
-  const seen = new Map<string, number>();
-  for (const doc of docs) {
-    const occurrence = seen.get(doc.id) ?? 0;
-    seen.set(doc.id, occurrence + 1);
-    if (occurrence > 0) doc.id = `${doc.id}:${occurrence}`;
-  }
 
   return { prompts: docs, version: options.version ?? 1 };
 }
