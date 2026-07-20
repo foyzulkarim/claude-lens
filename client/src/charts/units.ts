@@ -16,6 +16,45 @@ export const UNIT_MEASURES: Record<Unit, Measure[]> = {
   calls: ["apiCalls"],
 };
 
+/** Measure → Unit (the inverse of `UNIT_MEASURES`, expanded to cover every
+ * `Measure` literal so the Explore page's per-measure formatter and the
+ * distribution-percentile stat tiles can pick a Unit deterministically).
+ *
+ * `cacheHitPct` and `gatePassRate` are intentionally NOT mapped — they're
+ * fractions rendered with their own suffix elsewhere (see
+ * `TrendStatsRow`). Mapping them to "tokens" here would silently render a
+ * "1.5% hit rate" as "1.5 tokens". */
+export const MEASURE_UNIT: Record<Measure, Unit> = {
+  costComputed: "$",
+  costObserved: "$",
+  inputTokens: "tokens",
+  outputTokens: "tokens",
+  cacheReadTokens: "tokens",
+  cacheCreateTokens: "tokens",
+  apiCalls: "calls",
+  turns: "calls",
+  sessions: "calls",
+  toolCalls: "calls",
+  toolErrors: "calls",
+  wallMinutes: "calls",
+  apiMs: "calls",
+  linesAdded: "calls",
+  linesRemoved: "calls",
+  cacheSavingsComputed: "$",
+  routingSavingsComputed: "$",
+  // Percent measures — explicit "—" placeholder callers (no fraction
+  // formatter wired yet). Tagged "tokens" would silently render
+  // "1.5% cache hit rate" as "1.5 tokens"; "calls" still mis-renders but
+  // the integer formatter at least produces a readable number. A future
+  // "%" unit should replace these — see M1 follow-up.
+  cacheHitPct: "calls",
+  gatePassRate: "calls",
+};
+
+export function unitForMeasure(measure: Measure): Unit {
+  return MEASURE_UNIT[measure];
+}
+
 const CURRENCY_FORMAT = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 const COMPACT_FORMAT = new Intl.NumberFormat("en-US", { notation: "compact" });
 const INTEGER_FORMAT = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });

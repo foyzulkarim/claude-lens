@@ -41,7 +41,7 @@ export async function getViews(signal?: AbortSignal): Promise<SavedView[]> {
 }
 
 export async function createView(
-  input: { name: string; path: string; search: string },
+  input: { name: string; path: string; search: string; pinned?: boolean },
   signal?: AbortSignal,
 ): Promise<SavedView> {
   const response = await fetch("/api/views", {

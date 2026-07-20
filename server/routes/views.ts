@@ -35,14 +35,21 @@ export function registerViewsRoute(
   app.post("/api/views", async (request, reply): Promise<SavedView | { error: string }> => {
     if (!isValidSavedViewInput(request.body)) {
       reply.code(400);
-      return { error: "body must be { name: string, path: string, search: string }" };
+      return {
+        error: "body must be { name: string, path: string, search: string, pinned?: boolean }",
+      };
     }
-    const { name, path, search } = request.body;
+    const { name, path, search, pinned } = request.body;
     const view: SavedView = {
       id: randomUUID(),
       name,
       path,
       search,
+      // Omit the key entirely when undefined so on-disk JSON is lean and
+      // older readers see the same shape they always have. ARCH-explore-page.md
+      // A3 — Explore's save flow always passes pinned:true; FilterBar never
+      // passes the field.
+      ...(pinned === undefined ? {} : { pinned }),
       createdAt: new Date().toISOString(),
     };
     // Write failures bubble to app.ts's top-level setErrorHandler

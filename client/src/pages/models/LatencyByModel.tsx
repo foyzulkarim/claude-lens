@@ -83,7 +83,11 @@ const columnHelper = createColumnHelper<LatencyRow>();
 
 export function LatencyByModel({ data, filters, isPending, isError, error }: LatencyByModelProps) {
   const [, navigate] = useLocation();
-  const columns = useMemo<ColumnDef<LatencyRow, unknown>[]>(
+  // `ColumnDef` is invariant in `TValue` — TanStack's own `TableOptions.columns`
+  // is typed `ColumnDef<TData, any>[]` for the same reason, mirrored on the
+  // `DataTable` props (see `components/DataTable.tsx`).
+  // biome-ignore lint/suspicious/noExplicitAny: matches upstream TanStack + DataTable contract
+  const columns = useMemo<ColumnDef<LatencyRow, any>[]>(
     () => [
       columnHelper.accessor("model", {
         header: "Model",
@@ -131,7 +135,7 @@ export function LatencyByModel({ data, filters, isPending, isError, error }: Lat
         ) : (
           <DataTable<LatencyRow>
             data={rows}
-            columns={columns as ColumnDef<LatencyRow, unknown>[]}
+            columns={columns}
             label="Latency by model"
             isLoading={isPending}
             empty="No latency data in this range."
