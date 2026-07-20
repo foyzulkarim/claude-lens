@@ -203,7 +203,7 @@ Pages are cheap by design: filter state + preset `MetricsQuery`s + layout. The H
 - [x] **#P4-15 — Settings page + config/local-store** *(§10)*
   `~/.claude-lens/config.json` + `local.json` (settings.ts, local-store.ts — extends #P4-10's minimal budget-only config store); pricing table editor, labeled scan roots (host dimension), budget/anomaly/gate thresholds, saved-views + tags managers, cost-capture setup guide. `GET/PUT /api/config`, `/api/views`, `/api/tags`.
   *Acceptance:* matches `settings.html`; root relabeling reflects in the host dimension without restart; tags now filterable on Sessions.
-- [ ] **#P4-16 — Explore page** *(§11)*
+- [x] **#P4-16 — Explore page** *(§11)*
   Pivot builder over the existing engine: measure × dimension × grain × chart type; distribution mode; save-as-Saved-View pinned to Dashboard.
   *Acceptance:* matches `explore.html`; any curated chart is reproducible as an Explore query.
 - [x] **#P4-17 — Export**

@@ -24,8 +24,6 @@ Thumbs.db
 # Local working clone of the GitHub wiki repo (specs/wiki-structure.md)
 .wiki/
 
-# Lane context files (auto-generated per issue by /start-task)
-specs/context/
 
 # Parallel Phase 4 lane worktrees (.claude/skills/move-to-worktree/)
 .worktrees/
