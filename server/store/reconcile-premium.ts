@@ -8,22 +8,29 @@ import type { CostLogRow, CostSample, TurnBoundary } from "../ingest/parse-premi
 // `deriveSession`); this module reads no store state and mutates nothing it is
 // given.
 //
-// Reconciliation model (design decisions D1-D3, D7 in the #P4-13 plan):
+// Reconciliation model (design decisions A1-A7 in ARCH-45.md / the #P4-13 plan):
 //
-//   * Attribution is by TIMESTAMP, not by C's `turn`/`epoch` index fields —
-//     every C line carries a `timestamp`, so one rule covers both index
+//   * (A1) Attribution is by TIMESTAMP, not by C's `turn`/`epoch` index fields
+//     — every C line carries a `timestamp`, so one rule covers both index
 //     variants. Each sample attaches to the **last call at-or-before** its
 //     timestamp (C fields are emitted after a call completes, so the sample's
 //     time is >= that call's); a sample earlier than every call falls back to
 //     the first call.
-//   * Per-field aggregation: cost SUM, lines SUM (per-sample deltas), apiMs
-//     MAX per call (a call's API duration, not additive across repeated
+//   * (A2) Per-field aggregation: cost SUM, lines SUM (per-sample deltas),
+//     apiMs MAX per call (a call's API duration, not additive across repeated
 //     samples), context_pct LAST (a point-in-time %, never summed).
-//   * Turn rollup: apiMs / lines are SUMMED across the turn's calls. `wallMs`
-//     upgrades to the observed turn-boundary span (`turn_end` − `startedAt`)
-//     when a B boundary covers the (main-chain) turn; degrades to the call
-//     span otherwise.
-//   * Session rollup is computed directly from all samples (attribution-
+//   * (A3) Turn rollup: apiMs / lines are SUMMED across the turn's calls.
+//     `wallMs` upgrades to the observed turn-boundary span (`turn_end` −
+//     `startedAt`) when a B boundary covers the (main-chain) turn; degrades to
+//     the transcript call-span otherwise.
+//   * (A4) costLogRow precedence: only consumed when C is absent. C wins
+//     whenever present.
+//   * (A5) wallMs baseline: `endedAt - startedAt` of the turn itself; the B
+//     upgrade replaces this value when a valid boundary matches.
+//   * (A6) Annotated-copy discipline: original `calls[]`/`turns[]` references
+//     are kept untouched when no accumulator fires for a row, so identity-keyed
+//     maps stay stable.
+//   * (A7) Session rollup is computed directly from all samples (attribution-
 //     invariant): `costObserved` = Σ cost_delta_usd, lines = Σ, context% =
 //     the latest sample's `context_pct`. When only L is present, its
 //     per-session totals stand in. When both C and L are present, **C wins**.
@@ -63,6 +70,13 @@ interface CallAccumulator {
   hasPct: boolean;
 }
 
+/** Boundary with its parsed end timestamp — pre-parsed once per reconcile so
+ *  the per-turn boundary lookup is O(1) amortized via a scanning pointer. */
+interface BoundaryWithMs {
+  ms: number;
+  boundary: TurnBoundary;
+}
+
 function parseMs(ts: string): number {
   const ms = Date.parse(ts);
   return Number.isFinite(ms) ? ms : Number.NaN;
@@ -86,79 +100,161 @@ export function reconcilePremium(
     return { calls, turns, session: {} };
   }
 
-  // --- Per-call attribution (C only) --------------------------------------
+  // --- (A1, A2) Per-call attribution (C only) ----------------------------
+  const accByCall = hasC
+    ? attributeSamplesToCalls(calls, input.costSamples)
+    : new Map<ApiCall, CallAccumulator>();
+
+  // --- (A6) Annotated call copies + identity-keyed map -------------------
+  const { annotatedCalls, annotatedByOriginal } = annotateCalls(calls, accByCall);
+
+  // --- (A3, A5) Turn annotation (with B-driven wallMs upgrade) -----------
+  const annotatedTurns = annotateTurns(
+    turns,
+    annotatedByOriginal,
+    input.turnBoundaries,
+    hasC,
+    hasB,
+  );
+
+  // --- (A4, A7) Session rollup (attribution-invariant) -------------------
+  const session = rollupSession(input.costSamples, input.costLogRow, hasC, hasL);
+
+  return { calls: annotatedCalls, turns: annotatedTurns, session };
+}
+
+/**
+ * (A1, A2) Attribute parsed C samples to their owning ApiCall by timestamp,
+ * accumulating per-call observed fields. Returns a Map keyed by ApiCall
+ * identity; entries absent for calls with no attributed samples.
+ */
+function attributeSamplesToCalls(
+  calls: ApiCall[],
+  samples: CostSample[],
+): Map<ApiCall, CallAccumulator> {
+  // ms-sorts with discriminator tie-break so attribution is deterministic
+  // when two calls share a timestamp (review M5; Array.sort is stable in V8
+  // but not spec-mandated).
+  const sortedCalls = [...calls].sort((a, b) => {
+    const am = Date.parse(a.timestamp);
+    const bm = Date.parse(b.timestamp);
+    return am !== bm ? am - bm : a.uuid.localeCompare(b.uuid);
+  });
+  const sortedSamples = [...samples].sort((a, b) => {
+    const am = Date.parse(a.timestamp);
+    const bm = Date.parse(b.timestamp);
+    return am !== bm
+      ? am - bm
+      : (a.timestamp + a.sessionId).localeCompare(b.timestamp + b.sessionId);
+  });
+
   const accByCall = new Map<ApiCall, CallAccumulator>();
-  if (hasC) {
-    const sortedCalls = [...calls].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-    const sortedSamples = [...input.costSamples].sort((a, b) =>
-      a.timestamp.localeCompare(b.timestamp),
-    );
-    let callIdx = -1;
-    for (const sample of sortedSamples) {
-      // Advance to the last call whose timestamp is <= this sample's.
-      while (
-        callIdx + 1 < sortedCalls.length &&
-        (sortedCalls[callIdx + 1]?.timestamp ?? "") <= sample.timestamp
-      ) {
-        callIdx++;
-      }
-      // Fallback: a sample earlier than every call attaches to the first call.
-      const target = callIdx >= 0 ? sortedCalls[callIdx] : sortedCalls[0];
-      if (!target) continue; // no calls at all — session rollup still counts it below
-      let acc = accByCall.get(target);
-      if (!acc) {
-        acc = {
-          costObserved: 0,
-          apiMs: 0,
-          linesAdded: 0,
-          linesRemoved: 0,
-          latestPctAt: Number.NEGATIVE_INFINITY,
-          contextPct: 0,
-          hasPct: false,
-        };
-        accByCall.set(target, acc);
-      }
-      acc.costObserved += sample.costDeltaUsd;
-      acc.apiMs = Math.max(acc.apiMs, sample.apiDurationMs);
-      acc.linesAdded += sample.linesAdded;
-      acc.linesRemoved += sample.linesRemoved;
-      const sampleMs = parseMs(sample.timestamp);
-      // LAST context_pct wins; NaN-timestamp samples never displace a dated one.
-      if (Number.isFinite(sampleMs) ? sampleMs >= acc.latestPctAt : !acc.hasPct) {
-        acc.latestPctAt = Number.isFinite(sampleMs) ? sampleMs : acc.latestPctAt;
-        acc.contextPct = sample.contextPct;
-        acc.hasPct = true;
-      }
+  let callIdx = -1;
+  for (const sample of sortedSamples) {
+    // Advance to the last call whose timestamp is <= this sample's.
+    while (
+      callIdx + 1 < sortedCalls.length &&
+      (sortedCalls[callIdx + 1]?.timestamp ?? "") <= sample.timestamp
+    ) {
+      callIdx++;
+    }
+    // Fallback: a sample earlier than every call attaches to the first call.
+    const target = callIdx >= 0 ? sortedCalls[callIdx] : sortedCalls[0];
+    if (!target) continue; // no calls at all — session rollup still counts it below
+    let acc = accByCall.get(target);
+    if (!acc) {
+      acc = {
+        costObserved: 0,
+        apiMs: 0,
+        linesAdded: 0,
+        linesRemoved: 0,
+        latestPctAt: Number.NEGATIVE_INFINITY,
+        contextPct: 0,
+        hasPct: false,
+      };
+      accByCall.set(target, acc);
+    }
+    acc.costObserved += sample.costDeltaUsd;
+    acc.apiMs = Math.max(acc.apiMs, sample.apiDurationMs);
+    acc.linesAdded += sample.linesAdded;
+    acc.linesRemoved += sample.linesRemoved;
+    const sampleMs = parseMs(sample.timestamp);
+    // LAST context_pct wins; NaN-timestamp samples never displace a dated one.
+    if (Number.isFinite(sampleMs) ? sampleMs >= acc.latestPctAt : !acc.hasPct) {
+      acc.latestPctAt = Number.isFinite(sampleMs) ? sampleMs : acc.latestPctAt;
+      acc.contextPct = sample.contextPct;
+      acc.hasPct = true;
     }
   }
+  return accByCall;
+}
 
-  // --- Annotated call copies ----------------------------------------------
+/**
+ * (A6) Build annotated copies of calls carrying their accumulator's observed
+ * fields, plus an identity-keyed Map from original → annotated ApiCall so the
+ * turn pass can rewire `turn.calls` without re-running attribution.
+ *
+ * Calls with no accumulator keep their original reference — no allocation, and
+ * the identity map reflects "this call was not touched."
+ */
+function annotateCalls(
+  calls: ApiCall[],
+  accByCall: Map<ApiCall, CallAccumulator>,
+): { annotatedCalls: ApiCall[]; annotatedByOriginal: Map<ApiCall, ApiCall> } {
+  const annotatedByOriginal = new Map<ApiCall, ApiCall>();
   const annotatedCalls = calls.map((call) => {
     const acc = accByCall.get(call);
-    if (!acc) return call;
+    if (!acc) {
+      annotatedByOriginal.set(call, call);
+      return call;
+    }
     const next: ApiCall = { ...call };
     next.costObserved = acc.costObserved;
     next.apiMs = acc.apiMs;
     next.linesAdded = acc.linesAdded;
     next.linesRemoved = acc.linesRemoved;
     if (acc.hasPct) next.contextPct = acc.contextPct;
+    annotatedByOriginal.set(call, next);
     return next;
   });
-  const annotatedByOriginal = new Map<ApiCall, ApiCall>();
-  calls.forEach((call, i) => {
-    const a = annotatedCalls[i];
-    if (a) annotatedByOriginal.set(call, a);
-  });
+  return { annotatedCalls, annotatedByOriginal };
+}
 
-  // --- Turn annotation ----------------------------------------------------
-  const boundaries = hasB
-    ? [...input.turnBoundaries].sort((a, b) => a.turnEnd.localeCompare(b.turnEnd))
+/**
+ * (A3, A5) Annotate turns with their per-turn observed rollups (when C is
+ * present) and the observed wall time from a B boundary (main-chain turns
+ * only). The B lookup uses a sorted-by-ms boundary array + scanning pointer
+ * across turns so the total cost is O(T + B) instead of O(T × B) (review H4).
+ *
+ * wallMs fallback (A5): the transcript-derived call span `endedAt - startedAt`
+ * when no B boundary matches — keeps main-chain turns with valid C data but
+ * absent/malformed B file from leaving `wallMs` undefined (review H5).
+ */
+function annotateTurns(
+  turns: Turn[],
+  annotatedByOriginal: Map<ApiCall, ApiCall>,
+  boundaries: TurnBoundary[],
+  hasC: boolean,
+  hasB: boolean,
+): Turn[] {
+  // Pre-parse boundary timestamps once outside the per-turn loop so the
+  // boundary find is a constant-time indexed read, not a per-turn
+  // `Date.parse(b.turnEnd)` storm.
+  const boundariesWithMs: BoundaryWithMs[] = hasB
+    ? [...boundaries]
+        .sort((a, b) => a.turnEnd.localeCompare(b.turnEnd))
+        .map((b) => ({ ms: parseMs(b.turnEnd), boundary: b }))
+        .filter((bw) => Number.isFinite(bw.ms))
     : [];
+  let bIdx = 0; // first boundary at-or-after the previous turn's endMs
 
-  const annotatedTurns = turns.map((turn) => {
+  return turns.map((turn) => {
     const turnCalls = turn.calls.map((c) => annotatedByOriginal.get(c) ?? c);
     const next: Turn = { ...turn, calls: turnCalls };
 
+    // (A3) Per-turn C aggregation: apiMs / lines summed across the turn's
+    // calls. Only written when at least one call carries observed fields;
+    // otherwise undefined means "no observed data for this turn."
     if (hasC) {
       let apiMs = 0;
       let linesAdded = 0;
@@ -185,27 +281,50 @@ export function reconcilePremium(
       }
     }
 
-    // Observed wall time from a B boundary (main-chain turns only — the
-    // Stop-hook fires on the main thread, not per sub-agent). Match the
-    // earliest boundary at-or-after the turn's last call; degrade to the
-    // transcript call-span when none matches.
-    if (hasB && !turn.isSidechain) {
+    // (A3, A5) Observed wall time. Match the earliest B boundary at-or-after
+    // the turn's last call (scanning pointer advances across turns);
+    // degrade to the transcript call span (endedAt - startedAt) when no
+    // boundary matches. Main-chain turns only — sub-agent turns are not
+    // covered by the Stop-hook boundary emission.
+    if (!turn.isSidechain) {
       const startMs = parseMs(turn.startedAt);
       const endMs = parseMs(turn.endedAt);
-      const boundary = boundaries.find((b) => {
-        const bMs = parseMs(b.turnEnd);
-        return Number.isFinite(bMs) && Number.isFinite(endMs) && bMs >= endMs;
-      });
-      if (boundary && Number.isFinite(startMs)) {
-        const wall = parseMs(boundary.turnEnd) - startMs;
-        if (wall >= 0) next.wallMs = wall;
+      let wallMs: number | undefined;
+      if (hasB && Number.isFinite(endMs)) {
+        // Advance bIdx past every boundary whose turnEnd < endMs; the
+        // boundary now at bIdx (if any) is the earliest at-or-after.
+        while (bIdx < boundariesWithMs.length && boundariesWithMs[bIdx].ms < endMs) {
+          bIdx++;
+        }
+        const candidate = boundariesWithMs[bIdx];
+        if (candidate && Number.isFinite(startMs)) {
+          const wall = candidate.ms - startMs;
+          if (wall >= 0) wallMs = wall;
+        }
       }
+      // Fallback (A5): transcript call span when B is absent, empty, or
+      // no boundary covers this turn.
+      if (wallMs === undefined && Number.isFinite(startMs) && Number.isFinite(endMs)) {
+        const fallback = endMs - startMs;
+        if (fallback >= 0) wallMs = fallback;
+      }
+      if (wallMs !== undefined) next.wallMs = wallMs;
     }
 
     return next;
   });
+}
 
-  // --- Session rollup (attribution-invariant) -----------------------------
+/**
+ * (A4, A7) Compute the session-level observed rollup. C wins over L
+ * whenever C is present; L stands in only when C is absent.
+ */
+function rollupSession(
+  costSamples: CostSample[],
+  costLogRow: CostLogRow | undefined,
+  hasC: boolean,
+  hasL: boolean,
+): PremiumRollup {
   const session: PremiumRollup = {};
   if (hasC) {
     let cost = 0;
@@ -214,7 +333,7 @@ export function reconcilePremium(
     let latestPctAt = Number.NEGATIVE_INFINITY;
     let latestPct: number | undefined;
     let sawDated = false;
-    for (const s of input.costSamples) {
+    for (const s of costSamples) {
       cost += s.costDeltaUsd;
       linesAdded += s.linesAdded;
       linesRemoved += s.linesRemoved;
@@ -233,16 +352,14 @@ export function reconcilePremium(
     session.linesAdded = linesAdded;
     session.linesRemoved = linesRemoved;
     if (latestPct !== undefined) session.contextPctObserved = clampFraction(latestPct / 100);
-  } else if (hasL && input.costLogRow) {
+  } else if (hasL && costLogRow) {
     // L stands in only when C is absent (C wins when both present).
-    const row = input.costLogRow;
-    session.costObserved = row.costUsd;
-    session.linesAdded = row.linesAdded;
-    session.linesRemoved = row.linesRemoved;
-    session.contextPctObserved = clampFraction(row.contextPct / 100);
+    session.costObserved = costLogRow.costUsd;
+    session.linesAdded = costLogRow.linesAdded;
+    session.linesRemoved = costLogRow.linesRemoved;
+    session.contextPctObserved = clampFraction(costLogRow.contextPct / 100);
   }
-
-  return { calls: annotatedCalls, turns: annotatedTurns, session };
+  return session;
 }
 
 function clampFraction(value: number): number {

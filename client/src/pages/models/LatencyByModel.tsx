@@ -56,24 +56,42 @@ function sumMeasure(serieses: Series[], measure: Series["measure"]): number {
 
 function deriveResult(data: Series[] | undefined): LatencyResult {
   if (!data || data.length === 0) return { rows: [], observed: false };
-  const modelKeys = new Set(data.map((s) => s.label || s.dimensionKey).filter((k) => k.length > 0));
+  // Pre-bucket series by model once (#P4-13 review finding M14) — the previous
+  // `data.filter` inside the per-model loop was O(N × M).
+  const byModel = new Map<string, Series[]>();
+  for (const s of data) {
+    const key = s.label || s.dimensionKey;
+    if (!key) continue;
+    const existing = byModel.get(key);
+    if (existing) existing.push(s);
+    else byModel.set(key, [s]);
+  }
   const rows: LatencyRow[] = [];
-  for (const model of modelKeys) {
-    const modelSeries = data.filter((s) => (s.label || s.dimensionKey) === model);
+  for (const [model, modelSeries] of byModel) {
     const apiCalls = sumMeasure(modelSeries, "apiCalls");
     if (apiCalls === 0) {
       rows.push({ model, secondsPerCall: null, callCount: 0, observed: false });
       continue;
     }
     // Prefer observed api_duration when present; fall back to the wall-clock
-    // proxy otherwise (a model with premium capture reports apiMs > 0).
+    // proxy otherwise. The metrics engine returns `apiMs` as a sum over
+    // observed-only calls while `apiCalls` is total — without a server-side
+    // `allObserved` flag or a separate observed-call-count measure, any
+    // `apiMs > 0 && apiCalls > 0` row is ambiguous (Review finding M11).
+    // A mixed-coverage rate renders neither observed nor total, so the
+    // conservative tier claim is to drop the `observed` flag whenever
+    // total calls exceed what we can verify; the displayed rate still
+    // uses the observed-sum when available, but the tier badge stays
+    // honest until server-side coverage info arrives.
     const apiMs = sumMeasure(modelSeries, "apiMs");
     if (apiMs > 0) {
       rows.push({
         model,
         secondsPerCall: apiMs / 1000 / apiCalls,
         callCount: apiCalls,
-        observed: true,
+        // Conservative (apiCalls > 0 means "at least one total call"; without
+        // an observed-call count we can't prove every call carried apiMs).
+        observed: false,
       });
     } else {
       const wallMinutes = sumMeasure(modelSeries, "wallMinutes");

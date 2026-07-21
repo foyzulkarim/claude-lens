@@ -53,20 +53,34 @@ function sumMeasure(serieses: Series[], measure: Series["measure"]): number {
 
 function deriveResult(data: Series[] | undefined): ThroughputResult {
   if (!data || data.length === 0) return { rows: [], observed: false };
-  const modelKeys = new Set(data.map((s) => s.label || s.dimensionKey).filter((k) => k.length > 0));
+  // Pre-bucket series by model once (#P4-13 review finding M14) — the previous
+  // `data.filter` inside the per-model loop was O(N × M).
+  const byModel = new Map<string, Series[]>();
+  for (const s of data) {
+    const key = s.label || s.dimensionKey;
+    if (!key) continue;
+    const existing = byModel.get(key);
+    if (existing) existing.push(s);
+    else byModel.set(key, [s]);
+  }
   const rows: ThroughputRow[] = [];
-  for (const model of modelKeys) {
-    const modelSeries = data.filter((s) => (s.label || s.dimensionKey) === model);
+  for (const [model, modelSeries] of byModel) {
     const output = sumMeasure(modelSeries, "outputTokens");
     // Prefer observed api_duration (true generation-time throughput) over the
     // wall-clock proxy, which bundles idle time and only lower-bounds it.
+    // The metrics engine returns `apiMs` as a sum over observed-only calls;
+    // without a server-side `allObserved` flag we can't prove every call
+    // carried apiMs. Symmetric to LatencyByModel (Review finding M11):
+    // when `apiMs > 0` we still use the observed-sum for the rate (it's
+    // the best signal we have), but the tier claim stays conservative
+    // so a partial-coverage model never reads as `observed`.
     const apiMs = sumMeasure(modelSeries, "apiMs");
     if (apiMs > 0) {
       rows.push({
         model,
         tokensPerSecond: output / (apiMs / 1000),
         totalOutputTokens: output,
-        observed: true,
+        observed: false,
       });
       continue;
     }

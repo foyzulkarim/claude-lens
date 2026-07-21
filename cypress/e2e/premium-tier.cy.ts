@@ -47,10 +47,13 @@ describe(`premium tier (${isPremium ? "T+C/B/L observed" : "T-only estimated"})`
     cy.visit(`/sessions/${PREMIUM_SESSION}${RANGE}`);
     cy.get('[data-testid="session-detail-turns"]').within(() => {
       // Turn 1 reconciles to +5/−1 lines (3+2 added, 0+1 removed).
+      // Scoped to the observed-Δlines cell testid so an unrelated "+5/"
+      // substring elsewhere on the page can't satisfy either branch
+      // (#P4-13 review finding T3).
       if (isPremium) {
-        cy.contains("+5/").should("exist");
+        cy.contains('[data-testid="session-delta"]', "+5/").should("exist");
       } else {
-        cy.contains("+5/").should("not.exist");
+        cy.contains('[data-testid="session-delta"]', "+5/").should("not.exist");
       }
     });
   });
@@ -68,10 +71,13 @@ describe(`premium tier (${isPremium ? "T+C/B/L observed" : "T-only estimated"})`
       // The Obs $ / Δlines / Ctx % columns always render; the values flip.
       cy.contains("Obs $").should("exist");
       // Session 1111… rolls up to +11/−3 observed lines under premium.
+      // Scoped to the observed-Δlines cell testid so an unrelated "+11/"
+      // substring elsewhere on the page can't satisfy either branch
+      // (#P4-13 review finding T3).
       if (isPremium) {
-        cy.contains("+11/").should("exist");
+        cy.contains('[data-testid="session-delta"]', "+11/").should("exist");
       } else {
-        cy.contains("+11/").should("not.exist");
+        cy.contains('[data-testid="session-delta"]', "+11/").should("not.exist");
       }
     });
   });

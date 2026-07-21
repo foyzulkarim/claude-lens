@@ -22,10 +22,7 @@ export function ContextGrowthPanel({
   error?: Error | null;
 }) {
   const observed = data?.basis === "observed";
-  const option = useMemo(
-    () => (data ? buildContextGrowthOption(data.curves) : buildContextGrowthOption([])),
-    [data],
-  );
+  const option = useMemo(() => buildContextGrowthOption(data?.curves ?? []), [data]);
   const summary = useMemo(() => {
     if (!data) return { total: 0, finiteBuckets: 0 };
     let total = 0;

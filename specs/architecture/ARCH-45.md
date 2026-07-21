@@ -8,7 +8,7 @@
 
 ## Architecture Summary
 
-Three premium capture files (C = `<uuid>.cost.jsonl`, B = `<uuid>.turn-boundaries.jsonl`, L = `cost-log.jsonl`) are discovered alongside transcripts, parsed defensively (malformed → counter, never throw), reconciled into per-call / per-turn / per-session observed annotations on copies of transcript-derived structures, and exposed through `TierFlags` so the 🟡 estimated → 🟢 observed flip propagates uniformly to Session Detail, Sessions table, Turn Inspector, Models, and Cache Lab. Storybook carries the fleet-aggregate upgrade states the Cypress double-run can't deterministically reproduce.
+Three premium capture files (C = `<uuid>.cost.jsonl`, B = `<uuid>.turn-boundaries.jsonl`, L = `cost-log.jsonl`) are discovered alongside transcripts, parsed defensively (malformed → counter, never throw), reconciled into per-call / per-turn / per-session observed annotations on copies of transcript-derived structures, and exposed through `TierFlags` so the 🟡 estimated → 🟢 observed flip propagates uniformly to Session Detail (`specs/claude-lens-pages.md §3`), Sessions (`specs/claude-lens-pages.md §2`), Turn Inspector (`specs/claude-lens-pages.md §4`), Models (`specs/claude-lens-pages.md §6`), and Cache Lab (`specs/claude-lens-pages.md §7`). Storybook carries the fleet-aggregate upgrade states the Cypress double-run can't deterministically reproduce.
 
 ## High-Level Structure
 
@@ -30,7 +30,7 @@ Three premium capture files (C = `<uuid>.cost.jsonl`, B = `<uuid>.turn-boundarie
                                   ▼
 ┌──────────────────────────────────────────────────────────────────────┐
 │ Reconciliation (server/store/reconcile-premium.ts)                   │
-│   D1-D7: timestamp attribution · per-field aggregation ·            │
+│   A1-A7: timestamp attribution · per-field aggregation ·            │
 │   C-wins-over-L · turn wallMs upgrade from B                         │
 │   ↳ zero-cost early return when no C/B/L (transcript-only path)      │
 └──────────────────────────────────────────────────────────────────────┘
@@ -56,9 +56,9 @@ Three premium capture files (C = `<uuid>.cost.jsonl`, B = `<uuid>.turn-boundarie
 |-------------------|---------------------------------------|--------------------------------------------------------|
 | Parser style      | Pure functions, JSONL line-by-line    | Matches `parse-transcript.ts`; testable without I/O    |
 | Reconciliation    | Pure: input structures → annotated copies | Store orchestrates; module is side-effect-free      |
-| Attribution key   | `timestamp` (not `turn`/`epoch` index) | D1 — every C line carries `timestamp`; variant-agnostic |
-| Field aggregation | SUM cost/lines · MAX apiMs · LAST ctx% | D2 — matches per-field semantics                  |
-| Turn wall time    | B boundary span when main-chain       | D3 — Stop-hook fires on main thread only             |
+| Attribution key   | `timestamp` (not `turn`/`epoch` index) | A1 — every C line carries `timestamp`; variant-agnostic |
+| Field aggregation | SUM cost/lines · MAX apiMs · LAST ctx% | A2 — matches per-field semantics                  |
+| Turn wall time    | B boundary span when main-chain       | A3 — Stop-hook fires on main thread only             |
 | C vs L            | C wins when both present              | L is session-total only; C carries per-sample signal  |
 | Storage shape     | In-memory columnar (existing)         | Per the architecture doc §5                            |
 
@@ -67,7 +67,7 @@ Three premium capture files (C = `<uuid>.cost.jsonl`, B = `<uuid>.turn-boundarie
 - **Defensive coercion** — `toStr` / `toNum` / `toOptionalNum` mirror `parse-transcript.ts`; required strings yield `""`, numbers yield `0`.
 - **Malformed counting, never throwing** — shared with transcript parser; counters surface on Data Health (#P4-14).
 - **Pure reconciliation** — `reconcilePremium` reads no store state; the store is the sole caller. Matches the project's "derived state in pure functions, store orchestrates" idiom.
-- **CLAUDE.md §4 tier semantics** — 🟢 observed / 🟡 estimated / 🔴 unavailable. The reconciliation produces `*Observed` fields rather than mutating base types, so the tier status is a derived predicate (`costObserved !== undefined`) rather than a stored flag.
+- **`specs/claude-lens-architecture.md §4` tier semantics** — 🟢 observed / 🟡 estimated / 🔴 unavailable. The reconciliation produces `*Observed` fields rather than mutating base types, so the tier status is a derived predicate (`costObserved !== undefined`) rather than a stored flag.
 
 ## Data Models
 
@@ -78,12 +78,12 @@ Three premium capture files (C = `<uuid>.cost.jsonl`, B = `<uuid>.turn-boundarie
 | Field                 | Type    | Notes                                                |
 |-----------------------|---------|------------------------------------------------------|
 | sessionId             | string  | Partition key; missing/empty → malformed             |
-| timestamp             | string  | Reconciliation key (D1)                              |
+| timestamp             | string  | Reconciliation key (A1)                              |
 | costDeltaUsd          | number  | Σ for session/turn rollup                             |
-| cumulativeCostUsd     | number  | Carried but not used for attribution (per D1)        |
-| apiDurationMs         | number  | MAX per call (D2)                                    |
-| contextPct            | number  | LAST per call (D2)                                   |
-| linesAdded/Removed    | number  | Σ per call (D2)                                      |
+| cumulativeCostUsd     | number  | Carried but not used for attribution (per A1)        |
+| apiDurationMs         | number  | MAX per call (A2)                                    |
+| contextPct            | number  | LAST per call (A2)                                   |
+| linesAdded/Removed    | number  | Σ per call (A2)                                      |
 | cacheRead/WriteTokens | number  | Reserved for future premium tier, currently passthrough |
 | turn?                 | number  | Turn-indexed variant only                             |
 | epoch? / sample?      | number  | Epoch-indexed variant only (mutually exclusive with `turn`) |
@@ -137,57 +137,97 @@ Carries the per-session upgrade state surfaced through every contract. Reconcile
 
 ## Module Boundaries
 
-| Module                            | Responsibility                                                  |
-|-----------------------------------|-----------------------------------------------------------------|
-| `server/ingest/parse-premium.ts`  | JSONL → typed records + malformed counters                      |
-| `server/store/reconcile-premium.ts` | Pure annotation of transcript-derived structures              |
-| `server/store/store.ts`           | Orchestrates parse → reconcile → derive (sole `reconcilePremium` caller) |
-| `server/ingest/discovery.ts`      | Locates C/B/L files (already shipped in #P2-3, unchanged here)  |
-| `server/{session-detail,turn-inspector,metrics}/*` | Consume `TierFlags` and observed fields |
-| `client/src/components/TierBadge*` | Render tier (🟢/🟡/🔴)                                          |
+| Module                                      | Responsibility                                                        |
+|---------------------------------------------|-----------------------------------------------------------------------|
+| `server/ingest/parse-premium.ts`            | JSONL → typed records + malformed counters                            |
+| `server/store/reconcile-premium.ts`         | Pure annotation of transcript-derived structures                      |
+| `server/store/store.ts`                     | Orchestrates parse → reconcile → derive (sole `reconcilePremium` caller) |
+| `server/ingest/discovery.ts`                | Locates C/B/L files (already shipped in #P2-3, unchanged here)        |
+| `server/routes/sessions.ts`                 | Sessions page API (`specs/claude-lens-pages.md §2`)                   |
+| `server/session-detail/*`                   | Session Detail page (`specs/claude-lens-pages.md §3`)                 |
+| `server/turn-inspector/*`                   | Turn Inspector page (`specs/claude-lens-pages.md §4`)                 |
+| `server/metrics/*`                          | Models (`specs/claude-lens-pages.md §6`) and Cache Lab (`specs/claude-lens-pages.md §7`) |
+| `client/src/components/TierBadge*`          | Render tier (🟢/🟡/🔴)                                                  |
 
 ## Change Footprint
 
 _This work is already shipped (PR #108). The footprint below is the record of what landed._
 
-### New files / modules
+### New implementation / UI files
 
-| Path                                                | Purpose                                          |
-|-----------------------------------------------------|--------------------------------------------------|
-| `server/ingest/parse-premium.ts`                    | C/B/L parsers                                    |
-| `server/ingest/parse-premium.test.ts`              | Parser unit tests                                |
-| `server/ingest/premium-fixtures.test.ts`            | Fixture-level integration                        |
-| `server/store/reconcile-premium.ts`                 | Pure reconciliation (D1–D7)                      |
-| `server/store/reconcile-premium.test.ts`            | Reconciliation unit tests                        |
-| `cypress/e2e/premium-tier.cy.ts`                    | Double-run upgrade harness                       |
-| `client/src/pages/PremiumTierUpgrades.stories.tsx`  | Fleet-aggregate upgrade states                   |
+| Path | Purpose |
+|---|---|
+| `server/ingest/parse-premium.ts` | C/B/L parsers |
+| `server/store/reconcile-premium.ts` | Pure reconciliation (A1–A7) |
+| `client/src/pages/PremiumTierUpgrades.stories.tsx` | Fleet-aggregate upgrade states |
 
-### Modified files / modules
+### Modified implementation / UI files
 
-| Path                                                | What changed                                          |
-|-----------------------------------------------------|-------------------------------------------------------|
-| `shared/types.ts`                                   | Added `TierFlags` interface (line 123) and `*Observed` fields on `ApiCall` / `Turn` / `Session` |
-| `shared/session-detail-contract.ts`                 | Exposes `tier: TierFlags`                             |
-| `shared/sessions-contract.ts`                       | Per-session `tier` + `globalCapture` aggregate        |
-| `server/store/store.ts`                             | Wires `reconcilePremium` into `recompute`              |
-| `server/store/derive-session.ts`                    | Builds `TierFlags` from the reconciled rollup         |
-| `server/session-detail/projector.ts`                | Reads observed fields for Session Detail              |
-| `server/turn-inspector/projector.ts`                | Reads observed fields for waterfall                  |
-| `server/metrics/measures.ts`                        | Routes `apiMs` through Models latency/throughput      |
-| `client/src/components/TierBadge.tsx` + stories     | Renders tier; Storybook story for `TierFlags`         |
-| `client/src/components/LockedCard.stories.tsx`      | Stories for the locked / unavailable tier states      |
-| `client/src/pages/dashboard/CaptureBanner.*`        | Capture-presence banner with stories                  |
-| `client/src/pages/session-detail/Header.tsx`        | Reflects `costObserved` / `contextPctObserved`        |
-| `client/src/pages/dashboard/format.ts`              | `hasAnyCapture`, `describeMissingCapture` helpers     |
+| Path | What changed |
+|---|---|
+| `shared/types.ts` | Added `TierFlags` and `*Observed` fields on `ApiCall` / `Turn` / `Session` |
+| `shared/cache-lab-contract.ts` | Exposes premium context-growth contract fields |
+| `shared/session-detail-contract.ts` | Exposes tier and observed Session Detail fields |
+| `shared/turn-inspector-contract.ts` | Exposes observed waterfall fields |
+| `server/cache/analysis.ts` | Threads observed values into Cache Lab analysis |
+| `server/metrics/measures.ts` | Routes `apiMs` through Models latency/throughput |
+| `server/routes/sessions.ts` | Exposes observed session fields and global capture metadata |
+| `server/session-detail/projector.ts` | Reads observed fields for Session Detail |
+| `server/store/derive-session.ts` | Builds `TierFlags` from the reconciled rollup |
+| `server/store/store.ts` | Wires premium sidecars and `reconcilePremium` into recompute |
+| `server/turn-inspector/projector.ts` | Reads observed fields for the waterfall |
+| `server/ingest/pipeline.ts` | Reads and applies premium sidecars during ingest |
+| `client/src/pages/cache-lab/ContextGrowthPanel.tsx` | Renders premium context-growth curves |
+| `client/src/pages/models/LatencyByModel.tsx` | Renders premium latency values |
+| `client/src/pages/models/ThroughputByModel.tsx` | Renders premium throughput values |
+| `client/src/pages/models/useModelsQueries.ts` | Queries model latency/throughput measures |
+| `client/src/pages/session-detail/Header.tsx` | Reflects `costObserved` / `contextPctObserved` |
+| `client/src/pages/session-detail/SessionDetail.stories.tsx` | Covers premium Session Detail states |
+| `client/src/pages/session-detail/TurnsSection.tsx` | Renders observed turn timing and line deltas |
+| `client/src/pages/session-detail/format.ts` | Formats observed line deltas |
+| `client/src/pages/sessions/SessionBrowser.tsx` | Renders observed session line deltas |
+| `client/src/pages/turn-inspector/Waterfall.tsx` | Uses observed API durations for widths |
+
+### Test coverage
+
+| Path | Coverage added or changed |
+|---|---|
+| `server/ingest/parse-premium.test.ts` | Parser unit tests |
+| `server/ingest/premium-fixtures.test.ts` | Premium fixture integration tests |
+| `server/ingest/pipeline.test.ts` | Premium ingest wiring |
+| `server/store/reconcile-premium.test.ts` | Reconciliation unit tests |
+| `server/store/store.test.ts` | Sidecar store behavior |
+| `server/cache/analysis.test.ts` | Cache Lab premium analysis |
+| `server/metrics/measures.test.ts` | Models latency/throughput measures |
+| `server/session-detail/projector.test.ts` | Session Detail observed fields |
+| `server/turn-inspector/projector.test.ts` | Waterfall observed fields |
+| `cypress/e2e/premium-tier.cy.ts` | T-only and premium double-run upgrade harness |
+| `scripts/e2e.ts` | Isolated fixture runs for the Cypress harness |
+
+### Test fixtures
+
+| Path | Purpose |
+|---|---|
+| `test/fixtures-premium/cost-log.jsonl` | Premium L session-total fixture |
+| `test/fixtures-premium/projects/-Users-demo-project-alpha/11111111-1111-4111-8111-111111111111.cost.jsonl` | Premium C fixture for the first session |
+| `test/fixtures-premium/projects/-Users-demo-project-alpha/11111111-1111-4111-8111-111111111111.turn-boundaries.jsonl` | Premium B fixture for the first session |
+| `test/fixtures-premium/projects/-Users-demo-project-alpha/44444444-4444-4444-8444-444444444444.cost.jsonl` | Premium C fixture for the second session |
+| `test/fixtures-premium/projects/-Users-demo-project-alpha/44444444-4444-4444-8444-444444444444.turn-boundaries.jsonl` | Premium B fixture for the second session |
+| `test/fixtures/README.md` | Documents the premium fixture overlay |
+
+### Audit / provenance records
+
+| Path | Purpose |
+|---|---|
+| `specs/architecture/ARCH-45.md` | Shipped architecture audit record |
+| `specs/context/45.md` | Start-task provenance and acceptance contract |
 
 ### Touched but not changed (silent-regression hotspots)
 
-| Path                                                | Why it matters                                                  |
-|-----------------------------------------------------|------------------------------------------------------------------|
-| `server/ingest/parse-transcript.ts`                 | The reconciliation layer assumes its derived `ApiCall` / `Turn` shapes — any future shape change ripples here |
-| `server/ingest/pipeline.ts`                         | Drives when `reconcilePremium` is invoked; cost of adding more sidecars scales linearly with file count |
-| `server/ingest/discovery.ts`                        | `cost-log.jsonl` lives at `claudeDir` not the projects root — a future config change that drops the `claudeDir` link breaks L silently |
-| `cypress/scripts/e2e.ts`                            | Sets `Cypress.env("premium")` — the Cypress spec branches on this; any rename is a silent regression |
+| Path | Why it matters |
+|---|---|
+| `server/ingest/parse-transcript.ts` | The reconciliation layer assumes its derived `ApiCall` / `Turn` shapes — any future shape change ripples here |
+| `server/ingest/discovery.ts` | `cost-log.jsonl` lives at `claudeDir` not the projects root — a future config change that drops the `claudeDir` link breaks L silently |
 
 ## Areas of Impact
 
@@ -195,7 +235,7 @@ _This work is already shipped (PR #108). The footprint below is the record of wh
 |-------------------------------------|--------------------------------------------------------------|------|--------------------------------------------------------------|
 | Data Health (#P4-14)                | Surface per-file `malformedCount` from the three parsers     | L    | Counters are returned but not yet surfaced in any route — follow-up #46 |
 | Models / Cache Lab                  | Aggregate tier only flips when *every* shown session is premium | M | Storybook covers; real-data fallback relies on data shape |
-| Drift detection on Session Detail   | `AnomalyFeed` stories cover the visual state                 | L    | Drift source is reconciliation-driven; reviewed in `reconcile-premium.ts` |
+| Drift detection on Session Detail   | `client/src/pages/dashboard/AnomalyFeed.stories.tsx` covers the visual state | L    | Drift source is reconciliation-driven; reviewed in `reconcile-premium.ts` |
 | Existing Tier badge consumers       | `costTierLevel` maps `TierFlags` → "exact" / "estimated"     | L    | Two-tier mapping is intentional; "locked" not derivable from flags |
 
 **Contract changes:** none to external API shape — `TierFlags` was added to existing per-session payloads. The `globalCapture` aggregate is additive.
@@ -250,7 +290,7 @@ _This work is already shipped (PR #108). The footprint below is the record of wh
 
 ## Open Questions
 
-- **Lint warnings** — 12 `noNonNullAssertion` in `parse-premium.test.ts` are pre-existing style debt. Suggested default: convert `samples[0]!` → `samples[0]?.` in a one-line follow-up; not blocking.
+- **Lint warnings** — 12 `noNonNullAssertion` in `parse-premium.test.ts` are test-only style debt. **TODO:** keep this non-blocking for now: Biome's auto-fix would weaken the assertions by converting `samples[0]!` to `samples[0]?.x`, which Vitest treats as undefined-allowed. Leave the assertions intact for a deliberate follow-up.
 - **`transcriptPath` on `TurnBoundary`** — carried but not asserted anywhere; safe to drop if no future cross-validation work is planned.
 - **`cacheReadTokens` / `cacheWriteTokens` on `CostSample`** — passthrough; no consumer yet. Suggested default: keep — they're a tier-3 upgrade hook.
 
@@ -266,3 +306,10 @@ _This work is already shipped (PR #108). The footprint below is the record of wh
 
 _This section is populated by the **generate-tasks** skill (Phase 3)._
 _Run: `/generate-tasks from: specs/architecture/ARCH-45.md`_
+
+## Cross-references
+
+- Requirements and task provenance: [`specs/context/45.md`](../context/45.md) for GitHub issue #45 / #P4-13.
+- Owning plan task: [`specs/claude-lens-plan.md`](../claude-lens-plan.md) `#P4-13`.
+- Tier semantics and the C/B/L input contract: [`specs/claude-lens-architecture.md`](../claude-lens-architecture.md) §4.
+- Binding page tables: [`specs/claude-lens-pages.md`](../claude-lens-pages.md) §§2–7.

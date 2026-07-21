@@ -196,7 +196,17 @@ function TurnTable({
       {
         // Observed line delta (#P4-13) — "—" for transcript-only turns.
         header: "Δlines",
-        cell: ({ row }) => formatLineDelta(row.original.linesAdded, row.original.linesRemoved),
+        cell: ({ row }) => (
+          // data-testid="session-delta" — exclusive target for the
+          // Cypress premium-tier "this turn row flipped from — to +A/−R"
+          // assertion (cypress/e2e/premium-tier.cy.ts). Without this scoped
+          // hook the negative branch could match any "+5/" substring that
+          // happens to render elsewhere in the turn table (#P4-13 review
+          // finding T3).
+          <span data-testid="session-delta">
+            {formatLineDelta(row.original.linesAdded, row.original.linesRemoved)}
+          </span>
+        ),
         meta: { mono: true },
       },
       {

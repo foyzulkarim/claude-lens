@@ -239,4 +239,79 @@ describe("reconcilePremium", () => {
     expect(c1.costObserved).toBeUndefined();
     expect(t[0]?.apiMs).toBeUndefined();
   });
+
+  // T1 (review): L-only path does NOT propagate L's `durationMs` to
+  // `wallMs`. The concern is that a future refactor might accidentally
+  // source wallMs from costLogRow.durationMs (a per-session total that's
+  // NOT per-turn). Without this pin, a fabricated value would leak.
+  // The transcript-derived call span (endedAt - startedAt) is allowed
+  // and is the H5 fallback — the test pins only "NOT durationMs".
+  it("L-only path does not source wallMs from costLogRow.durationMs (T1)", () => {
+    const c1 = call("2026-07-03T00:00:01.000Z");
+    const c2 = call("2026-07-03T00:00:04.000Z");
+    const t = [turn("p1", [c1, c2])];
+    const row: CostLogRow = {
+      sessionId: "s1",
+      timestamp: "2026-07-03T00:00:00.000Z",
+      costUsd: 1.5,
+      durationMs: 30_000, // intentionally very different from transcript span
+      model: "Sonnet",
+      dir: "/x",
+      contextPct: 45,
+      cacheRead: 0,
+      cacheWrite: 0,
+      linesAdded: 16,
+      linesRemoved: 8,
+    };
+    const result = reconcilePremium([c1, c2], t, {
+      costSamples: [],
+      turnBoundaries: [],
+      costLogRow: row,
+    });
+    // Transcript span (H5 fallback) = 00:04 - 00:01 = 3000 ms.
+    // Anything else (especially row.durationMs = 30_000) would be a leak.
+    expect(result.turns[0]?.wallMs).toBe(3000);
+    // No observed C/B data → apiMs stays undefined.
+    expect(result.turns[0]?.apiMs).toBeUndefined();
+    expect(result.calls[0]?.apiMs).toBeUndefined();
+    expect(result.calls[0]?.costObserved).toBeUndefined();
+  });
+
+  // M19 (review): when a B boundary's turnEnd precedes the turn's
+  // startedAt (clock skew / out-of-order write), the negative span is
+  // silently dropped — wallMs falls back to the transcript span (H5),
+  // NOT to the (negative) B span. Locks both behaviors at once.
+  it("does not set wallMs from a negative B boundary (M19) — falls back to transcript span (H5)", () => {
+    const c1 = call("2026-07-03T00:00:05.000Z");
+    const c2 = call("2026-07-03T00:00:09.000Z");
+    const t = [turn("p1", [c1, c2])]; // turn span = 4s = 4000ms
+    const boundaries = [
+      {
+        sessionId: "s1",
+        transcriptPath: "/x/s1.jsonl",
+        turnEnd: "2026-07-03T00:00:01.000Z", // before turn.startedAt = c1's timestamp
+        turnEndEpoch: 0,
+      },
+    ];
+    const rt = reconcilePremium([c1, c2], t, { costSamples: [], turnBoundaries: boundaries })
+      .turns[0];
+    // Falls back to transcript span (H5), NOT the negative B span.
+    expect(rt?.wallMs).toBe(4000);
+  });
+
+  // H5 (review): when only C is present (no B file at all), wallMs falls
+  // back to the transcript call span (endedAt - startedAt). Locks the
+  // documented "degrades to call span" contract. (Tests with no C/B/L
+  // data return early with no annotation — wallMs stays undefined; that's
+  // a separate hot path.)
+  it("wallMs falls back to transcript call span when C present but no B (H5)", () => {
+    const c1 = call("2026-07-03T00:00:01.000Z");
+    const c2 = call("2026-07-03T00:00:06.000Z");
+    const t = [turn("p1", [c1, c2])];
+    const rt = reconcilePremium([c1, c2], t, {
+      costSamples: [sample("2026-07-03T00:00:02.000Z")],
+      turnBoundaries: [],
+    }).turns[0];
+    expect(rt?.wallMs).toBe(5000); // 00:06 - 00:01
+  });
 });

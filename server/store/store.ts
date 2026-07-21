@@ -1,13 +1,20 @@
-import type { ApiCall, CompactionRecord, Session, Turn } from "../../shared/types.js";
+import type {
+  HealthSnapshot,
+  PremiumFileClass,
+  PremiumFileHealth,
+} from "../../shared/health-contract.js";
+import { LOCAL_STORE_STRING_MAX } from "../../shared/local-store-contract.js";
 import type { SearchIndexResponse } from "../../shared/search-index-contract.js";
+import type { ApiCall, CompactionRecord, Session, Turn } from "../../shared/types.js";
 import type { WsServerMessage } from "../../shared/ws-protocol.js";
+import type { CostLogRow, CostSample, TurnBoundary } from "../ingest/parse-premium.js";
 import type {
   ParseTranscriptResult,
   PromptTextRecord,
   ToolResultBytesRecord,
 } from "../ingest/parse-transcript.js";
-import type { CostLogRow, CostSample, TurnBoundary } from "../ingest/parse-premium.js";
 import type { PricingTable } from "../metrics/measures.js";
+import { buildSearchSnapshot } from "./build-search-snapshot.js";
 import {
   type ContextResolver,
   deriveSession,
@@ -15,9 +22,8 @@ import {
   type SessionSidecarFlags,
 } from "./derive-session.js";
 import { deriveTurns } from "./derive-turns.js";
-import { reconcilePremium } from "./reconcile-premium.js";
 import { createInvalidator, type Invalidator } from "./invalidation.js";
-import { buildSearchSnapshot } from "./build-search-snapshot.js";
+import { reconcilePremium } from "./reconcile-premium.js";
 
 // The in-memory columnar store (architecture §5.5, §6). Per-session raw
 // arrays plus cached derived Turn[]/Session. `ingest/` is the only writer
@@ -110,6 +116,17 @@ export class Store {
   // `session-prompts-changed` for any session in this set, then clears
   // it. Bounded by the dirty-session set — never grows unboundedly.
   private readonly pendingPromptChanges = new Set<string>();
+  // Per-file cumulative malformed-line counters (review E1 — Data Health
+  // surfacing of `malformedCount` produced by parse-premium.ts). Keyed by
+  // `${fileClass}:${filePath}` so a single global L file does not collide
+  // with per-session C/B files. Cumulative across re-reads (a single
+  // malformed line on re-read increments once per read); bounded by the
+  // number of premium files the poller has discovered since server start.
+  private readonly premiumFileHealth = new Map<string, PremiumFileHealth>();
+  // Server-start wall-clock (review E1). Recorded once in the constructor
+  // so the snapshot's `observedSince` matches the lifetime of the
+  // per-file counters.
+  private readonly observedSince = Date.now();
 
   constructor(options: StoreOptions) {
     this.pricer = options.pricer;
@@ -266,19 +283,21 @@ export class Store {
    * means, so an empty-but-present cost file still upgrades the session's
    * `costBasis` to observed (with a $0 observed total, the honest value).
    */
-  applyCostSamples(sessionId: string, samples: CostSample[]): void {
-    const state = this.stateFor(sessionId);
-    state.costSamples = samples;
-    state.sidecars.hasCostSamples = true;
-    this.invalidator.markDirty(sessionId);
+  applyCostSamples(
+    sessionId: string,
+    samples: CostSample[],
+    options?: { malformedCount?: number; filePath?: string },
+  ): void {
+    this.applySidecar({ kind: "costSamples", sessionId, items: samples, ...options });
   }
 
   /** Replace a session's parsed B (`<uuid>.turn-boundaries.jsonl`) boundaries (#P4-13). Full-replace, mirrors `applyCostSamples`. */
-  applyTurnBoundaries(sessionId: string, boundaries: TurnBoundary[]): void {
-    const state = this.stateFor(sessionId);
-    state.turnBoundaries = boundaries;
-    state.sidecars.hasTurnBoundaries = true;
-    this.invalidator.markDirty(sessionId);
+  applyTurnBoundaries(
+    sessionId: string,
+    boundaries: TurnBoundary[],
+    options?: { malformedCount?: number; filePath?: string },
+  ): void {
+    this.applySidecar({ kind: "turnBoundaries", sessionId, items: boundaries, ...options });
   }
 
   /**
@@ -291,14 +310,187 @@ export class Store {
    * row per finished session), so this is accepted (#P4-13 R2); revisit only
    * if L files turn hot. Rows dropped from a later L revision leave a stale
    * `costLogRow` on their session (L is append-mostly, so not handled).
+   *
+   * Cold-boot fan-out: on a 10k-row L file with mostly unseen sessionIds,
+   * the per-row `stateFor` would fire 10k immediate `session-added` WS
+   * messages (review H2 — invalidation has no debounce on `markAdded`).
+   * Pass `suppressNewSessionAdded: true` so brand-new sessions created by
+   * THIS call do not emit `session-added`; the debounced `session-updated`
+   * that follows the batch is the client's signal to refetch mounted
+   * queries (architecture §7).
    */
-  applyCostLog(rows: CostLogRow[]): void {
+  applyCostLog(rows: CostLogRow[], options?: { malformedCount?: number; filePath?: string }): void {
     for (const row of rows) {
-      const state = this.stateFor(row.sessionId);
-      state.costLogRow = row;
-      state.sidecars.hasCostLog = true;
-      this.invalidator.markDirty(row.sessionId);
+      this.applySidecar({
+        kind: "costLogRow",
+        sessionId: row.sessionId,
+        row,
+        suppressNewSessionAdded: true,
+        ...options,
+      });
     }
+  }
+
+  /**
+   * Shared implementation for `applyCostSamples` / `applyTurnBoundaries` /
+   * per-row `applyCostLog` (review M6 — collapse the 5-line near-duplicates
+   * into one helper). Also enforces a defensive `sessionId` length cap
+   * (`LOCAL_STORE_STRING_MAX = 200`, mirroring the tag/host caps in
+   * `shared/local-store-contract.ts`) so an attacker-controlled row with a
+   * multi-MB `session_id` cannot broadcast a huge WS frame, bloat the
+   * `sessions` Map, or poison a query-key prefix. `parse-premium.ts` is
+   * adding the upstream cap (review M4) — this is a trust-but-verify
+   * backstop, not a substitute.
+   *
+   * `suppressNewSessionAdded` (review H2) suppresses the immediate
+   * `session-added` emission when this call creates a brand-new session.
+   * Used by `applyCostLog`'s batch loop; unused by `applyCostSamples` /
+   * `applyTurnBoundaries`, which create at most one session at a time.
+   */
+  private applySidecar(input: {
+    kind: "costSamples" | "turnBoundaries" | "costLogRow";
+    sessionId: string;
+    items?: CostSample[] | TurnBoundary[];
+    row?: CostLogRow;
+    suppressNewSessionAdded?: boolean;
+    /** Cumulative malformed-line count for the source file (review E1). */
+    malformedCount?: number;
+    /** Absolute path of the source file, required when `malformedCount` is provided. */
+    filePath?: string;
+  }): void {
+    const { kind, sessionId } = input;
+    // Defensive length cap — see JSDoc above. Empty sessionIds can never
+    // produce observed sidecar data (the parser rejects "" as malformed);
+    // a too-long one slips past the parser's empty-string check but would
+    // blow up our Map key + WS payload. Treat both as "skip + warn", never
+    // throw — the malformed-counter story stays in the parser; this is
+    // strictly a safety net for defense-in-depth.
+    if (sessionId.length === 0 || sessionId.length > LOCAL_STORE_STRING_MAX) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[store] dropping sidecar (${kind}) with invalid sessionId length ${sessionId.length}`,
+      );
+      return;
+    }
+    const isNewSession = !this.sessions.has(sessionId);
+    let state = this.sessions.get(sessionId);
+    if (!state) {
+      state = {
+        calls: [],
+        prompts: [],
+        toolResultBytes: [],
+        compactions: [],
+        sidecars: emptySidecars(),
+        costSamples: [],
+        turnBoundaries: [],
+        turns: [],
+        session: null,
+      };
+      this.sessions.set(sessionId, state);
+      // First sighting: stateFor used to call `markAdded` unconditionally.
+      // applyCostLog's per-row batch now suppresses it (review H2); all
+      // other call sites keep the original immediate-emit behavior.
+      if (!(isNewSession && input.suppressNewSessionAdded)) {
+        this.invalidator.markAdded(sessionId);
+      }
+    }
+    if (kind === "costSamples") {
+      state.costSamples = input.items as CostSample[];
+      state.sidecars.hasCostSamples = true;
+    } else if (kind === "turnBoundaries") {
+      state.turnBoundaries = input.items as TurnBoundary[];
+      state.sidecars.hasTurnBoundaries = true;
+    } else {
+      // kind === "costLogRow"
+      state.costLogRow = input.row as CostLogRow;
+      state.sidecars.hasCostLog = true;
+    }
+    // Per-file malformed-line accumulator (review E1). Records cumulative
+    // counts so the Data Health page can surface "this file has had N
+    // malformed lines since server start." Cumulative across re-reads
+    // because `parse-premium.ts` re-reads the whole file on every change
+    // (no offset / dedupe), so the count would otherwise grow unboundedly
+    // across reads; cumulative + bounded per-file keeps the operator-
+    // facing signal honest.
+    //
+    // L (cost-log) is a single global file — the row's sessionId is
+    // fan-out routing, not file ownership — so its health entry carries no
+    // `sessionId`. C/B carry the sessionId from the filename.
+    if (input.malformedCount !== undefined && input.filePath) {
+      const fileClass: PremiumFileClass =
+        kind === "costSamples"
+          ? "cost"
+          : kind === "turnBoundaries"
+            ? "turn-boundaries"
+            : "cost-log";
+      if (fileClass === "cost-log") {
+        this.recordPremiumFileHealth({
+          filePath: input.filePath,
+          fileClass,
+          malformedCount: input.malformedCount,
+        });
+      } else {
+        this.recordPremiumFileHealth({
+          filePath: input.filePath,
+          fileClass,
+          sessionId,
+          malformedCount: input.malformedCount,
+        });
+      }
+    }
+    this.invalidator.markDirty(sessionId);
+  }
+
+  /**
+   * Accumulate the cumulative malformed-line count for a premium sidecar
+   * file (review E1). Keyed by `${fileClass}:${filePath}` so a single
+   * global L file cannot collide with per-session C/B files even when
+   * paths happen to share a basename. `lastUpdated` is refreshed on every
+   * call so the Data Health page can render "last seen at" alongside the
+   * count.
+   */
+  private recordPremiumFileHealth(input: {
+    filePath: string;
+    fileClass: PremiumFileClass;
+    sessionId?: string;
+    malformedCount: number;
+  }): void {
+    const key = `${input.fileClass}:${input.filePath}`;
+    const existing = this.premiumFileHealth.get(key);
+    if (existing) {
+      existing.malformedCount += input.malformedCount;
+      existing.lastUpdated = Date.now();
+    } else {
+      this.premiumFileHealth.set(key, {
+        filePath: input.filePath,
+        fileClass: input.fileClass,
+        ...(input.sessionId !== undefined ? { sessionId: input.sessionId } : {}),
+        malformedCount: input.malformedCount,
+        lastUpdated: Date.now(),
+      });
+    }
+  }
+
+  /**
+   * Snapshot of every premium file's cumulative malformed-line count plus
+   * aggregate totals (review E1 — Data Health surfacing of
+   * `malformedCount`). Returned by `GET /api/health`; consumed by the
+   * `DataHealth` page. The shape is read-only and defensive — never
+   * returns internal references, so consumers can't mutate Store state.
+   */
+  getHealthSnapshot(): HealthSnapshot {
+    const files: PremiumFileHealth[] = [];
+    let totalMalformedLines = 0;
+    for (const entry of this.premiumFileHealth.values()) {
+      files.push({ ...entry });
+      totalMalformedLines += entry.malformedCount;
+    }
+    return {
+      files,
+      totalMalformedLines,
+      observedFileCount: files.length,
+      observedSince: this.observedSince,
+    };
   }
 
   /**

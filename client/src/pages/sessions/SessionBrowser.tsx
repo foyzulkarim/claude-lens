@@ -20,6 +20,7 @@ import { GateStatusBadge } from "../../components/GateStatusBadge.js";
 import { useFilters } from "../../filters/useFilters.js";
 import { TOGGLE_ACTIVE_CLASS, TOGGLE_CLASS } from "../../ui/toggleStyles.js";
 import { useStableNow } from "../dashboard/useStableNow.js";
+import { formatLineDelta } from "../session-detail/format.js";
 import { buildListQuery, type SessionsPageState } from "./state.js";
 
 // `letterFromScore` is exported by `gates-contract.ts` (#P4-12 review
@@ -135,12 +136,16 @@ const pageColumns: ColumnDef<SessionPageItem, any>[] = [
   helper.accessor("linesAdded", {
     header: "Δlines",
     meta: { align: "right", mono: true },
-    cell: (info) => {
-      const added = info.getValue();
-      const removed = info.row.original.linesRemoved;
-      if (added === undefined && removed === undefined) return "—";
-      return `+${added ?? 0}/−${removed ?? 0}`;
-    },
+    cell: (info) => (
+      // data-testid="session-delta" — exclusive target for the
+      // Cypress premium-tier "this row flipped from — to +A/−R" assertion
+      // (cypress/e2e/premium-tier.cy.ts). Without this scoped hook the
+      // negative branch could match any "+11/" substring that happens to
+      // render elsewhere on the sessions page (#P4-13 review finding T3).
+      <span data-testid="session-delta">
+        {formatLineDelta(info.getValue(), info.row.original.linesRemoved)}
+      </span>
+    ),
   }),
   helper.accessor("contextPctObserved", {
     header: "Ctx %",

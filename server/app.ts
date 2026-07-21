@@ -10,6 +10,7 @@ import { registerCacheLabRoute } from "./routes/cache-lab.js";
 import { registerConfigRoute } from "./routes/config.js";
 import { registerExportRoute } from "./routes/export.js";
 import { registerGatesRoute } from "./routes/gates.js";
+import { registerHealthRoute } from "./routes/health.js";
 import { registerMetricsRoute } from "./routes/metrics.js";
 import { registerSearchRoute } from "./routes/search.js";
 import { registerSessionDetailRoute } from "./routes/session-detail.js";
@@ -162,6 +163,10 @@ export function buildApp({
   }
 
   app.get("/api/ping", async () => ({ ok: true }));
+
+  // GET /api/health — review E1 (Data Health surfacing of parse-premium
+  // malformedCount). Registered next to /api/ping for symmetry.
+  registerHealthRoute(app, store);
 
   registerMetricsRoute(
     app,

@@ -1,3 +1,4 @@
+import { LOCAL_STORE_STRING_MAX } from "../../shared/local-store-contract.js";
 import { isRecord } from "../util.js";
 
 // Premium capture-file parsers (#P4-13, architecture §4). Three optional
@@ -111,12 +112,36 @@ function toOptionalNum(value: unknown): number | undefined {
 
 type ParsedLine<T> = { kind: "record"; record: T } | { kind: "skipped" } | { kind: "malformed" };
 
+// Cheap pre-parse DoS guard (security #5). `JSON.parse` is bounded by V8's
+// recursion limit, but a hostile capture-file could still construct a
+// pathologically nested payload that takes many seconds to reject. Counting
+// the structural-open chars is the cheapest signal — bail before
+// `JSON.parse` if the line carries an obvious attack shape. The threshold is
+// generous (64 opens → at least depth 64); string-literal-aware depth
+// tracking is fiddly and rejected here in favor of the simpler heuristic.
+const MAX_JSON_OPEN_STRUCT_CHARS = 64;
+
+function exceedsOpenStructCharLimit(rawLine: string): boolean {
+  let count = 0;
+  for (let i = 0; i < rawLine.length; i++) {
+    const c = rawLine.charCodeAt(i);
+    if (c === 0x7b /* { */ || c === 0x5b /* [ */) {
+      count++;
+      if (count > MAX_JSON_OPEN_STRUCT_CHARS) return true;
+    }
+  }
+  return false;
+}
+
 /**
  * Parse one JSONL line into a record of type `T` via `build`, applying the
- * shared skipped/malformed discipline: blank → skipped; unparseable or
- * non-object JSON → malformed; a record whose `session_id` is missing/empty →
- * malformed (the partition key is mandatory for every premium line — unlike
- * transcripts, premium files carry no legitimately session-less line).
+ * shared skipped/malformed discipline: blank → skipped; pre-parse depth
+ * guard tripped → malformed; unparseable or non-object JSON → malformed;
+ * any string field over `LOCAL_STORE_STRING_MAX` → malformed (security #3,
+ * bounds the downstream Map key + WS broadcast size); a record whose
+ * `session_id` is missing/empty → malformed (the partition key is mandatory
+ * for every premium line — unlike transcripts, premium files carry no
+ * legitimately session-less line).
  */
 function parsePremiumLine<T extends { sessionId: string }>(
   rawLine: string,
@@ -124,6 +149,8 @@ function parsePremiumLine<T extends { sessionId: string }>(
 ): ParsedLine<T> {
   const trimmed = rawLine.trim();
   if (trimmed === "") return { kind: "skipped" };
+
+  if (exceedsOpenStructCharLimit(trimmed)) return { kind: "malformed" };
 
   let parsed: unknown;
   try {
@@ -135,11 +162,29 @@ function parsePremiumLine<T extends { sessionId: string }>(
 
   const record = build(parsed);
   if (record.sessionId === "") return { kind: "malformed" };
+  // M4: bound the string-length attack surface. Any string field over
+  // LOCAL_STORE_STRING_MAX (mirrored from local-store-contract.ts) is treated
+  // as malformed rather than silently truncated — this matches the security
+  // posture on `local.json` fields and bounds WS broadcast / query-key sizes
+  // downstream. Numbers are already bounded by `Number.MAX_SAFE_INTEGER`
+  // inside V8, so no parallel check is needed for numeric fields.
+  for (const value of Object.values(record)) {
+    if (typeof value === "string" && value.length > LOCAL_STORE_STRING_MAX) {
+      return { kind: "malformed" };
+    }
+  }
   return { kind: "record", record };
 }
 
 function buildCostSample(obj: Record<string, unknown>): CostSample {
-  const sample: CostSample = {
+  // M7: declare every optional at construction with `undefined` when absent
+  // so all records share the same hidden-class shape. The pre-M7 form
+  // appended turn/epoch/sample via separate `if` blocks, producing 4-8
+  // hidden classes across a mixed-variant C file — measurably slower in V8
+  // because every new shape forces a megamorphic inline-cache miss. Same
+  // fields are declared `turn?: number` on the interface, so `undefined` is
+  // assignable and the public shape is unchanged.
+  return {
     sessionId: toStr(obj.session_id),
     timestamp: toStr(obj.timestamp),
     costDeltaUsd: toNum(obj.cost_delta_usd),
@@ -150,14 +195,10 @@ function buildCostSample(obj: Record<string, unknown>): CostSample {
     linesRemoved: toNum(obj.lines_removed),
     cacheReadTokens: toNum(obj.cache_read_tokens),
     cacheWriteTokens: toNum(obj.cache_write_tokens),
+    turn: toOptionalNum(obj.turn),
+    epoch: toOptionalNum(obj.epoch),
+    sample: toOptionalNum(obj.sample),
   };
-  const turn = toOptionalNum(obj.turn);
-  const epoch = toOptionalNum(obj.epoch);
-  const s = toOptionalNum(obj.sample);
-  if (turn !== undefined) sample.turn = turn;
-  if (epoch !== undefined) sample.epoch = epoch;
-  if (s !== undefined) sample.sample = s;
-  return sample;
 }
 
 function buildTurnBoundary(obj: Record<string, unknown>): TurnBoundary {
@@ -185,26 +226,62 @@ function buildCostLogRow(obj: Record<string, unknown>): CostLogRow {
   };
 }
 
-export function parseCostSampleLines(rawLines: string[]): ParseCostSamplesResult {
+/**
+ * Parse the lines of a `<uuid>.cost.jsonl` file. When `expectedSessionId`
+ * is supplied, every parsed record whose `session_id` does not match is
+ * counted as malformed (H6 — a record with `session_id: "B"` inside
+ * `A.cost.jsonl` would otherwise be silently applied to A's session, leaking
+ * observed values into the wrong session).
+ */
+export function parseCostSampleLines(
+  rawLines: string[],
+  expectedSessionId?: string,
+): ParseCostSamplesResult {
   const result: ParseCostSamplesResult = { samples: [], malformedCount: 0 };
   for (const rawLine of rawLines) {
     const parsed = parsePremiumLine(rawLine, buildCostSample);
-    if (parsed.kind === "record") result.samples.push(parsed.record);
-    else if (parsed.kind === "malformed") result.malformedCount++;
+    if (parsed.kind === "record") {
+      if (expectedSessionId !== undefined && parsed.record.sessionId !== expectedSessionId) {
+        result.malformedCount++;
+      } else {
+        result.samples.push(parsed.record);
+      }
+    } else if (parsed.kind === "malformed") {
+      result.malformedCount++;
+    }
   }
   return result;
 }
 
-export function parseTurnBoundaryLines(rawLines: string[]): ParseTurnBoundariesResult {
+/**
+ * Parse the lines of a `<uuid>.turn-boundaries.jsonl` file. Same
+ * `expectedSessionId` mismatch discipline as `parseCostSampleLines` (H6).
+ */
+export function parseTurnBoundaryLines(
+  rawLines: string[],
+  expectedSessionId?: string,
+): ParseTurnBoundariesResult {
   const result: ParseTurnBoundariesResult = { boundaries: [], malformedCount: 0 };
   for (const rawLine of rawLines) {
     const parsed = parsePremiumLine(rawLine, buildTurnBoundary);
-    if (parsed.kind === "record") result.boundaries.push(parsed.record);
-    else if (parsed.kind === "malformed") result.malformedCount++;
+    if (parsed.kind === "record") {
+      if (expectedSessionId !== undefined && parsed.record.sessionId !== expectedSessionId) {
+        result.malformedCount++;
+      } else {
+        result.boundaries.push(parsed.record);
+      }
+    } else if (parsed.kind === "malformed") {
+      result.malformedCount++;
+    }
   }
   return result;
 }
 
+/**
+ * Parse the rows of the global `cost-log.jsonl` file. L is intentionally
+ * routed by its own `session_id` (one row may upgrade any session in the
+ * fleet) — no `expectedSessionId` parameter.
+ */
 export function parseCostLogLines(rawLines: string[]): ParseCostLogResult {
   const result: ParseCostLogResult = { rows: [], malformedCount: 0 };
   for (const rawLine of rawLines) {

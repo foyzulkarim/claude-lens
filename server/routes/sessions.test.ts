@@ -1,6 +1,6 @@
-import type { FastifyInstance } from "fastify";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ApiCall } from "../../shared/types.js";
 import { buildApp } from "../app.js";
@@ -675,6 +675,45 @@ describe("GET /api/sessions — pagination, trace, and meta", () => {
     const summary = withCapture.json().meta.captureSummary;
     expect(summary.capturingSessions).toBe(1);
     expect(summary.lastCapturedAt).not.toBeNull();
+  });
+
+  it("meta.globalCapture.costBasis reads 'observed' for an L-only fleet (review M2)", async () => {
+    // Per-session tier.costBasis is `hasCostSamples || hasCostLog` in
+    // derive-session.ts; an L-only session is therefore "observed". The
+    // fleet-level meta.globalCapture.costBasis used to key off
+    // `hasCostSamples` only, so an L-only fleet reported "computed" while
+    // every per-session tier said "observed" — inconsistent. Post-fix the
+    // aggregate matches the per-session predicate.
+    store.applyCostLog([
+      {
+        sessionId: "s-05",
+        timestamp: iso(2026, 6, 5, 10, 0),
+        costUsd: 1.5,
+        durationMs: 1000,
+        model: "claude-sonnet-5",
+        dir: "/repo/alpha",
+        contextPct: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        linesAdded: 0,
+        linesRemoved: 0,
+      },
+    ]);
+    store.flushAll();
+
+    // Per-session predicate confirms the L-only session is observed.
+    expect(store.getSession("s-05")?.tier.costBasis).toBe("observed");
+    expect(store.getSession("s-05")?.tier.hasCostLog).toBe(true);
+    expect(store.getSession("s-05")?.tier.hasCostSamples).toBe(false);
+
+    // Fleet aggregate now agrees (the bug).
+    const response = await app.inject({ method: "GET", url: "/api/sessions" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().meta.globalCapture).toMatchObject({
+      hasCostLog: true,
+      hasCostSamples: false,
+      costBasis: "observed",
+    });
   });
 });
 
