@@ -1,8 +1,15 @@
+import { readFile, stat } from "node:fs/promises";
+import { basename } from "node:path";
 import type { WsServerMessage } from "../../shared/ws-protocol.js";
 import type { RuntimeMetadata } from "../runtime.js";
 import { Store } from "../store/store.js";
 import type { ScanConfig } from "./discovery.js";
-import { Poller } from "./poller.js";
+import {
+  parseCostLogLines,
+  parseCostSampleLines,
+  parseTurnBoundaryLines,
+} from "./parse-premium.js";
+import { Poller, type RegisteredFile } from "./poller.js";
 import { Tailer } from "./tailer.js";
 import type { WarmCache } from "./warm-cache.js";
 
@@ -11,6 +18,15 @@ import type { WarmCache } from "./warm-cache.js";
 // implicit — cli.ts reuses this same function and connects `onInvalidate` to
 // the WS fan-out (`server/ws/broadcaster.ts`); this module adds no WS/socket
 // code itself (#P3-1).
+
+// H1: byte cap on a single premium sidecar read. C/B carry one session's
+// data (5 MB is generous for that — a session with 10 k calls is ≈ 1 MB of
+// JSONL); L is per-session totals for the whole fleet (50 MB is the upper
+// bound on a real fleet at this scale). Anything larger is almost certainly
+// an attacker-controlled or runaway-capture file; reject with a warning
+// rather than letting `readFile` allocate the whole thing into V8 heap.
+const PREMIUM_FILE_SIZE_CAP_BYTES_CB = 5 * 1024 * 1024;
+const PREMIUM_FILE_SIZE_CAP_BYTES_L = 50 * 1024 * 1024;
 
 export interface IngestPipelineOptions {
   onInvalidate(message: WsServerMessage): void;
@@ -74,6 +90,90 @@ export function startIngest(config: ScanConfig, options: IngestPipelineOptions):
     options.warmCache,
   );
 
+  // Read a premium C/B/L sidecar whole and apply it with full-replace store
+  // semantics (#P4-13, plan D5). These files are small (one session for C/B;
+  // one row per session for L), so re-reading the entire file on every change
+  // — no byte-offset tailing, no dedupe — is both simpler and cheap. Never
+  // rejects: read failures (a file that vanished between the poll and this
+  // read) are swallowed and retried on the next poll; the parsers count
+  // malformed lines rather than throwing. Files exceeding the per-class size
+  // cap (H1) are skipped with a single warning rather than throwing — a
+  // malformed or wrong-sidecar file must not crash ingest.
+  async function readPremiumFile(file: RegisteredFile): Promise<void> {
+    const cap =
+      file.class === "cost-log" ? PREMIUM_FILE_SIZE_CAP_BYTES_L : PREMIUM_FILE_SIZE_CAP_BYTES_CB;
+    let size: number;
+    try {
+      const stats = await stat(file.path);
+      size = stats.size;
+    } catch {
+      return;
+    }
+    if (size > cap) {
+      console.warn("[ingest] premium file exceeds size cap", {
+        path: basename(file.path),
+        size,
+        cap,
+      });
+      return;
+    }
+    let content: string;
+    try {
+      content = await readFile(file.path, "utf8");
+    } catch {
+      return;
+    }
+    const lines = content.split("\n");
+    if (file.class === "cost") {
+      if (!file.sessionId) return;
+      // H6: the parser cross-checks every record's `session_id` against the
+      // filename-derived sessionId and counts mismatches as malformed,
+      // preventing a `B`-tagged record inside `A.cost.jsonl` from silently
+      // contributing to A's session.
+      // E1: thread the parser's `malformedCount` + the absolute path into
+      // the Store's per-file health accumulator (review E1 — Data Health
+      // surfacing of `malformedCount`).
+      const costResult = parseCostSampleLines(lines, file.sessionId);
+      store.applyCostSamples(file.sessionId, costResult.samples, {
+        malformedCount: costResult.malformedCount,
+        filePath: file.path,
+      });
+    } else if (file.class === "turn-boundaries") {
+      if (!file.sessionId) return;
+      const boundaryResult = parseTurnBoundaryLines(lines, file.sessionId);
+      store.applyTurnBoundaries(file.sessionId, boundaryResult.boundaries, {
+        malformedCount: boundaryResult.malformedCount,
+        filePath: file.path,
+      });
+    } else if (file.class === "cost-log") {
+      // L is intentionally routed by its own `session_id` (one row may
+      // upgrade any session in the fleet) — no expectedSessionId here.
+      const logResult = parseCostLogLines(lines);
+      store.applyCostLog(logResult.rows, {
+        malformedCount: logResult.malformedCount,
+        filePath: file.path,
+      });
+    }
+  }
+
+  // Defensive .catch so `track()`'s "never rejects" precondition holds even if
+  // a store apply method throws unexpectedly (readPremiumFile already swallows
+  // read errors, but the store call is outside that try). The error log
+  // intentionally redacts the absolute path (security #4) — only the
+  // basename + errno code are surfaced so a shared-log reader can't harvest
+  // a user's home directory layout.
+  function trackPremium(file: RegisteredFile): void {
+    track(
+      readPremiumFile(file).catch((err) => {
+        const code = (err as NodeJS.ErrnoException | undefined)?.code ?? "UNKNOWN";
+        console.error("[ingest] premium read failed", {
+          code,
+          path: basename(file.path),
+        });
+      }),
+    );
+  }
+
   const poller = new Poller(config, {
     onFileAdded(file) {
       if (file.class === "transcript") {
@@ -81,24 +181,26 @@ export function startIngest(config: ScanConfig, options: IngestPipelineOptions):
         track(tailer.onFileAdded(file));
         return;
       }
-      if (file.sessionId && (file.class === "cost" || file.class === "turn-boundaries")) {
-        store.markSidecarPresent(file.sessionId, file.class);
-      }
-      // "cost-log" is a single global file, not per-session — presence
-      // wiring for it is deferred to #P4-13 (see Store.markSidecarPresent).
+      // C/B/L sidecars (cost, turn-boundaries, cost-log) — parse content now
+      // (#P4-13). cost-log is a single global file with no per-file sessionId;
+      // Store.applyCostLog fans its rows out to their sessions.
+      trackPremium(file);
     },
     onFileChanged(file) {
       if (file.class === "transcript") {
         if (file.sessionId) store.setTranscriptPath(file.sessionId, file.path);
         track(tailer.onFileChanged(file));
+        return;
       }
-      // Sidecar file content changes (cost/turn-boundaries/cost-log) are not
-      // parsed until #P4-13 — presence was already recorded on add.
+      trackPremium(file);
     },
     onFileRemoved(file) {
       if (file.class === "transcript") {
         tailer.onFileRemoved(file);
       }
+      // A removed premium file leaves the session's last observed values in
+      // place — same "state kept even if its file disappears" stance as
+      // transcript removal above; no cleanup requirement in #P4-13 scope.
     },
   });
 

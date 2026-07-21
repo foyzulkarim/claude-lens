@@ -50,9 +50,13 @@ export interface TurnInspectorWaterfallCall {
   messageId: string;
   timestamp: string;
   /** Milliseconds since the turn's first call — the timestamp-delta
-   * fallback the pages spec calls for (🟡; real `api_duration` needs
-   * #P4-13). Widths in the waterfall chart are derived from this. */
+   * fallback the pages spec calls for (🟡). Widths in the waterfall chart
+   * fall back to this when observed `apiMs` is absent. */
   offsetMs: number;
+  /** Observed per-call API duration in ms (#P4-13), reconciled from C cost
+   * samples. When present, the waterfall sizes this call's bar by it (the
+   * 🟢 upgrade); absent for transcript-only calls. */
+  apiMs?: number;
   tokens: number;
   cost: number;
   tools: TurnInspectorWaterfallTool[];

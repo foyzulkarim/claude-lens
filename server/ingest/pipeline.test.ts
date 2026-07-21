@@ -182,6 +182,79 @@ describe("startIngest — end-to-end wiring", () => {
     });
   });
 
+  it("parses non-empty C/L premium content and threads observed values into the session (#P4-13)", async () => {
+    const claudeDir = await makeTmpDir();
+    const projectDir = join(claudeDir, "projects", "alpha");
+    await mkdir(projectDir, { recursive: true });
+
+    const sessionId = "ffffffff-1111-4111-8111-111111111111";
+    await writeFile(
+      join(projectDir, `${sessionId}.jsonl`),
+      `${userLine(sessionId, "p1", "2026-07-14T00:00:00.000Z", "hi")}\n${assistantLine(sessionId, "m1", "2026-07-14T00:00:01.000Z")}\n`,
+      "utf8",
+    );
+    // C sample attributed to the single call (timestamp just after it).
+    await writeFile(
+      join(projectDir, `${sessionId}.cost.jsonl`),
+      `${JSON.stringify({
+        session_id: sessionId,
+        timestamp: "2026-07-14T00:00:02.000Z",
+        cost_delta_usd: 0.42,
+        cumulative_cost_usd: 0.42,
+        api_duration_ms: 5200,
+        context_pct: 27,
+        lines_added: 7,
+        lines_removed: 3,
+        cache_read_tokens: 0,
+        cache_write_tokens: 0,
+        turn: 1,
+      })}\n`,
+      "utf8",
+    );
+    // L file lives at the claudeDir root (parent of projects/).
+    await writeFile(
+      join(claudeDir, "cost-log.jsonl"),
+      `${JSON.stringify({
+        session_id: sessionId,
+        timestamp: "2026-07-14T00:00:03.000Z",
+        cost_usd: 0.99,
+        duration_ms: 6000,
+        model: "claude-sonnet-5",
+        dir: "/repo",
+        context_pct: 30,
+        cache_read: 0,
+        cache_write: 0,
+        lines_added: 7,
+        lines_removed: 3,
+      })}\n`,
+      "utf8",
+    );
+
+    const pipeline = track(
+      startIngest(
+        {
+          roots: [{ path: join(claudeDir, "projects") }],
+          claudeDir,
+          fastIntervalMs: 50,
+          slowIntervalMs: 5000,
+        },
+        { onInvalidate: () => {}, debounceMs: 30 },
+      ),
+    );
+    await pipeline.whenSettled();
+    pipeline.store.flushAll();
+
+    const session = pipeline.store.getSession(sessionId);
+    expect(session?.tier.costBasis).toBe("observed");
+    expect(session?.tier).toMatchObject({ hasCostSamples: true, hasCostLog: true });
+    // C wins over L for costObserved (0.42, not L's 0.99).
+    expect(session?.costObserved).toBeCloseTo(0.42);
+    expect(session?.linesAdded).toBe(7);
+    expect(session?.contextPctObserved).toBeCloseTo(0.27);
+    // Observed apiMs is attributed onto the fleet-visible call.
+    expect(pipeline.store.getCalls(sessionId)[0]?.apiMs).toBe(5200);
+  });
+
   it("resets a session's accumulated state when its transcript file is truncated and rewritten", async () => {
     const claudeDir = await makeTmpDir();
     const projectDir = join(claudeDir, "projects", "alpha");

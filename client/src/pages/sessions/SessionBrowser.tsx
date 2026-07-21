@@ -20,6 +20,7 @@ import { GateStatusBadge } from "../../components/GateStatusBadge.js";
 import { useFilters } from "../../filters/useFilters.js";
 import { TOGGLE_ACTIVE_CLASS, TOGGLE_CLASS } from "../../ui/toggleStyles.js";
 import { useStableNow } from "../dashboard/useStableNow.js";
+import { formatLineDelta } from "../session-detail/format.js";
 import { buildListQuery, type SessionsPageState } from "./state.js";
 
 // `letterFromScore` is exported by `gates-contract.ts` (#P4-12 review
@@ -121,6 +122,40 @@ const pageColumns: ColumnDef<SessionPageItem, any>[] = [
     header: "Cost",
     meta: { align: "right", mono: true },
     cell: (info) => formatUnitValue(info.getValue(), "$"),
+  }),
+  // Premium-tier columns (#P4-13) — light up only for sessions with a C/L
+  // capture file; "—" (never a fabricated 0) otherwise.
+  helper.accessor("costObserved", {
+    header: "Obs $",
+    meta: { align: "right", mono: true },
+    cell: (info) => {
+      const value = info.getValue();
+      return value === undefined || value === null ? "—" : formatUnitValue(value, "$");
+    },
+  }),
+  helper.accessor("linesAdded", {
+    header: "Δlines",
+    meta: { align: "right", mono: true },
+    cell: (info) => (
+      // data-testid="session-delta" — exclusive target for the
+      // Cypress premium-tier "this row flipped from — to +A/−R" assertion
+      // (cypress/e2e/premium-tier.cy.ts). Without this scoped hook the
+      // negative branch could match any "+11/" substring that happens to
+      // render elsewhere on the sessions page (#P4-13 review finding T3).
+      <span data-testid="session-delta">
+        {formatLineDelta(info.getValue(), info.row.original.linesRemoved)}
+      </span>
+    ),
+  }),
+  helper.accessor("contextPctObserved", {
+    header: "Ctx %",
+    meta: { align: "right", mono: true },
+    cell: (info) => {
+      // Prefer the observed value; fall back to the transcript-tier estimate.
+      const observed = info.getValue();
+      const value = observed ?? info.row.original.contextPctEstimated;
+      return value === undefined || value === null ? "—" : `${Math.round(value * 100)}%`;
+    },
   }),
   helper.accessor("cacheHitPct", {
     header: "Cache %",

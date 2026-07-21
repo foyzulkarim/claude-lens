@@ -588,3 +588,246 @@ describe("Store — buildSearchSnapshot per-session error handling (#P4-3)", () 
     expect(sessionIds).not.toContain("s-bad");
   });
 });
+
+describe("Store — premium sidecars (#P4-13)", () => {
+  const costSample = (overrides: Record<string, unknown> = {}) => ({
+    sessionId: "s1",
+    timestamp: "2026-07-13T00:00:01.000Z",
+    costDeltaUsd: 0.25,
+    cumulativeCostUsd: 0.25,
+    apiDurationMs: 4200,
+    contextPct: 33,
+    linesAdded: 5,
+    linesRemoved: 2,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    ...overrides,
+  });
+
+  it("applyCostSamples flips costBasis to observed and threads costObserved through", () => {
+    const { store } = makeStore();
+    store.applyRecords("s1", batch([call({ sessionId: "s1", messageId: "m1" })]));
+    vi.advanceTimersByTime(300);
+    expect(store.getSession("s1")?.tier.costBasis).toBe("computed");
+    expect(store.getSession("s1")?.costObserved).toBeUndefined();
+
+    store.applyCostSamples("s1", [costSample()]);
+    vi.advanceTimersByTime(300);
+
+    const s = store.getSession("s1");
+    expect(s?.tier.costBasis).toBe("observed");
+    expect(s?.tier.hasCostSamples).toBe(true);
+    expect(s?.costObserved).toBeCloseTo(0.25);
+    expect(s?.linesAdded).toBe(5);
+    expect(s?.contextPctObserved).toBeCloseTo(0.33);
+    // The observed apiMs is attributed onto the fleet-visible call too.
+    expect(store.getCalls("s1")[0]?.apiMs).toBe(4200);
+  });
+
+  it("applyCostLog fans a global row out to its session and flips costBasis", () => {
+    const { store } = makeStore();
+    store.applyRecords("s1", batch([call({ sessionId: "s1", messageId: "m1" })]));
+    vi.advanceTimersByTime(300);
+
+    store.applyCostLog([
+      {
+        sessionId: "s1",
+        timestamp: "2026-07-13T00:00:00.000Z",
+        costUsd: 1.75,
+        durationMs: 5000,
+        model: "claude-sonnet-5",
+        dir: "/repo",
+        contextPct: 40,
+        cacheRead: 0,
+        cacheWrite: 0,
+        linesAdded: 9,
+        linesRemoved: 3,
+      },
+    ]);
+    vi.advanceTimersByTime(300);
+
+    const s = store.getSession("s1");
+    expect(s?.tier.costBasis).toBe("observed");
+    expect(s?.tier.hasCostLog).toBe(true);
+    expect(s?.costObserved).toBeCloseTo(1.75);
+  });
+
+  // M18 (review): applyTurnBoundaries flips `hasTurnBoundaries` and
+  // threads observed wallMs onto the turn. Companion to applyCostSamples
+  // (which tests costBasis/costObserved).
+  it("applyTurnBoundaries flips hasTurnBoundaries and threads observed wallMs onto turns", () => {
+    const { store } = makeStore();
+    // deriveTurns requires prompts to anchor calls into a turn; otherwise
+    // it returns [] and the wallMs assertion is meaningless. Provide a
+    // prompt before each call so deriveTurns produces a single main-chain
+    // turn wrapping the two calls.
+    store.applyRecords("s1", {
+      calls: [
+        call({ sessionId: "s1", messageId: "m1", timestamp: "2026-07-13T00:00:01.000Z" }),
+        call({ sessionId: "s1", messageId: "m2", timestamp: "2026-07-13T00:00:06.000Z" }),
+      ],
+      prompts: [
+        {
+          sessionId: "s1",
+          promptId: "p1",
+          timestamp: "2026-07-13T00:00:00.000Z",
+          text: "hi",
+        },
+      ],
+      toolResultBytes: [],
+      compactions: [],
+      duplicateCount: 0,
+      malformedCount: 0,
+    });
+    vi.advanceTimersByTime(300);
+    expect(store.getSession("s1")?.tier.hasTurnBoundaries).toBe(false);
+    expect(store.getTurns("s1")[0]?.wallMs).toBeUndefined();
+
+    store.applyTurnBoundaries("s1", [
+      {
+        sessionId: "s1",
+        transcriptPath: "/transcripts/s1.jsonl",
+        turnEnd: "2026-07-13T00:00:11.000Z",
+        turnEndEpoch: Date.parse("2026-07-13T00:00:11.000Z"),
+      },
+    ]);
+    vi.advanceTimersByTime(300);
+
+    expect(store.getSession("s1")?.tier.hasTurnBoundaries).toBe(true);
+    // B boundary 11:00 - first call 01:00 = 10000ms.
+    expect(store.getTurns("s1")[0]?.wallMs).toBe(10_000);
+  });
+
+  it("leaves transcript-only sessions with no observed fields", () => {
+    const { store } = makeStore();
+    store.applyRecords("s2", batch([call({ sessionId: "s2", messageId: "m2" })]));
+    vi.advanceTimersByTime(300);
+    const s = store.getSession("s2");
+    expect(s?.tier.costBasis).toBe("computed");
+    expect(s?.costObserved).toBeUndefined();
+    expect(store.getCalls("s2")[0]?.apiMs).toBeUndefined();
+  });
+
+  it("applyCostLog batch only emits session-added for sessions seen before the batch (review H2)", () => {
+    // Cold-boot fan-out scenario: a 10k-row L file mostly carries brand-new
+    // sessionIds. Pre-fix the per-row stateFor would fire one immediate
+    // `session-added` per row, dwarfing the actual data. Post-fix, brand-new
+    // sessions created by THIS call suppress `session-added`; the
+    // debounced `session-updated` (one per session, post-300ms) is the
+    // signal the client uses to refetch (architecture §7).
+    const { store, invalidations } = makeStore();
+
+    // Seed one session via transcript first — it should still emit
+    // session-added, since applyCostLog only suppresses for sessions it
+    // creates itself.
+    store.applyRecords("s-known", batch([call({ sessionId: "s-known", messageId: "m-known" })]));
+    vi.advanceTimersByTime(300);
+    const beforeBatch = invalidations.filter((m) => m.type === "session-added").length;
+
+    // Five brand-new L rows for sessions never seen via a transcript.
+    store.applyCostLog(
+      ["s-new-1", "s-new-2", "s-new-3", "s-new-4", "s-new-5"].map((id) => ({
+        sessionId: id,
+        timestamp: "2026-07-13T00:00:00.000Z",
+        costUsd: 1.0,
+        durationMs: 1000,
+        model: "claude-sonnet-5",
+        dir: "/repo",
+        contextPct: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        linesAdded: 0,
+        linesRemoved: 0,
+      })),
+    );
+    // The whole batch must add ZERO new session-added messages — the five
+    // brand-new sessions are created silently and ride the debounced
+    // session-updated instead.
+    const afterBatch = invalidations.filter((m) => m.type === "session-added");
+    expect(afterBatch.length - beforeBatch).toBe(0);
+
+    // After the debounced flush, every dirty session fires its own
+    // session-updated — including s-known, whose markDirty was called again
+    // by applyCostLog (it kept its pre-existing tier flags but the row
+    // bumped its dirty timer).
+    vi.advanceTimersByTime(300);
+    const updatedSessionIds = new Set(
+      invalidations
+        .filter(
+          (m): m is Extract<WsServerMessage, { type: "session-updated" }> =>
+            m.type === "session-updated",
+        )
+        .map((m) => m.sessionId),
+    );
+    for (const id of ["s-known", "s-new-1", "s-new-2", "s-new-3", "s-new-4", "s-new-5"]) {
+      expect(updatedSessionIds.has(id)).toBe(true);
+    }
+  });
+
+  it("applyCostSamples / applyTurnBoundaries keep the original immediate session-added behavior (review H2/M6)", () => {
+    // The suppression is applyCostLog-only; the per-session sidecar paths
+    // create at most one session at a time, so the immediate emit is the
+    // right signal.
+    const { store, invalidations } = makeStore();
+
+    store.applyCostSamples("s-c", [
+      {
+        sessionId: "s-c",
+        timestamp: "2026-07-13T00:00:01.000Z",
+        costDeltaUsd: 0.1,
+        cumulativeCostUsd: 0.1,
+        apiDurationMs: 100,
+        contextPct: 0,
+        linesAdded: 0,
+        linesRemoved: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+      },
+    ]);
+    expect(invalidations.filter((m) => m.type === "session-added")).toEqual([
+      { type: "session-added", sessionId: "s-c" },
+    ]);
+
+    store.applyTurnBoundaries("s-b", [
+      {
+        sessionId: "s-b",
+        transcriptPath: "/transcripts/s-b.jsonl",
+        turnEnd: "2026-07-13T00:00:02.000Z",
+        turnEndEpoch: Date.parse("2026-07-13T00:00:02.000Z"),
+      },
+    ]);
+    expect(invalidations.filter((m) => m.type === "session-added")).toEqual([
+      { type: "session-added", sessionId: "s-c" },
+      { type: "session-added", sessionId: "s-b" },
+    ]);
+  });
+
+  it("drops rows with pathological sessionId length in applyCostLog (review M4 trust-but-verify)", () => {
+    // parse-premium.ts is adding the upstream cap; this test pins the
+    // defense-in-depth backstop in the store so a future parser regression
+    // cannot silently re-introduce the unbounded-string DoS.
+    const { store, invalidations } = makeStore();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const oversized = `${"x".repeat(500)}`; // > LOCAL_STORE_STRING_MAX (200)
+    store.applyCostLog([
+      {
+        sessionId: oversized,
+        timestamp: "2026-07-13T00:00:00.000Z",
+        costUsd: 1,
+        durationMs: 1000,
+        model: "claude-sonnet-5",
+        dir: "/repo",
+        contextPct: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        linesAdded: 0,
+        linesRemoved: 0,
+      },
+    ]);
+    expect(store.getSession(oversized)).toBeUndefined();
+    // No session-added — the row was dropped before stateFor.
+    expect(invalidations.filter((m) => m.type === "session-added")).toEqual([]);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("invalid sessionId length"));
+    warn.mockRestore();
+  });
+});

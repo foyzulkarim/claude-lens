@@ -92,15 +92,21 @@ function buildSummary(
     fleetPercentile: percentile === null ? null : roundCost(percentile),
     isAnomaly: fleetMedian !== null && fleetMedian > 0 && cost > fleetMedian * ANOMALY_FACTOR,
   };
-  // Optional premium fields — surfaced only when present on the source
-  // Turn record (mirrors `server/session-detail/projector.ts`). The Store
-  // doesn't populate them yet (#P4-13), so today these slots are always
-  // absent, but the shape is reserved. `apiMs` isn't on Turn yet, but the
-  // wire field stays reserved in the contract for the same future capture.
-  const sourceTurn = group.main ?? group.sidechains[0];
-  if (sourceTurn) {
-    if (sourceTurn.wallMs !== undefined) summary.wallMs = sourceTurn.wallMs;
+  // Observed premium timing (#P4-13), reconciled onto the source Turn records
+  // by `reconcile-premium.ts` (mirrors `server/session-detail/projector.ts`).
+  // `apiMs` sums across the logical turn's segments; observed `wallMs` comes
+  // from the main segment's turn-boundary. Absent unless C/B was attributed —
+  // the api-vs-wall split then renders partial rather than fabricated.
+  let apiMs = 0;
+  let sawApiMs = false;
+  for (const seg of [...(group.main ? [group.main] : []), ...group.sidechains]) {
+    if (seg.apiMs !== undefined) {
+      apiMs += seg.apiMs;
+      sawApiMs = true;
+    }
   }
+  if (sawApiMs) summary.apiMs = apiMs;
+  if (group.main?.wallMs !== undefined) summary.wallMs = group.main.wallMs;
   return summary;
 }
 
@@ -120,7 +126,7 @@ function buildWaterfall(
     const timestampMs = Date.parse(call.timestamp);
     const offsetMs =
       Number.isFinite(timestampMs) && Number.isFinite(firstAt) ? timestampMs - firstAt : 0;
-    return {
+    const waterfallCall: TurnInspectorWaterfallCall = {
       callIndex: index,
       messageId: call.messageId,
       timestamp: call.timestamp,
@@ -132,6 +138,9 @@ function buildWaterfall(
       cacheReadTokens: call.usage.cacheReadTokens,
       cacheCreateTokens: call.usage.cacheCreateTokens,
     };
+    // Observed per-call API duration (#P4-13) reconciled onto the ApiCall.
+    if (call.apiMs !== undefined) waterfallCall.apiMs = call.apiMs;
+    return waterfallCall;
   });
 
   return { calls };

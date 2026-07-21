@@ -1,4 +1,6 @@
 import type { FastifyInstance } from "fastify";
+import type { GateSummaryLite } from "../../shared/gates-cache-contract.js";
+import { isValidTagList } from "../../shared/local-store-contract.js";
 import type {
   SessionListItem,
   SessionListMeta,
@@ -12,8 +14,6 @@ import type {
   SessionTimelineSet,
   TracePoint,
 } from "../../shared/sessions-contract.js";
-import type { GateSummaryLite } from "../../shared/gates-cache-contract.js";
-import { isValidTagList } from "../../shared/local-store-contract.js";
 import type { Session } from "../../shared/types.js";
 import type { GatesCache } from "../cache/gates-cache.js";
 import { mutateLocalStore, readLocalStore } from "../local-store.js";
@@ -520,10 +520,14 @@ function aggregateGlobalCapture(sessions: Session[]): SessionListMeta["globalCap
     if (session.tier.hasTurnBoundaries) hasTurnBoundaries = true;
     if (session.tier.hasCostLog) hasCostLog = true;
   }
-  // costBasis: "observed" the moment any session has C/B/L files; "computed"
+  // costBasis: "observed" the moment any session has C or L files; "computed"
   // otherwise. Matches the per-session tier's "computed today, observed when
-  // #P4-13 wires premium files through" semantics.
-  const costBasis: "computed" | "observed" = hasCostSamples ? "observed" : "computed";
+  // a C or L sidecar is present" semantics in derive-session.ts (which keys
+  // off `hasCostSamples || hasCostLog`). Previously this aggregate keyed off
+  // `hasCostSamples` only, so an L-only fleet reported
+  // `meta.globalCapture.costBasis: "computed"` while every per-session
+  // `tier.costBasis` read "observed" — inconsistent (review M2).
+  const costBasis: "computed" | "observed" = hasCostSamples || hasCostLog ? "observed" : "computed";
   return { hasCostSamples, hasTurnBoundaries, hasCostLog, costBasis };
 }
 
@@ -737,7 +741,7 @@ export function projectPageItem(
     linesAdded: session.linesAdded,
     linesRemoved: session.linesRemoved,
     contextPctEstimated: session.contextPctEstimated,
-    contextPctObserved: undefined,
+    contextPctObserved: session.contextPctObserved,
     gateScore: gateSummary?.score ?? session.gateScore,
     // Session.gateStatus is not a field on `Session` (only Turn.gateStatus
     // is — gates.md §1 has session-scoped E1/E2 + turn-scoped V1/V2/P3/C3/K2).

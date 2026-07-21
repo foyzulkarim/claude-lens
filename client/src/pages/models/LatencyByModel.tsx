@@ -30,9 +30,17 @@ export interface LatencyByModelProps {
 
 interface LatencyRow {
   model: string;
-  /** Mean seconds per call (wallMinutes ÷ apiCalls × 60). */
+  /** Mean seconds per call — observed `apiMs ÷ apiCalls` or the `wallMinutes` fallback. */
   secondsPerCall: number | null;
   callCount: number;
+  /** True when this row's latency came from observed `apiMs` (#P4-13). */
+  observed: boolean;
+}
+
+interface LatencyResult {
+  rows: LatencyRow[];
+  /** True when every row with calls used observed `apiMs` — drives the panel's tier badge. */
+  observed: boolean;
 }
 
 function sumMeasure(serieses: Series[], measure: Series["measure"]): number {
@@ -46,26 +54,65 @@ function sumMeasure(serieses: Series[], measure: Series["measure"]): number {
   return sum;
 }
 
-function deriveRows(data: Series[] | undefined): LatencyRow[] {
-  if (!data || data.length === 0) return [];
-  const modelKeys = new Set(data.map((s) => s.label || s.dimensionKey).filter((k) => k.length > 0));
+function deriveResult(data: Series[] | undefined): LatencyResult {
+  if (!data || data.length === 0) return { rows: [], observed: false };
+  // Pre-bucket series by model once (#P4-13 review finding M14) — the previous
+  // `data.filter` inside the per-model loop was O(N × M).
+  const byModel = new Map<string, Series[]>();
+  for (const s of data) {
+    const key = s.label || s.dimensionKey;
+    if (!key) continue;
+    const existing = byModel.get(key);
+    if (existing) existing.push(s);
+    else byModel.set(key, [s]);
+  }
   const rows: LatencyRow[] = [];
-  for (const model of modelKeys) {
-    const modelSeries = data.filter((s) => (s.label || s.dimensionKey) === model);
-    const wallMinutes = sumMeasure(modelSeries, "wallMinutes");
+  for (const [model, modelSeries] of byModel) {
     const apiCalls = sumMeasure(modelSeries, "apiCalls");
     if (apiCalls === 0) {
-      rows.push({ model, secondsPerCall: null, callCount: 0 });
+      rows.push({ model, secondsPerCall: null, callCount: 0, observed: false });
       continue;
     }
-    const secondsPerCall = (wallMinutes * 60) / apiCalls;
-    rows.push({ model, secondsPerCall, callCount: apiCalls });
+    // Prefer observed api_duration when present; fall back to the wall-clock
+    // proxy otherwise. The metrics engine returns `apiMs` as a sum over
+    // observed-only calls while `apiCalls` is total — without a server-side
+    // `allObserved` flag or a separate observed-call-count measure, any
+    // `apiMs > 0 && apiCalls > 0` row is ambiguous (Review finding M11).
+    // A mixed-coverage rate renders neither observed nor total, so the
+    // conservative tier claim is to drop the `observed` flag whenever
+    // total calls exceed what we can verify; the displayed rate still
+    // uses the observed-sum when available, but the tier badge stays
+    // honest until server-side coverage info arrives.
+    const apiMs = sumMeasure(modelSeries, "apiMs");
+    if (apiMs > 0) {
+      rows.push({
+        model,
+        secondsPerCall: apiMs / 1000 / apiCalls,
+        callCount: apiCalls,
+        // Conservative (apiCalls > 0 means "at least one total call"; without
+        // an observed-call count we can't prove every call carried apiMs).
+        observed: false,
+      });
+    } else {
+      const wallMinutes = sumMeasure(modelSeries, "wallMinutes");
+      rows.push({
+        model,
+        secondsPerCall: (wallMinutes * 60) / apiCalls,
+        callCount: apiCalls,
+        observed: false,
+      });
+    }
   }
-  return rows.sort((a, b) => {
+  rows.sort((a, b) => {
     const aV = a.secondsPerCall ?? Number.POSITIVE_INFINITY;
     const bV = b.secondsPerCall ?? Number.POSITIVE_INFINITY;
     return aV - bV;
   });
+  // Panel is observed only when every model that has calls used observed apiMs,
+  // so the tier badge never over-claims a mixed fleet.
+  const withCalls = rows.filter((r) => r.callCount > 0);
+  const observed = withCalls.length > 0 && withCalls.every((r) => r.observed);
+  return { rows, observed };
 }
 
 function formatSeconds(value: number | null): string {
@@ -106,7 +153,7 @@ export function LatencyByModel({ data, filters, isPending, isError, error }: Lat
     ],
     [],
   );
-  const rows = useMemo(() => deriveRows(data), [data]);
+  const { rows, observed } = useMemo(() => deriveResult(data), [data]);
 
   return (
     <section
@@ -121,11 +168,16 @@ export function LatencyByModel({ data, filters, isPending, isError, error }: Lat
         >
           Latency by model (avg time / call)
         </h2>
-        <TierBadge level="estimated">timestamp fallback</TierBadge>
+        {observed ? (
+          <TierBadge level="exact">observed api_duration</TierBadge>
+        ) : (
+          <TierBadge level="estimated">timestamp fallback</TierBadge>
+        )}
       </div>
       <p className="mt-1 font-mono text-[11px] text-slate-600 dark:text-[#8A96A5]">
-        wallMinutes ÷ apiCalls · per-model proxy for inter-call latency · premium capture upgrades
-        to p50 / p90
+        {observed
+          ? "api_duration_ms ÷ apiCalls · observed mean API latency per call"
+          : "wallMinutes ÷ apiCalls · per-model proxy for inter-call latency · premium capture upgrades to observed"}
       </p>
       <div className="mt-3">
         {isError ? (

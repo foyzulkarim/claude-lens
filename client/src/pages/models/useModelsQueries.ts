@@ -143,15 +143,18 @@ export function useModelsQueries(
     [args],
   );
 
-  // Latency fallback: wallMinutes ÷ apiCalls per model.
+  // Latency: observed `apiMs ÷ apiCalls` per model when premium capture is
+  // present (#P4-13), else the `wallMinutes ÷ apiCalls` timestamp fallback.
+  // Both measures are requested; the panel picks observed when apiMs has data.
   const latencyQuery = useMemo<SeriesMetricsQuery>(
-    () => makeQuery(["wallMinutes", "apiCalls"], ["model"], args),
+    () => makeQuery(["wallMinutes", "apiCalls", "apiMs"], ["model"], args),
     [args],
   );
 
-  // Throughput fallback: outputTokens ÷ wallMinutes per model.
+  // Throughput: observed `outputTokens ÷ apiMs` per model when premium capture
+  // is present (#P4-13), else the `outputTokens ÷ wallMinutes` fallback.
   const throughputQuery = useMemo<SeriesMetricsQuery>(
-    () => makeQuery(["outputTokens", "wallMinutes"], ["model"], args),
+    () => makeQuery(["outputTokens", "wallMinutes", "apiMs"], ["model"], args),
     [args],
   );
 

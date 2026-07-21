@@ -75,6 +75,22 @@ export interface ApiCall {
   gitBranch: string;
   version: string;
   entrypoint: string;
+  /**
+   * Observed premium fields (#P4-13) — populated only by
+   * `server/store/reconcile-premium.ts` when a `<uuid>.cost.jsonl` (C) sidecar
+   * exists for the session, absent on transcript-only calls. Each carries the
+   * aggregate of the C samples attributed to this call (attribution =
+   * "last call at-or-before the sample timestamp"): `costObserved` and
+   * `linesAdded`/`linesRemoved` are summed, `apiMs` is the max observed API
+   * duration, `contextPct` is the most recent (last) sample's context window
+   * percentage (0-100, never summed). The transcript-only tier leaves all five
+   * undefined so `undefined` cleanly reads as "unavailable", never "measured 0".
+   */
+  costObserved?: number;
+  apiMs?: number;
+  linesAdded?: number;
+  linesRemoved?: number;
+  contextPct?: number;
 }
 
 export interface Turn {
@@ -91,6 +107,17 @@ export interface Turn {
   wallMs?: number;
   gateStatus?: string;
   errorToolResults?: number;
+  /**
+   * Observed premium fields (#P4-13), aggregated from the C samples attributed
+   * to this turn's calls (`apiMs` summed across the turn's calls,
+   * `linesAdded`/`linesRemoved` summed). `wallMs` above upgrades to the
+   * observed turn-boundary span (`turn_end` − `startedAt`) when a
+   * `<uuid>.turn-boundaries.jsonl` (B) sidecar covers the turn. Undefined on
+   * transcript-only turns.
+   */
+  apiMs?: number;
+  linesAdded?: number;
+  linesRemoved?: number;
 }
 
 export interface TierFlags {
@@ -132,6 +159,15 @@ export interface Session {
   cacheSavingsComputed?: number;
   maxTurnCostComputed?: number;
   contextPctEstimated?: number;
+  /**
+   * Observed context-window percentage (#P4-13) — the most recent (last) C
+   * sample's `context_pct` for this session, on a 0-1 scale to match
+   * `contextPctEstimated`. Kept as a distinct field rather than overwriting the
+   * estimated one so the two never masquerade for each other (the repo's
+   * "estimated ≠ observed" honesty convention). Undefined unless a
+   * `<uuid>.cost.jsonl` (C) sidecar exists for the session.
+   */
+  contextPctObserved?: number;
 }
 /**
  * A pre-priced turn sample used by the anomaly detector.
