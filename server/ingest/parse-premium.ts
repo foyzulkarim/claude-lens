@@ -37,6 +37,15 @@ export interface CostSample {
   linesRemoved: number;
   cacheReadTokens: number;
   cacheWriteTokens: number;
+  /**
+   * The turn's `promptId` at the time the sample was emitted (#P4-14,
+   * Data Health §4 boundary-mismatches panel). Optional because the
+   * source field is not always present (statusline writers vary);
+   * undefined samples are skipped by the promptId-mismatch check in
+   * `reconcilePremium` rather than counted as a mismatch. Empty
+   * string is treated as missing.
+   */
+  promptId?: string;
   /** Turn-indexed variant only. */
   turn?: number;
   /** Epoch-indexed variant only (paired with `sample`). */
@@ -184,6 +193,7 @@ function buildCostSample(obj: Record<string, unknown>): CostSample {
   // because every new shape forces a megamorphic inline-cache miss. Same
   // fields are declared `turn?: number` on the interface, so `undefined` is
   // assignable and the public shape is unchanged.
+  const promptId = toStr(obj.prompt_id);
   return {
     sessionId: toStr(obj.session_id),
     timestamp: toStr(obj.timestamp),
@@ -195,6 +205,7 @@ function buildCostSample(obj: Record<string, unknown>): CostSample {
     linesRemoved: toNum(obj.lines_removed),
     cacheReadTokens: toNum(obj.cache_read_tokens),
     cacheWriteTokens: toNum(obj.cache_write_tokens),
+    ...(promptId !== "" ? { promptId } : {}),
     turn: toOptionalNum(obj.turn),
     epoch: toOptionalNum(obj.epoch),
     sample: toOptionalNum(obj.sample),

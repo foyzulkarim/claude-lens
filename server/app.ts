@@ -6,6 +6,7 @@ import fastifyWebsocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from "fastify";
 import { createGatesCache, type GatesCache } from "./cache/gates-cache.js";
 import { getGateThresholds } from "./gates/thresholds.js";
+import type { PipelineStats } from "./pipeline-stats.js";
 import { registerCacheLabRoute } from "./routes/cache-lab.js";
 import { registerConfigRoute } from "./routes/config.js";
 import { registerExportRoute } from "./routes/export.js";
@@ -100,6 +101,14 @@ export interface BuildAppOptions {
    * the default and subscribes it to the broadcaster.
    */
   gatesCache?: GatesCache;
+  /**
+   * The ingest pipeline (#P4-14). When provided, its `getStats`
+   * callback is threaded into `/api/health` so the Data Health page
+   * can surface `transcriptsFound` / `transcriptsFailed`. Optional
+   * because route tests build an app without a real pipeline; CLI
+   * production wiring always passes it.
+   */
+  pipeline?: { getStats: () => PipelineStats };
 }
 
 export function buildApp({
@@ -111,6 +120,7 @@ export function buildApp({
   userHomeDir,
   localStorePath,
   gatesCache,
+  pipeline,
 }: BuildAppOptions): FastifyInstance {
   const app = Fastify({
     logger: logger ?? {
@@ -165,8 +175,14 @@ export function buildApp({
   app.get("/api/ping", async () => ({ ok: true }));
 
   // GET /api/health — review E1 (Data Health surfacing of parse-premium
-  // malformedCount). Registered next to /api/ping for symmetry.
-  registerHealthRoute(app, store);
+  // malformedCount); #P4-14 extends it with the §2 scan-coverage and §3
+  // reconciliation rollups. `scanRoots` threads from metadata (same plumbing
+  // as `pricing`); `pipelineStats` is wired by `cli.ts` via the optional
+  // `pipeline` field on `BuildAppOptions`.
+  registerHealthRoute(app, store, {
+    ...(metadata?.scanRoots ? { scanRoots: metadata.scanRoots } : {}),
+    ...(pipeline ? { pipelineStats: pipeline.getStats } : {}),
+  });
 
   registerMetricsRoute(
     app,

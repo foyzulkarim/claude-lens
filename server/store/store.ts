@@ -2,11 +2,14 @@ import type {
   HealthSnapshot,
   PremiumFileClass,
   PremiumFileHealth,
+  ReconciliationRollup,
 } from "../../shared/health-contract.js";
 import { LOCAL_STORE_STRING_MAX } from "../../shared/local-store-contract.js";
 import type { SearchIndexResponse } from "../../shared/search-index-contract.js";
+import type { ScanRootConfig } from "../../shared/settings-contract.js";
 import type { ApiCall, CompactionRecord, Session, Turn } from "../../shared/types.js";
 import type { WsServerMessage } from "../../shared/ws-protocol.js";
+import type { PipelineStats } from "../pipeline-stats.js";
 import type { CostLogRow, CostSample, TurnBoundary } from "../ingest/parse-premium.js";
 import type {
   ParseTranscriptResult,
@@ -59,6 +62,28 @@ interface SessionState {
    * read — never affects derived Session/Turn shape, so setting it never
    * marks the session dirty. */
   transcriptPath?: string;
+  /**
+   * Σ `result.rawLines` across all `applyRecords` calls on this session
+   * since the last `resetSession` (#P4-14, Data Health dedup stats).
+   * Incremented via `+=` per tailer batch, mirroring how the per-session
+   * `costSamples` array is full-replaced by `applyCostSamples`. Used to
+   * surface "raw lines → distinct calls" on the Data Health page.
+   */
+  rawLineCount: number;
+  /**
+   * Σ `result.duplicateCount` (message.id collisions the parser saw and
+   * skipped) since the last `resetSession` (#P4-14). `+=` semantics —
+   * tailer calls `applyRecords` once per batch with a non-cumulative
+   * per-batch count, so we accumulate.
+   */
+  duplicateCount: number;
+  /**
+   * Σ `result.malformedCount` (lines the parser rejected) since the last
+   * `resetSession` (#P4-14, Data Health parse-errors section). `+=`
+   * semantics. The Data Health page surfaces this fleet-wide plus a
+   * per-file top-N drilldown.
+   */
+  malformedCount: number;
 }
 
 /**
@@ -215,6 +240,9 @@ export class Store {
         turnBoundaries: [],
         turns: [],
         session: null,
+        rawLineCount: 0,
+        duplicateCount: 0,
+        malformedCount: 0,
       };
       this.sessions.set(sessionId, state);
       this.invalidator.markAdded(sessionId);
@@ -246,6 +274,14 @@ export class Store {
     state.prompts.push(...result.prompts);
     state.toolResultBytes.push(...result.toolResultBytes);
     state.compactions.push(...result.compactions);
+    // #P4-14: accumulate transcript-tier health counters additively. The
+    // tailer calls applyRecords once per batch with the batch's per-line
+    // counts; rolling them up gives the Data Health page its "raw lines
+    // → distinct calls" stat. `resetSession` zeros these on a truncation
+    // re-read, matching the `calls = []` semantics below.
+    state.rawLineCount += result.rawLines;
+    state.duplicateCount += result.duplicateCount;
+    state.malformedCount += result.malformedCount;
     if (rootPath && !this.sessionRoot.has(sessionId)) {
       this.sessionRoot.set(sessionId, rootPath);
     }
@@ -385,6 +421,9 @@ export class Store {
         turnBoundaries: [],
         turns: [],
         session: null,
+        rawLineCount: 0,
+        duplicateCount: 0,
+        malformedCount: 0,
       };
       this.sessions.set(sessionId, state);
       // First sighting: stateFor used to call `markAdded` unconditionally.
@@ -477,19 +516,137 @@ export class Store {
    * `malformedCount`). Returned by `GET /api/health`; consumed by the
    * `DataHealth` page. The shape is read-only and defensive — never
    * returns internal references, so consumers can't mutate Store state.
+   *
+   * #P4-14: the snapshot is now the Data Health page's single read
+   * endpoint. Every fleet-level stat the page needs is rolled up here in
+   * one O(sessions) pass — no aggregation happens in the route handler.
+   * The `scanRoots` and `pipelineStats` options are optional so the
+   * existing #P4-13 callers (no options) still return the legacy four
+   * fields; #P4-14 callers pass them to populate the §2 and §3 sections.
    */
-  getHealthSnapshot(): HealthSnapshot {
+  getHealthSnapshot(options?: {
+    scanRoots?: ScanRootConfig[];
+    pipelineStats?: () => PipelineStats;
+  }): HealthSnapshot {
+    // --- (existing) premium file health (#P4-13) ---
     const files: PremiumFileHealth[] = [];
     let totalMalformedLines = 0;
     for (const entry of this.premiumFileHealth.values()) {
       files.push({ ...entry });
       totalMalformedLines += entry.malformedCount;
     }
+
+    // --- (§1 dedup) Σ across sessions ---
+    let rawLines = 0;
+    let distinctCalls = 0;
+    let duplicates = 0;
+    let malformedLines = 0;
+    // (§2 parse-errors-by-file) per-session malformed → per-file entry
+    // (filePath derived from sessionRoot + `${sessionId}.jsonl`).
+    const malformedByFile = new Map<string, number>();
+    // (§1 pricing coverage) distinct `ApiCall.model` across the fleet.
+    const modelsSeen = new Set<string>();
+    // (§2 sidecar coverage + §3 reconciliation) counters derived from
+    // the per-session `Session` rollup; a stale session is recomputed
+    // here (matching `listSessions()`'s "fresh within ~debounceMs"
+    // caveat) so the snapshot reflects the latest pricing table.
+    let sessionsWithObserved = 0;
+    let costComputedTotal = 0;
+    let costObservedTotal = 0;
+    let withCostSamples = 0;
+    let withTurnBoundaries = 0;
+    let sessionsWithSidecars = 0;
+    let transcriptsParsed = 0;
+
+    for (const [sessionId, state] of this.sessions) {
+      // Lazy recompute mirrors listSessions(): a dirty-but-not-yet-flushed
+      // session's `state.session` may be null; recompute populates it from
+      // current pricing + premium sidecars. Same caveat applies.
+      if (!state.session) this.recompute(sessionId);
+      const session = this.sessions.get(sessionId)?.session;
+      if (!session) continue;
+      transcriptsParsed++;
+      rawLines += state.rawLineCount;
+      distinctCalls += state.calls.length;
+      duplicates += state.duplicateCount;
+      malformedLines += state.malformedCount;
+      if (state.malformedCount > 0) {
+        const root = this.sessionRoot.get(sessionId);
+        const filePath = root ? `${root}/${sessionId}.jsonl` : `<unknown>/${sessionId}.jsonl`;
+        malformedByFile.set(filePath, (malformedByFile.get(filePath) ?? 0) + state.malformedCount);
+      }
+      for (const call of state.calls) {
+        if (call.model) modelsSeen.add(call.model);
+      }
+      costComputedTotal += session.costComputed;
+      if (session.costObserved !== undefined) {
+        costObservedTotal += session.costObserved;
+        sessionsWithObserved++;
+      }
+      if (state.sidecars.hasCostSamples) withCostSamples++;
+      if (state.sidecars.hasTurnBoundaries) withTurnBoundaries++;
+      if (
+        state.sidecars.hasCostSamples ||
+        state.sidecars.hasTurnBoundaries ||
+        state.sidecars.hasCostLog
+      ) {
+        sessionsWithSidecars++;
+      }
+    }
+
+    // Top-N files by malformed-line count. Bounded so a single corrupt
+    // file cannot bloat the response; the page renders the full Σ in
+    // the section header and the list as a drill-down table.
+    const PARSE_ERRORS_TOP_N = 20;
+    const parseErrorsByFile = [...malformedByFile.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, PARSE_ERRORS_TOP_N)
+      .map(([filePath, count]) => ({ filePath, count }));
+
+    const modelsSeenSorted = [...modelsSeen].sort();
+    const unpricedModels = this.pricing
+      ? modelsSeenSorted.filter((m) => this.pricing && !(m in this.pricing))
+      : modelsSeenSorted.slice();
+
+    const stats = options?.pipelineStats?.();
+    const transcriptsFound = stats?.transcriptsFound ?? transcriptsParsed;
+    const transcriptsFailed =
+      stats?.transcriptsFailed ?? Math.max(0, transcriptsFound - transcriptsParsed);
+    const totalSessions = transcriptsParsed;
+
+    const reconciliation: ReconciliationRollup = {
+      sessionsWithObserved,
+      sessionsWithComputedOnly: Math.max(0, totalSessions - sessionsWithObserved),
+      costComputed: costComputedTotal,
+      costObserved: costObservedTotal,
+      // L file is owned by the pipeline; the store has no visibility. The
+      // route will thread this in via a future hook; for now `undefined`
+      // — the page renders it as "no cost-log.jsonl observed."
+      costLogTotal: undefined,
+    };
+
     return {
       files,
       totalMalformedLines,
       observedFileCount: files.length,
       observedSince: this.observedSince,
+      dedup: { rawLines, distinctCalls, duplicates },
+      parseErrors: { malformedLines, byFile: parseErrorsByFile },
+      scan: {
+        roots: options?.scanRoots ?? [],
+        transcriptsFound,
+        transcriptsParsed,
+        transcriptsFailed,
+        sessionsWithSidecars,
+      },
+      pricingCoverage: { modelsSeen: modelsSeenSorted, unpricedModels },
+      sidecarCoverage: {
+        total: totalSessions,
+        withCost: withCostSamples,
+        withBoundaries: withTurnBoundaries,
+      },
+      reconciliation,
+      captureGaps: { sessionsWithoutObserved: reconciliation.sessionsWithComputedOnly },
     };
   }
 
@@ -522,6 +679,15 @@ export class Store {
     state.compactions = [];
     state.turns = [];
     state.session = null;
+    // #P4-14: zero transcript-tier health counters too. The tailer
+    // re-reads the whole file from byte 0 on a truncation; without
+    // this, the fleet's malformed/duplicate counts would inflate on
+    // every re-read. Premium-tier counters (`costSamples`,
+    // `turnBoundaries`, `costLogRow`) intentionally stay — premium
+    // files are separate and don't truncate together.
+    state.rawLineCount = 0;
+    state.duplicateCount = 0;
+    state.malformedCount = 0;
     this.invalidator.markDirty(sessionId);
   }
 

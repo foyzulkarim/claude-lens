@@ -1,6 +1,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { basename } from "node:path";
 import type { WsServerMessage } from "../../shared/ws-protocol.js";
+import type { PipelineStats } from "../pipeline-stats.js";
 import type { RuntimeMetadata } from "../runtime.js";
 import { Store } from "../store/store.js";
 import type { ScanConfig } from "./discovery.js";
@@ -50,6 +51,16 @@ export interface IngestPipeline {
   /** Resolves once the initial discovery pass and every file's initial tail read have drained — a deterministic cold-boot barrier for benchmarking (#P2-7) and tests. */
   whenSettled(): Promise<void>;
   stop(): void;
+  /**
+   * Pipeline-level counters surfaced on the Data Health page (#P4-14).
+   * The store reads them via the `pipelineStats` callback so its
+   * `getHealthSnapshot` stays decoupled from the pipeline class.
+   * `transcriptsFound` is the count of distinct transcript files the
+   * poller has registered; `transcriptsFailed` is recomputed on every
+   * call as the number of those registered files that have produced
+   * zero calls (i.e. registered - sessions with at least one parsed call).
+   */
+  getStats(): PipelineStats;
 }
 
 export function startIngest(config: ScanConfig, options: IngestPipelineOptions): IngestPipeline {
@@ -70,6 +81,26 @@ export function startIngest(config: ScanConfig, options: IngestPipelineOptions):
   function track(promise: Promise<unknown>): void {
     inFlight.add(promise);
     promise.finally(() => inFlight.delete(promise));
+  }
+
+  // #P4-14: count distinct transcript files the poller has registered
+  // since server start. The store's `getHealthSnapshot` derives
+  // `transcriptsFailed` from this (found - parsed) on every read, so
+  // the pipeline only needs to maintain the "found" side. Sidecar
+  // files (C/B/L) are excluded — the Data Health page surfaces
+  // malformed-line counts for those via the existing
+  // `premiumFileHealth` map on the store, not via this counter.
+  const discoveredTranscriptPaths = new Set<string>();
+  function getStats(): PipelineStats {
+    const transcriptsFound = discoveredTranscriptPaths.size;
+    // Computed defensively on every read so a session that has just
+    // produced its first call (and is in the store) drops out of
+    // "failed" without any explicit decrement.
+    const transcriptsParsed = store.listSessions().filter((s) => s.callCount > 0).length;
+    return {
+      transcriptsFound,
+      transcriptsFailed: Math.max(0, transcriptsFound - transcriptsParsed),
+    };
   }
 
   const tailer = new Tailer(
@@ -177,6 +208,11 @@ export function startIngest(config: ScanConfig, options: IngestPipelineOptions):
   const poller = new Poller(config, {
     onFileAdded(file) {
       if (file.class === "transcript") {
+        // #P4-14: track distinct transcript files the poller has
+        // registered since server start. The Set ignores duplicates
+        // so a re-registration after a removal+rediscovery is
+        // idempotent (see onFileRemoved for the matching delete).
+        discoveredTranscriptPaths.add(file.path);
         if (file.sessionId) store.setTranscriptPath(file.sessionId, file.path);
         track(tailer.onFileAdded(file));
         return;
@@ -196,6 +232,11 @@ export function startIngest(config: ScanConfig, options: IngestPipelineOptions):
     },
     onFileRemoved(file) {
       if (file.class === "transcript") {
+        // #P4-14: drop the file from the discovered set so
+        // `transcriptsFound` doesn't overcount after a re-discovery.
+        // tailer.onFileRemoved also resets the session's transcript
+        // counters (calls/duplicates/malformed) via store.resetSession.
+        discoveredTranscriptPaths.delete(file.path);
         tailer.onFileRemoved(file);
       }
       // A removed premium file leaves the session's last observed values in
@@ -247,5 +288,6 @@ export function startIngest(config: ScanConfig, options: IngestPipelineOptions):
       poller.stop();
       store.stop();
     },
+    getStats,
   };
 }

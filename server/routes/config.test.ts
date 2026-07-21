@@ -243,6 +243,8 @@ describe("GET/PUT /api/config", () => {
         prompts: [],
         toolResultBytes: [],
         compactions: [],
+        rawLines: 0,
+        skippedLines: 0,
         duplicateCount: 0,
         malformedCount: 0,
       },

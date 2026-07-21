@@ -36,6 +36,8 @@ function batch(calls: ApiCall[]): ParseTranscriptResult {
     prompts: [],
     toolResultBytes: [],
     compactions: [],
+    rawLines: 0,
+    skippedLines: 0,
     duplicateCount: 0,
     malformedCount: 0,
   };
@@ -217,6 +219,8 @@ describe("Store — listTurns", () => {
       prompts: [prompt1],
       toolResultBytes: [],
       compactions: [],
+      rawLines: 0,
+      skippedLines: 0,
       duplicateCount: 0,
       malformedCount: 0,
     });
@@ -225,6 +229,8 @@ describe("Store — listTurns", () => {
       prompts: [prompt2],
       toolResultBytes: [],
       compactions: [],
+      rawLines: 0,
+      skippedLines: 0,
       duplicateCount: 0,
       malformedCount: 0,
     });
@@ -283,6 +289,8 @@ describe("Store — recompute threading", () => {
       prompts: [prompt1],
       toolResultBytes: [],
       compactions: [],
+      rawLines: 0,
+      skippedLines: 0,
       duplicateCount: 0,
       malformedCount: 0,
     });
@@ -325,6 +333,8 @@ describe("Store — getSessionSnapshot (#P4-5 T2)", () => {
       prompts: [prompt],
       toolResultBytes: [toolResult],
       compactions: [compaction],
+      rawLines: 0,
+      skippedLines: 0,
       duplicateCount: 0,
       malformedCount: 0,
     });
@@ -371,6 +381,8 @@ describe("Store — getSessionSnapshot (#P4-5 T2)", () => {
       prompts: [],
       toolResultBytes: [],
       compactions: [{ sessionId: "s1" }],
+      rawLines: 0,
+      skippedLines: 0,
       duplicateCount: 0,
       malformedCount: 0,
     });
@@ -383,6 +395,8 @@ describe("Store — getSessionSnapshot (#P4-5 T2)", () => {
       prompts: [],
       toolResultBytes: [],
       compactions: [],
+      rawLines: 0,
+      skippedLines: 0,
       duplicateCount: 0,
       malformedCount: 0,
     });
@@ -437,6 +451,8 @@ describe("Store — getSessionSnapshot (#P4-5 T2)", () => {
       ],
       toolResultBytes: [],
       compactions: [],
+      rawLines: 0,
+      skippedLines: 0,
       duplicateCount: 0,
       malformedCount: 0,
     });
@@ -459,6 +475,8 @@ describe("Store — session-prompts-changed emit (#P4-3, ARCH A2/A8)", () => {
       prompts: [{ sessionId, promptId, text, timestamp: "2026-07-13T00:00:00.000Z" }],
       toolResultBytes: [],
       compactions: [],
+      rawLines: 0,
+      skippedLines: 0,
       duplicateCount: 0,
       malformedCount: 0,
     };
@@ -485,6 +503,8 @@ describe("Store — session-prompts-changed emit (#P4-3, ARCH A2/A8)", () => {
       prompts: [],
       toolResultBytes: [],
       compactions: [],
+      rawLines: 0,
+      skippedLines: 0,
       duplicateCount: 0,
       malformedCount: 0,
     });
@@ -523,6 +543,8 @@ describe("Store — buildSearchSnapshot per-session error handling (#P4-3)", () 
       ],
       toolResultBytes: [],
       compactions: [],
+      rawLines: 0,
+      skippedLines: 0,
       duplicateCount: 0,
       malformedCount: 0,
     });
@@ -538,6 +560,8 @@ describe("Store — buildSearchSnapshot per-session error handling (#P4-3)", () 
       ],
       toolResultBytes: [],
       compactions: [],
+      rawLines: 0,
+      skippedLines: 0,
       duplicateCount: 0,
       malformedCount: 0,
     });
@@ -554,6 +578,8 @@ describe("Store — buildSearchSnapshot per-session error handling (#P4-3)", () 
       ],
       toolResultBytes: [],
       compactions: [],
+      rawLines: 0,
+      skippedLines: 0,
       duplicateCount: 0,
       malformedCount: 0,
     });
@@ -676,6 +702,8 @@ describe("Store — premium sidecars (#P4-13)", () => {
       ],
       toolResultBytes: [],
       compactions: [],
+      rawLines: 0,
+      skippedLines: 0,
       duplicateCount: 0,
       malformedCount: 0,
     });

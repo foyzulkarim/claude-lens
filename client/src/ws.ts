@@ -66,7 +66,8 @@ type InvalidationAction =
   | { kind: "session"; sessionId: string }
   | { kind: "turnInspectorSession"; sessionId: string }
   | { kind: "gates" }
-  | { kind: "searchIndex" };
+  | { kind: "searchIndex" }
+  | { kind: "health" };
 
 function actionKey(action: InvalidationAction): string {
   switch (action.kind) {
@@ -79,6 +80,7 @@ function actionKey(action: InvalidationAction): string {
     case "sessions":
     case "gates":
     case "searchIndex":
+    case "health":
       return action.kind;
   }
 }
@@ -95,8 +97,10 @@ function actionsForMessage(message: WsServerMessage): InvalidationAction[] {
       // Aggregate metrics shift (a new session contributes to the spend /
       // turn-count series) and the session list itself is stale by
       // definition — invalidate both prefixes so every card refetches
-      // without the page needing to thread its own subscriptions.
-      return [{ kind: "metrics" }, { kind: "sessions" }];
+      // without the page needing to thread its own subscriptions. The
+      // Data Health page (#P4-14) also needs a fresh read — a new
+      // session contributes to fleet coverage counts.
+      return [{ kind: "metrics" }, { kind: "sessions" }, { kind: "health" }];
     case "session-updated":
       // Per-session invalidation (ARCH T5, #P4-5): mounted detail queries
       // for THIS session refetch; the metrics/list paths invalidate too
@@ -109,13 +113,17 @@ function actionsForMessage(message: WsServerMessage): InvalidationAction[] {
       // (`qk.gates(id)`) AND the Dashboard failure feed
       // (`qk.gateFailures(...)`) — without this, the PR title's
       // "live gate feeds" claim is broken (Report Card `staleTime: 5min`,
-      // Dashboard feed `staleTime: 60s`).
+      // Dashboard feed `staleTime: 60s`). The Data Health page (#P4-14)
+      // also invalidates: an append changes per-session dedup/malformed
+      // counters, so without this the page would be stale during a live
+      // transcript write.
       return [
         { kind: "metrics" },
         { kind: "session", sessionId: message.sessionId },
         { kind: "turnInspectorSession", sessionId: message.sessionId },
         { kind: "sessions" },
         { kind: "gates" },
+        { kind: "health" },
       ];
     case "session-prompts-changed":
       // Prompt-only mutation (#P4-3, ARCH A2): the search index is the
@@ -164,6 +172,13 @@ function applyInvalidationAction(queryClient: QueryClient, action: InvalidationA
       return;
     case "searchIndex":
       queryClient.invalidateQueries({ queryKey: qk.prefixes.searchIndex });
+      return;
+    case "health":
+      // #P4-14: invalidate the Data Health page's single query key
+      // (`["health"]`) so a mounted page refetches with the latest
+      // fleet rollup. `scan-updated`'s `all` action already covers
+      // this via `queryClient.invalidateQueries()` with no key.
+      queryClient.invalidateQueries({ queryKey: qk.prefixes.health });
       return;
     default: {
       // Exhaustive check, mirroring actionsForMessage's switch above: a

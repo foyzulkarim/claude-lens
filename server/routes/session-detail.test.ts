@@ -49,6 +49,8 @@ function batch(calls: ApiCall[], prompts: PromptTextRecord[] = []): ParseTranscr
     prompts,
     toolResultBytes: [] as ToolResultBytesRecord[],
     compactions: [],
+    rawLines: 0,
+    skippedLines: 0,
     duplicateCount: 0,
     malformedCount: 0,
   };

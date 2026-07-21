@@ -43,7 +43,27 @@ export interface ParseTranscriptResult {
   prompts: PromptTextRecord[];
   toolResultBytes: ToolResultBytesRecord[];
   compactions: CompactionRecord[];
+  /**
+   * Number of non-blank input lines the parser observed (#P4-14). The
+   * tailer splits the tailed chunk on `\n` and drops the trailing empty
+   * element; blank lines are filtered out before this counter is set so
+   * `rawLines = calls.length + prompts.length + toolResultBytes.length +
+   * compactions.length + duplicateCount + malformedCount + skippedLines`.
+   * The Store accumulates this additively across tailer batches so the
+   * Data Health page can render "N raw lines → M distinct calls".
+   */
+  rawLines: number;
   duplicateCount: number;
+  /**
+   * Lines the parser saw but could not classify (already-typed records it
+   * doesn't handle — e.g. queue-operation, file-history-snapshot — that
+   * fall through the dispatch with kind "skipped"). Surfaced separately
+   * from `malformedCount` so the page can distinguish "line was a non-JSONL
+   * record" from "line was a broken JSONL record". Currently unused in
+   * the wire shape (the page only renders `malformedCount`); tracked here
+   * for future evolution.
+   */
+  skippedLines: number;
   malformedCount: number;
 }
 
@@ -401,7 +421,9 @@ export function parseTranscriptLines(
     prompts: [],
     toolResultBytes: [],
     compactions: [],
+    rawLines: 0,
     duplicateCount: 0,
+    skippedLines: 0,
     malformedCount: 0,
   };
 
@@ -412,6 +434,14 @@ export function parseTranscriptLines(
   const toolNameByToolUseId = initialToolNameMap ?? new Map<string, string>();
 
   for (const rawLine of rawLines) {
+    // Empty / whitespace-only lines never reach `parseTranscriptLine` —
+    // they don't increment any counter today. The tailer slices the
+    // tailed chunk on `\n` and drops the trailing empty element, so the
+    // only blanks we see here are intra-file blanks. We skip them
+    // explicitly (without incrementing `skippedLines`) so `rawLines`
+    // counts only lines that the parser actually attempted to classify.
+    if (rawLine.trim() === "") continue;
+    result.rawLines++;
     const parsed = parseTranscriptLine(rawLine, seenMessageIds, toolNameByToolUseId);
     switch (parsed.kind) {
       case "call":
@@ -433,6 +463,7 @@ export function parseTranscriptLines(
         result.malformedCount++;
         break;
       case "skipped":
+        result.skippedLines++;
         break;
     }
   }

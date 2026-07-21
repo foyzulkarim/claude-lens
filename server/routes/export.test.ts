@@ -81,6 +81,8 @@ function addSession(
     prompts: [prompt(args.sessionId, promptId, "hi", ts)],
     toolResultBytes: [],
     compactions: [],
+    rawLines: 0,
+    skippedLines: 0,
     duplicateCount: 0,
     malformedCount: 0,
   });

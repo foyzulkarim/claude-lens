@@ -37,11 +37,13 @@ describe("invalidateForMessage", () => {
     const queryClient = new QueryClient();
     const spy = vi.spyOn(queryClient, "invalidateQueries");
     invalidateForMessage(queryClient, { type: "session-added", sessionId: "s1" });
-    // Aggregate metrics shift + the sessions list itself is stale — both
-    // prefixes invalidated in one go (ARCH T7, A12).
+    // Aggregate metrics shift + the sessions list itself is stale +
+    // the Data Health page (#P4-14) needs a fresh read — three
+    // prefixes invalidated in one go (ARCH T7, A12; A6 for health).
     expect(spy).toHaveBeenCalledWith({ queryKey: ["metrics"] });
     expect(spy).toHaveBeenCalledWith({ queryKey: ["sessions"] });
-    expect(spy).toHaveBeenCalledTimes(2);
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["health"] });
+    expect(spy).toHaveBeenCalledTimes(3);
   });
 
   it("invalidates the sessions prefix on session-added", () => {
@@ -51,7 +53,7 @@ describe("invalidateForMessage", () => {
     expect(spy).toHaveBeenCalledWith({ queryKey: ["sessions"] });
   });
 
-  it("invalidates metrics, the session prefix, the turn-inspector prefix, the sessions prefix, AND the gates prefix on session-updated", () => {
+  it("invalidates metrics, the session prefix, the turn-inspector prefix, the sessions prefix, the gates prefix, AND the health prefix on session-updated", () => {
     const queryClient = new QueryClient();
     const spy = vi.spyOn(queryClient, "invalidateQueries");
     invalidateForMessage(queryClient, { type: "session-updated", sessionId: "s1" });
@@ -62,7 +64,11 @@ describe("invalidateForMessage", () => {
     // Gates prefix invalidation — Report Card + Dashboard failure feed
     // (PR title's "live gate feeds" claim is broken without this).
     expect(spy).toHaveBeenNthCalledWith(5, { queryKey: ["gates"] });
-    expect(spy).toHaveBeenCalledTimes(5);
+    // Data Health page (#P4-14) — a transcript append changes
+    // dedup/malformed counters fleet-wide; without this the page
+    // stays stale during a live session write.
+    expect(spy).toHaveBeenNthCalledWith(6, { queryKey: ["health"] });
+    expect(spy).toHaveBeenCalledTimes(6);
   });
 
   it("invalidates the gates prefix on session-updated so Report Card + failure feed refetch", () => {
@@ -184,13 +190,15 @@ describe("connectWs", () => {
     expect(spy).not.toHaveBeenCalled();
     vi.advanceTimersByTime(INVALIDATION_COALESCE_MS);
 
-    // A single inbound `session-added` message triggers both metrics- and
-    // sessions-prefix invalidations (aggregate metrics + the list itself
-    // are stale). The router passes both through; this test guards the
+    // A single inbound `session-added` message triggers metrics-,
+    // sessions-, and health-prefix invalidations (aggregate metrics +
+    // the list itself are stale + the Data Health page needs a fresh
+    // read). The router passes each through; this test guards the
     // connectWs→onmessage→batcher wiring, not the prefix set.
     expect(spy).toHaveBeenCalledWith({ queryKey: ["metrics"] });
     expect(spy).toHaveBeenCalledWith({ queryKey: ["sessions"] });
-    expect(spy).toHaveBeenCalledTimes(2);
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["health"] });
+    expect(spy).toHaveBeenCalledTimes(3);
   });
 
   it("coalesces multiple session-updated messages within one window into a single metrics/sessions invalidation, keeping each session's own detail invalidation", () => {
@@ -229,8 +237,13 @@ describe("connectWs", () => {
       ([arg]) => JSON.stringify(arg) === JSON.stringify({ queryKey: ["gates"] }),
     );
     expect(gatesCalls).toHaveLength(1);
-    // 1 metrics + 1 sessions + 1 gates + 3 session detail + 3 turn-inspector = 9.
-    expect(spy).toHaveBeenCalledTimes(9);
+    // #P4-14: the health prefix also collapses across sessions.
+    const healthCalls = spy.mock.calls.filter(
+      ([arg]) => JSON.stringify(arg) === JSON.stringify({ queryKey: ["health"] }),
+    );
+    expect(healthCalls).toHaveLength(1);
+    // 1 metrics + 1 sessions + 1 gates + 1 health + 3 session detail + 3 turn-inspector = 10.
+    expect(spy).toHaveBeenCalledTimes(10);
   });
 
   it("includes a message that arrives mid-window (after the timer is scheduled but before it fires)", () => {
@@ -280,7 +293,11 @@ describe("connectWs", () => {
     expect(spy).toHaveBeenCalledWith({ queryKey: ["session", "s1"] });
     expect(spy).toHaveBeenCalledWith({ queryKey: ["turn-inspector", "s1"] });
     expect(spy).toHaveBeenCalledWith({ queryKey: ["gates"] });
-    expect(spy).toHaveBeenCalledTimes(5);
+    // #P4-14: the health action is shared between session-added and
+    // session-updated, so it collapses to a single entry here just
+    // like the other shared prefixes.
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["health"] });
+    expect(spy).toHaveBeenCalledTimes(6);
   });
 
   it("does not apply pending batched invalidations after dispose", () => {

@@ -31,7 +31,7 @@ export interface WarmCache {
  * throw — see ARCH-session-detail-page.md T1 stress test: "treats old cache
  * schemas as safe misses". (#P4-5)
  */
-export const WARM_CACHE_SCHEMA_VERSION = 2;
+export const WARM_CACHE_SCHEMA_VERSION = 3;
 
 type CacheHeader = WarmCacheKey & { version: number };
 
@@ -40,7 +40,13 @@ type CacheRecordLine =
   | { kind: "prompt"; prompt: PromptTextRecord }
   | { kind: "tool-result-bytes"; record: ToolResultBytesRecord }
   | { kind: "compaction"; record: CompactionRecord }
-  | { kind: "meta"; duplicateCount: number; malformedCount: number };
+  | {
+      kind: "meta";
+      rawLines: number;
+      duplicateCount: number;
+      skippedLines: number;
+      malformedCount: number;
+    };
 
 function isWarmCacheKey(value: unknown): value is WarmCacheKey {
   return (
@@ -127,7 +133,9 @@ function serializeEntry(key: WarmCacheKey, entry: WarmCacheEntry): string {
   lines.push(
     JSON.stringify({
       kind: "meta",
+      rawLines: entry.rawLines,
       duplicateCount: entry.duplicateCount,
+      skippedLines: entry.skippedLines,
       malformedCount: entry.malformedCount,
     } satisfies CacheRecordLine),
   );
@@ -162,7 +170,9 @@ function deserializeEntry(raw: string, expectedKey: WarmCacheKey): WarmCacheEntr
     prompts: [],
     toolResultBytes: [],
     compactions: [],
+    rawLines: 0,
     duplicateCount: 0,
+    skippedLines: 0,
     malformedCount: 0,
   };
 
@@ -194,12 +204,16 @@ function deserializeEntry(raw: string, expectedKey: WarmCacheKey): WarmCacheEntr
         break;
       case "meta":
         if (
+          typeof parsed.rawLines !== "number" ||
           typeof parsed.duplicateCount !== "number" ||
+          typeof parsed.skippedLines !== "number" ||
           typeof parsed.malformedCount !== "number"
         ) {
           return null;
         }
+        entry.rawLines = parsed.rawLines;
         entry.duplicateCount = parsed.duplicateCount;
+        entry.skippedLines = parsed.skippedLines;
         entry.malformedCount = parsed.malformedCount;
         break;
       default:
