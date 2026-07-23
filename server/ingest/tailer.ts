@@ -1,5 +1,6 @@
 import type { FileHandle } from "node:fs/promises";
 import { open } from "node:fs/promises";
+import { basename } from "node:path";
 import type { ParseTranscriptResult } from "./parse-transcript.js";
 import { parseTranscriptLines } from "./parse-transcript.js";
 import type { RegisteredFile } from "./poller.js";
@@ -28,6 +29,17 @@ interface TailFileState {
 
 const NEWLINE = 0x0a;
 
+// Bounds a single synchronous read+parse pass during `rereadFromStart`
+// (#113 RB-1). A normal incremental growth read is naturally small (bytes
+// since the last poll), but a full replay reads the whole file — for a
+// session with many/large sub-agent files, one truncation could otherwise
+// trigger a burst of large synchronous parses back-to-back, blocking the
+// event loop. Reading in bounded chunks with a yield between them (see
+// `rereadFromStart`) keeps all the data (unlike a hard size cap, which
+// would silently drop legitimate large-session history) while letting
+// other work interleave between chunks.
+const REREAD_CHUNK_BYTES = 4 * 1024 * 1024;
+
 function freshState(): TailFileState {
   return {
     offset: 0,
@@ -40,6 +52,11 @@ function freshState(): TailFileState {
 
 export class Tailer {
   private readonly files = new Map<string, TailFileState>();
+  // Once-gated set for sibling-replay failure warnings (#113 EH-2). Bounded
+  // by the number of distinct file paths this tailer has ever replayed —
+  // never grows unboundedly. Mirrors the `warnedPremiumReadFailure` /
+  // `warnedDiscoverFailure` pattern in pipeline.ts/discovery.ts.
+  private readonly warnedRereadFailure = new Set<string>();
 
   constructor(
     private readonly events: TailerEvents,
@@ -100,6 +117,54 @@ export class Tailer {
     return this.enqueue(state, () => this.handleChange(file, state));
   }
 
+  /**
+   * Rewind a file to offset 0 and re-read it whole, WITHOUT emitting a reset
+   * (#113). Used for the sibling-rewind path: when one file of a multi-file
+   * session truncates, the pipeline resets the shared session once and then
+   * asks every other file of that session to replay itself, so the siblings'
+   * records survive the reset. Emitting a reset here instead would have each
+   * sibling wipe the records the previous one just replayed.
+   *
+   * Cross-file duplication from this reread landing on top of an
+   * already-applied incremental read (#113 AP-1) is guarded at the store
+   * layer (`Store.applyRecords`'s session-wide `appliedMessageIds`), not
+   * here — this method has no visibility into what the store already has.
+   */
+  rereadFromStart(file: RegisteredFile): Promise<void> {
+    if (file.class !== "transcript") return Promise.resolve();
+    const state = this.files.get(file.path);
+    if (!state) return this.onFileAdded(file);
+    return this.enqueue(state, async () => {
+      // #113 EH-1: this task was queued behind whatever was already in
+      // `state.chain` when `rereadFromStart` was called. If the file was
+      // removed and rediscovered in the meantime, `onFileRemoved` deleted
+      // this `state` from `this.files` and a fresh one (with its own
+      // `onFileAdded` initial read already in flight) took its place.
+      // Applying this stale state's read on top of that would duplicate
+      // records, so bail — the fresh registration's own read covers it.
+      if (this.files.get(file.path) !== state) return;
+      this.resetTailState(state);
+      const errorsBefore = state.readErrorCount;
+      // Chunked, not one Buffer.alloc(file.size) read (#113 RB-1) — see
+      // REREAD_CHUNK_BYTES.
+      while (state.offset < file.size) {
+        const before = state.offset;
+        const target = Math.min(file.size, state.offset + REREAD_CHUNK_BYTES);
+        await this.readGrowth(file, state, target);
+        if (state.offset === before) break; // no full line in this chunk (e.g. a trailing partial line) — the next regular growth read picks it up once more content/a newline arrives, same as the unchunked path's behavior.
+        if (state.offset < file.size) {
+          await new Promise<void>((resolve) => setImmediate(resolve));
+        }
+      }
+      if (state.readErrorCount > errorsBefore && !this.warnedRereadFailure.has(file.path)) {
+        this.warnedRereadFailure.add(file.path);
+        console.warn("[ingest] sibling replay hit a read error", {
+          path: basename(file.path),
+        });
+      }
+    });
+  }
+
   onFileRemoved(file: RegisteredFile): void {
     this.files.delete(file.path);
     try {
@@ -123,12 +188,21 @@ export class Tailer {
 
   private async handleChange(file: RegisteredFile, state: TailFileState): Promise<void> {
     if (file.size < state.offset) {
-      state.seen.clear();
-      state.offset = 0;
-      state.toolNameByToolUseId.clear();
+      this.resetTailState(state);
       this.emitReset(file);
     }
     await this.readGrowth(file, state, file.size);
+  }
+
+  // Shared by the truncation branch above and `rereadFromStart` (#113 CQ-2)
+  // — both need to forget everything read so far so the next `readGrowth`
+  // starts a clean re-parse from byte 0. Kept as one place so a future
+  // field added to `TailFileState` can't be reset in one call site and
+  // forgotten in the other.
+  private resetTailState(state: TailFileState): void {
+    state.seen.clear();
+    state.offset = 0;
+    state.toolNameByToolUseId.clear();
   }
 
   private async readGrowth(

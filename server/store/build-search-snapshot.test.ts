@@ -202,3 +202,29 @@ describe("buildSearchSnapshot — version", () => {
     expect(out.version).toBe(42);
   });
 });
+
+describe("buildSearchSnapshot — prompts whose sessionId differs from the store key (#113)", () => {
+  it("keeps ids unique when two store sessions carry the same prompt.sessionId", () => {
+    // Real shape: `<uuid>.jsonl` and `<uuid>/subagents/agent-X.jsonl` both
+    // carry sessionId `<uuid>` on their lines. Before the fix the occurrence
+    // counter restarted per store session, so both emitted the bare
+    // `<uuid>:<promptId>` id and MiniSearch rejected the whole index.
+    const out = buildSearchSnapshot({
+      sessions: [
+        {
+          sessionId: "parent-uuid",
+          prompts: [mkPrompt("p1", "main line", "2026-06-10T10:00:00.000Z", "parent-uuid")],
+          turns: [mkTurn("p1")],
+        },
+        {
+          sessionId: "agent-a1598463750f4ab65",
+          prompts: [mkPrompt("p1", "sidechain line", "2026-06-10T10:00:05.000Z", "parent-uuid")],
+          turns: [mkTurn("p1")],
+        },
+      ],
+    });
+    const ids = out.prompts.map((d) => d.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids).toEqual(["parent-uuid:p1", "parent-uuid:p1:1"]);
+  });
+});

@@ -4,7 +4,7 @@ import { basename, join, resolve } from "node:path";
 import fg from "fast-glob";
 
 export type FileClass =
-  | { kind: "transcript"; sessionId: string }
+  | { kind: "transcript"; sessionId: string; agentId?: string }
   | { kind: "cost"; sessionId: string }
   | { kind: "turn-boundaries"; sessionId: string }
   | { kind: "cost-log" }
@@ -14,6 +14,14 @@ export interface DiscoveredFile {
   path: string;
   class: Exclude<FileClass["kind"], "unknown">;
   sessionId?: string;
+  /**
+   * Set only for sub-agent (sidechain) transcripts discovered under
+   * `<session-uuid>/subagents/` (#113). Its presence means "this file's
+   * records belong to `sessionId`, but it is not that session's own
+   * transcript" — the pipeline uses it to keep `setTranscriptPath` pinned
+   * to the parent file.
+   */
+  agentId?: string;
   root: string;
   label?: string;
 }
@@ -34,6 +42,10 @@ const COST_LOG_NAME = "cost-log.jsonl";
 const TURN_BOUNDARIES_SUFFIX = ".turn-boundaries.jsonl";
 const COST_SUFFIX = ".cost.jsonl";
 const TRANSCRIPT_SUFFIX = ".jsonl";
+// Directory Claude Code writes per-agent sidechain transcripts into, and the
+// conventional prefix on those filenames (`agent-<id>.jsonl`). See classifyPath.
+const SUBAGENT_DIR_NAME = "subagents";
+const AGENT_FILE_PREFIX = "agent-";
 
 // Once-gated set for fast-glob failure warnings (review EH-3). Bounded
 // by the number of scan roots the user has configured since server
@@ -62,6 +74,59 @@ export function classifyFilename(name: string): FileClass {
     return { kind: "transcript", sessionId };
   }
   return { kind: "unknown" };
+}
+
+/**
+ * Path-aware classification (#113). Claude Code no longer writes sub-agent
+ * (sidechain) activity inline in the parent transcript — it writes one file
+ * per agent to `<session-uuid>/subagents/agent-<id>.jsonl`. Every line in
+ * those files carries the **parent** session's `sessionId` (verified 67/67
+ * against real capture data), so classifying them by filename alone made
+ * each one a phantom top-level session keyed `agent-<id>`: sidechain cost
+ * and tokens were attributed to sessions that don't exist, the
+ * `main`/`sidechain` dimension never saw any sidechain rows, and two store
+ * sessions could emit the same `sessionId:promptId` search-doc id (the
+ * MiniSearch "duplicate ID" crash).
+ *
+ * Routing them to the parent here means every downstream consumer is
+ * correct without changes — `derive-turns` already keys turns by
+ * `promptId::side|main`, and gates/cache/metrics already branch on
+ * `isSidechain`.
+ *
+ * Falls back to `classifyFilename` for every other shape, so premium
+ * sidecars and ordinary transcripts are unaffected.
+ */
+export function classifyPath(filePath: string): FileClass {
+  const segments = filePath.split(/[/\\]/);
+  const name = segments.at(-1) ?? "";
+  const parentDir = segments.at(-2);
+  const grandparentDir = segments.at(-3);
+
+  // #113 CQ-1: classify by filename first and only reinterpret an already-
+  // confirmed transcript — rather than re-deriving "is this a cost/
+  // turn-boundaries/cost-log sidecar" from the suffixes a second time here.
+  // One source of truth for the sidecar shapes; a future one added to
+  // `classifyFilename` doesn't also need updating in this condition.
+  const base = classifyFilename(name);
+  if (
+    base.kind === "transcript" &&
+    parentDir === SUBAGENT_DIR_NAME &&
+    grandparentDir !== undefined &&
+    grandparentDir.length > 0
+  ) {
+    // Strip the conventional `agent-` prefix so `agentId` matches the value
+    // the transcript lines themselves carry (parse-transcript.ts reads
+    // `line.agentId`; cache/classifier.ts groups sidechain calls by it).
+    const stem = name.slice(0, -TRANSCRIPT_SUFFIX.length);
+    const agentId = stem.startsWith(AGENT_FILE_PREFIX)
+      ? stem.slice(AGENT_FILE_PREFIX.length)
+      : stem;
+    if (agentId.length > 0) {
+      return { kind: "transcript", sessionId: grandparentDir, agentId };
+    }
+  }
+
+  return base;
 }
 
 function toDiscoveredClass(
@@ -110,7 +175,7 @@ export async function discover(config: ScanConfig): Promise<DiscoveredFile[]> {
       const absPath = resolve(match);
       if (seen.has(absPath)) continue;
 
-      const classification = classifyFilename(absPath.split("/").pop() ?? "");
+      const classification = classifyPath(absPath);
       if (classification.kind === "unknown") continue;
 
       seen.add(absPath);
@@ -118,6 +183,9 @@ export async function discover(config: ScanConfig): Promise<DiscoveredFile[]> {
         path: absPath,
         class: toDiscoveredClass(classification),
         sessionId: "sessionId" in classification ? classification.sessionId : undefined,
+        ...(classification.kind === "transcript" && classification.agentId !== undefined
+          ? { agentId: classification.agentId }
+          : {}),
         root: root.path,
         label: root.label,
       });

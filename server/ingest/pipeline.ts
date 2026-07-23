@@ -83,9 +83,10 @@ export function startIngest(config: ScanConfig, options: IngestPipelineOptions):
 
   const inFlight = new Set<Promise<unknown>>();
   // track() assumes `promise` never rejects — true today because every
-  // promise passed in comes from Tailer.onFileAdded/onFileChanged, whose
-  // enqueue() swallows task rejections internally (tailer.ts). If track() is
-  // ever reused for a promise without that guarantee, attach a .catch first.
+  // promise passed in comes from Tailer.onFileAdded/onFileChanged/
+  // rereadFromStart, whose enqueue() swallows task rejections internally
+  // (tailer.ts). If track() is ever reused for a promise without that
+  // guarantee, attach a .catch first.
   function track(promise: Promise<unknown>): void {
     inFlight.add(promise);
     promise.finally(() => inFlight.delete(promise));
@@ -99,6 +100,49 @@ export function startIngest(config: ScanConfig, options: IngestPipelineOptions):
   // malformed-line counts for those via the existing
   // `premiumFileHealth` map on the store, not via this counter.
   const discoveredTranscriptPaths = new Set<string>();
+
+  // #113: a session is no longer 1:1 with a file. A session's sidechain
+  // activity lives in sibling `<uuid>/subagents/agent-*.jsonl` files that
+  // discovery routes to the same `sessionId`. `resetSession` clears the
+  // whole session, so a truncation in ANY of its files would otherwise
+  // silently drop the records contributed by the others. This index lets
+  // the reset handler replay them. The stored `RegisteredFile` objects are
+  // the poller's own registry entries, which it mutates in place on each
+  // poll — so `size`/`mtime` read here are always current.
+  const filesBySession = new Map<string, Map<string, RegisteredFile>>();
+
+  function indexSessionFile(file: RegisteredFile): void {
+    if (file.class !== "transcript" || !file.sessionId) return;
+    let group = filesBySession.get(file.sessionId);
+    if (!group) {
+      group = new Map<string, RegisteredFile>();
+      filesBySession.set(file.sessionId, group);
+    }
+    group.set(file.path, file);
+  }
+
+  function forgetSessionFile(file: RegisteredFile): void {
+    if (file.class !== "transcript" || !file.sessionId) return;
+    const group = filesBySession.get(file.sessionId);
+    if (!group) return;
+    group.delete(file.path);
+    if (group.size === 0) filesBySession.delete(file.sessionId);
+  }
+
+  // Shared by the poller's onFileAdded/onFileChanged transcript branches
+  // below — both need to index the file into `filesBySession` and keep
+  // `setTranscriptPath` pinned to the parent (never a sub-agent file).
+  function registerTranscriptFile(file: RegisteredFile): void {
+    indexSessionFile(file);
+    // `agentId` set = a sub-agent sidechain file (#113). Its records
+    // belong to this session, but the session's transcript path must
+    // stay pinned to the parent `<uuid>.jsonl` — otherwise whichever
+    // agent file registered last would win and Session Detail would
+    // deep-link into a sub-agent transcript.
+    if (file.sessionId && file.agentId === undefined) {
+      store.setTranscriptPath(file.sessionId, file.path);
+    }
+  }
   // Receives the store's already-computed `transcriptsParsed` count so
   // `transcriptsFailed` can be derived without a second `listSessions()`
   // sweep per `/api/health` (review P-001 — both the pipeline and the
@@ -119,7 +163,26 @@ export function startIngest(config: ScanConfig, options: IngestPipelineOptions):
       },
       onFileReset(file) {
         if (!file.sessionId) return;
+        // #113 EH-3: relies on at most one `onFileReset` per session per
+        // poll cycle, even if two sibling files both truncate in the same
+        // cycle — otherwise the second reset would wipe the first reset's
+        // sibling replays before they land. That holds today only because
+        // `Poller.pollOnce` awaits `stat()` sequentially per file, so this
+        // callback (and everything it synchronously triggers) finishes
+        // before the next file in the registry is even stat'd. Not a
+        // documented guarantee elsewhere — a future parallelized
+        // `pollOnce` would need to preserve or replace it.
         store.resetSession(file.sessionId);
+        // Replay this session's other files (parent transcript and/or
+        // sibling sub-agent transcripts) — the reset above wiped their
+        // records too (#113). Skipped entirely for the common
+        // one-file-per-session case, where the group holds only `file`.
+        const group = filesBySession.get(file.sessionId);
+        if (!group) return;
+        for (const sibling of group.values()) {
+          if (sibling.path === file.path) continue;
+          track(tailer.rereadFromStart(sibling));
+        }
       },
       onFileRemoved() {
         // Session state is kept even if its file disappears mid-run — no
@@ -243,7 +306,7 @@ export function startIngest(config: ScanConfig, options: IngestPipelineOptions):
         // so a re-registration after a removal+rediscovery is
         // idempotent (see onFileRemoved for the matching delete).
         discoveredTranscriptPaths.add(file.path);
-        if (file.sessionId) store.setTranscriptPath(file.sessionId, file.path);
+        registerTranscriptFile(file);
         track(tailer.onFileAdded(file));
         return;
       }
@@ -254,7 +317,7 @@ export function startIngest(config: ScanConfig, options: IngestPipelineOptions):
     },
     onFileChanged(file) {
       if (file.class === "transcript") {
-        if (file.sessionId) store.setTranscriptPath(file.sessionId, file.path);
+        registerTranscriptFile(file);
         track(tailer.onFileChanged(file));
         return;
       }
@@ -267,6 +330,7 @@ export function startIngest(config: ScanConfig, options: IngestPipelineOptions):
         // tailer.onFileRemoved also resets the session's transcript
         // counters (calls/duplicates/malformed) via store.resetSession.
         discoveredTranscriptPaths.delete(file.path);
+        forgetSessionFile(file);
         tailer.onFileRemoved(file);
       }
       // A removed premium file leaves the session's last observed values in

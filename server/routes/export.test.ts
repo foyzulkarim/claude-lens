@@ -71,7 +71,12 @@ function addSession(
     calls: [
       call({
         sessionId: args.sessionId,
-        messageId: `m-${args.sessionId}-1`,
+        // Derived from the timestamp, not a fixed "-1" suffix: the store
+        // now rejects a repeated messageId within the same session
+        // (#113 AP-1), and a couple of these tests call addSession twice
+        // for the same sessionId (different timestamps) to simulate two
+        // calls in one session.
+        messageId: `m-${args.sessionId}-${ts}`,
         timestamp: ts,
         model: args.model ?? "claude-sonnet-5",
         cwd: args.project ?? "/repo/alpha",

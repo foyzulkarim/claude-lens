@@ -57,6 +57,16 @@ export function buildSearchSnapshot(
   options: { version?: number } = {},
 ): SearchIndexResponse {
   const docs: PromptSearchDoc[] = [];
+  // Function-scoped, NOT per-session (#113). The id is built from
+  // `prompt.sessionId` — the sessionId carried by the transcript line —
+  // which is not guaranteed to equal the store key we're iterating. A
+  // per-session map made the occurrence counter restart whenever two store
+  // sessions contributed prompts with the same `prompt.sessionId`, so both
+  // emitted occurrence 0 and MiniSearch rejected the whole index with
+  // "duplicate ID". Discovery now routes sub-agent files to their parent
+  // session so that divergence shouldn't arise, but this map is the
+  // backstop that makes the uniqueness guarantee true by construction.
+  const occurrences = new Map<string, number>();
 
   for (const session of input.sessions) {
     const turnByPrompt = new Map<string, number>();
@@ -66,10 +76,6 @@ export function buildSearchSnapshot(
     });
     const fallbackTurn = session.turns.length + 1;
 
-    // Per-session occurrence counter — keys are the canonical
-    // `sessionId:promptId` so two sessions with the same promptId never
-    // collide, and within one session each repeat gets a fresh suffix.
-    const occurrences = new Map<string, number>();
     const sessionContext =
       session.cwd !== undefined || session.gitBranch !== undefined
         ? {

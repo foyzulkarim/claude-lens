@@ -9,6 +9,8 @@ export interface RegisteredFile {
   path: string;
   class: DiscoveredFile["class"];
   sessionId?: string;
+  /** Sub-agent transcript marker — see `DiscoveredFile.agentId` (#113). */
+  agentId?: string;
   root: string;
   label?: string;
   size: number;
@@ -111,6 +113,10 @@ export class Poller {
         path: found.path,
         class: found.class,
         sessionId: found.sessionId,
+        // #113 RB-2: assigned unconditionally (even when `undefined`), same
+        // as `sessionId`/`label` above, so every `RegisteredFile` in the
+        // hot-polled registry keeps one consistent shape.
+        agentId: found.agentId,
         root: found.root,
         label: found.label,
         size,

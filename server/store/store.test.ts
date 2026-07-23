@@ -157,6 +157,47 @@ describe("Store — reset", () => {
   });
 });
 
+describe("Store — applyRecords messageId dedup (#113 AP-1)", () => {
+  it("rejects a call whose messageId was already applied to the session", () => {
+    const { store } = makeStore();
+    store.applyRecords("s1", batch([call({ sessionId: "s1", messageId: "m1" })]));
+    // Simulates the #113 replay race: a sibling file's own incremental
+    // growth read applies "m1", then a full sibling-replay re-parses the
+    // same bytes (fresh per-file `seen` set, so it doesn't know "m1" was
+    // already seen) and calls applyRecords again with it.
+    store.applyRecords("s1", batch([call({ sessionId: "s1", messageId: "m1" })]));
+    vi.advanceTimersByTime(300);
+
+    expect(store.getCalls("s1")).toHaveLength(1);
+    expect(store.getSession("s1")?.callCount).toBe(1);
+  });
+
+  it("re-accepts a messageId after resetSession clears the dedup set", () => {
+    const { store } = makeStore();
+    store.applyRecords("s1", batch([call({ sessionId: "s1", messageId: "m1" })]));
+    vi.advanceTimersByTime(300);
+    store.resetSession("s1");
+    // A genuine re-read from byte 0 after a truncation must be able to
+    // re-apply the same messageId — resetSession has to clear
+    // `appliedMessageIds` alongside `calls`, not just the array.
+    store.applyRecords("s1", batch([call({ sessionId: "s1", messageId: "m1" })]));
+    vi.advanceTimersByTime(300);
+
+    expect(store.getCalls("s1")).toHaveLength(1);
+    expect(store.getSession("s1")?.callCount).toBe(1);
+  });
+
+  it("does not cross-contaminate dedup state between sessions", () => {
+    const { store } = makeStore();
+    store.applyRecords("s1", batch([call({ sessionId: "s1", messageId: "m1" })]));
+    store.applyRecords("s2", batch([call({ sessionId: "s2", messageId: "m1" })]));
+    vi.advanceTimersByTime(300);
+
+    expect(store.getSession("s1")?.callCount).toBe(1);
+    expect(store.getSession("s2")?.callCount).toBe(1);
+  });
+});
+
 describe("Store — sidecar presence", () => {
   it("markSidecarPresent flips the relevant tier flag for that session only", () => {
     const { store } = makeStore();
