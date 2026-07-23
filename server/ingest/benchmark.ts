@@ -1,6 +1,5 @@
 #!/usr/bin/env node
-import { stat } from "node:fs/promises";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 // #P2-7 checkpoint: cold boot, warm boot, and RSS against the real
@@ -11,7 +10,8 @@ import { basename, join } from "node:path";
 // into specs/claude-lens-plan.md's benchmark log.
 import { performance } from "node:perf_hooks";
 import fg from "fast-glob";
-import { classifyFilename, type ScanConfig, resolveScanConfig } from "./discovery.js";
+import { parseRootsFlag } from "./argv.js";
+import { classifyPath, type ScanConfig, resolveScanConfig } from "./discovery.js";
 import { startIngest } from "./pipeline.js";
 import { createWarmCache } from "./warm-cache.js";
 
@@ -23,40 +23,70 @@ function formatMb(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
 }
 
+// Once-gated set mirroring `discover.ts`'s `warnedDiscoverFailure`:
+// bounded by the number of distinct roots since server start — never
+// grows unboundedly. A flapping root surfaces one warning across the
+// process lifetime instead of spamming the log on every benchmark run.
+const warnedMeasureFailure = new Set<string>();
+
 /**
- * Walks each scan root and sums the bytes of every transcript (T) file —
- * the `<uuid>.jsonl` shape classified by `classifyFilename` as kind
- * "transcript". Excludes `.cost.jsonl` and `.turn-boundaries.jsonl`
+ * Walks the configured scan roots and sums the bytes of every
+ * transcript (T) file classified as `kind: "transcript"` by
+ * `classifyPath`. Excludes `.cost.jsonl` and `.turn-boundaries.jsonl`
  * sidecars (C and B) since they're metadata for a T file, not the
  * transcript data the boot hot path reads. The cost-log.jsonl (L) lives
  * at the `claudeDir` level, not under a scan root, so it never appears
  * here. The sum is "MB of source JSONL" — the same data the cold path
  * must read off disk and parse.
+ *
+ * Side effect on the cold-boot measurement: walking the same files
+ * here warms the OS page cache before the cold-boot timer starts in
+ * `runOnce`. On a warm-cache system the measured cold-boot `ms` reads
+ * from that warm cache; the JS-level `t0` is unaffected, but the I/O
+ * is. Acceptable for our scale; revisit if a true cold-disk measurement
+ * becomes important.
  */
-async function measureDataSize(roots: { path: string }[]): Promise<number> {
+async function measureDataSize(config: ScanConfig): Promise<number> {
+  // Cap in-flight stat() calls per root. The libuv thread pool
+  // serializes the syscalls internally (default 4 threads), so the
+  // actual concurrency is lower — this cap bounds the in-flight
+  // promise count and closure retention, not the syscall rate. 64
+  // is a comfortable ceiling; revisit for the 100× corpus case the
+  // §5.7 follow-up in the PR description already calls out.
+  const STAT_CONCURRENCY = 64;
   let totalBytes = 0;
-  for (const root of roots) {
+  for (const root of config.roots) {
     let matches: string[];
     try {
       matches = await fg("**/*.jsonl", { cwd: root.path, absolute: true, onlyFiles: true });
-    } catch {
-      // Same "skip and continue" shape `discover` uses for a flapping
-      // root — a partial data-size number beats a crash, and the
-      // pipeline surfaces the same warning via its own discover pass.
+    } catch (err) {
+      // Mirror `discover.ts`'s posture: warn once per misconfigured
+      // root so the operator can see what went wrong, then continue.
+      // A partial data-size number still beats a crash.
+      if (!warnedMeasureFailure.has(root.path)) {
+        warnedMeasureFailure.add(root.path);
+        console.warn("[measure-data-size] fast-glob failed for root", {
+          root: basename(root.path),
+          code: (err as NodeJS.ErrnoException | undefined)?.code ?? "UNKNOWN",
+        });
+      }
       continue;
     }
-    await Promise.all(
-      matches.map(async (filePath) => {
-        if (classifyFilename(basename(filePath)).kind !== "transcript") return;
-        try {
-          const s = await stat(filePath);
-          totalBytes += s.size;
-        } catch {
-          // File may have been pruned between glob and stat — best-
-          // effort posture matches the pipeline's own readers.
-        }
-      }),
-    );
+    for (let i = 0; i < matches.length; i += STAT_CONCURRENCY) {
+      const chunk = matches.slice(i, i + STAT_CONCURRENCY);
+      await Promise.all(
+        chunk.map(async (filePath) => {
+          if (classifyPath(filePath).kind !== "transcript") return;
+          try {
+            const s = await stat(filePath);
+            totalBytes += s.size;
+          } catch {
+            // File may have been pruned between glob and stat — best-
+            // effort posture matches the pipeline's own readers.
+          }
+        }),
+      );
+    }
   }
   return totalBytes;
 }
@@ -81,29 +111,10 @@ async function runOnce(
   return { ms, rssBytes, sessions: sessions.length, calls };
 }
 
-/**
- * Mirrors `server/cli.ts`'s --roots handling: `--roots a b c` and
- * `--roots=a` both work, repeats accumulate, parsing stops at the
- * next `--`-prefixed token. No commander per architecture §1.
- */
-function parseRootsArg(argv: string[]): string[] {
-  const roots: string[] = [];
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
-    const [flag, inlineValue] = arg.split("=", 2);
-    if (flag !== "--roots") continue;
-    if (inlineValue) roots.push(inlineValue);
-    while (argv[i + 1] && !argv[i + 1].startsWith("--")) {
-      roots.push(argv[++i]);
-    }
-  }
-  return roots;
-}
-
 async function main() {
-  const configRoots = parseRootsArg(process.argv.slice(2));
+  const { roots: configRoots } = parseRootsFlag(process.argv.slice(2));
   const scanConfig = resolveScanConfig({ roots: configRoots });
-  const dataBytes = await measureDataSize(scanConfig.roots);
+  const dataBytes = await measureDataSize(scanConfig);
   const cacheDir = await mkdtemp(join(tmpdir(), "claude-lens-bench-cache-"));
   try {
     const cold = await runOnce(cacheDir, scanConfig);

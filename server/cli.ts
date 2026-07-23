@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import type { FastifyInstance } from "fastify";
 import open from "open";
 import { buildApp } from "./app.js";
+import { parseRootsFlag } from "./ingest/argv.js";
 import { resolveScanConfig } from "./ingest/discovery.js";
 import { startIngest } from "./ingest/pipeline.js";
 import { buildHostLabels, buildRuntimeMetadata } from "./runtime.js";
@@ -29,9 +30,16 @@ interface CliOptions {
 class CliUsageError extends Error {}
 
 function parseArgs(argv: string[]): CliOptions {
-  const options: CliOptions = { open: true, roots: [] };
+  // Pre-extract --roots via the shared helper (see server/ingest/argv.ts)
+  // so the main loop doesn't have to re-parse them inline — and so the
+  // unknown-flag throw below doesn't trip on the `--roots` token itself.
+  // The shared helper returns the consumed indices so this loop can
+  // skip them cleanly.
+  const { roots, skipIndices } = parseRootsFlag(argv);
+  const options: CliOptions = { open: true, roots };
 
   for (let i = 0; i < argv.length; i++) {
+    if (skipIndices.has(i)) continue;
     const arg = argv[i];
 
     if (arg === "--no-open") {
@@ -50,11 +58,6 @@ function parseArgs(argv: string[]): CliOptions {
         );
       }
       options.port = parsed;
-    } else if (flag === "--roots") {
-      if (inlineValue) options.roots.push(inlineValue);
-      while (argv[i + 1] && !argv[i + 1].startsWith("--")) {
-        options.roots.push(argv[++i]);
-      }
     } else if (flag === "--config-dir") {
       const raw = inlineValue ?? argv[++i];
       if (raw === undefined) {
