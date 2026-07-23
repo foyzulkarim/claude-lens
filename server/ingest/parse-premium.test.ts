@@ -45,7 +45,8 @@ describe("parseCostSampleLines (C)", () => {
     const { samples, malformedCount } = parseCostSampleLines([turnIndexedSample()]);
     expect(malformedCount).toBe(0);
     expect(samples).toHaveLength(1);
-    const s = samples[0]!;
+    const s = samples[0];
+    if (!s) throw new Error("expected a sample");
     expect(s.sessionId).toBe("session-1");
     expect(s.costDeltaUsd).toBeCloseTo(0.139625);
     expect(s.apiDurationMs).toBe(7606);
@@ -58,7 +59,8 @@ describe("parseCostSampleLines (C)", () => {
 
   it("parses the epoch-indexed variant", () => {
     const { samples } = parseCostSampleLines([epochIndexedSample()]);
-    const s = samples[0]!;
+    const s = samples[0];
+    if (!s) throw new Error("expected a sample");
     expect(s.epoch).toBe(1783057922);
     expect(s.sample).toBe(64);
     expect(s.turn).toBeUndefined();
@@ -71,8 +73,8 @@ describe("parseCostSampleLines (C)", () => {
     ]);
     expect(malformedCount).toBe(0);
     expect(samples).toHaveLength(2);
-    expect(samples[0]!.turn).toBe(43);
-    expect(samples[1]!.sample).toBe(64);
+    expect(samples[0]?.turn).toBe(43);
+    expect(samples[1]?.sample).toBe(64);
   });
 
   it("counts malformed lines and never throws", () => {
@@ -93,8 +95,8 @@ describe("parseCostSampleLines (C)", () => {
       JSON.stringify({ session_id: "s", timestamp: "2026-07-03T00:00:00.000Z" }),
     ]);
     expect(malformedCount).toBe(0);
-    expect(samples[0]!.costDeltaUsd).toBe(0);
-    expect(samples[0]!.apiDurationMs).toBe(0);
+    expect(samples[0]?.costDeltaUsd).toBe(0);
+    expect(samples[0]?.apiDurationMs).toBe(0);
   });
 
   // 🟠 T2 — pin the documented coerce-not-drop decision (parse-premium.ts:97-110):
@@ -107,7 +109,7 @@ describe("parseCostSampleLines (C)", () => {
     ]);
     expect(malformedCount).toBe(0);
     expect(samples).toHaveLength(1);
-    expect(samples[0]!.costDeltaUsd).toBe(0);
+    expect(samples[0]?.costDeltaUsd).toBe(0);
   });
 
   // 🟠 T2 (counterpart) — toStr yields "" for a non-string `session_id`, and
@@ -150,7 +152,7 @@ describe("parseCostSampleLines (C)", () => {
     );
     expect(malformedCount).toBe(1);
     expect(samples).toHaveLength(1);
-    expect(samples[0]!.sessionId).toBe("session-A");
+    expect(samples[0]?.sessionId).toBe("session-A");
   });
 
   // 🟠 H6 — control case: when expectedSessionId is omitted, every record
@@ -177,7 +179,7 @@ describe("parseCostSampleLines (C)", () => {
     ]);
     expect(malformedCount).toBe(2);
     expect(samples).toHaveLength(1);
-    expect(samples[0]!.sessionId).toBe("session-1");
+    expect(samples[0]?.sessionId).toBe("session-1");
   });
 
   // 💭 Security #5 — a pathologically nested JSON payload is rejected
@@ -207,8 +209,8 @@ describe("parseTurnBoundaryLines (B)", () => {
     ]);
     expect(malformedCount).toBe(0);
     expect(boundaries).toHaveLength(1);
-    expect(boundaries[0]!.turnEnd).toBe("2026-07-03T05:54:53.000Z");
-    expect(boundaries[0]!.turnEndEpoch).toBe(1783058093);
+    expect(boundaries[0]?.turnEnd).toBe("2026-07-03T05:54:53.000Z");
+    expect(boundaries[0]?.turnEndEpoch).toBe(1783058093);
   });
 
   it("marks a session_id-less boundary malformed", () => {
@@ -273,10 +275,10 @@ describe("parseCostLogLines (L)", () => {
     ]);
     expect(malformedCount).toBe(0);
     expect(rows).toHaveLength(2);
-    expect(rows[0]!.costUsd).toBeCloseTo(1.8167906);
-    expect(rows[0]!.model).toBe("Sonnet 4.6");
-    expect(rows[1]!.sessionId).toBe("session-2");
-    expect(rows[1]!.costUsd).toBe(0.5);
+    expect(rows[0]?.costUsd).toBeCloseTo(1.8167906);
+    expect(rows[0]?.model).toBe("Sonnet 4.6");
+    expect(rows[1]?.sessionId).toBe("session-2");
+    expect(rows[1]?.costUsd).toBe(0.5);
   });
 
   // M15 (review): parseCostLogLines never throws on malformed input —
