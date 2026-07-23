@@ -8,6 +8,7 @@ import { createGatesCache, type GatesCache } from "./cache/gates-cache.js";
 import { getGateThresholds } from "./gates/thresholds.js";
 import type { PipelineStats } from "./pipeline-stats.js";
 import { registerCacheLabRoute } from "./routes/cache-lab.js";
+import { registerCaptureAssetsRoute } from "./routes/capture-assets.js";
 import { registerConfigRoute } from "./routes/config.js";
 import { registerExportRoute } from "./routes/export.js";
 import { registerGatesRoute } from "./routes/gates.js";
@@ -112,6 +113,14 @@ export interface BuildAppOptions {
    * always passes it.
    */
   pipeline?: { getStats: (transcriptsParsed: number) => PipelineStats };
+  /**
+   * Overrides the resolved `capture/` directory for `GET /api/capture-assets`
+   * (ARCH-producer-cost-capture-tier). Tests pass a fixed string or `null`
+   * so route tests don't depend on whether `dist/capture` happens to exist
+   * on the machine running the suite; production (`cli.ts`) never sets it,
+   * so the route resolves the real path via `resolveCaptureDir()`.
+   */
+  captureDir?: string | null;
 }
 
 export function buildApp({
@@ -124,6 +133,7 @@ export function buildApp({
   localStorePath,
   gatesCache,
   pipeline,
+  captureDir,
 }: BuildAppOptions): FastifyInstance {
   const app = Fastify({
     logger: logger ?? {
@@ -204,6 +214,8 @@ export function buildApp({
   });
 
   registerCacheLabRoute(app, store, metadata?.pricing ? { pricing: metadata.pricing } : undefined);
+
+  registerCaptureAssetsRoute(app, captureDir !== undefined ? { captureDir } : undefined);
 
   registerExportRoute(app, store);
 

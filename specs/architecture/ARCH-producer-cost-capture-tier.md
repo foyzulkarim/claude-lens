@@ -431,5 +431,155 @@ machine**, since the acceptance criterion is verified by running the installer a
 
 # Tasks
 
-_This section is populated by the **generate-tasks** skill (Phase 3)._
-_Run: `/generate-tasks from: specs/architecture/ARCH-producer-cost-capture-tier.md`_
+_Draft breakdown prepared directly from this architecture doc. The user-level `/generate-tasks`
+skill remains the authoritative Phase-3 producer of the implementation task list — this draft
+is a starting point the developer can hand to it or edit directly; it does not replace running
+`/generate-tasks from: specs/architecture/ARCH-producer-cost-capture-tier.md` if a formal
+task-file artifact is wanted._
+
+**Status:** Groups 1–7 and 9 implemented and verified (`npm run verify` clean: typecheck, lint,
+format, and the full `vitest` suite — 141 files, 1601 tests — including the new
+`capture/install.test.ts` and `capture/contract.test.ts`; `npm run test:e2e`'s `settings.cy.ts`
+passes, and the two unrelated failures elsewhere in that run were confirmed pre-existing on
+`main`, not a regression from this task). **Group 8 was asked about and explicitly declined by
+the developer** — every sub-task there writes to the real `~/.claude/settings.json` (Areas of
+Impact rates this **H** risk), and the developer chose to run `bash capture/install.sh`
+themselves rather than have it run for them. Remains unchecked below for that reason, not
+because it's blocked.
+
+## 1. Vendor the capture scripts (R1, R2, A1, A2, A6, A8)
+
+- [x] 1.1 Copy the four scripts from `~/.claude/scripts/` into `capture/*.cjs`
+      (`cost-logger.cjs`, `turn-logger.cjs`, `statusline-command.cjs`, `statusline-wrapper.cjs`),
+      renaming `.js` → `.cjs` and updating internal `require` targets to match.
+- [x] 1.2 Apply the two sanctioned hardening edits from A6: wrap `turn-logger.cjs`'s handler
+      body in a top-level `try/catch` so a malformed Stop payload or `EACCES` can't surface a
+      hook error, and fix the `parseInt` radix.
+- [x] 1.3 Confirm every `logCost` call site is already wrapped in `try { } catch (_) {}` per the
+      Silent-capture pattern; do not change this behavior, only verify it survived the copy.
+- [x] 1.4 Add `"capture/**"` to `biome.json` `files.includes` (A8) and run `biome format --write`
+      over `capture/`; leave `biome lint` as-is (already exits 0 per the measured 21 auto-fixable
+      infos).
+- [x] 1.5 Diff emitted JSONL from the scripts before and after the format pass (feed the same
+      synthetic payload through) to confirm reflowing didn't change behavior — this can reuse the
+      contract-test harness built in task 3. (Confirmed via `capture/contract.test.ts` passing
+      against the post-format `.cjs` files.)
+
+## 2. Author `capture/install.sh` (R3, A4, A6, S3–S5)
+
+- [x] 2.1 Implement `command -v node` resolution to an absolute path; exit `1` with an actionable
+      message if not found (S5).
+- [x] 2.2 Implement the settings-merge engine: parse `~/.claude/settings.json`
+      first (fail before any side effect on unparseable JSON — S3), merge `statusLine` per the
+      three-case table (absent / already-ours by basename-stem match / foreign-and-wrap — A4),
+      merge `hooks.Stop` by appending one `turn-logger` entry only if none already references it.
+      Implemented as `capture/merge-settings.cjs`, a standalone script `install.sh` invokes with
+      node (not a literal one-liner, but the same "node is already guaranteed present" rationale
+      — split out for direct testability).
+- [x] 2.3 Implement the ordering contract exactly: parse → merge → compare → backup → atomic
+      write (`settings.json.tmp` + `rename`).
+- [x] 2.4 Implement idempotency: serialize the merged object, compare against the original: if
+      identical, skip both backup and write and report "already configured" (S4).
+- [x] 2.5 On foreign-statusline detection, write the original command into
+      `~/.claude/scripts/statusline-original.json` before pointing `statusLine.command` at
+      `statusline-wrapper.cjs`.
+- [x] 2.6 Copy the four `.cjs` scripts into `~/.claude/scripts/` as part of install.
+
+## 3. Test the producer (A9, R2, R3, S8)
+
+- [x] 3.1 `capture/install.test.ts` — run `install.sh` twice against a temp `HOME`: assert a
+      backup file is created on the first run only, assert existing unrelated `settings.json`
+      content (other Stop hooks, other config keys) survives untouched, assert byte-identical
+      output on the second run (S4), and cover the `.js`-already-ours basename-stem case
+      explicitly (A4 regression risk). 7 cases, all passing.
+- [x] 3.2 `capture/contract.test.ts` — feed synthetic statusline + Stop payloads through the
+      vendored `.cjs` scripts into a temp `HOME`, then assert the emitted C/B/L lines round-trip
+      through `parseCostSampleLines` / `parseTurnBoundaryLines` / `parseCostLogLines` with
+      `malformedCount === 0` and every field populated. Includes a dotted-`cwd` case (S8) and an
+      L-upsert case. Required adding `capture` to `vitest.config.ts`'s `test.include` glob and a
+      new `capture/tsconfig.json` (wired into the `typecheck` script) since neither existed for
+      this directory — not called out in the Change Footprint but needed for these tests to run
+      under `npm run verify` at all.
+- [x] 3.3 Decide whether to keep A9's contract test in scope per the Open Questions default
+      (keep) — kept.
+
+## 4. Author supporting docs (R1)
+
+- [x] 4.1 `capture/settings.snippet.json` — copy-paste `statusLine` + `hooks.Stop` wiring for
+      users who prefer manual setup, matching the live `~/.claude/settings.json` shape.
+- [x] 4.2 `capture/README.md` — what each file does, the C/B/L field contract, how to verify
+      capture is working, the L-file concurrency caveat (A7 / S1), and the rollback procedure
+      (`cp` of the timestamped backup).
+
+## 5. Reachability plumbing — server (R4, R7, A3, A5, S7)
+
+- [x] 5.1 `shared/capture-assets-contract.ts` — define the `CaptureAssets` wire type
+      (`{ captureDir: string | null }`), following the `shared/health-contract.ts` pattern.
+- [x] 5.2 `server/capture-assets.ts` — `resolveCaptureDir(): string | null` using the
+      two-candidate resolution idiom (`../capture` dev/source tree, then `./capture` at the
+      `dist/cli.js` bundle location), relative to `import.meta.url`; return `null` rather than
+      throw when neither candidate exists (S7). Verified against a simulated stripped install
+      (only `dist/` present, no sibling source `capture/`) — resolves to `dist/capture` correctly.
+- [x] 5.3 `server/routes/capture-assets.ts` — `GET /api/capture-assets` handler returning the
+      resolved value, following `server/routes/health.ts` as the simplest existing route.
+- [x] 5.4 `server/routes/capture-assets.test.ts` — route test covering both the resolved-path and
+      `null` cases.
+- [x] 5.5 Wire `registerCaptureAssetsRoute(app)` into `server/app.ts` alongside the existing route
+      registrations. Also added a test-only `captureDir` override to `BuildAppOptions` (matching
+      the existing `configPath`/`userHomeDir`/`localStorePath` pattern) so route tests don't
+      depend on the filesystem state of the machine running the suite.
+
+## 6. Reachability plumbing — build & packaging (R7, A3)
+
+- [x] 6.1 `scripts/build.ts` — copies `capture/` → `dist/capture/` after the existing `public`
+      copy, with a `filter` excluding `*.test.ts` and `tsconfig.json` (repo-only files with no
+      runtime purpose in a published package).
+- [x] 6.2 Confirmed `package.json` `files: ["dist"]` needs no change — `npm pack --dry-run` shows
+      `dist/capture/*` (cjs scripts, `install.sh`, `merge-settings.cjs`, `README.md`,
+      `settings.snippet.json`) in the packed tarball after a build.
+
+## 7. Client — Cost Capture Guide (R4, R8)
+
+- [x] 7.1 `client/src/api/captureAssets.ts` — typed fetch wrapper over
+      `GET /api/capture-assets`, following `client/src/api/health.ts`.
+- [x] 7.2 `client/src/api/queryKeys.ts` — add `captureAssets: () => ["capture-assets"]`.
+- [x] 7.3 `client/src/pages/settings/CostCaptureGuide.tsx` — replace the 3 static `STEPS` with
+      real-path steps driven by the new query; render both a `bash <dir>/install.sh` command and
+      a paste-to-Claude-Code prompt (R8: delegatable setup) for the resolved-path case, and
+      manual fallback instructions for the `null` case. Left the existing `captureSummary`
+      verification `<li>` and its `useQuery` untouched.
+- [x] 7.4 `client/src/pages/settings/CostCaptureGuide.stories.tsx` — added/adjusted stories for
+      the resolved-path and unresolved-path (`null`) states.
+- [x] 7.5 Grepped `cypress/**` Settings specs for assertions against the old `STEPS` copy —
+      `cypress/e2e/settings.cy.ts` only asserts `[data-testid="cost-capture-guide"]` is visible
+      and contains a case-insensitive "cost...capture" match; nothing broke.
+
+## 8. Live verification (R5, R6, R8 — author's machine) — PENDING, needs go-ahead
+
+- [ ] 8.1 Run `capture/install.sh` against the real `~/.claude/settings.json`, exercising the
+      `.js` → `.cjs` upgrade path for the currently-running `statusline-command.js`.
+- [ ] 8.2 Confirm the statusline keeps rendering after install (R6) and that
+      `statusline-original.json` is written correctly if a wrap occurs.
+- [ ] 8.3 Run one real Claude Code session end-to-end and confirm it shows as observed 🟢 in Data
+      Health / the dashboard (R5).
+- [ ] 8.4 Re-run `install.sh` and confirm the "already configured" no-op path (ties back to 3.1
+      but against real config, not a temp `HOME`).
+
+## 9. Gate
+
+- [x] 9.1 `npm run verify` (typecheck → lint → format:check → test) clean — 141 test files, 1601
+      tests passing.
+- [x] 9.2 `npm run test:e2e` — `settings.cy.ts` (touched in 7.5) passes clean, 2/2. Two unrelated
+      specs (`dashboard.cy.ts`'s `CaptureBanner` assertion, `data-health.cy.ts`'s
+      `ReconciliationPanel` assertion) fail on this run; confirmed **pre-existing on `main`** by
+      stashing every change in this task and re-running the same two specs against the clean
+      tree — both fail identically with no capture-tier code present. Not this task's regression;
+      out of scope to fix here.
+- [ ] 9.3 PR body carries `Closes #112`.
+
+## Deferred / explicitly out of scope for this task
+
+- S2's re-baseline-from-last-C-line fix (Open Questions default: vendor as-is, document only).
+- Emitting `prompt_id` on C samples (Open Questions default: leave out).
+- Everything under **Out of Scope** above (parser/discovery/reconciliation changes, a CLI
+  subcommand, Windows support, uninstall tooling, hostname field, L-file lost-update fix).

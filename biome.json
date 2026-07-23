@@ -6,7 +6,15 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["client/**", "server/**", "shared/**", "scripts/**", "cypress/**", "*.ts"],
+    "includes": [
+      "client/**",
+      "server/**",
+      "shared/**",
+      "scripts/**",
+      "cypress/**",
+      "capture/**",
+      "*.ts"
+    ],
     "ignoreUnknown": true
   },
   "formatter": {
