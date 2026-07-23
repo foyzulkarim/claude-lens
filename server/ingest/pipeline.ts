@@ -83,9 +83,10 @@ export function startIngest(config: ScanConfig, options: IngestPipelineOptions):
 
   const inFlight = new Set<Promise<unknown>>();
   // track() assumes `promise` never rejects — true today because every
-  // promise passed in comes from Tailer.onFileAdded/onFileChanged, whose
-  // enqueue() swallows task rejections internally (tailer.ts). If track() is
-  // ever reused for a promise without that guarantee, attach a .catch first.
+  // promise passed in comes from Tailer.onFileAdded/onFileChanged/
+  // rereadFromStart, whose enqueue() swallows task rejections internally
+  // (tailer.ts). If track() is ever reused for a promise without that
+  // guarantee, attach a .catch first.
   function track(promise: Promise<unknown>): void {
     inFlight.add(promise);
     promise.finally(() => inFlight.delete(promise));
@@ -121,11 +122,26 @@ export function startIngest(config: ScanConfig, options: IngestPipelineOptions):
   }
 
   function forgetSessionFile(file: RegisteredFile): void {
-    if (!file.sessionId) return;
+    if (file.class !== "transcript" || !file.sessionId) return;
     const group = filesBySession.get(file.sessionId);
     if (!group) return;
     group.delete(file.path);
     if (group.size === 0) filesBySession.delete(file.sessionId);
+  }
+
+  // Shared by the poller's onFileAdded/onFileChanged transcript branches
+  // below — both need to index the file into `filesBySession` and keep
+  // `setTranscriptPath` pinned to the parent (never a sub-agent file).
+  function registerTranscriptFile(file: RegisteredFile): void {
+    indexSessionFile(file);
+    // `agentId` set = a sub-agent sidechain file (#113). Its records
+    // belong to this session, but the session's transcript path must
+    // stay pinned to the parent `<uuid>.jsonl` — otherwise whichever
+    // agent file registered last would win and Session Detail would
+    // deep-link into a sub-agent transcript.
+    if (file.sessionId && file.agentId === undefined) {
+      store.setTranscriptPath(file.sessionId, file.path);
+    }
   }
   // Receives the store's already-computed `transcriptsParsed` count so
   // `transcriptsFailed` can be derived without a second `listSessions()`
@@ -147,6 +163,15 @@ export function startIngest(config: ScanConfig, options: IngestPipelineOptions):
       },
       onFileReset(file) {
         if (!file.sessionId) return;
+        // #113 EH-3: relies on at most one `onFileReset` per session per
+        // poll cycle, even if two sibling files both truncate in the same
+        // cycle — otherwise the second reset would wipe the first reset's
+        // sibling replays before they land. That holds today only because
+        // `Poller.pollOnce` awaits `stat()` sequentially per file, so this
+        // callback (and everything it synchronously triggers) finishes
+        // before the next file in the registry is even stat'd. Not a
+        // documented guarantee elsewhere — a future parallelized
+        // `pollOnce` would need to preserve or replace it.
         store.resetSession(file.sessionId);
         // Replay this session's other files (parent transcript and/or
         // sibling sub-agent transcripts) — the reset above wiped their
@@ -281,15 +306,7 @@ export function startIngest(config: ScanConfig, options: IngestPipelineOptions):
         // so a re-registration after a removal+rediscovery is
         // idempotent (see onFileRemoved for the matching delete).
         discoveredTranscriptPaths.add(file.path);
-        indexSessionFile(file);
-        // `agentId` set = a sub-agent sidechain file (#113). Its records
-        // belong to this session, but the session's transcript path must
-        // stay pinned to the parent `<uuid>.jsonl` — otherwise whichever
-        // agent file registered last would win and Session Detail would
-        // deep-link into a sub-agent transcript.
-        if (file.sessionId && file.agentId === undefined) {
-          store.setTranscriptPath(file.sessionId, file.path);
-        }
+        registerTranscriptFile(file);
         track(tailer.onFileAdded(file));
         return;
       }
@@ -300,10 +317,7 @@ export function startIngest(config: ScanConfig, options: IngestPipelineOptions):
     },
     onFileChanged(file) {
       if (file.class === "transcript") {
-        indexSessionFile(file);
-        if (file.sessionId && file.agentId === undefined) {
-          store.setTranscriptPath(file.sessionId, file.path);
-        }
+        registerTranscriptFile(file);
         track(tailer.onFileChanged(file));
         return;
       }

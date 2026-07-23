@@ -113,7 +113,10 @@ export class Poller {
         path: found.path,
         class: found.class,
         sessionId: found.sessionId,
-        ...(found.agentId !== undefined ? { agentId: found.agentId } : {}),
+        // #113 RB-2: assigned unconditionally (even when `undefined`), same
+        // as `sessionId`/`label` above, so every `RegisteredFile` in the
+        // hot-polled registry keeps one consistent shape.
+        agentId: found.agentId,
         root: found.root,
         label: found.label,
         size,

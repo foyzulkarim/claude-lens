@@ -102,14 +102,17 @@ export function classifyPath(filePath: string): FileClass {
   const parentDir = segments.at(-2);
   const grandparentDir = segments.at(-3);
 
+  // #113 CQ-1: classify by filename first and only reinterpret an already-
+  // confirmed transcript — rather than re-deriving "is this a cost/
+  // turn-boundaries/cost-log sidecar" from the suffixes a second time here.
+  // One source of truth for the sidecar shapes; a future one added to
+  // `classifyFilename` doesn't also need updating in this condition.
+  const base = classifyFilename(name);
   if (
+    base.kind === "transcript" &&
     parentDir === SUBAGENT_DIR_NAME &&
     grandparentDir !== undefined &&
-    grandparentDir.length > 0 &&
-    name.endsWith(TRANSCRIPT_SUFFIX) &&
-    !name.endsWith(COST_SUFFIX) &&
-    !name.endsWith(TURN_BOUNDARIES_SUFFIX) &&
-    name !== COST_LOG_NAME
+    grandparentDir.length > 0
   ) {
     // Strip the conventional `agent-` prefix so `agentId` matches the value
     // the transcript lines themselves carry (parse-transcript.ts reads
@@ -123,7 +126,7 @@ export function classifyPath(filePath: string): FileClass {
     }
   }
 
-  return classifyFilename(name);
+  return base;
 }
 
 function toDiscoveredClass(

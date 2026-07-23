@@ -37,6 +37,25 @@ import { reconcilePremium } from "./reconcile-premium.js";
 
 interface SessionState {
   calls: ApiCall[];
+  /**
+   * `ApiCall.messageId` of every call currently in `calls` (#113 AP-1).
+   * `message.id` is unique per real assistant turn — Claude Code never
+   * writes the same one to two lines — so this Set lets `applyRecords`
+   * reject a re-application session-wide, not just within one tailer
+   * batch's `seenMessageIds`. Needed because a session can now span
+   * multiple files (parent + sub-agent transcripts): when one file
+   * truncates, `resetSession` wipes the whole session and the pipeline
+   * asks every file of that session to do a full re-read to restore it
+   * (`server/ingest/pipeline.ts`'s `onFileReset`). If a sibling file
+   * already had an ordinary incremental read queued ahead of that full
+   * re-read, its calls would otherwise land twice — once from the
+   * incremental read, once from the full re-read re-parsing the same
+   * bytes with a fresh per-file `seen` set. Scoped to `calls` only:
+   * `promptId` is a legitimate repeat-capable key (see
+   * `build-search-snapshot.ts`'s per-prompt occurrence counter), so the
+   * same dedup strategy doesn't apply to `prompts`.
+   */
+  appliedMessageIds: Set<string>;
   prompts: PromptTextRecord[];
   toolResultBytes: ToolResultBytesRecord[];
   compactions: CompactionRecord[];
@@ -232,6 +251,7 @@ export class Store {
     if (!state) {
       state = {
         calls: [],
+        appliedMessageIds: new Set(),
         prompts: [],
         toolResultBytes: [],
         compactions: [],
@@ -270,7 +290,15 @@ export class Store {
    */
   applyRecords(sessionId: string, result: ParseTranscriptResult, rootPath?: string): void {
     const state = this.stateFor(sessionId);
-    state.calls.push(...result.calls);
+    // #113 AP-1: session-wide messageId guard, not just a bare push — see
+    // `appliedMessageIds`'s doc comment on `SessionState` for why a single
+    // batch's own per-file dedup isn't enough once a session can span
+    // multiple files.
+    for (const call of result.calls) {
+      if (state.appliedMessageIds.has(call.messageId)) continue;
+      state.appliedMessageIds.add(call.messageId);
+      state.calls.push(call);
+    }
     state.prompts.push(...result.prompts);
     state.toolResultBytes.push(...result.toolResultBytes);
     state.compactions.push(...result.compactions);
@@ -413,6 +441,7 @@ export class Store {
     if (!state) {
       state = {
         calls: [],
+        appliedMessageIds: new Set(),
         prompts: [],
         toolResultBytes: [],
         compactions: [],
@@ -693,6 +722,7 @@ export class Store {
     const state = this.sessions.get(sessionId);
     if (!state) return;
     state.calls = [];
+    state.appliedMessageIds.clear();
     state.prompts = [];
     state.toolResultBytes = [];
     state.compactions = [];
