@@ -9,6 +9,8 @@ export interface RegisteredFile {
   path: string;
   class: DiscoveredFile["class"];
   sessionId?: string;
+  /** Sub-agent transcript marker — see `DiscoveredFile.agentId` (#113). */
+  agentId?: string;
   root: string;
   label?: string;
   size: number;
@@ -111,6 +113,7 @@ export class Poller {
         path: found.path,
         class: found.class,
         sessionId: found.sessionId,
+        ...(found.agentId !== undefined ? { agentId: found.agentId } : {}),
         root: found.root,
         label: found.label,
         size,

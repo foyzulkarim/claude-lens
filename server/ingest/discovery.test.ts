@@ -1,9 +1,9 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { classifyFilename, discover, resolveScanConfig } from "./discovery.js";
+import { classifyFilename, classifyPath, discover, resolveScanConfig } from "./discovery.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fixturesRoot = join(__dirname, "..", "..", "test", "fixtures", "projects");
@@ -167,5 +167,80 @@ describe("resolveScanConfig — CLI/defaults to ScanConfig", () => {
     const config = resolveScanConfig({ roots: ["/some/other/place"] });
     expect(config.roots).toEqual([{ path: "/some/other/place" }]);
     expect(config.claudeDir).toBe(join(homedir(), ".claude"));
+  });
+});
+
+describe("classifyPath — sub-agent sidechain transcripts (#113)", () => {
+  it("routes <uuid>/subagents/agent-<id>.jsonl to the parent session", () => {
+    expect(classifyPath("/r/-Users-x/84509ee5/subagents/agent-a1598463750f4ab65.jsonl")).toEqual({
+      kind: "transcript",
+      sessionId: "84509ee5",
+      agentId: "a1598463750f4ab65",
+    });
+  });
+
+  it("keeps an ordinary transcript keyed by its own filename", () => {
+    expect(classifyPath("/r/-Users-x/84509ee5.jsonl")).toEqual({
+      kind: "transcript",
+      sessionId: "84509ee5",
+    });
+  });
+
+  it("does not set agentId for a top-level transcript", () => {
+    const result = classifyPath("/r/-Users-x/84509ee5.jsonl");
+    expect("agentId" in result ? result.agentId : undefined).toBeUndefined();
+  });
+
+  it("falls back to the filename stem when the agent- prefix is absent", () => {
+    expect(classifyPath("/r/-Users-x/sess/subagents/worker7.jsonl")).toEqual({
+      kind: "transcript",
+      sessionId: "sess",
+      agentId: "worker7",
+    });
+  });
+
+  it("leaves premium sidecars inside a subagents dir classified by suffix", () => {
+    expect(classifyPath("/r/-Users-x/sess/subagents/abc.cost.jsonl")).toEqual({
+      kind: "cost",
+      sessionId: "abc",
+    });
+    expect(classifyPath("/r/-Users-x/sess/subagents/abc.turn-boundaries.jsonl")).toEqual({
+      kind: "turn-boundaries",
+      sessionId: "abc",
+    });
+  });
+
+  it("ignores a subagents dir with no grandparent directory", () => {
+    expect(classifyPath("subagents/agent-x.jsonl")).toEqual({
+      kind: "transcript",
+      sessionId: "agent-x",
+    });
+  });
+
+  it("does not treat a differently-named directory as subagents", () => {
+    expect(classifyPath("/r/-Users-x/sess/agents/agent-x.jsonl")).toEqual({
+      kind: "transcript",
+      sessionId: "agent-x",
+    });
+  });
+});
+
+describe("discover — sub-agent transcripts (#113)", () => {
+  it("emits the agent file under the parent sessionId with an agentId", async () => {
+    const root = await makeTmpDir();
+    const claudeDir = await makeTmpDir();
+    const sessionId = "84509ee5-2c27-4bec-a113-4fab01758d38";
+    await mkdir(join(root, "proj", sessionId, "subagents"), { recursive: true });
+    await writeFile(join(root, "proj", `${sessionId}.jsonl`), "");
+    await writeFile(join(root, "proj", sessionId, "subagents", "agent-aa25.jsonl"), "");
+
+    const files = await discover({ roots: [{ path: root }], claudeDir });
+    const transcripts = files.filter((f) => f.class === "transcript");
+
+    expect(transcripts).toHaveLength(2);
+    expect(new Set(transcripts.map((f) => f.sessionId))).toEqual(new Set([sessionId]));
+    const agentFile = transcripts.find((f) => f.agentId !== undefined);
+    expect(agentFile?.agentId).toBe("aa25");
+    expect(transcripts.filter((f) => f.agentId === undefined)).toHaveLength(1);
   });
 });

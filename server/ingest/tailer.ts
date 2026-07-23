@@ -100,6 +100,26 @@ export class Tailer {
     return this.enqueue(state, () => this.handleChange(file, state));
   }
 
+  /**
+   * Rewind a file to offset 0 and re-read it whole, WITHOUT emitting a reset
+   * (#113). Used for the sibling-rewind path: when one file of a multi-file
+   * session truncates, the pipeline resets the shared session once and then
+   * asks every other file of that session to replay itself, so the siblings'
+   * records survive the reset. Emitting a reset here instead would have each
+   * sibling wipe the records the previous one just replayed.
+   */
+  rereadFromStart(file: RegisteredFile): Promise<void> {
+    if (file.class !== "transcript") return Promise.resolve();
+    const state = this.files.get(file.path);
+    if (!state) return this.onFileAdded(file);
+    return this.enqueue(state, async () => {
+      state.seen.clear();
+      state.offset = 0;
+      state.toolNameByToolUseId.clear();
+      await this.readGrowth(file, state, file.size);
+    });
+  }
+
   onFileRemoved(file: RegisteredFile): void {
     this.files.delete(file.path);
     try {

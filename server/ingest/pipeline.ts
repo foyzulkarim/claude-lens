@@ -99,6 +99,34 @@ export function startIngest(config: ScanConfig, options: IngestPipelineOptions):
   // malformed-line counts for those via the existing
   // `premiumFileHealth` map on the store, not via this counter.
   const discoveredTranscriptPaths = new Set<string>();
+
+  // #113: a session is no longer 1:1 with a file. A session's sidechain
+  // activity lives in sibling `<uuid>/subagents/agent-*.jsonl` files that
+  // discovery routes to the same `sessionId`. `resetSession` clears the
+  // whole session, so a truncation in ANY of its files would otherwise
+  // silently drop the records contributed by the others. This index lets
+  // the reset handler replay them. The stored `RegisteredFile` objects are
+  // the poller's own registry entries, which it mutates in place on each
+  // poll — so `size`/`mtime` read here are always current.
+  const filesBySession = new Map<string, Map<string, RegisteredFile>>();
+
+  function indexSessionFile(file: RegisteredFile): void {
+    if (file.class !== "transcript" || !file.sessionId) return;
+    let group = filesBySession.get(file.sessionId);
+    if (!group) {
+      group = new Map<string, RegisteredFile>();
+      filesBySession.set(file.sessionId, group);
+    }
+    group.set(file.path, file);
+  }
+
+  function forgetSessionFile(file: RegisteredFile): void {
+    if (!file.sessionId) return;
+    const group = filesBySession.get(file.sessionId);
+    if (!group) return;
+    group.delete(file.path);
+    if (group.size === 0) filesBySession.delete(file.sessionId);
+  }
   // Receives the store's already-computed `transcriptsParsed` count so
   // `transcriptsFailed` can be derived without a second `listSessions()`
   // sweep per `/api/health` (review P-001 — both the pipeline and the
@@ -120,6 +148,16 @@ export function startIngest(config: ScanConfig, options: IngestPipelineOptions):
       onFileReset(file) {
         if (!file.sessionId) return;
         store.resetSession(file.sessionId);
+        // Replay this session's other files (parent transcript and/or
+        // sibling sub-agent transcripts) — the reset above wiped their
+        // records too (#113). Skipped entirely for the common
+        // one-file-per-session case, where the group holds only `file`.
+        const group = filesBySession.get(file.sessionId);
+        if (!group) return;
+        for (const sibling of group.values()) {
+          if (sibling.path === file.path) continue;
+          track(tailer.rereadFromStart(sibling));
+        }
       },
       onFileRemoved() {
         // Session state is kept even if its file disappears mid-run — no
@@ -243,7 +281,15 @@ export function startIngest(config: ScanConfig, options: IngestPipelineOptions):
         // so a re-registration after a removal+rediscovery is
         // idempotent (see onFileRemoved for the matching delete).
         discoveredTranscriptPaths.add(file.path);
-        if (file.sessionId) store.setTranscriptPath(file.sessionId, file.path);
+        indexSessionFile(file);
+        // `agentId` set = a sub-agent sidechain file (#113). Its records
+        // belong to this session, but the session's transcript path must
+        // stay pinned to the parent `<uuid>.jsonl` — otherwise whichever
+        // agent file registered last would win and Session Detail would
+        // deep-link into a sub-agent transcript.
+        if (file.sessionId && file.agentId === undefined) {
+          store.setTranscriptPath(file.sessionId, file.path);
+        }
         track(tailer.onFileAdded(file));
         return;
       }
@@ -254,7 +300,10 @@ export function startIngest(config: ScanConfig, options: IngestPipelineOptions):
     },
     onFileChanged(file) {
       if (file.class === "transcript") {
-        if (file.sessionId) store.setTranscriptPath(file.sessionId, file.path);
+        indexSessionFile(file);
+        if (file.sessionId && file.agentId === undefined) {
+          store.setTranscriptPath(file.sessionId, file.path);
+        }
         track(tailer.onFileChanged(file));
         return;
       }
@@ -267,6 +316,7 @@ export function startIngest(config: ScanConfig, options: IngestPipelineOptions):
         // tailer.onFileRemoved also resets the session's transcript
         // counters (calls/duplicates/malformed) via store.resetSession.
         discoveredTranscriptPaths.delete(file.path);
+        forgetSessionFile(file);
         tailer.onFileRemoved(file);
       }
       // A removed premium file leaves the session's last observed values in

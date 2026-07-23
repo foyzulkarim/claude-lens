@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { WsServerMessage } from "../../shared/ws-protocol.js";
 import type { IngestPipeline } from "./pipeline.js";
 import { startIngest } from "./pipeline.js";
@@ -358,3 +358,129 @@ async function waitFor(check: () => boolean, timeoutMs: number): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
 }
+
+function sidechainLine(sessionId: string, messageId: string, timestamp: string, agentId: string) {
+  return JSON.stringify({
+    type: "assistant",
+    uuid: `u-${messageId}`,
+    sessionId,
+    timestamp,
+    cwd: "/repo",
+    gitBranch: "main",
+    version: "1.0.0",
+    entrypoint: "cli",
+    isSidechain: true,
+    agentId,
+    message: {
+      id: messageId,
+      model: "claude-sonnet-5",
+      content: [],
+      usage: { input_tokens: 10, output_tokens: 5 },
+    },
+  });
+}
+
+describe("startIngest — sub-agent transcripts route to the parent session (#113)", () => {
+  it("folds subagents/agent-*.jsonl into the parent, creating no phantom session", async () => {
+    const claudeDir = await makeTmpDir();
+    const projectDir = join(claudeDir, "projects", "alpha");
+    const sessionId = "84509ee5-2c27-4bec-a113-4fab01758d38";
+    await mkdir(join(projectDir, sessionId, "subagents"), { recursive: true });
+    await writeFile(
+      join(projectDir, `${sessionId}.jsonl`),
+      `${[
+        userLine(sessionId, "p1", "2026-07-14T00:00:00.000Z", "hi"),
+        assistantLine(sessionId, "m1", "2026-07-14T00:00:01.000Z"),
+      ].join("\n")}\n`,
+      "utf8",
+    );
+    await writeFile(
+      join(projectDir, sessionId, "subagents", "agent-aa25.jsonl"),
+      `${sidechainLine(sessionId, "m2", "2026-07-14T00:00:02.000Z", "aa25")}\n`,
+      "utf8",
+    );
+
+    const pipeline = track(
+      startIngest(
+        {
+          roots: [{ path: join(claudeDir, "projects") }],
+          claudeDir,
+          fastIntervalMs: 50,
+          slowIntervalMs: 5000,
+        },
+        { onInvalidate: () => {}, debounceMs: 50 },
+      ),
+    );
+    await pipeline.whenSettled();
+    pipeline.store.flushAll();
+
+    // Both files' calls land on the one real session...
+    expect(pipeline.store.getSession(sessionId)?.callCount).toBe(2);
+    // ...and no `agent-*` phantom session exists.
+    const ids = pipeline.store.listSessions().map((s) => s.sessionId);
+    expect(ids).toEqual([sessionId]);
+    // The session's transcript path stays pinned to the parent file.
+    expect(pipeline.store.getTranscriptPath(sessionId)).toBe(
+      join(projectDir, `${sessionId}.jsonl`),
+    );
+  });
+
+  it("replays sibling files when one file of the session truncates", async () => {
+    const claudeDir = await makeTmpDir();
+    const projectDir = join(claudeDir, "projects", "alpha");
+    const sessionId = "84509ee5-2c27-4bec-a113-4fab01758d38";
+    await mkdir(join(projectDir, sessionId, "subagents"), { recursive: true });
+    const parentPath = join(projectDir, `${sessionId}.jsonl`);
+    const agentPath = join(projectDir, sessionId, "subagents", "agent-aa25.jsonl");
+    await writeFile(
+      parentPath,
+      `${[
+        userLine(sessionId, "p1", "2026-07-14T00:00:00.000Z", "hi"),
+        assistantLine(sessionId, "m1", "2026-07-14T00:00:01.000Z"),
+      ].join("\n")}\n`,
+      "utf8",
+    );
+    // Two sidechain calls, so the rewrite below is strictly fewer bytes and
+    // the tailer takes its `file.size < state.offset` truncation branch.
+    await writeFile(
+      agentPath,
+      `${[
+        sidechainLine(sessionId, "m2", "2026-07-14T00:00:02.000Z", "aa25"),
+        sidechainLine(sessionId, "m3", "2026-07-14T00:00:03.000Z", "aa25"),
+      ].join("\n")}\n`,
+      "utf8",
+    );
+
+    const pipeline = track(
+      startIngest(
+        {
+          roots: [{ path: join(claudeDir, "projects") }],
+          claudeDir,
+          fastIntervalMs: 50,
+          slowIntervalMs: 5000,
+        },
+        { onInvalidate: () => {}, debounceMs: 50 },
+      ),
+    );
+    await pipeline.whenSettled();
+    pipeline.store.flushAll();
+    expect(pipeline.store.getSession(sessionId)?.callCount).toBe(3);
+
+    // Truncate ONLY the agent file, down to a single call. The shared session
+    // is reset by that file's truncation; without the sibling replay the
+    // parent transcript's call would be dropped and never re-read, leaving 1.
+    await writeFile(
+      agentPath,
+      `${sidechainLine(sessionId, "m4", "2026-07-14T00:00:04.000Z", "aa25")}\n`,
+      "utf8",
+    );
+
+    await vi.waitFor(
+      () => {
+        pipeline.store.flushAll();
+        expect(pipeline.store.getSession(sessionId)?.callCount).toBe(2);
+      },
+      { timeout: 5000, interval: 50 },
+    );
+  });
+});
