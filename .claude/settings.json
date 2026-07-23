@@ -1,8 +1,5 @@
 {
   "permissions": {
-    "allow": [
-      "Read(CHANGELOG.md)",
-      "Edit(CHANGELOG.md)"
-    ]
+    "allow": []
   }
 }
