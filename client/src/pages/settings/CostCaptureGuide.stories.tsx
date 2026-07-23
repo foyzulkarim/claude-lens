@@ -113,3 +113,15 @@ export const ErrorState: Story = {
     ),
   ],
 };
+
+/** capture-assets fetch itself fails (transport error) — distinct from the
+ * server successfully resolving and reporting `captureDir: null`. */
+export const CaptureAssetsError: Story = {
+  decorators: [
+    withFetch(
+      () =>
+        Promise.resolve(new Response(JSON.stringify({ error: "internal error" }), { status: 500 })),
+      () => jsonResponse(sessionsResponse({ capturingSessions: 0, lastCapturedAt: null })),
+    ),
+  ],
+};

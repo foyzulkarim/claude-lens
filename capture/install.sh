@@ -24,7 +24,7 @@ if [ -z "$NODE_BIN" ]; then
 fi
 
 mkdir -p "$SCRIPTS_DIR"
-for f in cost-logger.cjs turn-logger.cjs statusline-command.cjs statusline-wrapper.cjs; do
+for f in cost-logger.cjs turn-logger.cjs statusline-command.cjs statusline-wrapper.cjs state-dir.cjs mapped-dir.cjs statusline-payload.cjs; do
   cp "$SCRIPT_DIR/$f" "$SCRIPTS_DIR/$f"
 done
 

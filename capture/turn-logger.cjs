@@ -16,6 +16,8 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
+const { stateFilePath, sanitizeSessionId } = require("./state-dir.cjs");
+const { mappedProjectDir } = require("./mapped-dir.cjs");
 
 let input = "";
 process.stdin.setEncoding("utf8");
@@ -29,7 +31,7 @@ process.stdin.on("end", () => {
     if (!SESSION_ID) return;
 
     const NOW = Math.floor(Date.now() / 1000);
-    const LAST_ACTIVITY_FILE = path.join(os.tmpdir(), `statusline-lastactivity-${SESSION_ID}`);
+    const LAST_ACTIVITY_FILE = stateFilePath("lastactivity", SESSION_ID);
     fs.writeFileSync(LAST_ACTIVITY_FILE, `${NOW}`);
 
     const CWD = data.workspace?.current_dir ?? data.cwd ?? "";
@@ -37,9 +39,11 @@ process.stdin.on("end", () => {
       console.error(`[turn-logger] missing cwd for session ${SESSION_ID}, skipping boundary`);
       return;
     }
-    // Same slug rule as Claude Code's project dirs: slashes AND dots → dashes.
-    const BOUNDARY_DIR = path.join(os.homedir(), ".claude", "projects", CWD.replace(/[/.]/g, "-"));
-    const BOUNDARY_LOG = path.join(BOUNDARY_DIR, `${SESSION_ID}.turn-boundaries.jsonl`);
+    const BOUNDARY_DIR = path.join(os.homedir(), ".claude", "projects", mappedProjectDir(CWD));
+    const BOUNDARY_LOG = path.join(
+      BOUNDARY_DIR,
+      `${sanitizeSessionId(SESSION_ID)}.turn-boundaries.jsonl`,
+    );
     const ENTRY = JSON.stringify({
       session_id: SESSION_ID,
       turn_end: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),

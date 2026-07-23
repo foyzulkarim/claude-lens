@@ -22,34 +22,37 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
+const { stateFilePath, sanitizeSessionId } = require("./state-dir.cjs");
+const { mappedProjectDir } = require("./mapped-dir.cjs");
+const { readStatuslinePayload } = require("./statusline-payload.cjs");
 
 function logCost(data) {
-  const MODEL = data.model?.display_name ?? "";
-  const DIR = data.workspace?.current_dir ?? "";
-  const COST = data.cost?.total_cost_usd ?? 0;
-  const PCT = Math.floor(data.context_window?.used_percentage ?? 0);
-  const DURATION_MS = data.cost?.total_duration_ms ?? 0;
-  const API_DURATION_MS = data.cost?.total_api_duration_ms ?? 0;
-  const SESSION_ID = data.session_id ?? "";
-  const CACHE_READ = Number(data.context_window?.current_usage?.cache_read_input_tokens ?? 0);
-  const CACHE_WRITE = Number(data.context_window?.current_usage?.cache_creation_input_tokens ?? 0);
-  const LINES_ADDED = data.cost?.total_lines_added ?? 0;
-  const LINES_REMOVED = data.cost?.total_lines_removed ?? 0;
+  const {
+    model: MODEL,
+    dir: DIR,
+    cost: COST,
+    pct: PCT,
+    durationMs: DURATION_MS,
+    apiDurationMs: API_DURATION_MS,
+    sessionId: SESSION_ID,
+    cacheRead: CACHE_READ,
+    cacheWrite: CACHE_WRITE,
+    linesAdded: LINES_ADDED,
+    linesRemoved: LINES_REMOVED,
+  } = readStatuslinePayload(data);
 
   if (!SESSION_ID) return;
 
-  // Match Claude Code's project-dir slug rule (slashes AND dots become dashes,
-  // underscores survive) so the sidecars land next to the session transcript.
-  const MAPPED_DIR = DIR.replace(/[/.]/g, "-");
+  const MAPPED_DIR = mappedProjectDir(DIR);
   const TURN_LOG = path.join(
     os.homedir(),
     ".claude",
     "projects",
     MAPPED_DIR,
-    `${SESSION_ID}.cost.jsonl`,
+    `${sanitizeSessionId(SESSION_ID)}.cost.jsonl`,
   );
-  const PREV_STATE_FILE = path.join(os.tmpdir(), `statusline-prevstate-${SESSION_ID}`);
-  const CACHE_ACCUM_FILE = path.join(os.tmpdir(), `statusline-cache-accum-${SESSION_ID}`);
+  const PREV_STATE_FILE = stateFilePath("prevstate", SESSION_ID);
+  const CACHE_ACCUM_FILE = stateFilePath("cache-accum", SESSION_ID);
 
   // Activity detection — fires when API_DURATION_MS changes since last poll.
   // Each firing logs one cost SAMPLE (~5s resolution during activity), not a

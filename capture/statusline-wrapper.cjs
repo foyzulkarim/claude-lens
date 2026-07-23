@@ -37,7 +37,12 @@ process.stdin.on("end", () => {
   }
 
   if (original) {
-    const res = spawnSync("/bin/sh", ["-c", original], { input, encoding: "utf8", timeout: 10000 });
+    const res = spawnSync("/bin/sh", ["-c", original], {
+      input,
+      encoding: "utf8",
+      timeout: 10000,
+      killSignal: "SIGKILL",
+    });
     if (res.stdout) {
       process.stdout.write(res.stdout);
       return;

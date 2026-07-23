@@ -11,15 +11,36 @@ interface Step {
 
 /**
  * Setup steps driven by the resolved `capture/` directory
- * (ARCH-producer-cost-capture-tier §API Contracts, R4). Three states:
- * resolving, resolved (real runnable command + a delegate-to-Claude-Code
- * prompt, R8), and unresolved (manual fallback, S7) — a dev server started
- * outside a build, or an install stripped of `dist/capture`.
+ * (ARCH-producer-cost-capture-tier §API Contracts, R4). Four states:
+ * resolving, transport error (server unreachable — distinct from the server
+ * resolving and reporting "not found"), resolved (real runnable command + a
+ * delegate-to-Claude-Code prompt, R8), and unresolved (manual fallback, S7) —
+ * a dev server started outside a build, or an install stripped of
+ * `dist/capture`.
  */
-function buildSteps(captureDir: string | null | undefined, isPending: boolean): Step[] {
+function buildSteps(
+  captureDir: string | null | undefined,
+  isPending: boolean,
+  isError: boolean,
+  errorMessage: string | undefined,
+): Step[] {
   if (isPending) {
     return [
       { badge: "1", content: "Resolving capture assets…" },
+      { badge: "2", content: "Run one session → verify below" },
+    ];
+  }
+  if (isError) {
+    return [
+      {
+        badge: "1",
+        content: (
+          <span className="text-[#B23A3A] dark:text-[#E05252]">
+            Couldn't reach the server to resolve capture assets
+            {errorMessage ? `: ${errorMessage}` : "."}
+          </span>
+        ),
+      },
       { badge: "2", content: "Run one session → verify below" },
     ];
   }
@@ -91,7 +112,12 @@ export function CostCaptureGuide() {
     queryKey: qk.captureAssets(),
     queryFn: ({ signal }) => fetchCaptureAssets(signal),
   });
-  const STEPS = buildSteps(assetsQuery.data?.captureDir, assetsQuery.isPending);
+  const STEPS = buildSteps(
+    assetsQuery.data?.captureDir,
+    assetsQuery.isPending,
+    assetsQuery.isError,
+    assetsQuery.error?.message,
+  );
 
   const query = useQuery({
     queryKey: qk.sessions({ limit: 1 }),

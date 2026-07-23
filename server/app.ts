@@ -215,7 +215,7 @@ export function buildApp({
 
   registerCacheLabRoute(app, store, metadata?.pricing ? { pricing: metadata.pricing } : undefined);
 
-  registerCaptureAssetsRoute(app, captureDir !== undefined ? { captureDir } : undefined);
+  registerCaptureAssetsRoute(app, { captureDir });
 
   registerExportRoute(app, store);
 

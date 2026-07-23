@@ -4,9 +4,9 @@
 // script only renders. Guarded so a logger failure can never blank the line.
 
 const fs = require("node:fs");
-const path = require("node:path");
 const { execSync } = require("node:child_process");
-const os = require("node:os");
+const { stateFilePath } = require("./state-dir.cjs");
+const { readStatuslinePayload } = require("./statusline-payload.cjs");
 
 let input = "";
 process.stdin.setEncoding("utf8");
@@ -14,25 +14,33 @@ process.stdin.on("data", (chunk) => {
   input += chunk;
 });
 process.stdin.on("end", () => {
-  const data = JSON.parse(input);
+  try {
+    renderStatusline(JSON.parse(input));
+  } catch (_) {
+    /* malformed/unparseable payload — never crash the statusline */
+  }
+});
 
+function renderStatusline(data) {
   try {
     require("./cost-logger.cjs").logCost(data);
   } catch (_) {
     /* silent capture — never break the statusline */
   }
 
-  const MODEL = data.model?.display_name ?? "";
-  const DIR = data.workspace?.current_dir ?? "";
-  const COST = data.cost?.total_cost_usd ?? 0;
-  const PCT = Math.floor(data.context_window?.used_percentage ?? 0);
-  const DURATION_MS = data.cost?.total_duration_ms ?? 0;
-  const SESSION_ID = data.session_id ?? "";
+  const {
+    model: MODEL,
+    dir: DIR,
+    cost: COST,
+    pct: PCT,
+    durationMs: DURATION_MS,
+    sessionId: SESSION_ID,
+    cacheRead: CACHE_READ,
+    cacheWrite: CACHE_WRITE,
+    linesAdded: LINES_ADDED,
+    linesRemoved: LINES_REMOVED,
+  } = readStatuslinePayload(data);
   const ADDED_DIRS = (data.workspace?.added_dirs ?? []).map((d) => d.split("/").pop()).join(", ");
-  const CACHE_READ = Number(data.context_window?.current_usage?.cache_read_input_tokens ?? 0);
-  const CACHE_WRITE = Number(data.context_window?.current_usage?.cache_creation_input_tokens ?? 0);
-  const LINES_ADDED = data.cost?.total_lines_added ?? 0;
-  const LINES_REMOVED = data.cost?.total_lines_removed ?? 0;
 
   const CYAN = "\x1b[36m";
   const GREEN = "\x1b[32m";
@@ -50,7 +58,7 @@ process.stdin.on("end", () => {
   const START_EPOCH = Math.floor((NOW * 1000 - DURATION_MS) / 1000);
   const START_TIME = new Date(START_EPOCH * 1000).toTimeString().slice(0, 5);
 
-  const LAST_ACTIVITY_FILE = path.join(os.tmpdir(), `statusline-lastactivity-${SESSION_ID}`);
+  const LAST_ACTIVITY_FILE = stateFilePath("lastactivity", SESSION_ID);
 
   // Idle time — written by turn-logger.cjs (Stop hook) with exact turn-end timestamp
   let IDLE_SECS = 0;
@@ -98,4 +106,4 @@ process.stdin.on("end", () => {
     `${BAR_COLOR}${BAR}${RESET} ${PCT}% | ${YELLOW}${COST_FMT}${RESET} | ⏱️  ${MINS}m ${SECS}s | 🕐 ${START_TIME} | ${IDLE_DISPLAY}\n`,
   );
   process.stdout.write(`${CACHE_DISPLAY}\n`);
-});
+}

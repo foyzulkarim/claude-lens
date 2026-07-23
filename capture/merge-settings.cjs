@@ -130,6 +130,13 @@ function main() {
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
     const tmpPath = `${settingsPath}.tmp`;
     fs.writeFileSync(tmpPath, `${JSON.stringify(merged, null, 2)}\n`);
+    if (fs.existsSync(settingsPath)) {
+      // Preserve the original file's permission bits — writeFileSync creates
+      // tmpPath at the umask default, and a bare rename would otherwise
+      // silently loosen a settings.json the user deliberately chmod'd down
+      // (it can embed apiKeyHelper / env secrets).
+      fs.chmodSync(tmpPath, fs.statSync(settingsPath).mode);
+    }
     fs.renameSync(tmpPath, settingsPath);
   } catch (err) {
     console.error(`error: failed to write ${settingsPath}: ${err.message}`);

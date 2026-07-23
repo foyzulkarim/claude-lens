@@ -257,10 +257,16 @@ what keeps the vendored scripts runnable on a machine that has no claude-lens ch
 | `capture/turn-logger.cjs`                  | B writer, Stop hook                                                     | Vendored from `~/.claude/scripts/turn-logger.js` |
 | `capture/statusline-command.cjs`           | Full display statusline (model, $, context bar, timers) + capture call  | Vendored from `~/.claude/scripts/statusline-command.js` |
 | `capture/statusline-wrapper.cjs`           | Capture + delegate to the user's original statusline                    | Vendored from `~/.claude/scripts/statusline-wrapper.js` |
+| `capture/merge-settings.cjs`               | Settings-merge engine invoked by `install.sh`: parse → merge → compare → backup → atomic write | new (post-review split from an `install.sh` one-liner for direct testability) |
+| `capture/state-dir.cjs`                    | Per-session scratch state (`prevstate`/`cache-accum`/`lastactivity`) under `~/.claude/scripts/.state/` instead of the shared system tmpdir; also `sanitizeSessionId()` | new (post-review security fix — predictable-tmp-file finding) |
+| `capture/mapped-dir.cjs`                   | Single shared implementation of Claude Code's project-dir slug rule, used by `cost-logger.cjs` and `turn-logger.cjs` | new (post-review de-duplication) |
+| `capture/statusline-payload.cjs`           | Shared statusline-JSON field extraction, used by `cost-logger.cjs` and `statusline-command.cjs` | new (post-review de-duplication) |
 | `capture/settings.snippet.json`            | Copy-paste `statusLine` + `hooks.Stop` wiring for manual users          | Shape mirrors live `~/.claude/settings.json` |
 | `capture/install.sh`                       | Idempotent installer                                                    | new                                        |
-| `capture/install.test.ts`                  | Runs `install.sh` twice against a temp `HOME`; asserts backup, merge preservation, and byte-identical second run | `server/**/*.test.ts` vitest style         |
-| `capture/contract.test.ts`                 | Feeds synthetic statusline + Stop payloads through the `.cjs` scripts into a temp `HOME`; asserts output round-trips through `parseCostSampleLines` / `parseTurnBoundaryLines` / `parseCostLogLines` with `malformedCount === 0` and every field populated | `server/ingest/parse-premium.test.ts`      |
+| `capture/tsconfig.json`                    | TS project for `capture/*.test.ts`, wired into the root `typecheck` script | new                                       |
+| `capture/install.test.ts`                  | Runs `install.sh` twice against a temp `HOME`; asserts backup, merge preservation, byte-identical second run, and the S5 node-not-found failure path | `server/**/*.test.ts` vitest style         |
+| `capture/contract.test.ts`                 | Feeds synthetic statusline + Stop payloads through the `.cjs` scripts into a temp `HOME`; asserts output round-trips through `parseCostSampleLines` / `parseTurnBoundaryLines` / `parseCostLogLines` with `malformedCount === 0` and every field populated, plus the empty-session-id, de-dupe, and resume-guard branches | `server/ingest/parse-premium.test.ts`      |
+| `capture/statusline-wrapper.test.ts`       | Runs `statusline-wrapper.cjs` from a scratch scripts dir; asserts delegation to a stored original command and the minimal-cost-line fallback | new (post-review — was previously untested) |
 | `capture/README.md`                        | What each file does, the field contract, how to verify                  | new                                        |
 | `shared/capture-assets-contract.ts`        | `CaptureAssets` wire type                                               | `shared/health-contract.ts`                |
 | `server/capture-assets.ts`                 | `resolveCaptureDir(): string \| null`                                   | `scripts/build.ts` `rootDir` derivation    |
@@ -278,6 +284,8 @@ what keeps the vendored scripts runnable on a machine that has no claude-lens ch
 | `server/app.ts`                                 | `registerCaptureAssetsRoute(app)` alongside the existing route registrations (~line 185)                  |
 | `scripts/build.ts`                              | `await cp(join(rootDir,"capture"), join(distDir,"capture"), { recursive: true })` after the `public` copy  |
 | `biome.json`                                    | Add `"capture/**"` to `files.includes`                                                                   |
+| `package.json`                                  | Wire `capture/tsconfig.json` into the root `typecheck` script                                            |
+| `vitest.config.ts`                              | Add `capture` to `test.include` so `capture/*.test.ts` runs under `npm test`                              |
 
 ### Deleted / replaced
 
@@ -327,8 +335,11 @@ machine**, since the acceptance criterion is verified by running the installer a
     capture failure can never blank a statusline. `turn-logger.cjs` currently has **no**
     top-level guard — hardened per A6 so a malformed Stop payload or an `EACCES` cannot
     surface a hook error to the user.
-  - `install.sh`: fails loudly and early. Node-not-found and unparseable-`settings.json`
-    both exit `1` before any file is touched.
+  - `install.sh`: fails loudly and early. Node-not-found exits `1` before anything is
+    touched. Unparseable `settings.json` exits `1` before `settings.json` (or its backup)
+    is touched — the vendored-script copy into `~/.claude/scripts/` happens first and is
+    unaffected, since it's an idempotent copy with no user data at stake (tested by
+    `install.test.ts`'s S3 case).
   - Route: `resolveCaptureDir()` returns `null` rather than throwing; the guide renders
     manual fallback instructions in that state.
 - **Logging & metrics:** capture scripts stay silent by design — stdout on the statusline
@@ -378,7 +389,7 @@ machine**, since the acceptance criterion is verified by running the installer a
 | **S3.** `~/.claude/settings.json` is malformed JSON when the installer runs                | Parse happens **before** backup and before any write. Exits `1` with the parse error, leaving the file untouched                                                                                                                                                                              |
 | **S4.** `install.sh` is run twice (or three times)                                          | Merged object is compared against the original; identical → no backup, no write, "already configured". Asserted by `capture/install.test.ts`                                                                                                                                                  |
 | **S5.** `node` is not on PATH in the installer's shell, or resolves differently than in the hook's non-login shell (this machine has both homebrew and volta node) | The installer resolves `command -v node` once and writes that **absolute** path into `settings.json` — matching what the live config already does. Missing node → exit `1` with an actionable message                                                                                          |
-| **S6.** The user's original statusline is slow or hangs after being wrapped                 | `statusline-wrapper.cjs` already uses `spawnSync(..., { timeout: 10000 })` and falls back to a minimal cost line on empty stdout. Worst case is a stale statusline, never a lost capture — capture runs *before* delegation                                                                     |
+| **S6.** The user's original statusline is slow or hangs after being wrapped                 | `statusline-wrapper.cjs` uses `spawnSync(..., { timeout: 10000, killSignal: "SIGKILL" })` and falls back to a minimal cost line on empty stdout. Worst case is a stale statusline, never a lost capture — capture runs *before* delegation. (Post-review fix: the original `killSignal` default, `SIGTERM`, is ignorable by the wrapped command and would not actually bound execution — `spawnSync` blocks until the child exits regardless of the timeout firing. `SIGKILL` cannot be ignored, so the 10s bound is now real.) |
 | **S7.** Server started from a source tree with no `dist/`, or an install missing `capture/` | `resolveCaptureDir()` tries both candidates and returns `null`; the guide renders manual instructions instead of a broken path. No throw, no 500                                                                                                                                              |
 | **S8.** A session's `cwd` contains dots (e.g. `~/work/my.project`)                          | The slug rule maps both `/` and `.` to `-`, matching Claude Code's own naming, so sidecars land in the same directory as the transcript. This is exactly the rule that makes files discoverable — the contract test should cover a dotted path                                                  |
 

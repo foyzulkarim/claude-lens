@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -38,7 +38,6 @@ function readLines(path: string): string[] {
 
 describe("producer ↔ parser contract (A9)", () => {
   let homeDir: string;
-  let sessionIds: string[];
 
   beforeEach(() => {
     homeDir = mkdtempSync(join(tmpdir(), "claude-lens-capture-contract-"));
@@ -48,31 +47,18 @@ describe("producer ↔ parser contract (A9)", () => {
     // parent directory exists (only the per-session C directory is
     // mkdir'd), so a from-scratch temp HOME must pre-create it too.
     mkdirSync(join(homeDir, ".claude"), { recursive: true });
-    sessionIds = [];
   });
 
   afterEach(() => {
+    // Per-session scratch state (prevstate/cache-accum/lastactivity) now
+    // lives under homeDir/.claude/scripts/.state/ (state-dir.cjs), not the
+    // system tmpdir, so this one rmSync covers everything a run created —
+    // no separate tmpdir cleanup needed.
     rmSync(homeDir, { recursive: true, force: true });
-    // cost-logger.cjs's PREV_STATE_FILE / CACHE_ACCUM_FILE deliberately live
-    // in the *system* tmpdir (not $HOME) keyed only by session_id — that's
-    // why a fresh randomUUID() per test is required (a fixed id would
-    // accumulate stale state across repeated runs), and cleaning them up
-    // here keeps the real machine's /tmp from collecting test litter.
-    for (const id of sessionIds) {
-      for (const prefix of [
-        "statusline-prevstate-",
-        "statusline-cache-accum-",
-        "statusline-lastactivity-",
-      ]) {
-        rmSync(join(tmpdir(), `${prefix}${id}`), { force: true });
-      }
-    }
   });
 
   function newSessionId(): string {
-    const id = randomUUID();
-    sessionIds.push(id);
-    return id;
+    return randomUUID();
   }
 
   it("emits C/B/L lines that parse cleanly with every field populated", () => {
@@ -191,5 +177,93 @@ describe("producer ↔ parser contract (A9)", () => {
     const costResult = parseCostSampleLines(readLines(costFile), sessionId);
     expect(costResult.malformedCount).toBe(0);
     expect(costResult.samples).toHaveLength(2);
+  });
+
+  it("writes nothing when session_id is missing (empty-session-id guard)", () => {
+    const cwd = "/Users/tester/work/no-session";
+    const mappedDir = cwd.replace(/[/.]/g, "-");
+
+    runScript(
+      "statusline-command.cjs",
+      {
+        model: { display_name: "claude-sonnet-5" },
+        workspace: { current_dir: cwd, added_dirs: [] },
+        cost: { total_cost_usd: 0.01, total_api_duration_ms: 1000 },
+        context_window: { used_percentage: 10, current_usage: {} },
+      },
+      homeDir,
+    );
+
+    expect(existsSync(join(homeDir, ".claude", "projects", mappedDir))).toBe(false);
+    expect(existsSync(join(homeDir, ".claude", "cost-log.jsonl"))).toBe(false);
+  });
+
+  it("does not emit a duplicate sample when api_duration_ms is unchanged (de-dupe guard)", () => {
+    const sessionId = newSessionId();
+    const cwd = "/Users/tester/work/idle";
+    const mappedDir = cwd.replace(/[/.]/g, "-");
+    const payload = {
+      session_id: sessionId,
+      model: { display_name: "claude-sonnet-5" },
+      workspace: { current_dir: cwd, added_dirs: [] },
+      cost: { total_cost_usd: 0.05, total_api_duration_ms: 5000 },
+      context_window: { used_percentage: 20, current_usage: {} },
+    };
+
+    // Same total_api_duration_ms on both ticks — no activity between them.
+    runScript("statusline-command.cjs", payload, homeDir);
+    runScript("statusline-command.cjs", payload, homeDir);
+
+    const costFile = join(homeDir, ".claude", "projects", mappedDir, `${sessionId}.cost.jsonl`);
+    const costResult = parseCostSampleLines(readLines(costFile), sessionId);
+    expect(costResult.malformedCount).toBe(0);
+    expect(costResult.samples).toHaveLength(1);
+  });
+
+  it("re-baselines instead of emitting a negative delta when counters go backwards (resume guard)", () => {
+    const sessionId = newSessionId();
+    const cwd = "/Users/tester/work/resumed";
+    const mappedDir = cwd.replace(/[/.]/g, "-");
+    const basePayload = {
+      session_id: sessionId,
+      model: { display_name: "claude-sonnet-5" },
+      workspace: { current_dir: cwd, added_dirs: [] },
+      context_window: { used_percentage: 30, current_usage: {} },
+    };
+
+    // First tick establishes a baseline.
+    runScript(
+      "statusline-command.cjs",
+      { ...basePayload, cost: { total_cost_usd: 0.5, total_api_duration_ms: 10_000 } },
+      homeDir,
+    );
+    // Second tick: cost and api duration both went backwards (session resumed,
+    // counters restarted) — must re-baseline silently, not append a sample
+    // with a garbage negative delta.
+    runScript(
+      "statusline-command.cjs",
+      { ...basePayload, cost: { total_cost_usd: 0.1, total_api_duration_ms: 2000 } },
+      homeDir,
+    );
+
+    const costFile = join(homeDir, ".claude", "projects", mappedDir, `${sessionId}.cost.jsonl`);
+    const costResult = parseCostSampleLines(readLines(costFile), sessionId);
+    expect(costResult.malformedCount).toBe(0);
+    expect(costResult.samples).toHaveLength(1);
+    expect(costResult.samples[0].cumulativeCostUsd).toBe(0.5);
+
+    // Third tick, moving forward again from the new (resumed) baseline —
+    // the delta must be relative to the re-baselined 0.1/2000, not the
+    // original 0.5/10_000.
+    runScript(
+      "statusline-command.cjs",
+      { ...basePayload, cost: { total_cost_usd: 0.15, total_api_duration_ms: 3000 } },
+      homeDir,
+    );
+    const finalResult = parseCostSampleLines(readLines(costFile), sessionId);
+    expect(finalResult.malformedCount).toBe(0);
+    expect(finalResult.samples).toHaveLength(2);
+    expect(finalResult.samples[1].costDeltaUsd).toBeCloseTo(0.05);
+    expect(finalResult.samples[1].apiDurationMs).toBe(1000);
   });
 });

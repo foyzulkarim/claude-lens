@@ -8,9 +8,10 @@ const moduleDir = dirname(fileURLToPath(import.meta.url));
  * Resolves the absolute path to the vendored `capture/` directory
  * (ARCH-producer-cost-capture-tier §Reachability path, decision A5).
  *
- * Two-candidate resolution relative to this module's own location — the
- * same idiom `scripts/build.ts` uses to derive `rootDir` from
- * `import.meta.url`:
+ * Two-candidate resolution relative to this module's own location — the same
+ * `import.meta.url`-relative idiom `scripts/build.ts` uses for `rootDir`
+ * (that derivation is single-candidate, since it never runs from a bundled
+ * location):
  *   1. Dev / source-tree layout — this file lives at `server/capture-assets.ts`,
  *      so `../capture` is the repo-root `capture/` directory.
  *   2. Production bundle layout — esbuild bundles everything into one

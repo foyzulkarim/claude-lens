@@ -65,6 +65,9 @@ describe("capture/install.sh", () => {
       "turn-logger.cjs",
       "statusline-command.cjs",
       "statusline-wrapper.cjs",
+      "state-dir.cjs",
+      "mapped-dir.cjs",
+      "statusline-payload.cjs",
     ]) {
       expect(existsSync(join(homeDir, ".claude", "scripts", f))).toBe(true);
     }
@@ -190,5 +193,26 @@ describe("capture/install.sh", () => {
     expect(readFileSync(settingsPath(homeDir), "utf8")).toBe("{ this is not json");
     expect(existsSync(join(claudeDir, "scripts"))).toBe(true); // scripts still copied
     expect(backupCount(claudeDir)).toBe(0);
+  });
+
+  it("exits 1 with an actionable message when node is not on PATH (S5)", () => {
+    // /usr/bin:/bin carries the coreutils install.sh itself needs (cd, pwd,
+    // mkdir, cp) but not node on this machine, where node lives under
+    // homebrew/volta — simulates a shell with no node resolvable at all.
+    let result: { status: number; stdout: string; stderr: string };
+    try {
+      const stdout = execFileSync("bash", [installScript], {
+        env: { HOME: homeDir, PATH: "/usr/bin:/bin" },
+        encoding: "utf8",
+      });
+      result = { status: 0, stdout, stderr: "" };
+    } catch (err) {
+      const e = err as { status: number; stdout: string; stderr: string };
+      result = { status: e.status, stdout: e.stdout, stderr: e.stderr };
+    }
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("node not found on PATH");
+    expect(existsSync(join(homeDir, ".claude", "scripts"))).toBe(false);
   });
 });
