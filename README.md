@@ -61,8 +61,32 @@ Other useful scripts:
 ## How it works
 
 - **Ingest pipeline**: discovers and tails your `~/.claude/projects/**/*.jsonl` transcripts incrementally, parsing them into an in-memory store of API calls, turns, and sessions. A `/ws` connection pushes lightweight invalidation events so the UI refetches automatically as new activity comes in — no data over the socket, no manual refresh.
-- **Tiered accuracy**: metrics are 🟢 exact or 🟡 estimated from transcripts alone; optional premium capture files upgrade specific sessions to 🟢 observed values.
+- **Tiered accuracy**: every metric carries a 🟢 observed, 🟡 estimated, or 🔴 locked label. The default install shows 🟡 everywhere; the "Cost capture" section below explains how to unlock 🟢.
 - **One process, one port**: Fastify serves the built SPA, the `/api/*` metrics endpoints, and the `/ws` upgrade together — no separate services to run.
+
+## Tier accuracy
+
+Three tiers, labeled in the UI on every relevant column:
+
+- **🟡 Estimated** (default) — derived from your `~/.claude/projects` transcripts alone. Token counts, call counts, cache %, and computed $ (from the configured pricing table) are accurate enough for high-level trends. Every session shows 🟡 on first install.
+- **🟢 Observed** — when a session has matching premium capture files (C/B/L sidecars), the dashboard upgrades to observed values for cost, API latency, lines-changed, and turn boundaries. See the next section.
+- **🔴 Locked** — premium-only features (latency waterfalls, observed $, lines-changed, the `contextPctEstimated` curve on the Dashboard and Cache Lab) appear with a "Set up cost capture" CTA that links to the in-app setup steps.
+
+The session-level tier is shown in the `tier` column on the Sessions page; a header dot on the Dashboard summarizes the fleet split.
+
+## Cost capture (unlocks 🟢 observed values)
+
+To upgrade matching sessions from 🟡 to 🟢, install the producer scripts that write the C/B/L sidecars while Claude Code runs:
+
+```sh
+bash capture/install.sh
+```
+
+The installer copies four `.cjs` scripts to `~/.claude/scripts/` and merges a `statusLine` (cost-aware) + `hooks.Stop` (turn-boundary) entry into your `~/.claude/settings.json`. It's idempotent — re-run it any time; if nothing needs to change it reports "already configured" and touches nothing. It backs up your existing `settings.json` to `settings.json.backup-<timestamp>` before writing, so rollback is a single `cp` away.
+
+**Manual setup** (if you'd rather not run the script): copy the four `.cjs` files into `~/.claude/scripts/` yourself and merge the `statusLine` + `hooks.Stop` keys from [`capture/settings.snippet.json`](capture/settings.snippet.json) into your own `~/.claude/settings.json`. See [`capture/README.md`](capture/README.md) for the exact file layout and field names — those are load-bearing and read directly by `server/ingest/parse-premium.ts` in this repo.
+
+**Verify it worked:** open `/settings` in claude-lens and check the "Cost capture setup" panel — it should show the latest sample timestamp and the capturing-session count. Run one Claude Code session anywhere; the next time claude-lens polls your `~/.claude` directory, matching sessions flip to 🟢.
 
 See `specs/claude-lens-architecture.md` for the full design and `specs/claude-lens-pages.md` for what each page shows.
 
