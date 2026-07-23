@@ -67,58 +67,6 @@ export interface ParseTranscriptResult {
   malformedCount: number;
 }
 
-interface RawAssistantMessage {
-  id?: unknown;
-  model?: unknown;
-  stop_reason?: unknown;
-  content?: unknown;
-  usage?: {
-    input_tokens?: unknown;
-    output_tokens?: unknown;
-    cache_read_input_tokens?: unknown;
-    cache_creation_input_tokens?: unknown;
-    cache_creation?: {
-      ephemeral_5m_input_tokens?: unknown;
-      ephemeral_1h_input_tokens?: unknown;
-    };
-    server_tool_use?: {
-      web_search_requests?: unknown;
-      web_fetch_requests?: unknown;
-    };
-  };
-}
-
-interface RawAssistantLine {
-  type: "assistant";
-  uuid?: unknown;
-  sessionId?: unknown;
-  requestId?: unknown;
-  agentId?: unknown;
-  timestamp?: unknown;
-  cwd?: unknown;
-  gitBranch?: unknown;
-  version?: unknown;
-  entrypoint?: unknown;
-  isSidechain?: unknown;
-  isApiErrorMessage?: unknown;
-  apiErrorStatus?: unknown;
-  message?: RawAssistantMessage;
-}
-
-interface RawUserLine {
-  type: "user";
-  sessionId?: unknown;
-  promptId?: unknown;
-  timestamp?: unknown;
-  /** Present on tool_result lines from sub-agent (Agent tool) turns —
-   * mirrors RawAssistantLine's `isSidechain` field and lets the downstream
-   * turn derivation split main-thread vs sidechain tool_result attribution
-   * (review #3: otherwise sidechain bytes/errors silently inflate the
-   * parent's FailedWork/Records numbers). */
-  isSidechain?: unknown;
-  message?: { content?: unknown };
-}
-
 function toStr(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
@@ -193,26 +141,20 @@ function classifyBash(input: unknown): "git-commit" | "other" {
   return GIT_COMMIT_RE.test(command) ? "git-commit" : "other";
 }
 
-interface RawCompactBoundaryLine {
-  type: "system/compact_boundary";
-  sessionId?: unknown;
-  timestamp?: unknown;
-  promptId?: unknown;
-}
-
 function parseAssistantLine(
-  line: RawAssistantLine,
+  line: Record<string, unknown>,
   toolNameByToolUseId: Map<string, string>,
 ): ParsedLine {
-  const message = line.message;
+  const message = isRecord(line.message) ? line.message : undefined;
   const messageId = message?.id;
   if (!message || typeof messageId !== "string") {
     return { kind: "malformed" };
   }
 
-  const usage = message.usage;
-  const cacheCreation = usage?.cache_creation;
-  const serverToolUse = usage?.server_tool_use;
+  const usage = isRecord(message.usage) ? message.usage : undefined;
+  const cacheCreation = usage && isRecord(usage.cache_creation) ? usage.cache_creation : undefined;
+  const serverToolUse =
+    usage && isRecord(usage.server_tool_use) ? usage.server_tool_use : undefined;
 
   const tools: ApiCall["tools"] = [];
   const content = message.content;
@@ -287,11 +229,14 @@ function parseAssistantLine(
   return { kind: "call", call };
 }
 
-function parseUserLine(line: RawUserLine, toolNameByToolUseId: Map<string, string>): ParsedLine {
+function parseUserLine(
+  line: Record<string, unknown>,
+  toolNameByToolUseId: Map<string, string>,
+): ParsedLine {
   const sessionId = toStr(line.sessionId);
   const promptId = toOptionalStr(line.promptId);
   const timestamp = toStr(line.timestamp);
-  const content = line.message?.content;
+  const content = isRecord(line.message) ? line.message.content : undefined;
 
   if (typeof content === "string") {
     if (!promptId) return { kind: "skipped" };
@@ -367,18 +312,18 @@ export function parseTranscriptLine(
   }
 
   if (parsed.type === "user") {
-    return parseUserLine(parsed as unknown as RawUserLine, toolNameByToolUseId);
+    return parseUserLine(parsed, toolNameByToolUseId);
   }
 
   if (parsed.type === "system/compact_boundary") {
-    return parseCompactBoundaryLine(parsed as unknown as RawCompactBoundaryLine);
+    return parseCompactBoundaryLine(parsed);
   }
 
   if (parsed.type !== "assistant") {
     return { kind: "skipped" };
   }
 
-  const result = parseAssistantLine(parsed as unknown as RawAssistantLine, toolNameByToolUseId);
+  const result = parseAssistantLine(parsed, toolNameByToolUseId);
   if (result.kind !== "call") {
     return result;
   }
@@ -394,7 +339,7 @@ export function parseTranscriptLine(
 // record can't be partitioned into any session snapshot, so it's skipped
 // rather than malformed — every other "missing required" line has a clear
 // session-less treatment in parseUserLine. Optional fields stay optional.
-function parseCompactBoundaryLine(line: RawCompactBoundaryLine): ParsedLine {
+function parseCompactBoundaryLine(line: Record<string, unknown>): ParsedLine {
   const sessionId = toStr(line.sessionId);
   if (sessionId === "") {
     return { kind: "skipped" };
@@ -440,9 +385,15 @@ export function parseTranscriptLines(
     // only blanks we see here are intra-file blanks. We skip them
     // explicitly (without incrementing `skippedLines`) so `rawLines`
     // counts only lines that the parser actually attempted to classify.
-    if (rawLine.trim() === "") continue;
+    //
+    // Trim once at the batch boundary (review P-006) so the per-line
+    // `parseTranscriptLine` doesn't repeat the same `String.trim()` on
+    // every line — on a busy transcript with 100s of lines per tail
+    // read, the doubled trim adds up.
+    const trimmed = rawLine.trim();
+    if (trimmed === "") continue;
     result.rawLines++;
-    const parsed = parseTranscriptLine(rawLine, seenMessageIds, toolNameByToolUseId);
+    const parsed = parseTranscriptLine(trimmed, seenMessageIds, toolNameByToolUseId);
     switch (parsed.kind) {
       case "call":
         result.calls.push(parsed.call);

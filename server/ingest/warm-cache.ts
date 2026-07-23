@@ -48,30 +48,40 @@ type CacheRecordLine =
       malformedCount: number;
     };
 
-function isWarmCacheKey(value: unknown): value is WarmCacheKey {
+// Reads `version` directly off the record (review TS-5) rather than a
+// double `as unknown as Record` assertion. `WARM_CACHE_SCHEMA_VERSION` is a
+// number literal, so the equality check also proves `version` is that number.
+function isCacheHeader(value: unknown): value is CacheHeader {
   return (
     isRecord(value) &&
     typeof value.path === "string" &&
     typeof value.size === "number" &&
-    typeof value.mtime === "number"
+    typeof value.mtime === "number" &&
+    value.version === WARM_CACHE_SCHEMA_VERSION
   );
 }
 
-function isCacheHeader(value: unknown): value is CacheHeader {
+// Type-predicate guards (review X-5 / TS-1): narrow persisted records to their
+// declared types by structural validation instead of an `as unknown as` cast.
+// Every required field the serializer writes is checked; nested containers are
+// confirmed to be the right kind (record / array). A failed check surfaces as a
+// clean cache miss (deserializeEntry returns null → full re-parse), never a
+// throw, so stricter-than-before validation only ever costs one slower boot.
+function isApiCall(value: unknown): value is ApiCall {
   return (
-    isWarmCacheKey(value) &&
-    typeof (value as unknown as Record<string, unknown>).version === "number" &&
-    (value as unknown as Record<string, unknown>).version === WARM_CACHE_SCHEMA_VERSION
-  );
-}
-
-function isApiCallShape(value: Record<string, unknown>): boolean {
-  return (
+    isRecord(value) &&
     typeof value.uuid === "string" &&
     typeof value.sessionId === "string" &&
     typeof value.messageId === "string" &&
     typeof value.timestamp === "string" &&
-    typeof value.model === "string"
+    typeof value.model === "string" &&
+    typeof value.isSidechain === "boolean" &&
+    typeof value.cwd === "string" &&
+    typeof value.gitBranch === "string" &&
+    typeof value.version === "string" &&
+    typeof value.entrypoint === "string" &&
+    isRecord(value.usage) &&
+    Array.isArray(value.tools)
   );
 }
 
@@ -83,8 +93,9 @@ function isApiCallShape(value: Record<string, unknown>): boolean {
 // falls back to a full re-parse and re-saves a schema-correct entry. No data
 // loss (this cache is a rebuildable derived artifact; the source-of-truth
 // transcripts are never touched), just one slower boot per affected file.
-function isPromptTextRecordShape(value: Record<string, unknown>): boolean {
+function isPromptTextRecord(value: unknown): value is PromptTextRecord {
   return (
+    isRecord(value) &&
     typeof value.sessionId === "string" &&
     typeof value.promptId === "string" &&
     typeof value.text === "string" &&
@@ -92,18 +103,22 @@ function isPromptTextRecordShape(value: Record<string, unknown>): boolean {
   );
 }
 
-function isToolResultBytesRecordShape(value: Record<string, unknown>): boolean {
+function isToolResultBytesRecord(value: unknown): value is ToolResultBytesRecord {
   return (
+    isRecord(value) &&
     typeof value.sessionId === "string" &&
     typeof value.promptId === "string" &&
     typeof value.toolUseId === "string" &&
-    typeof value.bytes === "number"
+    typeof value.bytes === "number" &&
+    typeof value.isError === "boolean" &&
+    (value.isSidechain === undefined || typeof value.isSidechain === "boolean")
   );
 }
 
 // (#P4-5) Compact validation: sessionId is the only required field. Both
 // optional fields may be absent on a transcript that didn't supply them.
-function isCompactionRecordShape(value: Record<string, unknown>): boolean {
+function isCompactionRecord(value: unknown): value is CompactionRecord {
+  if (!isRecord(value)) return false;
   if (typeof value.sessionId !== "string" || value.sessionId === "") return false;
   if (value.timestamp !== undefined && typeof value.timestamp !== "string") return false;
   if (value.promptId !== undefined && typeof value.promptId !== "string") return false;
@@ -187,20 +202,20 @@ function deserializeEntry(raw: string, expectedKey: WarmCacheKey): WarmCacheEntr
 
     switch (parsed.kind) {
       case "call":
-        if (!isRecord(parsed.call) || !isApiCallShape(parsed.call)) return null;
-        entry.calls.push(parsed.call as unknown as ApiCall);
+        if (!isApiCall(parsed.call)) return null;
+        entry.calls.push(parsed.call);
         break;
       case "prompt":
-        if (!isRecord(parsed.prompt) || !isPromptTextRecordShape(parsed.prompt)) return null;
-        entry.prompts.push(parsed.prompt as unknown as PromptTextRecord);
+        if (!isPromptTextRecord(parsed.prompt)) return null;
+        entry.prompts.push(parsed.prompt);
         break;
       case "tool-result-bytes":
-        if (!isRecord(parsed.record) || !isToolResultBytesRecordShape(parsed.record)) return null;
-        entry.toolResultBytes.push(parsed.record as unknown as ToolResultBytesRecord);
+        if (!isToolResultBytesRecord(parsed.record)) return null;
+        entry.toolResultBytes.push(parsed.record);
         break;
       case "compaction":
-        if (!isRecord(parsed.record) || !isCompactionRecordShape(parsed.record)) return null;
-        entry.compactions.push(parsed.record as unknown as CompactionRecord);
+        if (!isCompactionRecord(parsed.record)) return null;
+        entry.compactions.push(parsed.record);
         break;
       case "meta":
         if (

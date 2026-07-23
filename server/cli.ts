@@ -139,14 +139,17 @@ async function main() {
   // Store and the Fastify metrics route. Without this, the Store derived
   // costComputed = 0 (no pricer injected) and the metrics route fell back
   // to its own module-level default — the two halves could drift apart.
-  const metadata = buildRuntimeMetadata({ pricing: savedConfig.pricing });
-  // #P4-14: thread scanRoots into runtime metadata so the /api/health
-  // route can populate the §2 scan-coverage section. The store already
-  // takes a separate `hostLabels` map (one level lower — string→label,
-  // not the raw ScanRootConfig[]) for Session.host resolution, so we
-  // pass both: the raw config to metadata (read by the route), the
-  // derived map to startIngest (read by the store).
-  const metadataWithScanRoots = { ...metadata, scanRoots: savedConfig.scanRoots ?? [] };
+  //
+  // #P4-14: thread scanRoots through `buildRuntimeMetadata` directly so
+  // the route can populate the §2 scan-coverage section. The store
+  // additionally takes a separate `hostLabels` map (one level lower —
+  // string→label, not the raw ScanRootConfig[]) for Session.host
+  // resolution, so we pass both: the raw config to metadata (read by
+  // the route), the derived map to startIngest (read by the store).
+  const metadata = buildRuntimeMetadata({
+    pricing: savedConfig.pricing,
+    scanRoots: savedConfig.scanRoots,
+  });
   const hostLabels = buildHostLabels(savedConfig.scanRoots);
 
   // The live wiring (#P3-1): the broadcaster is the fan-out seam shared by both
@@ -158,13 +161,13 @@ async function main() {
   const broadcaster = createBroadcaster();
   const ingest = startIngest(config, {
     onInvalidate: broadcaster.broadcast,
-    metadata: metadataWithScanRoots,
+    metadata,
     hostLabels,
   });
   const app = buildApp({
     store: ingest.store,
     broadcaster,
-    metadata: metadataWithScanRoots,
+    metadata,
     configPath,
     localStorePath,
     pipeline: ingest,

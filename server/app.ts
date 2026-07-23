@@ -104,11 +104,14 @@ export interface BuildAppOptions {
   /**
    * The ingest pipeline (#P4-14). When provided, its `getStats`
    * callback is threaded into `/api/health` so the Data Health page
-   * can surface `transcriptsFound` / `transcriptsFailed`. Optional
-   * because route tests build an app without a real pipeline; CLI
-   * production wiring always passes it.
+   * can surface `transcriptsFound` / `transcriptsFailed`. The store
+   * passes its already-computed `transcriptsParsed` count into the
+   * callback so the pipeline doesn't have to recompute it via
+   * `listSessions()` (review P-001). Optional because route tests
+   * build an app without a real pipeline; CLI production wiring
+   * always passes it.
    */
-  pipeline?: { getStats: () => PipelineStats };
+  pipeline?: { getStats: (transcriptsParsed: number) => PipelineStats };
 }
 
 export function buildApp({

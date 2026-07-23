@@ -17,11 +17,18 @@ import { qk } from "../../api/queryKeys.js";
  * 30s keeps a mounted page from refetching on every interaction while
  * still feeling live; WS invalidation re-fires the query immediately
  * when the underlying state shifts.
+ *
+ * `enabled` controls whether the query fires (review TC-5 / RP-1).
+ * When the DataHealth page is rendered with an injected `snapshot`
+ * prop (Storybook stories, tests) the query is suppressed so the
+ * fetch doesn't run — and, critically, so the page doesn't crash
+ * with "No QueryClient set" when there's no provider in the tree.
  */
-export function useHealthQuery(): UseQueryResult<HealthSnapshot> {
+export function useHealthQuery(options?: { enabled?: boolean }): UseQueryResult<HealthSnapshot> {
   return useQuery({
     queryKey: qk.health(),
     queryFn: ({ signal }) => fetchHealth(signal),
     staleTime: 30_000,
+    enabled: options?.enabled ?? true,
   });
 }

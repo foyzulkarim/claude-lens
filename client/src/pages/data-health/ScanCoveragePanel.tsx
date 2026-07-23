@@ -1,6 +1,7 @@
 import type { ScanCoverage as ScanCoverageType } from "../../../../shared/health-contract.js";
+import { TierBadge } from "../../components/TierBadge.js";
+import { Panel } from "./Panel.js";
 import { formatInt } from "./format.js";
-import { SectionHeader } from "./SectionHeader.js";
 
 export interface ScanCoveragePanelProps {
   scan: ScanCoverageType;
@@ -11,21 +12,17 @@ export interface ScanCoveragePanelProps {
  * sidecar coverage stat folded in from the mockup. Always 🟢:
  * transcript-tier + sidecar presence are independent of premium
  * capture, so this section has data on every fleet.
+ *
+ * File renamed from `ScanCoverage.tsx` (review Q-009) so the filename
+ * matches the export, matching every sibling panel file.
  */
 export function ScanCoveragePanel({ scan }: ScanCoveragePanelProps) {
   return (
-    <section
-      aria-labelledby="data-health-scan-title"
-      className="rounded-md border border-slate-200 bg-white p-4 dark:border-[#232B36] dark:bg-[#151A21]"
+    <Panel
+      title="Scan coverage"
+      right={<TierBadge level="exact">transcript tier</TierBadge>}
+      description="Active scan roots, transcripts found/parsed/failed, and sidecar presence."
     >
-      <SectionHeader
-        title="Scan coverage"
-        right={
-          <span className="text-xs text-slate-500 dark:text-[#8A95A3]">transcript tier · 🟢</span>
-        }
-        description="Active scan roots, transcripts found/parsed/failed, and sidecar presence."
-      />
-
       <div className="grid grid-cols-4 gap-4 pt-2">
         <div>
           <div className="text-xs text-slate-500 dark:text-[#8A95A3]">Found</div>
@@ -44,7 +41,8 @@ export function ScanCoveragePanel({ scan }: ScanCoveragePanelProps) {
           <div
             className={`text-lg font-semibold ${
               scan.transcriptsFailed > 0
-                ? "text-amber-600 dark:text-amber-400"
+                ? // amber-700 (review A11Y-5)
+                  "text-amber-700 dark:text-amber-400"
                 : "text-slate-900 dark:text-[#E8EDF2]"
             }`}
           >
@@ -83,6 +81,6 @@ export function ScanCoveragePanel({ scan }: ScanCoveragePanelProps) {
           </ul>
         )}
       </div>
-    </section>
+    </Panel>
   );
 }

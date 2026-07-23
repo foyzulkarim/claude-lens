@@ -6,6 +6,11 @@ export interface SectionHeaderProps {
   right?: ReactNode;
   /** One-line description rendered below the title. */
   description?: string;
+  /** id applied to the `<h2>` so the parent `<section>`'s
+   *  `aria-labelledby` resolves to the visible heading. Always
+   *  supplied by `<Panel>`; left undefined only for tests that
+   *  render the header standalone. */
+  headingId?: string;
 }
 
 /**
@@ -13,11 +18,13 @@ export interface SectionHeaderProps {
  * count badge on the right, optional one-line description below. Used
  * identically by every section so the page has one visual rhythm.
  */
-export function SectionHeader({ title, right, description }: SectionHeaderProps) {
+export function SectionHeader({ title, right, description, headingId }: SectionHeaderProps) {
   return (
     <div className="flex flex-col gap-1 pb-2">
       <div className="flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold text-slate-900 dark:text-[#E8EDF2]">{title}</h2>
+        <h2 id={headingId} className="text-sm font-semibold text-slate-900 dark:text-[#E8EDF2]">
+          {title}
+        </h2>
         {right}
       </div>
       {description ? (

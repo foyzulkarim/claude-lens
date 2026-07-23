@@ -176,21 +176,24 @@ function attributeSamplesToCalls(
   promptIdMismatchCount: number;
   unbucketedTailCount: number;
 } {
-  // ms-sorts with discriminator tie-break so attribution is deterministic
-  // when two calls share a timestamp (review M5; Array.sort is stable in V8
-  // but not spec-mandated).
-  const sortedCalls = [...calls].sort((a, b) => {
-    const am = Date.parse(a.timestamp);
-    const bm = Date.parse(b.timestamp);
-    return am !== bm ? am - bm : a.uuid.localeCompare(b.uuid);
-  });
-  const sortedSamples = [...samples].sort((a, b) => {
-    const am = Date.parse(a.timestamp);
-    const bm = Date.parse(b.timestamp);
-    return am !== bm
-      ? am - bm
-      : (a.timestamp + a.sessionId).localeCompare(b.timestamp + b.sessionId);
-  });
+  // Pre-parse timestamps once (review P-004) instead of re-parsing on
+  // every comparator call. For K=10k samples, Array.sort invokes the
+  // comparator ~K·log₂K = 130k times — naive `Date.parse` in the
+  // comparator means ~260k parses per sort (twice for the tie-break
+  // path). Pre-parsing once into a `{ms, original, key}` tuple trades
+  // K upfront parses for ~K·log₂K saved inside the sort.
+  const callsWithMs = calls.map((c) => ({ call: c, ms: parseMs(c.timestamp) }));
+  const sortedCalls = [...callsWithMs].sort((a, b) =>
+    a.ms !== b.ms ? a.ms - b.ms : a.call.uuid.localeCompare(b.call.uuid),
+  );
+  const samplesWithMs = samples.map((s) => ({
+    sample: s,
+    ms: parseMs(s.timestamp),
+    key: s.timestamp + s.sessionId,
+  }));
+  const sortedSamples = [...samplesWithMs].sort((a, b) =>
+    a.ms !== b.ms ? a.ms - b.ms : a.key.localeCompare(b.key),
+  );
 
   // §4 indexes — built once, reused per sample. A turn with a non-empty
   // promptId contributes to `turnPromptIds`; a turn with parseable
@@ -208,22 +211,34 @@ function attributeSamplesToCalls(
       turnRanges.push({ startMs, endMs });
     }
   }
+  // Sort by startMs once for the unbucketed-tail sweep below. Without
+  // this the sweep would need to compare every range against every
+  // sample (review P-002) — O(samples × turns). With the sweep + a
+  // max-endMs active set, the bound is O((samples + turns) · active)
+  // where `active` is the typical concurrency of overlapping ranges,
+  // usually 1 for non-overlapping turn timelines.
+  turnRanges.sort((a, b) => a.startMs - b.startMs);
+  const activeEndMs: number[] = []; // sorted descending; front is current max
+  let rangeIdx = 0;
 
   const accByCall = new Map<ApiCall, CallAccumulator>();
   let callIdx = -1;
   let promptIdMismatchCount = 0;
   let unbucketedTailCount = 0;
 
-  for (const sample of sortedSamples) {
+  for (const sampleEntry of sortedSamples) {
+    const sample = sampleEntry.sample;
+    const sampleMs = sampleEntry.ms;
+
     // Advance to the last call whose timestamp is <= this sample's.
     while (
       callIdx + 1 < sortedCalls.length &&
-      (sortedCalls[callIdx + 1]?.timestamp ?? "") <= sample.timestamp
+      (sortedCalls[callIdx + 1]?.ms ?? Number.NEGATIVE_INFINITY) <= sampleMs
     ) {
       callIdx++;
     }
     // Fallback: a sample earlier than every call attaches to the first call.
-    const target = callIdx >= 0 ? sortedCalls[callIdx] : sortedCalls[0];
+    const target = callIdx >= 0 ? sortedCalls[callIdx]?.call : sortedCalls[0]?.call;
     if (!target) continue; // no calls at all — session rollup still counts it below
     let acc = accByCall.get(target);
     if (!acc) {
@@ -242,7 +257,6 @@ function attributeSamplesToCalls(
     acc.apiMs = Math.max(acc.apiMs, sample.apiDurationMs);
     acc.linesAdded += sample.linesAdded;
     acc.linesRemoved += sample.linesRemoved;
-    const sampleMs = parseMs(sample.timestamp);
     // LAST context_pct wins; NaN-timestamp samples never displace a dated one.
     if (Number.isFinite(sampleMs) ? sampleMs >= acc.latestPctAt : !acc.hasPct) {
       acc.latestPctAt = Number.isFinite(sampleMs) ? sampleMs : acc.latestPctAt;
@@ -256,20 +270,42 @@ function attributeSamplesToCalls(
     if (sample.promptId && turnPromptIds.size > 0 && !turnPromptIds.has(sample.promptId)) {
       promptIdMismatchCount++;
     }
-    // §4 — unbucketed tail: only count when both the sample's
-    // timestamp and at least one turn range are parseable. Walk
-    // `turnRanges` linearly; at the per-session sample counts we
-    // expect (~tens to hundreds), an O(samples × turns) bound is
-    // already fine, and avoiding a binary search keeps the diff small.
+    // §4 — unbucketed tail (review P-002): swept interval-stab algorithm
+    // over the pre-sorted `turnRanges` + a max-endMs active set. With
+    // `rangeIdx` advancing monotonically as samples come in (samples are
+    // time-sorted), every range is inserted into / evicted from the
+    // active set at most once, so the inner cost is O(active) per sample
+    // instead of O(turns). For real sessions where overlapping turn
+    // ranges are rare (main-chain + a side-agent at most), `active`
+    // stays ≤ 2 — much better than the previous O(samples × turns)
+    // bound that broke down on marathon sessions with 10k+ samples.
     if (Number.isFinite(sampleMs) && turnRanges.length > 0) {
-      let matched = false;
-      for (const r of turnRanges) {
-        if (sampleMs >= r.startMs && sampleMs <= r.endMs) {
-          matched = true;
-          break;
+      // Activate every range whose startMs ≤ sampleMs.
+      while (rangeIdx < turnRanges.length) {
+        const range = turnRanges[rangeIdx];
+        if (range === undefined || range.startMs > sampleMs) break;
+        // Insert range.endMs into the descending-sorted active set.
+        let i = 0;
+        while (i < activeEndMs.length) {
+          const top = activeEndMs[i];
+          if (top === undefined || top <= range.endMs) break;
+          i++;
         }
+        activeEndMs.splice(i, 0, range.endMs);
+        rangeIdx++;
       }
-      if (!matched) unbucketedTailCount++;
+      // Evict ranges that closed before this sample (endMs < sampleMs).
+      while (activeEndMs.length > 0) {
+        const top = activeEndMs[0];
+        if (top === undefined || top >= sampleMs) break;
+        activeEndMs.shift();
+      }
+      // A range covers this sample iff any active endMs ≥ sampleMs.
+      // The front of the descending-sorted array IS the max, so this is
+      // O(1) — exactly the algorithm's win.
+      if (activeEndMs.length === 0) {
+        unbucketedTailCount++;
+      }
     }
   }
 

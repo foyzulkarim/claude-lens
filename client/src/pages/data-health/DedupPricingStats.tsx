@@ -1,6 +1,7 @@
 import type { DedupStats } from "../../../../shared/health-contract.js";
+import { TierBadge } from "../../components/TierBadge.js";
+import { Panel } from "./Panel.js";
 import { formatInt } from "./format.js";
-import { SectionHeader } from "./SectionHeader.js";
 
 export interface DedupPricingStatsProps {
   /** Transcript-tier dedup totals from the snapshot. */
@@ -15,17 +16,11 @@ export interface DedupPricingStatsProps {
  */
 export function DedupPricingStats({ dedup }: DedupPricingStatsProps) {
   return (
-    <section
-      aria-labelledby="data-health-dedup-title"
-      className="rounded-md border border-slate-200 bg-white p-4 dark:border-[#232B36] dark:bg-[#151A21]"
+    <Panel
+      title="Dedup stats"
+      right={<TierBadge level="exact">transcript tier</TierBadge>}
+      description="Raw transcript lines → distinct API calls (message.id dedupe) → duplicates collapsed."
     >
-      <SectionHeader
-        title="Dedup stats"
-        right={
-          <span className="text-xs text-slate-500 dark:text-[#8A95A3]">transcript tier · 🟢</span>
-        }
-        description="Raw transcript lines → distinct API calls (message.id dedupe) → duplicates collapsed."
-      />
       <div className="grid grid-cols-3 gap-4 pt-2">
         <div>
           <div className="text-xs text-slate-500 dark:text-[#8A95A3]">Raw lines</div>
@@ -46,6 +41,6 @@ export function DedupPricingStats({ dedup }: DedupPricingStatsProps) {
           </div>
         </div>
       </div>
-    </section>
+    </Panel>
   );
 }

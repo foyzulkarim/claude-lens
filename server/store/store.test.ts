@@ -859,3 +859,65 @@ describe("Store — premium sidecars (#P4-13)", () => {
     warn.mockRestore();
   });
 });
+
+// 🟢 #P4-14 TC-1 — Data Health transcript-tier health counters
+// (rawLines / duplicateCount / malformedCount). The previous fixture
+// updates only asserted `0`, so a regression that silently dropped
+// or double-counted these fields would still pass. These tests pin
+// the additive accumulation + resetSession zero-out contract on
+// every batch.
+describe("Store health counters (#P4-14 TC-1)", () => {
+  it("accumulates rawLines / duplicateCount / malformedCount across batches", () => {
+    const { store } = makeStore();
+    store.applyRecords("s1", {
+      ...batch([call()]),
+      rawLines: 5,
+      duplicateCount: 1,
+      malformedCount: 0,
+    });
+    store.applyRecords("s1", {
+      ...batch([call()]),
+      rawLines: 3,
+      duplicateCount: 0,
+      malformedCount: 2,
+    });
+
+    const snap = store.getHealthSnapshot();
+    expect(snap.dedup.rawLines).toBe(8);
+    expect(snap.dedup.duplicates).toBe(1);
+    expect(snap.parseErrors.malformedLines).toBe(2);
+  });
+
+  it("reports per-file malformed counts in the top-N byFile list", () => {
+    const { store } = makeStore();
+    // Two sessions under different roots → two distinct file paths in byFile.
+    store.applyRecords("s-a", { ...batch([call()]), malformedCount: 3 }, "/root-A");
+    store.applyRecords("s-b", { ...batch([call()]), malformedCount: 7 }, "/root-B");
+
+    const snap = store.getHealthSnapshot();
+    expect(snap.parseErrors.malformedLines).toBe(10);
+    expect(snap.parseErrors.byFile).toEqual([
+      { filePath: "/root-B/s-b.jsonl", count: 7 },
+      { filePath: "/root-A/s-a.jsonl", count: 3 },
+    ]);
+  });
+
+  it("resetSession zeroes rawLines / duplicateCount / malformedCount but keeps premium sidecars", () => {
+    const { store } = makeStore();
+    store.applyRecords("s1", {
+      ...batch([call()]),
+      rawLines: 4,
+      duplicateCount: 1,
+      malformedCount: 2,
+    });
+    // Sanity: counters visible before reset.
+    expect(store.getHealthSnapshot().dedup.rawLines).toBe(4);
+
+    store.resetSession("s1");
+
+    const snap = store.getHealthSnapshot();
+    expect(snap.dedup.rawLines).toBe(0);
+    expect(snap.dedup.duplicates).toBe(0);
+    expect(snap.parseErrors.malformedLines).toBe(0);
+  });
+});

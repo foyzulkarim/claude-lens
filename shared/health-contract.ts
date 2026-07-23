@@ -24,11 +24,13 @@
  *   - `observedSince` is wall-clock ms at server start. Clients can use
  *     "now - observedSince" to display uptime.
  *   - All #P4-14 fields are required and non-nullable. Missing data is
- *     represented as zero counts / empty arrays, never `undefined`, so
- *     clients can render the page without per-field presence checks.
- *     The `reconciliation.costLogTotal` field is the one exception — it
- *     is `undefined` when the global L capture file is not present
- *     (the L file is one-per-user, not per-session).
+ *     represented as zero counts / empty arrays, never `undefined` or
+ *     `null`, so clients can render the page without per-field presence
+ *     checks. The earlier `reconciliation.costLogTotal` exception was
+ *     dropped in #P4-14 review (X-7) because the L capture file is not
+ *     currently surfaced — the field would have shipped as a permanent
+ *     `undefined`, which violated the contract's own "no undefined"
+ *     promise and forced every renderer to special-case it.
  */
 
 import type { ScanRootConfig } from "./settings-contract.js";
@@ -124,8 +126,10 @@ export interface SidecarCoverage {
 /** Fleet-level reconciliation rollup. The per-session signal lives on
  *  `Session.premium` (Σ into these totals). When C is absent and only
  *  L is present, `costObserved` still carries a value (L's per-session
- *  total stands in, per `reconcile-premium.ts` A4). `costLogTotal` is
- *  `undefined` when the global L capture is not present. */
+ *  total stands in, per `reconcile-premium.ts` A4). The L-file Σ total
+ *  is no longer carried on the wire — it would be a single-per-user
+ *  number rather than a per-session one and surfaced cleanly only when
+ *  the L capture is plumbed end to end (#P4-14 review X-7). */
 export interface ReconciliationRollup {
   /** Count of sessions with `costBasis === "observed"`. */
   sessionsWithObserved: number;
@@ -135,8 +139,6 @@ export interface ReconciliationRollup {
   costComputed: number;
   /** Σ `Session.premium.costObserved` across premium sessions. */
   costObserved: number;
-  /** Σ L-file session totals when L is present. */
-  costLogTotal: number | undefined;
 }
 
 /** Sub-card of the §4 reconciliation section. */

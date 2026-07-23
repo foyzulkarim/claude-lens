@@ -1,6 +1,8 @@
 import type { CaptureGaps } from "../../../../shared/health-contract.js";
+import { TierBadge } from "../../components/TierBadge.js";
+import { Link } from "wouter";
+import { Panel } from "./Panel.js";
 import { formatInt } from "./format.js";
-import { SectionHeader } from "./SectionHeader.js";
 
 export interface CaptureGapsPanelProps {
   captureGaps: CaptureGaps;
@@ -14,19 +16,22 @@ export interface CaptureGapsPanelProps {
  * flags. No premium capture is required to *see* the gap (the gap
  * itself is "no premium capture"), but a non-zero value here is the
  * "set up cost capture" CTA trigger.
+ *
+ * Phase 4 DoD: the "View sessions" drill link is the page's contract
+ * drill — clicking it lands on the Sessions page with the global URL
+ * filter state preserved (architecture §11 / decision A1). Cypress
+ * smoke (`cypress/e2e/data-health.cy.ts`) asserts both the URL change
+ * and the destination render so a regression in the permalink
+ * serialization is caught.
  */
 export function CaptureGapsPanel({ captureGaps, totalSessions }: CaptureGapsPanelProps) {
   const captured = totalSessions - captureGaps.sessionsWithoutObserved;
   return (
-    <section
-      aria-labelledby="data-health-capture-gaps-title"
-      className="rounded-md border border-slate-200 bg-white p-4 dark:border-[#232B36] dark:bg-[#151A21]"
+    <Panel
+      title="Capture gaps"
+      right={<TierBadge level="exact">premium</TierBadge>}
+      description="Sessions that don't yet have cost-capture files (C or L)."
     >
-      <SectionHeader
-        title="Capture gaps"
-        right={<span className="text-xs text-slate-500 dark:text-[#8A95A3]">premium · 🟢</span>}
-        description="Sessions that don't yet have cost-capture files (C or L)."
-      />
       <div className="grid grid-cols-2 gap-4 pt-2">
         <div>
           <div className="text-xs text-slate-500 dark:text-[#8A95A3]">Captured</div>
@@ -42,7 +47,8 @@ export function CaptureGapsPanel({ captureGaps, totalSessions }: CaptureGapsPane
           <div
             className={`text-lg font-semibold ${
               captureGaps.sessionsWithoutObserved > 0
-                ? "text-amber-600 dark:text-amber-400"
+                ? // amber-700 (review A11Y-5)
+                  "text-amber-700 dark:text-amber-400"
                 : "text-slate-900 dark:text-[#E8EDF2]"
             }`}
           >
@@ -50,6 +56,15 @@ export function CaptureGapsPanel({ captureGaps, totalSessions }: CaptureGapsPane
           </div>
         </div>
       </div>
-    </section>
+      <div className="pt-3">
+        <Link
+          href="/sessions"
+          className="text-xs font-medium text-[#0E7A8C] underline-offset-2 hover:underline dark:text-[#4FC3D9]"
+          data-testid="data-health-drill-sessions"
+        >
+          View sessions →
+        </Link>
+      </div>
+    </Panel>
   );
 }

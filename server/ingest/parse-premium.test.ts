@@ -195,6 +195,46 @@ describe("parseCostSampleLines (C)", () => {
     expect(malformedCount).toBe(1);
     expect(samples).toHaveLength(0);
   });
+
+  // 🟢 #P4-14 §4 boundary-mismatches — `prompt_id` is preserved on the
+  // parsed sample so `reconcile-premium` can compare it to per-turn
+  // promptIds. Without this assertion, a regression that strips the
+  // field (e.g. a toStr→toOptionalStr typo) would silently break the
+  // mismatch counter without surfacing in this file's other tests.
+  it("preserves a non-empty prompt_id on the parsed sample", () => {
+    const { samples, malformedCount } = parseCostSampleLines([
+      turnIndexedSample({ prompt_id: "prompt-A" }),
+    ]);
+    expect(malformedCount).toBe(0);
+    expect(samples).toHaveLength(1);
+    expect(samples[0]?.promptId).toBe("prompt-A");
+  });
+
+  // 🟢 #P4-14 §4 — an empty `prompt_id` is omitted from the sample
+  // object (M7 hidden-class discipline) so the §4 mismatch counter
+  // doesn't conflate "no field" with "non-matching field". The
+  // attributeSamplesToCalls call site checks `sample.promptId` truthiness
+  // before incrementing, so an empty string would never count anyway,
+  // but omission keeps the on-the-wire shape honest.
+  it("omits an empty prompt_id from the parsed sample", () => {
+    const { samples, malformedCount } = parseCostSampleLines([
+      turnIndexedSample({ prompt_id: "" }),
+    ]);
+    expect(malformedCount).toBe(0);
+    expect(samples).toHaveLength(1);
+    expect(samples[0]?.promptId).toBeUndefined();
+  });
+
+  // 🟢 #P4-14 §4 — a non-string `prompt_id` is also omitted (toStr
+  // returns "" for non-strings, then the spread gate drops it).
+  it("treats a non-string prompt_id the same as an empty one", () => {
+    const { samples, malformedCount } = parseCostSampleLines([
+      turnIndexedSample({ prompt_id: 12345 }),
+    ]);
+    expect(malformedCount).toBe(0);
+    expect(samples).toHaveLength(1);
+    expect(samples[0]?.promptId).toBeUndefined();
+  });
 });
 
 describe("parseTurnBoundaryLines (B)", () => {

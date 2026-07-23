@@ -1,5 +1,6 @@
 import type { PricingCoverage as PricingCoverageType } from "../../../../shared/health-contract.js";
-import { SectionHeader } from "./SectionHeader.js";
+import { TierBadge } from "../../components/TierBadge.js";
+import { Panel } from "./Panel.js";
 
 export interface PricingCoverageTableProps {
   coverage: PricingCoverageType;
@@ -15,48 +16,45 @@ export function PricingCoverageTable({ coverage }: PricingCoverageTableProps) {
   const { modelsSeen, unpricedModels } = coverage;
   const unpriced = new Set(unpricedModels);
 
-  if (modelsSeen.length === 0) {
-    return (
-      <section
-        aria-labelledby="data-health-pricing-title"
-        className="rounded-md border border-slate-200 bg-white p-4 dark:border-[#232B36] dark:bg-[#151A21]"
-      >
-        <SectionHeader
-          title="Pricing coverage"
-          right={
-            <span className="text-xs text-slate-500 dark:text-[#8A95A3]">transcript tier · 🟢</span>
-          }
-          description="Models seen across the fleet vs the configured pricing table."
-        />
-        <p className="text-sm text-slate-500 dark:text-[#8A95A3]">
-          No models seen yet — the dashboard will populate this once transcripts arrive.
-        </p>
-      </section>
+  // Single `<section>` (review Q-007) with body that branches between
+  // empty + populated states — the chrome is shared, only the inner
+  // content differs.
+  const rightSlot =
+    modelsSeen.length === 0 ? (
+      <TierBadge level="exact">transcript tier</TierBadge>
+    ) : unpricedModels.length === 0 ? (
+      <TierBadge level="exact">all priced</TierBadge>
+    ) : (
+      // Unpriced models ⇒ their cost is an estimate rather than a hard
+      // price, so the tier badge flips to `estimated` (🟡) to match the
+      // page's machine-readable tier contract (architecture §4).
+      <TierBadge level="estimated">{`${unpricedModels.length} gap${
+        unpricedModels.length === 1 ? "" : "s"
+      }`}</TierBadge>
     );
-  }
 
-  return (
-    <section
-      aria-labelledby="data-health-pricing-title"
-      className="rounded-md border border-slate-200 bg-white p-4 dark:border-[#232B36] dark:bg-[#151A21]"
-    >
-      <SectionHeader
-        title="Pricing coverage"
-        right={
-          <span className="text-xs text-slate-500 dark:text-[#8A95A3]">
-            {unpricedModels.length === 0
-              ? "all priced · 🟢"
-              : `${unpricedModels.length} gap${unpricedModels.length === 1 ? "" : "s"} · action needed`}
-          </span>
-        }
-        description="Models seen across the fleet vs the configured pricing table."
-      />
-      <div className="max-h-64 overflow-y-auto pt-2">
+  const body =
+    modelsSeen.length === 0 ? (
+      <p className="pt-2 text-sm text-slate-500 dark:text-[#8A95A3]">
+        No models seen yet — the dashboard will populate this once transcripts arrive.
+      </p>
+    ) : (
+      <section
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: scrollable regions require focusable tabIndex per WAI-ARIA APG; the lint rule's category list doesn't include `region`, but the accessibility win is real for keyboard-only users
+        tabIndex={0}
+        aria-label="Pricing coverage table — scroll to see all rows"
+        className="max-h-64 overflow-y-auto pt-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#4FC3D9]/60"
+      >
         <table className="w-full text-sm">
+          <caption className="sr-only">Pricing status by model across the fleet.</caption>
           <thead>
             <tr className="border-b border-slate-200 text-left text-xs uppercase text-slate-500 dark:border-[#232B36] dark:text-[#8A95A3]">
-              <th className="py-1 pr-2 font-medium">Model</th>
-              <th className="py-1 pr-2 font-medium">Status</th>
+              <th scope="col" className="py-1 pr-2 font-medium">
+                Model
+              </th>
+              <th scope="col" className="py-1 pr-2 font-medium">
+                Status
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -70,7 +68,9 @@ export function PricingCoverageTable({ coverage }: PricingCoverageTableProps) {
                 </td>
                 <td className="py-1 pr-2">
                   {unpriced.has(model) ? (
-                    <span className="text-amber-600 dark:text-amber-400">unpriced</span>
+                    // amber-700 (#B45309) clears WCAG AA 4.5:1 on white;
+                    // the previous amber-600 was 3.19:1 (review A11Y-5).
+                    <span className="text-amber-700 dark:text-amber-400">unpriced</span>
                   ) : (
                     <span className="text-slate-500 dark:text-[#8A95A3]">priced</span>
                   )}
@@ -79,7 +79,16 @@ export function PricingCoverageTable({ coverage }: PricingCoverageTableProps) {
             ))}
           </tbody>
         </table>
-      </div>
-    </section>
+      </section>
+    );
+
+  return (
+    <Panel
+      title="Pricing coverage"
+      right={rightSlot}
+      description="Models seen across the fleet vs the configured pricing table."
+    >
+      {body}
+    </Panel>
   );
 }

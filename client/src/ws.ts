@@ -49,7 +49,31 @@ function defaultUrl(): string {
 }
 
 function defaultCreateSocket(url: string): WsLike {
-  return new WebSocket(url) as unknown as WsLike;
+  // Adapter object (review TS-4) — preferred over `new WebSocket(url)
+  // as unknown as WsLike`, which the type system can't verify. The
+  // browser `WebSocket` callbacks all receive `Event`s with extra
+  // properties the `WsLike` interface intentionally narrows to its
+  // minimum surface; the adapter forwards each event into the
+  // reassignable handler slots without forcing the consumer to know
+  // the browser's full event shape.
+  const native = new WebSocket(url);
+  const adapter: WsLike = {
+    onopen: null,
+    onclose: null,
+    onerror: null,
+    onmessage: null,
+    close: () => native.close(),
+  };
+  native.onopen = () => adapter.onopen?.();
+  native.onclose = () => adapter.onclose?.();
+  // The browser supplies a `CloseEvent` for `onclose` and a generic
+  // `Event` for `onerror`; consumers in this module only react to the
+  // *fact* that they fired, so we drop the event payload here.
+  native.onerror = () => adapter.onerror?.(undefined);
+  // `MessageEvent.data` is the only field the reconnect / parse path
+  // reads; pass the event through and consumers extract `event.data`.
+  native.onmessage = (event) => adapter.onmessage?.(event);
+  return adapter;
 }
 
 /**

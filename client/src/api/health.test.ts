@@ -23,7 +23,6 @@ const snapshot: HealthSnapshot = {
     sessionsWithComputedOnly: 0,
     costComputed: 0,
     costObserved: 0,
-    costLogTotal: undefined,
   },
   captureGaps: { sessionsWithoutObserved: 0 },
 };

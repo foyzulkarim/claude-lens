@@ -5,7 +5,7 @@ import { DedupPricingStats } from "./DedupPricingStats.js";
 import { ParseErrorsPanel } from "./ParseErrorsPanel.js";
 import { PricingCoverageTable } from "./PricingCoverageTable.js";
 import { ReconciliationPanel } from "./ReconciliationPanel.js";
-import { ScanCoveragePanel } from "./ScanCoverage.js";
+import { ScanCoveragePanel } from "./ScanCoveragePanel.js";
 import { useHealthQuery } from "./useHealthQuery.js";
 
 /**
@@ -32,16 +32,24 @@ export interface DataHealthProps {
 }
 
 export function DataHealth({ snapshot: injectedSnapshot }: DataHealthProps = {}) {
-  const query = useHealthQuery();
+  const query = useHealthQuery({ enabled: injectedSnapshot === undefined });
   const snapshot = injectedSnapshot ?? query.data ?? null;
   const isPending = injectedSnapshot ? false : query.isPending;
   const isError = injectedSnapshot ? false : query.isError;
+  // Live-region announcement for background refetches (review A11Y-6).
+  // The page renders against the last-known snapshot via `staleTime: 30s`,
+  // so a refetch never flashes the page empty — but screen-reader users
+  // have no other signal that the numbers just refreshed. We surface a
+  // concise "Data Health updated" via `aria-live="polite"` whenever a new
+  // snapshot arrives after the first one.
+  const isFetchingAfterFirst = query.isFetching && !!query.data && !injectedSnapshot;
 
   if (isError && !snapshot) {
     return (
       <div className="flex flex-col gap-4 p-6">
         <h1 className="text-xl font-semibold text-slate-900 dark:text-[#E8EDF2]">Data Health</h1>
-        <p className="text-sm text-rose-600 dark:text-rose-400">
+        {/* `role="alert"` (review A11Y-6) — error is announced immediately. */}
+        <p role="alert" className="text-sm text-rose-600 dark:text-rose-400">
           Failed to load the health snapshot: {query.error?.message ?? "unknown error"}
         </p>
       </div>
@@ -52,7 +60,11 @@ export function DataHealth({ snapshot: injectedSnapshot }: DataHealthProps = {})
     return (
       <div className="flex flex-col gap-4 p-6">
         <h1 className="text-xl font-semibold text-slate-900 dark:text-[#E8EDF2]">Data Health</h1>
-        <p className="text-sm text-slate-500 dark:text-[#8A95A3]">Loading…</p>
+        {/* `role="status"` + `aria-live="polite"` (review A11Y-6) — loading
+            is announced without interrupting the current announcement. */}
+        <p role="status" aria-live="polite" className="text-sm text-slate-500 dark:text-[#8A95A3]">
+          Loading…
+        </p>
       </div>
     );
   }
@@ -91,6 +103,13 @@ export function DataHealth({ snapshot: injectedSnapshot }: DataHealthProps = {})
         <CaptureGapsPanel captureGaps={snapshot.captureGaps} totalSessions={totalSessions} />
         <BoundaryMismatchesPanel />
       </div>
+
+      {/* Visually-hidden live region (review A11Y-6): announces background
+          refetches so screen-reader users know the dashboard refreshed
+          without having to manually re-read every section. */}
+      <p role="status" aria-live="polite" className="sr-only">
+        {isFetchingAfterFirst ? "Data Health updated." : ""}
+      </p>
     </div>
   );
 }

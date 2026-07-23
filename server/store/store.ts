@@ -526,7 +526,7 @@ export class Store {
    */
   getHealthSnapshot(options?: {
     scanRoots?: ScanRootConfig[];
-    pipelineStats?: () => PipelineStats;
+    pipelineStats?: (transcriptsParsed: number) => PipelineStats;
   }): HealthSnapshot {
     // --- (existing) premium file health (#P4-13) ---
     const files: PremiumFileHealth[] = [];
@@ -559,38 +559,55 @@ export class Store {
     let transcriptsParsed = 0;
 
     for (const [sessionId, state] of this.sessions) {
-      // Lazy recompute mirrors listSessions(): a dirty-but-not-yet-flushed
-      // session's `state.session` may be null; recompute populates it from
-      // current pricing + premium sidecars. Same caveat applies.
-      if (!state.session) this.recompute(sessionId);
-      const session = this.sessions.get(sessionId)?.session;
-      if (!session) continue;
-      transcriptsParsed++;
-      rawLines += state.rawLineCount;
-      distinctCalls += state.calls.length;
-      duplicates += state.duplicateCount;
-      malformedLines += state.malformedCount;
-      if (state.malformedCount > 0) {
-        const root = this.sessionRoot.get(sessionId);
-        const filePath = root ? `${root}/${sessionId}.jsonl` : `<unknown>/${sessionId}.jsonl`;
-        malformedByFile.set(filePath, (malformedByFile.get(filePath) ?? 0) + state.malformedCount);
-      }
-      for (const call of state.calls) {
-        if (call.model) modelsSeen.add(call.model);
-      }
-      costComputedTotal += session.costComputed;
-      if (session.costObserved !== undefined) {
-        costObservedTotal += session.costObserved;
-        sessionsWithObserved++;
-      }
-      if (state.sidecars.hasCostSamples) withCostSamples++;
-      if (state.sidecars.hasTurnBoundaries) withTurnBoundaries++;
-      if (
-        state.sidecars.hasCostSamples ||
-        state.sidecars.hasTurnBoundaries ||
-        state.sidecars.hasCostLog
-      ) {
-        sessionsWithSidecars++;
+      // Per-session try/catch (review EH-1 + X-2) — mirrors the
+      // `buildSearchSnapshot` precedent (below). A single corrupt
+      // session's `recompute()` throwing an `unreachable:` invariant
+      // must not blank the entire Data Health page; the architecture
+      // rule says `/api/health` "must never throw on partial data."
+      // The next `session-updated` for this session will re-attempt.
+      try {
+        // Lazy recompute mirrors listSessions(): a dirty-but-not-yet-flushed
+        // session's `state.session` may be null; recompute populates it
+        // from current pricing + premium sidecars. Same caveat applies.
+        if (!state.session) this.recompute(sessionId);
+        const session = this.sessions.get(sessionId)?.session;
+        if (!session) continue;
+        transcriptsParsed++;
+        rawLines += state.rawLineCount;
+        distinctCalls += state.calls.length;
+        duplicates += state.duplicateCount;
+        malformedLines += state.malformedCount;
+        if (state.malformedCount > 0) {
+          const root = this.sessionRoot.get(sessionId);
+          const filePath = root ? `${root}/${sessionId}.jsonl` : `<unknown>/${sessionId}.jsonl`;
+          malformedByFile.set(
+            filePath,
+            (malformedByFile.get(filePath) ?? 0) + state.malformedCount,
+          );
+        }
+        for (const call of state.calls) {
+          if (call.model) modelsSeen.add(call.model);
+        }
+        costComputedTotal += session.costComputed;
+        if (session.costObserved !== undefined) {
+          costObservedTotal += session.costObserved;
+          sessionsWithObserved++;
+        }
+        if (state.sidecars.hasCostSamples) withCostSamples++;
+        if (state.sidecars.hasTurnBoundaries) withTurnBoundaries++;
+        if (
+          state.sidecars.hasCostSamples ||
+          state.sidecars.hasTurnBoundaries ||
+          state.sidecars.hasCostLog
+        ) {
+          sessionsWithSidecars++;
+        }
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[health] skipping session ${sessionId} due to error:`,
+          err instanceof Error ? err.message : String(err),
+        );
       }
     }
 
@@ -604,11 +621,17 @@ export class Store {
       .map(([filePath, count]) => ({ filePath, count }));
 
     const modelsSeenSorted = [...modelsSeen].sort();
-    const unpricedModels = this.pricing
-      ? modelsSeenSorted.filter((m) => this.pricing && !(m in this.pricing))
+    // Bind `this.pricing` to a local before the ternary so the filter
+    // callback reads the local directly (review Q-003). The original
+    // shape `this.pricing ? … .filter((m) => this.pricing && …)` repeated
+    // the property read on every iteration and prevented TypeScript
+    // from narrowing `this.pricing` inside the closure.
+    const pricing = this.pricing;
+    const unpricedModels = pricing
+      ? modelsSeenSorted.filter((m) => !(m in pricing))
       : modelsSeenSorted.slice();
 
-    const stats = options?.pipelineStats?.();
+    const stats = options?.pipelineStats?.(transcriptsParsed);
     const transcriptsFound = stats?.transcriptsFound ?? transcriptsParsed;
     const transcriptsFailed =
       stats?.transcriptsFailed ?? Math.max(0, transcriptsFound - transcriptsParsed);
@@ -619,10 +642,6 @@ export class Store {
       sessionsWithComputedOnly: Math.max(0, totalSessions - sessionsWithObserved),
       costComputed: costComputedTotal,
       costObserved: costObservedTotal,
-      // L file is owned by the pipeline; the store has no visibility. The
-      // route will thread this in via a future hook; for now `undefined`
-      // — the page renders it as "no cost-log.jsonl observed."
-      costLogTotal: undefined,
     };
 
     return {

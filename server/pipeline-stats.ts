@@ -14,18 +14,9 @@ export interface PipelineStats {
    *  start. Includes files that have not yet produced a single parsed
    *  call (e.g. a freshly tailed file that is still warming up). */
   transcriptsFound: number;
-  /** Sessions whose transcript has been polled ≥ `TRANSCRIPT_FAILED_POLL_THRESHOLD`
-   *  times with `state.calls.length === 0`. The pipeline recomputes
-   *  this defensively each time the store's snapshot is requested. */
+  /** Registered transcripts with no parsed calls (`transcriptsFound -
+   *  transcriptsParsed`, floored at 0). The store threads its already-
+   *  computed `transcriptsParsed` count through the callback so this
+   *  doesn't require a second `listSessions()` sweep per `/api/health`. */
   transcriptsFailed: number;
 }
-
-/**
- * Threshold above which a session with zero accumulated calls is
- * considered a failed transcript rather than a not-yet-read one. The
- * poller's slow-re-glob interval is ~5s, so 5 polls ≈ 25s of "no
- * calls" — long enough to ignore cold-boot and short polling hiccups,
- * short enough to flag a genuinely broken transcript. Same value used
- * by the test fixture so the threshold has a single source of truth.
- */
-export const TRANSCRIPT_FAILED_POLL_THRESHOLD = 5;
