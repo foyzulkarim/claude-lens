@@ -36,6 +36,8 @@ function batch(calls: ApiCall[]): ParseTranscriptResult {
     prompts: [],
     toolResultBytes: [],
     compactions: [],
+    rawLines: 0,
+    skippedLines: 0,
     duplicateCount: 0,
     malformedCount: 0,
   };
@@ -217,6 +219,8 @@ describe("Store — listTurns", () => {
       prompts: [prompt1],
       toolResultBytes: [],
       compactions: [],
+      rawLines: 0,
+      skippedLines: 0,
       duplicateCount: 0,
       malformedCount: 0,
     });
@@ -225,6 +229,8 @@ describe("Store — listTurns", () => {
       prompts: [prompt2],
       toolResultBytes: [],
       compactions: [],
+      rawLines: 0,
+      skippedLines: 0,
       duplicateCount: 0,
       malformedCount: 0,
     });
@@ -283,6 +289,8 @@ describe("Store — recompute threading", () => {
       prompts: [prompt1],
       toolResultBytes: [],
       compactions: [],
+      rawLines: 0,
+      skippedLines: 0,
       duplicateCount: 0,
       malformedCount: 0,
     });
@@ -325,6 +333,8 @@ describe("Store — getSessionSnapshot (#P4-5 T2)", () => {
       prompts: [prompt],
       toolResultBytes: [toolResult],
       compactions: [compaction],
+      rawLines: 0,
+      skippedLines: 0,
       duplicateCount: 0,
       malformedCount: 0,
     });
@@ -371,6 +381,8 @@ describe("Store — getSessionSnapshot (#P4-5 T2)", () => {
       prompts: [],
       toolResultBytes: [],
       compactions: [{ sessionId: "s1" }],
+      rawLines: 0,
+      skippedLines: 0,
       duplicateCount: 0,
       malformedCount: 0,
     });
@@ -383,6 +395,8 @@ describe("Store — getSessionSnapshot (#P4-5 T2)", () => {
       prompts: [],
       toolResultBytes: [],
       compactions: [],
+      rawLines: 0,
+      skippedLines: 0,
       duplicateCount: 0,
       malformedCount: 0,
     });
@@ -437,6 +451,8 @@ describe("Store — getSessionSnapshot (#P4-5 T2)", () => {
       ],
       toolResultBytes: [],
       compactions: [],
+      rawLines: 0,
+      skippedLines: 0,
       duplicateCount: 0,
       malformedCount: 0,
     });
@@ -459,6 +475,8 @@ describe("Store — session-prompts-changed emit (#P4-3, ARCH A2/A8)", () => {
       prompts: [{ sessionId, promptId, text, timestamp: "2026-07-13T00:00:00.000Z" }],
       toolResultBytes: [],
       compactions: [],
+      rawLines: 0,
+      skippedLines: 0,
       duplicateCount: 0,
       malformedCount: 0,
     };
@@ -485,6 +503,8 @@ describe("Store — session-prompts-changed emit (#P4-3, ARCH A2/A8)", () => {
       prompts: [],
       toolResultBytes: [],
       compactions: [],
+      rawLines: 0,
+      skippedLines: 0,
       duplicateCount: 0,
       malformedCount: 0,
     });
@@ -523,6 +543,8 @@ describe("Store — buildSearchSnapshot per-session error handling (#P4-3)", () 
       ],
       toolResultBytes: [],
       compactions: [],
+      rawLines: 0,
+      skippedLines: 0,
       duplicateCount: 0,
       malformedCount: 0,
     });
@@ -538,6 +560,8 @@ describe("Store — buildSearchSnapshot per-session error handling (#P4-3)", () 
       ],
       toolResultBytes: [],
       compactions: [],
+      rawLines: 0,
+      skippedLines: 0,
       duplicateCount: 0,
       malformedCount: 0,
     });
@@ -554,6 +578,8 @@ describe("Store — buildSearchSnapshot per-session error handling (#P4-3)", () 
       ],
       toolResultBytes: [],
       compactions: [],
+      rawLines: 0,
+      skippedLines: 0,
       duplicateCount: 0,
       malformedCount: 0,
     });
@@ -676,6 +702,8 @@ describe("Store — premium sidecars (#P4-13)", () => {
       ],
       toolResultBytes: [],
       compactions: [],
+      rawLines: 0,
+      skippedLines: 0,
       duplicateCount: 0,
       malformedCount: 0,
     });
@@ -829,5 +857,67 @@ describe("Store — premium sidecars (#P4-13)", () => {
     expect(invalidations.filter((m) => m.type === "session-added")).toEqual([]);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("invalid sessionId length"));
     warn.mockRestore();
+  });
+});
+
+// 🟢 #P4-14 TC-1 — Data Health transcript-tier health counters
+// (rawLines / duplicateCount / malformedCount). The previous fixture
+// updates only asserted `0`, so a regression that silently dropped
+// or double-counted these fields would still pass. These tests pin
+// the additive accumulation + resetSession zero-out contract on
+// every batch.
+describe("Store health counters (#P4-14 TC-1)", () => {
+  it("accumulates rawLines / duplicateCount / malformedCount across batches", () => {
+    const { store } = makeStore();
+    store.applyRecords("s1", {
+      ...batch([call()]),
+      rawLines: 5,
+      duplicateCount: 1,
+      malformedCount: 0,
+    });
+    store.applyRecords("s1", {
+      ...batch([call()]),
+      rawLines: 3,
+      duplicateCount: 0,
+      malformedCount: 2,
+    });
+
+    const snap = store.getHealthSnapshot();
+    expect(snap.dedup.rawLines).toBe(8);
+    expect(snap.dedup.duplicates).toBe(1);
+    expect(snap.parseErrors.malformedLines).toBe(2);
+  });
+
+  it("reports per-file malformed counts in the top-N byFile list", () => {
+    const { store } = makeStore();
+    // Two sessions under different roots → two distinct file paths in byFile.
+    store.applyRecords("s-a", { ...batch([call()]), malformedCount: 3 }, "/root-A");
+    store.applyRecords("s-b", { ...batch([call()]), malformedCount: 7 }, "/root-B");
+
+    const snap = store.getHealthSnapshot();
+    expect(snap.parseErrors.malformedLines).toBe(10);
+    expect(snap.parseErrors.byFile).toEqual([
+      { filePath: "/root-B/s-b.jsonl", count: 7 },
+      { filePath: "/root-A/s-a.jsonl", count: 3 },
+    ]);
+  });
+
+  it("resetSession zeroes rawLines / duplicateCount / malformedCount but keeps premium sidecars", () => {
+    const { store } = makeStore();
+    store.applyRecords("s1", {
+      ...batch([call()]),
+      rawLines: 4,
+      duplicateCount: 1,
+      malformedCount: 2,
+    });
+    // Sanity: counters visible before reset.
+    expect(store.getHealthSnapshot().dedup.rawLines).toBe(4);
+
+    store.resetSession("s1");
+
+    const snap = store.getHealthSnapshot();
+    expect(snap.dedup.rawLines).toBe(0);
+    expect(snap.dedup.duplicates).toBe(0);
+    expect(snap.parseErrors.malformedLines).toBe(0);
   });
 });

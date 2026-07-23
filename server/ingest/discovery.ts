@@ -1,6 +1,6 @@
 import { stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import fg from "fast-glob";
 
 export type FileClass =
@@ -34,6 +34,13 @@ const COST_LOG_NAME = "cost-log.jsonl";
 const TURN_BOUNDARIES_SUFFIX = ".turn-boundaries.jsonl";
 const COST_SUFFIX = ".cost.jsonl";
 const TRANSCRIPT_SUFFIX = ".jsonl";
+
+// Once-gated set for fast-glob failure warnings (review EH-3). Bounded
+// by the number of scan roots the user has configured since server
+// start — never grows unboundedly. A flapping root surfaces one
+// warning across the process lifetime instead of spamming the log on
+// every poll cycle.
+const warnedDiscoverFailure = new Set<string>();
 
 export function classifyFilename(name: string): FileClass {
   if (name === COST_LOG_NAME) {
@@ -81,7 +88,21 @@ export async function discover(config: ScanConfig): Promise<DiscoveredFile[]> {
     let matches: string[];
     try {
       matches = await fg("**/*.jsonl", { cwd: root.path, absolute: true, onlyFiles: true });
-    } catch {
+    } catch (err) {
+      // Review EH-3: previously swallowed silently — a misconfigured
+      // --roots entry, a permissions denial, or a stale path was
+      // invisible to operators. Warn once per root (the
+      // `warnedDiscoverFailure` Set matches the same once-gate
+      // pattern warm-cache.ts uses for save failures) so a flapping
+      // root doesn't spam logs on every poll cycle.
+      if (!warnedDiscoverFailure.has(root.path)) {
+        warnedDiscoverFailure.add(root.path);
+        console.warn("[discover] fast-glob failed for root", {
+          // Security #4 — basename only, never the absolute path.
+          root: basename(root.path),
+          code: (err as NodeJS.ErrnoException | undefined)?.code ?? "UNKNOWN",
+        });
+      }
       continue;
     }
 

@@ -43,6 +43,26 @@ export interface PremiumRollup {
   /** Σ observed lines added/removed for the session. */
   linesAdded?: number;
   linesRemoved?: number;
+  /**
+   * #P4-14: count of C samples whose `promptId` does not match any
+   * turn's `promptId` in this session (#P4-14 §4 boundary-mismatches
+   * panel). A sample is checked only when both the sample and at
+   * least one turn carry a non-empty `promptId`; samples missing
+   * `promptId` are skipped, not counted as a mismatch, so a statusline
+   * that doesn't emit the field never inflates this counter. Computed
+   * alongside the per-call attribution pass in
+   * `attributeSamplesToCalls`.
+   */
+  promptIdMismatchCount?: number;
+  /**
+   * #P4-14: count of C samples whose timestamp falls outside every
+   * turn's `[startedAt, endedAt]` range. Mirrors the promptId-mismatch
+   * check's "missing field is skipped, not counted" discipline — a
+   * sample with an unparseable timestamp is neither matched nor
+   * counted. Surfaced on the Data Health page §4 as "X samples sat
+   * outside any turn."
+   */
+  unbucketedTailCount?: number;
 }
 
 export interface ReconcileInput {
@@ -101,9 +121,13 @@ export function reconcilePremium(
   }
 
   // --- (A1, A2) Per-call attribution (C only) ----------------------------
-  const accByCall = hasC
-    ? attributeSamplesToCalls(calls, input.costSamples)
-    : new Map<ApiCall, CallAccumulator>();
+  const { accByCall, promptIdMismatchCount, unbucketedTailCount } = hasC
+    ? attributeSamplesToCalls(calls, input.costSamples, turns)
+    : {
+        accByCall: new Map<ApiCall, CallAccumulator>(),
+        promptIdMismatchCount: 0,
+        unbucketedTailCount: 0,
+      };
 
   // --- (A6) Annotated call copies + identity-keyed map -------------------
   const { annotatedCalls, annotatedByOriginal } = annotateCalls(calls, accByCall);
@@ -119,6 +143,15 @@ export function reconcilePremium(
 
   // --- (A4, A7) Session rollup (attribution-invariant) -------------------
   const session = rollupSession(input.costSamples, input.costLogRow, hasC, hasL);
+  if (hasC) {
+    // #P4-14: surface the §4 boundary-mismatch counts only when C is
+    // present (otherwise the counters stay undefined and the page
+    // renders the §4 sub-card as "no premium capture observed"). The
+    // counts are computed during `attributeSamplesToCalls` so the
+    // attribution pass and the §4 signal share a single walk.
+    session.promptIdMismatchCount = promptIdMismatchCount;
+    session.unbucketedTailCount = unbucketedTailCount;
+  }
 
   return { calls: annotatedCalls, turns: annotatedTurns, session };
 }
@@ -127,39 +160,85 @@ export function reconcilePremium(
  * (A1, A2) Attribute parsed C samples to their owning ApiCall by timestamp,
  * accumulating per-call observed fields. Returns a Map keyed by ApiCall
  * identity; entries absent for calls with no attributed samples.
+ *
+ * #P4-14: also walks the same sample list once to compute the
+ * promptId-mismatch and unbucketed-tail counts surfaced on the Data
+ * Health page §4. Both checks are O(samples) over a pre-built index
+ * of turn promptIds / turn time ranges, so the total cost stays
+ * O(samples + turns) instead of O(samples × turns).
  */
 function attributeSamplesToCalls(
   calls: ApiCall[],
   samples: CostSample[],
-): Map<ApiCall, CallAccumulator> {
-  // ms-sorts with discriminator tie-break so attribution is deterministic
-  // when two calls share a timestamp (review M5; Array.sort is stable in V8
-  // but not spec-mandated).
-  const sortedCalls = [...calls].sort((a, b) => {
-    const am = Date.parse(a.timestamp);
-    const bm = Date.parse(b.timestamp);
-    return am !== bm ? am - bm : a.uuid.localeCompare(b.uuid);
-  });
-  const sortedSamples = [...samples].sort((a, b) => {
-    const am = Date.parse(a.timestamp);
-    const bm = Date.parse(b.timestamp);
-    return am !== bm
-      ? am - bm
-      : (a.timestamp + a.sessionId).localeCompare(b.timestamp + b.sessionId);
-  });
+  turns: Turn[],
+): {
+  accByCall: Map<ApiCall, CallAccumulator>;
+  promptIdMismatchCount: number;
+  unbucketedTailCount: number;
+} {
+  // Pre-parse timestamps once (review P-004) instead of re-parsing on
+  // every comparator call. For K=10k samples, Array.sort invokes the
+  // comparator ~K·log₂K = 130k times — naive `Date.parse` in the
+  // comparator means ~260k parses per sort (twice for the tie-break
+  // path). Pre-parsing once into a `{ms, original, key}` tuple trades
+  // K upfront parses for ~K·log₂K saved inside the sort.
+  const callsWithMs = calls.map((c) => ({ call: c, ms: parseMs(c.timestamp) }));
+  const sortedCalls = [...callsWithMs].sort((a, b) =>
+    a.ms !== b.ms ? a.ms - b.ms : a.call.uuid.localeCompare(b.call.uuid),
+  );
+  const samplesWithMs = samples.map((s) => ({
+    sample: s,
+    ms: parseMs(s.timestamp),
+    key: s.timestamp + s.sessionId,
+  }));
+  const sortedSamples = [...samplesWithMs].sort((a, b) =>
+    a.ms !== b.ms ? a.ms - b.ms : a.key.localeCompare(b.key),
+  );
+
+  // §4 indexes — built once, reused per sample. A turn with a non-empty
+  // promptId contributes to `turnPromptIds`; a turn with parseable
+  // `startedAt`/`endedAt` contributes to `turnRanges`. Turns missing
+  // either field are skipped from the corresponding check (matching
+  // the "missing field is skipped, not counted" discipline on the
+  // sample side).
+  const turnPromptIds = new Set<string>();
+  const turnRanges: { startMs: number; endMs: number }[] = [];
+  for (const t of turns) {
+    if (t.promptId) turnPromptIds.add(t.promptId);
+    const startMs = parseMs(t.startedAt);
+    const endMs = parseMs(t.endedAt);
+    if (Number.isFinite(startMs) && Number.isFinite(endMs)) {
+      turnRanges.push({ startMs, endMs });
+    }
+  }
+  // Sort by startMs once for the unbucketed-tail sweep below. Without
+  // this the sweep would need to compare every range against every
+  // sample (review P-002) — O(samples × turns). With the sweep + a
+  // max-endMs active set, the bound is O((samples + turns) · active)
+  // where `active` is the typical concurrency of overlapping ranges,
+  // usually 1 for non-overlapping turn timelines.
+  turnRanges.sort((a, b) => a.startMs - b.startMs);
+  const activeEndMs: number[] = []; // sorted descending; front is current max
+  let rangeIdx = 0;
 
   const accByCall = new Map<ApiCall, CallAccumulator>();
   let callIdx = -1;
-  for (const sample of sortedSamples) {
+  let promptIdMismatchCount = 0;
+  let unbucketedTailCount = 0;
+
+  for (const sampleEntry of sortedSamples) {
+    const sample = sampleEntry.sample;
+    const sampleMs = sampleEntry.ms;
+
     // Advance to the last call whose timestamp is <= this sample's.
     while (
       callIdx + 1 < sortedCalls.length &&
-      (sortedCalls[callIdx + 1]?.timestamp ?? "") <= sample.timestamp
+      (sortedCalls[callIdx + 1]?.ms ?? Number.NEGATIVE_INFINITY) <= sampleMs
     ) {
       callIdx++;
     }
     // Fallback: a sample earlier than every call attaches to the first call.
-    const target = callIdx >= 0 ? sortedCalls[callIdx] : sortedCalls[0];
+    const target = callIdx >= 0 ? sortedCalls[callIdx]?.call : sortedCalls[0]?.call;
     if (!target) continue; // no calls at all — session rollup still counts it below
     let acc = accByCall.get(target);
     if (!acc) {
@@ -178,15 +257,59 @@ function attributeSamplesToCalls(
     acc.apiMs = Math.max(acc.apiMs, sample.apiDurationMs);
     acc.linesAdded += sample.linesAdded;
     acc.linesRemoved += sample.linesRemoved;
-    const sampleMs = parseMs(sample.timestamp);
     // LAST context_pct wins; NaN-timestamp samples never displace a dated one.
     if (Number.isFinite(sampleMs) ? sampleMs >= acc.latestPctAt : !acc.hasPct) {
       acc.latestPctAt = Number.isFinite(sampleMs) ? sampleMs : acc.latestPctAt;
       acc.contextPct = sample.contextPct;
       acc.hasPct = true;
     }
+
+    // §4 — promptId mismatch: only count when the sample carries a
+    // non-empty `promptId` AND at least one turn does. Otherwise the
+    // signal is undefined and the counter stays quiet.
+    if (sample.promptId && turnPromptIds.size > 0 && !turnPromptIds.has(sample.promptId)) {
+      promptIdMismatchCount++;
+    }
+    // §4 — unbucketed tail (review P-002): swept interval-stab algorithm
+    // over the pre-sorted `turnRanges` + a max-endMs active set. With
+    // `rangeIdx` advancing monotonically as samples come in (samples are
+    // time-sorted), every range is inserted into / evicted from the
+    // active set at most once, so the inner cost is O(active) per sample
+    // instead of O(turns). For real sessions where overlapping turn
+    // ranges are rare (main-chain + a side-agent at most), `active`
+    // stays ≤ 2 — much better than the previous O(samples × turns)
+    // bound that broke down on marathon sessions with 10k+ samples.
+    if (Number.isFinite(sampleMs) && turnRanges.length > 0) {
+      // Activate every range whose startMs ≤ sampleMs.
+      while (rangeIdx < turnRanges.length) {
+        const range = turnRanges[rangeIdx];
+        if (range === undefined || range.startMs > sampleMs) break;
+        // Insert range.endMs into the descending-sorted active set.
+        let i = 0;
+        while (i < activeEndMs.length) {
+          const top = activeEndMs[i];
+          if (top === undefined || top <= range.endMs) break;
+          i++;
+        }
+        activeEndMs.splice(i, 0, range.endMs);
+        rangeIdx++;
+      }
+      // Evict ranges that closed before this sample (endMs < sampleMs).
+      while (activeEndMs.length > 0) {
+        const top = activeEndMs[0];
+        if (top === undefined || top >= sampleMs) break;
+        activeEndMs.shift();
+      }
+      // A range covers this sample iff any active endMs ≥ sampleMs.
+      // The front of the descending-sorted array IS the max, so this is
+      // O(1) — exactly the algorithm's win.
+      if (activeEndMs.length === 0) {
+        unbucketedTailCount++;
+      }
+    }
   }
-  return accByCall;
+
+  return { accByCall, promptIdMismatchCount, unbucketedTailCount };
 }
 
 /**

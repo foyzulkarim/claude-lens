@@ -33,6 +33,14 @@ export interface RuntimeMetadata {
    * so `deriveSession`'s `contextPctEstimated` works in production.
    */
   contextResolver: ContextResolver;
+  /**
+   * Active scan roots (#P4-14, Data Health §2). Surfaced on the page
+   * so the user can see which directories are being polled; defaults
+   * to `[]` when not configured (the page then renders a CTA to
+   * open Settings). Mirrors how `pricing` is threaded — single
+   * source of truth per process, never duplicated per consumer.
+   */
+  scanRoots?: ScanRootConfig[];
 }
 
 /**

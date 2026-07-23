@@ -155,7 +155,9 @@ describe("Store.getHealthSnapshot (review E1 — Data Health surfacing of malfor
       filePath: "/home/user/.claude/projects/-Users-demo/abc.cost.jsonl",
     });
     const first = store.getHealthSnapshot();
-    first.files[0]!.malformedCount = 999;
+    const firstFile = first.files[0];
+    if (!firstFile) throw new Error("expected a health file entry");
+    firstFile.malformedCount = 999;
     first.totalMalformedLines = 999;
     const second = store.getHealthSnapshot();
     expect(second.files[0]?.malformedCount).toBe(1);

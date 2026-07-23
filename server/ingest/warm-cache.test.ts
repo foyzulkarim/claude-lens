@@ -51,6 +51,8 @@ function sampleEntry(overrides: Partial<WarmCacheEntry> = {}): WarmCacheEntry {
       { sessionId: "s1", promptId: "p1", toolUseId: "t1", bytes: 42, isError: false },
     ],
     compactions: [],
+    rawLines: 0,
+    skippedLines: 0,
     duplicateCount: 0,
     malformedCount: 0,
     ...overrides,

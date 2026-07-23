@@ -54,6 +54,16 @@ export const qk = {
     ["turn-inspector", "transcript", sessionId, turnNumber] as const,
 
   /**
+   * `GET /api/health` key (#P4-14). Bare literal-array key (no params)
+   * since the route has no query shape — every mounted Data Health read
+   * shares this one cache entry, invalidated wholesale after a session
+   * append, a new session, or a scan update. The `health` prefix is its
+   * own segment (not under `metrics`) so a metrics-shape change can't
+   * accidentally invalidate this read.
+   */
+  health: () => ["health"] as const,
+
+  /**
    * Cache Lab key. Lives under the existing `metrics` prefix on purpose
    * (ARCH §A9 / decision A9): the existing WebSocket invalidation bus
    * already targets `qk.prefixes.metrics`, so Cache Lab refreshes on
@@ -130,5 +140,11 @@ export const qk = {
      * user click (see `qk.turnTranscript` rationale above).
      */
     turnInspectorForSession: (sessionId: string) => ["turn-inspector", sessionId] as const,
+    /** Matches every mounted Data Health query (#P4-14). The WS handler
+     *  emits a `health` invalidation on every `session-updated` /
+     *  `session-added` so the page stays fresh during a live transcript
+     *  append (which changes dedup/malformed counters). `scan-updated`'s
+     *  `all` action already covers it via the same handler. */
+    health: ["health"] as const,
   },
 };

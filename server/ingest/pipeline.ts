@@ -1,6 +1,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { basename } from "node:path";
 import type { WsServerMessage } from "../../shared/ws-protocol.js";
+import type { PipelineStats } from "../pipeline-stats.js";
 import type { RuntimeMetadata } from "../runtime.js";
 import { Store } from "../store/store.js";
 import type { ScanConfig } from "./discovery.js";
@@ -28,6 +29,14 @@ import type { WarmCache } from "./warm-cache.js";
 const PREMIUM_FILE_SIZE_CAP_BYTES_CB = 5 * 1024 * 1024;
 const PREMIUM_FILE_SIZE_CAP_BYTES_L = 50 * 1024 * 1024;
 
+// Once-gated set for readPremiumFile failure warnings (review EH-2).
+// Bounded by the number of distinct premium files the poller has ever
+// seen since server start — never grows unboundedly. A persistently
+// broken C/B/L file surfaces one warning across the process lifetime
+// instead of spamming the log on every poll cycle. Mirrors the
+// `warnedOnSaveFailure` pattern in warm-cache.ts.
+const warnedPremiumReadFailure = new Set<string>();
+
 export interface IngestPipelineOptions {
   onInvalidate(message: WsServerMessage): void;
   warmCache?: WarmCache;
@@ -50,6 +59,16 @@ export interface IngestPipeline {
   /** Resolves once the initial discovery pass and every file's initial tail read have drained — a deterministic cold-boot barrier for benchmarking (#P2-7) and tests. */
   whenSettled(): Promise<void>;
   stop(): void;
+  /**
+   * Pipeline-level counters surfaced on the Data Health page (#P4-14).
+   * The store reads them via the `pipelineStats` callback so its
+   * `getHealthSnapshot` stays decoupled from the pipeline class.
+   * `transcriptsFound` is the count of distinct transcript files the
+   * poller has registered; `transcriptsFailed` is derived from the store's
+   * already-computed `transcriptsParsed` count (passed in by the caller),
+   * avoiding a second `listSessions()` sweep per `/api/health` request.
+   */
+  getStats(transcriptsParsed: number): PipelineStats;
 }
 
 export function startIngest(config: ScanConfig, options: IngestPipelineOptions): IngestPipeline {
@@ -70,6 +89,26 @@ export function startIngest(config: ScanConfig, options: IngestPipelineOptions):
   function track(promise: Promise<unknown>): void {
     inFlight.add(promise);
     promise.finally(() => inFlight.delete(promise));
+  }
+
+  // #P4-14: count distinct transcript files the poller has registered
+  // since server start. The store's `getHealthSnapshot` derives
+  // `transcriptsFailed` from this (found - parsed) on every read, so
+  // the pipeline only needs to maintain the "found" side. Sidecar
+  // files (C/B/L) are excluded — the Data Health page surfaces
+  // malformed-line counts for those via the existing
+  // `premiumFileHealth` map on the store, not via this counter.
+  const discoveredTranscriptPaths = new Set<string>();
+  // Receives the store's already-computed `transcriptsParsed` count so
+  // `transcriptsFailed` can be derived without a second `listSessions()`
+  // sweep per `/api/health` (review P-001 — both the pipeline and the
+  // store used to walk every session with `callCount > 0` per request).
+  function getStats(transcriptsParsed: number): PipelineStats {
+    const transcriptsFound = discoveredTranscriptPaths.size;
+    return {
+      transcriptsFound,
+      transcriptsFailed: Math.max(0, transcriptsFound - transcriptsParsed),
+    };
   }
 
   const tailer = new Tailer(
@@ -106,7 +145,19 @@ export function startIngest(config: ScanConfig, options: IngestPipelineOptions):
     try {
       const stats = await stat(file.path);
       size = stats.size;
-    } catch {
+    } catch (err) {
+      // Review EH-2: previously silent — a broken symlink, perm
+      // denial, or path replaced by a directory left no log line.
+      // Now warn once per file (basename + errno only — never the
+      // absolute path, security #4) so a flapping file doesn't spam
+      // logs on every poll cycle.
+      if (!warnedPremiumReadFailure.has(file.path)) {
+        warnedPremiumReadFailure.add(file.path);
+        console.warn("[ingest] premium stat failed", {
+          path: basename(file.path),
+          code: (err as NodeJS.ErrnoException | undefined)?.code ?? "UNKNOWN",
+        });
+      }
       return;
     }
     if (size > cap) {
@@ -120,7 +171,17 @@ export function startIngest(config: ScanConfig, options: IngestPipelineOptions):
     let content: string;
     try {
       content = await readFile(file.path, "utf8");
-    } catch {
+    } catch (err) {
+      // Review EH-2: same once-gate as the stat branch — a read
+      // failure on a previously-good file is the most common
+      // "operator has no idea why the page is stale" complaint.
+      if (!warnedPremiumReadFailure.has(file.path)) {
+        warnedPremiumReadFailure.add(file.path);
+        console.warn("[ingest] premium read failed", {
+          path: basename(file.path),
+          code: (err as NodeJS.ErrnoException | undefined)?.code ?? "UNKNOWN",
+        });
+      }
       return;
     }
     const lines = content.split("\n");
@@ -158,15 +219,15 @@ export function startIngest(config: ScanConfig, options: IngestPipelineOptions):
 
   // Defensive .catch so `track()`'s "never rejects" precondition holds even if
   // a store apply method throws unexpectedly (readPremiumFile already swallows
-  // read errors, but the store call is outside that try). The error log
-  // intentionally redacts the absolute path (security #4) — only the
-  // basename + errno code are surfaced so a shared-log reader can't harvest
-  // a user's home directory layout.
+  // read errors via the once-gated warnings above, but the store call is
+  // outside that try). The error log intentionally redacts the absolute path
+  // (security #4) — only the basename + errno code are surfaced so a
+  // shared-log reader can't harvest a user's home directory layout.
   function trackPremium(file: RegisteredFile): void {
     track(
       readPremiumFile(file).catch((err) => {
         const code = (err as NodeJS.ErrnoException | undefined)?.code ?? "UNKNOWN";
-        console.error("[ingest] premium read failed", {
+        console.error("[ingest] premium apply failed", {
           code,
           path: basename(file.path),
         });
@@ -177,6 +238,11 @@ export function startIngest(config: ScanConfig, options: IngestPipelineOptions):
   const poller = new Poller(config, {
     onFileAdded(file) {
       if (file.class === "transcript") {
+        // #P4-14: track distinct transcript files the poller has
+        // registered since server start. The Set ignores duplicates
+        // so a re-registration after a removal+rediscovery is
+        // idempotent (see onFileRemoved for the matching delete).
+        discoveredTranscriptPaths.add(file.path);
         if (file.sessionId) store.setTranscriptPath(file.sessionId, file.path);
         track(tailer.onFileAdded(file));
         return;
@@ -196,6 +262,11 @@ export function startIngest(config: ScanConfig, options: IngestPipelineOptions):
     },
     onFileRemoved(file) {
       if (file.class === "transcript") {
+        // #P4-14: drop the file from the discovered set so
+        // `transcriptsFound` doesn't overcount after a re-discovery.
+        // tailer.onFileRemoved also resets the session's transcript
+        // counters (calls/duplicates/malformed) via store.resetSession.
+        discoveredTranscriptPaths.delete(file.path);
         tailer.onFileRemoved(file);
       }
       // A removed premium file leaves the session's last observed values in
@@ -247,5 +318,6 @@ export function startIngest(config: ScanConfig, options: IngestPipelineOptions):
       poller.stop();
       store.stop();
     },
+    getStats,
   };
 }

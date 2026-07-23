@@ -201,7 +201,7 @@ Pages are cheap by design: filter state + preset `MetricsQuery`s + layout. The H
 - [x] **#P4-13 — Premium tier: C/B/L parsers + upgrades** *(closed 2026-07-21 via PR #109; checkbox was still `[ ]` — drift fixed, see decisions log)*
   `parse-premium.ts`; per-session tier detection wiring through to `TierFlags`; every 🟡 upgrade path lights up: observed $, intra-day resolution, true ctx %, waterfall widths from `api_duration_ms`, Δlines/api-vs-wall columns, latency/throughput on Models, context growth curves on Cache Lab; drift badge on Session Detail.
   *Acceptance:* verified upgrade-by-upgrade, not as one blob — run the Cypress harness twice (T-only fixture set, then T+C/B/L) and confirm each listed 🟡 upgrade flips: value changes where expected, tier badge updates, transcript-only sessions unaffected. Tier-upgrade component states (🟡 columns lighting up, drift badge) additionally covered by Storybook stories — these are hard to reproduce on demand with real data.
-- [ ] **#P4-14 — Data Health page + `/api/health`** *(§9)*
+- [x] **#P4-14 — Data Health page + `/api/health`** *(§9)*
   Dedup stats, pricing coverage, scan coverage, parse errors; reconciliation and boundary/capture-gap sections (🔴, needs #P4-13).
   *Acceptance:* matches `data-health.html`; malformed-line counters from #P2-2 surface here.
 - [x] **#P4-15 — Settings page + config/local-store** *(§10)*
