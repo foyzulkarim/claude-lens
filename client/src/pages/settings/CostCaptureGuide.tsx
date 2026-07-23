@@ -1,12 +1,97 @@
 import { useQuery } from "@tanstack/react-query";
+import type { ReactNode } from "react";
+import { fetchCaptureAssets } from "../../api/captureAssets.js";
 import { qk } from "../../api/queryKeys.js";
 import { listSessions } from "../../api/sessions.js";
 
-const STEPS = [
-  { badge: "1", text: "Copy cost-logger.js + turn-logger.js to ~/.claude/scripts" },
-  { badge: "2", text: "Add statusline wrapper + Stop hook to settings.json" },
-  { badge: "3", text: "Run one session → verify below" },
-];
+interface Step {
+  badge: string;
+  content: ReactNode;
+}
+
+/**
+ * Setup steps driven by the resolved `capture/` directory
+ * (ARCH-producer-cost-capture-tier §API Contracts, R4). Four states:
+ * resolving, transport error (server unreachable — distinct from the server
+ * resolving and reporting "not found"), resolved (real runnable command + a
+ * delegate-to-Claude-Code prompt, R8), and unresolved (manual fallback, S7) —
+ * a dev server started outside a build, or an install stripped of
+ * `dist/capture`.
+ */
+function buildSteps(
+  captureDir: string | null | undefined,
+  isPending: boolean,
+  isError: boolean,
+  errorMessage: string | undefined,
+): Step[] {
+  if (isPending) {
+    return [
+      { badge: "1", content: "Resolving capture assets…" },
+      { badge: "2", content: "Run one session → verify below" },
+    ];
+  }
+  if (isError) {
+    return [
+      {
+        badge: "1",
+        content: (
+          <span className="text-[#B23A3A] dark:text-[#E05252]">
+            Couldn't reach the server to resolve capture assets
+            {errorMessage ? `: ${errorMessage}` : "."}
+          </span>
+        ),
+      },
+      { badge: "2", content: "Run one session → verify below" },
+    ];
+  }
+  if (captureDir) {
+    const installCmd = `bash ${captureDir}/install.sh`;
+    return [
+      {
+        badge: "1",
+        content: (
+          <>
+            Run{" "}
+            <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[11px] dark:bg-[#232B36]">
+              {installCmd}
+            </code>{" "}
+            in a terminal on this machine.
+          </>
+        ),
+      },
+      {
+        badge: "2",
+        content: (
+          <>
+            Or paste this into a Claude Code session on this machine:{" "}
+            <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[11px] dark:bg-[#232B36]">
+              Please run {installCmd} to set up claude-lens cost capture.
+            </code>
+          </>
+        ),
+      },
+      { badge: "3", content: "Run one session → verify below" },
+    ];
+  }
+  return [
+    {
+      badge: "1",
+      content:
+        "Capture assets weren't found on this server (a dev server started outside a build, or a stripped install).",
+    },
+    {
+      badge: "2",
+      content: (
+        <>
+          From a repo checkout, copy <code>capture/*.cjs</code> into <code>~/.claude/scripts</code>{" "}
+          and merge <code>capture/settings.snippet.json</code> into{" "}
+          <code>~/.claude/settings.json</code> — see <code>capture/README.md</code>.
+        </>
+      ),
+    },
+    { badge: "3", content: "Run one session → verify below" },
+  ];
+}
 
 function formatTimestamp(iso: string): string {
   const d = new Date(iso);
@@ -15,13 +100,25 @@ function formatTimestamp(iso: string): string {
 }
 
 /**
- * Cost-capture setup guide (#P4-15, pages spec §10). Static instructional
- * steps (copy scripts, wire the Stop hook) plus a live "verified" readout
- * sourced from `GET /api/sessions`'s `meta.captureSummary` — reuses the
- * existing fleet-wide capture aggregate instead of the not-yet-built
- * `/api/health` (#P4-14).
+ * Cost-capture setup guide (#P4-15, pages spec §10; paths wired to real
+ * assets by ARCH-producer-cost-capture-tier). Steps are driven by
+ * `GET /api/capture-assets` so they name a real, runnable install path
+ * instead of static phantom-file instructions — even for `npx` installs,
+ * whose unpack directory is unguessable (R7). The live "verified" readout
+ * sourced from `GET /api/sessions`'s `meta.captureSummary` is unchanged.
  */
 export function CostCaptureGuide() {
+  const assetsQuery = useQuery({
+    queryKey: qk.captureAssets(),
+    queryFn: ({ signal }) => fetchCaptureAssets(signal),
+  });
+  const STEPS = buildSteps(
+    assetsQuery.data?.captureDir,
+    assetsQuery.isPending,
+    assetsQuery.isError,
+    assetsQuery.error?.message,
+  );
+
   const query = useQuery({
     queryKey: qk.sessions({ limit: 1 }),
     queryFn: ({ signal }) => listSessions({ limit: 1 }, signal),
@@ -45,7 +142,7 @@ export function CostCaptureGuide() {
             <span className="rounded-full bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] dark:bg-[#232B36]">
               {step.badge}
             </span>
-            <span>{step.text}</span>
+            <span>{step.content}</span>
           </li>
         ))}
         <li className="flex items-start gap-2">

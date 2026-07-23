@@ -26,7 +26,7 @@
   },
   "packageManager": "npm@10.9.2",
   "scripts": {
-    "typecheck": "tsc --noEmit -p shared/tsconfig.json && tsc --noEmit -p server/tsconfig.json && tsc --noEmit -p client/tsconfig.json && tsc --noEmit -p cypress/tsconfig.json",
+    "typecheck": "tsc --noEmit -p shared/tsconfig.json && tsc --noEmit -p server/tsconfig.json && tsc --noEmit -p client/tsconfig.json && tsc --noEmit -p cypress/tsconfig.json && tsc --noEmit -p capture/tsconfig.json",
     "lint": "biome lint .",
     "format": "biome format --write .",
     "format:check": "biome format .",

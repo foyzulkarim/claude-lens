@@ -1,0 +1,33 @@
+{
+  "_comment": "Copy-paste reference for manual setup. Merge these two top-level keys into your ~/.claude/settings.json — do not overwrite the file wholesale if you already have other statusLine or hooks.Stop configuration. Replace \"node\" with an absolute path (e.g. `command -v node`) if your Claude Code hook shell doesn't have node on PATH. See capture/README.md.",
+
+  "statusLine": {
+    "type": "command",
+    "command": "node ~/.claude/scripts/statusline-command.cjs"
+  },
+
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ~/.claude/scripts/turn-logger.cjs"
+          }
+        ]
+      }
+    ]
+  },
+
+  "_ifYouAlreadyHaveAStatusline": {
+    "_comment": "If statusLine.command is already set to something else, point it at statusline-wrapper.cjs instead, and save your original command into ~/.claude/scripts/statusline-original.json so the wrapper can still delegate to it.",
+    "statusLine": {
+      "type": "command",
+      "command": "node ~/.claude/scripts/statusline-wrapper.cjs"
+    },
+    "statuslineOriginalJson": {
+      "command": "<your original statusLine.command>"
+    }
+  }
+}

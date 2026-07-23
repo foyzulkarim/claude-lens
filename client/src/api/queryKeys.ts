@@ -81,6 +81,14 @@ export const qk = {
    */
   config: () => ["config"] as const,
 
+  /**
+   * `GET /api/capture-assets` key (ARCH-producer-cost-capture-tier). Bare
+   * literal-array key — the resolved `capture/` path is fixed at server
+   * startup, so one cache entry covers every mounted `CostCaptureGuide`;
+   * nothing invalidates it while the server is running.
+   */
+  captureAssets: () => ["capture-assets"] as const,
+
   /** `GET /api/views` key (#P4-15). Bare literal-array key — invalidated wholesale after create/delete. */
   views: () => ["views"] as const,
   /** `GET /api/tags` key (#P4-15). Bare literal-array key — invalidated wholesale after rename/delete/attach. */
