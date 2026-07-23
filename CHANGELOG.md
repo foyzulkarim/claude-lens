@@ -1,0 +1,41 @@
+# Changelog
+
+V2 changelog. V1 history lives in [`legacy/CHANGELOG.md`](legacy/CHANGELOG.md).
+
+## v1.0.1 — 2026-07-21
+
+### Features
+- **Producer-side cost-capture tier** (#115) — `bash capture/install.sh`
+  writes observed C/B/L sidecars during Claude Code sessions; matching
+  sessions upgrade from 🟡 estimated to 🟢 observed automatically
+- **Data Health page** (#P4-14) — session/file/dedup coverage and
+  capture-file reconciliation at `/data-health`
+- **Premium tier C/B/L parsers** (#P4-13) — observed values flow
+  through the metrics engine for sessions that have capture files
+- **Report Card UI** (#P4-12) — gates and KPIs on the Session Detail
+  page
+
+### Improvements
+- Dashboard quick-start now points at the published
+  `npx @foyzulkarim/claude-lens@latest` install
+- Chart series names disambiguated when a query spans multiple measures
+  (#104)
+
+### Fixes
+- Sub-agent transcripts route to parent sessions (#114) — sub-agents no
+  longer get their own session rows by default
+
+## v1.0.0 — 2026-05
+
+V2 initial release. The original V1 app (single-file Express dashboard)
+was moved to `legacy/` and is kept runnable for existing users.
+
+### Features
+- **Explore page** (#P4-16) — pivot builder over the metrics engine
+- **Full-text prompt search** (#P4-3) — search across every prompt in
+  every session
+- **Settings page** — pricing table, budget, thresholds, roots + labels
+- **WebSocket invalidation** — the dashboard live-updates as new
+  transcripts and capture files appear
+- **Tiered accuracy** — 🟡 estimated by default; 🟢 observed when
+  premium capture files are present
