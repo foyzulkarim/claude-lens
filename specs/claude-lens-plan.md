@@ -229,7 +229,7 @@ Pages are cheap by design: filter state + preset `MetricsQuery`s + layout. The H
 
 ## Phase 5 — Finalize & publish
 
-- [ ] **#P5-1 — Performance pass**
+- [x] **#P5-1 — Performance pass**
   Cold/warm boot and RSS on a large real history; warm-cache hit verification; profile only if numbers miss targets (single-threaded until proven otherwise, §5.7).
   *Acceptance:* numbers recorded below; warm boot near-instant.
 - [ ] **#P5-2 — Package hygiene + npx cold-start**
@@ -322,7 +322,7 @@ A genuinely separate concern from Phase 6, not a further theme-split of it: diff
 | Date | Task | Cold boot | Warm boot | RSS | Data size | Notes |
 |---|---|---|---|---|---|---|
 | 2026-07-14 | #P2-7 | 0.21s | 0.03s | 179.2MB | 160 sessions / 4136 calls | baseline; single-threaded, no paging needed — well within "low hundreds of MB" band |
-| — | #P5-1 | | | | | compare against #P2-7 baseline row above |
+| 2026-07-23 | #P5-1 | 0.29s | 0.06s | 230.6MB | 83.3MB · 128 sessions / 5541 calls | 3-run sample against real `~/.claude/projects`; single-threaded per §5.7; warm/cold 0.20x (cache hit verified); corpus grew 4136→5541 calls (+34%), cold 0.21s→0.29s tracks the call-count growth proportionally; well within 1s/100ms/500MB target band — no profiling required |
 
 ## Decisions log
 
