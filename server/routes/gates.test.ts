@@ -100,6 +100,8 @@ describe("GET /api/sessions/:id/gates", () => {
       prompts: [prompt(sessionId, "p1", "Hello", iso(2026, 6, 14, 10, 0))],
       toolResultBytes: [],
       compactions: [],
+      rawLines: 0,
+      skippedLines: 0,
       duplicateCount: 0,
       malformedCount: 0,
     });

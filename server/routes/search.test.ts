@@ -62,6 +62,8 @@ describe("GET /api/search-index (#P4-3)", () => {
       prompts: [prompt({ promptId: "p1", text: "first prompt" })],
       toolResultBytes: [],
       compactions: [],
+      rawLines: 0,
+      skippedLines: 0,
       duplicateCount: 0,
       malformedCount: 0,
     });
@@ -92,6 +94,8 @@ describe("GET /api/search-index (#P4-3)", () => {
       ],
       toolResultBytes: [],
       compactions: [],
+      rawLines: 0,
+      skippedLines: 0,
       duplicateCount: 0,
       malformedCount: 0,
     });
@@ -109,6 +113,8 @@ describe("GET /api/search-index (#P4-3)", () => {
       ],
       toolResultBytes: [],
       compactions: [],
+      rawLines: 0,
+      skippedLines: 0,
       duplicateCount: 0,
       malformedCount: 0,
     });

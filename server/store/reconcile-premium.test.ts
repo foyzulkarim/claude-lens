@@ -314,4 +314,163 @@ describe("reconcilePremium", () => {
     }).turns[0];
     expect(rt?.wallMs).toBe(5000); // 00:06 - 00:01
   });
+
+  // 🟢 #P4-14 §4 — promptId mismatch: a sample whose promptId matches
+  // the turn's promptId does NOT increment the mismatch counter.
+  it("does not count a sample whose promptId matches the turn", () => {
+    const c = [call("2026-07-03T00:00:01.000Z")];
+    const t = [turn("prompt-A", c)];
+    const samples = [sample("2026-07-03T00:00:02.000Z", { promptId: "prompt-A" })];
+    const s = reconcilePremium(c, t, { costSamples: samples, turnBoundaries: [] }).session;
+    expect(s.promptIdMismatchCount).toBe(0);
+  });
+
+  // 🟢 #P4-14 §4 — mismatched promptIds DO increment the counter.
+  it("counts each sample whose promptId does not match any turn", () => {
+    const c = [call("2026-07-03T00:00:01.000Z")];
+    const t = [turn("prompt-A", c)];
+    const samples = [
+      sample("2026-07-03T00:00:02.000Z", { promptId: "prompt-A" }),
+      sample("2026-07-03T00:00:03.000Z", { promptId: "prompt-B" }),
+      sample("2026-07-03T00:00:04.000Z", { promptId: "prompt-C" }),
+    ];
+    const s = reconcilePremium(c, t, { costSamples: samples, turnBoundaries: [] }).session;
+    expect(s.promptIdMismatchCount).toBe(2);
+  });
+
+  // 🟢 #P4-14 §4 — samples WITHOUT a promptId are skipped (not
+  // counted as mismatches), matching the documented "missing field is
+  // skipped, not counted" discipline on the turn side. A statusline
+  // that doesn't emit the field never inflates the counter.
+  it("does not count samples without a promptId, even when turns carry one", () => {
+    const c = [call("2026-07-03T00:00:01.000Z")];
+    const t = [turn("prompt-A", c)];
+    const samples = [
+      sample("2026-07-03T00:00:02.000Z"), // no promptId
+      sample("2026-07-03T00:00:03.000Z"), // no promptId
+    ];
+    const s = reconcilePremium(c, t, { costSamples: samples, turnBoundaries: [] }).session;
+    expect(s.promptIdMismatchCount).toBe(0);
+  });
+
+  // 🟢 #P4-14 §4 — when no turn carries a promptId either, the §4
+  // signal is undefined (no comparison possible) and the counter
+  // stays quiet. This matches the architecture: the §4 panel renders
+  // "no premium capture observed" when the counter is absent.
+  it("does not count when no turn carries a promptId either", () => {
+    const c = [call("2026-07-03T00:00:01.000Z")];
+    const t = [turn("", c)];
+    const samples = [
+      sample("2026-07-03T00:00:02.000Z", { promptId: "prompt-A" }),
+      sample("2026-07-03T00:00:03.000Z", { promptId: "prompt-B" }),
+    ];
+    const s = reconcilePremium(c, t, { costSamples: samples, turnBoundaries: [] }).session;
+    expect(s.promptIdMismatchCount).toBe(0);
+  });
+
+  // 🟢 #P4-14 §4 — unbucketed tail: a sample whose timestamp falls
+  // INSIDE the turn's [startedAt, endedAt] range does NOT increment
+  // the counter. The boundary inclusivity matters — a sample at the
+  // exact turn-end timestamp is "bucketed" by this turn.
+  it("does not count a sample inside the turn's [startedAt, endedAt] range", () => {
+    const c1 = call("2026-07-03T00:00:01.000Z");
+    const c2 = call("2026-07-03T00:00:05.000Z");
+    const t = [turn("p1", [c1, c2])]; // range [01, 05]
+    const samples = [
+      sample("2026-07-03T00:00:02.000Z"), // inside
+      sample("2026-07-03T00:00:05.000Z"), // exactly at end (inclusive)
+      sample("2026-07-03T00:00:01.000Z"), // exactly at start (inclusive)
+    ];
+    const s = reconcilePremium([c1, c2], t, { costSamples: samples, turnBoundaries: [] }).session;
+    expect(s.unbucketedTailCount).toBe(0);
+  });
+
+  // 🟢 #P4-14 §4 — a sample whose timestamp falls OUTSIDE every
+  // turn's range DOES increment the counter (the "X samples sat
+  // outside any turn" §4 sub-card).
+  it("counts samples that fall outside every turn's range", () => {
+    const c1 = call("2026-07-03T00:00:01.000Z");
+    const c2 = call("2026-07-03T00:00:05.000Z");
+    const t = [turn("p1", [c1, c2])]; // range [01, 05]
+    const samples = [
+      sample("2026-07-03T00:00:00.000Z"), // before the turn
+      sample("2026-07-03T00:00:06.000Z"), // after the turn
+      sample("2026-07-03T00:00:02.000Z"), // inside (sanity)
+    ];
+    const s = reconcilePremium([c1, c2], t, { costSamples: samples, turnBoundaries: [] }).session;
+    expect(s.unbucketedTailCount).toBe(2);
+  });
+
+  // 🟢 #P4-14 §4 — a sample with an UNPARSEABLE timestamp is
+  // skipped (not counted), matching the "missing field is skipped,
+  // not counted" discipline. An invalid timestamp is morally "missing"
+  // — neither bucketed nor unbucketed. The parseable sample sits
+  // inside the turn range so it is also bucketed; only the
+  // unparseable ones remain, and they must not contribute.
+  it("does not count samples with an unparseable timestamp", () => {
+    const c1 = call("2026-07-03T00:00:01.000Z");
+    const c2 = call("2026-07-03T00:00:05.000Z");
+    const t = [turn("p1", [c1, c2])]; // range [01, 05]
+    const samples = [
+      sample("2026-07-03T00:00:02.000Z"), // parseable, inside
+      sample("not-a-date"), // unparseable
+      sample(""), // unparseable
+    ];
+    const s = reconcilePremium([c1, c2], t, { costSamples: samples, turnBoundaries: [] }).session;
+    expect(s.unbucketedTailCount).toBe(0);
+  });
+
+  // 🟢 #P4-14 §4 — when no turn has parseable startedAt/endedAt,
+  // the §4 signal is undefined (no ranges to compare against) and
+  // every sample's timestamp falls "outside" silently — counter stays
+  // at zero. This matches the architecture: absent ranges = no
+  // signal, no false-positive unbucketed counts.
+  it("does not count when no turn has parseable time ranges", () => {
+    const c = [call("2026-07-03T00:00:01.000Z")];
+    const t = [
+      {
+        ...turn("p1", c),
+        startedAt: "not-a-date",
+        endedAt: "also-not-a-date",
+      },
+    ];
+    const samples = [sample("2026-07-03T00:00:02.000Z"), sample("2026-07-03T00:00:03.000Z")];
+    const s = reconcilePremium(c, t, { costSamples: samples, turnBoundaries: [] }).session;
+    expect(s.unbucketedTailCount).toBe(0);
+  });
+
+  // 🟢 #P4-14 P-002 — sweeping-pointer algorithm: with K=10k samples
+  // and T=1k turns, the per-sample scan used to be O(K × T) = 10M
+  // comparisons. The new sweep is O((K + T) · active) where `active`
+  // is the typical concurrency of overlapping ranges (usually 1 for
+  // non-overlapping turn timelines). Pin correctness on a small
+  // fixture that exercises overlapping turn ranges (sub-agent
+  // scenario) so a future regression that breaks one but not the
+  // other is caught by comparison.
+  it("the sweep algorithm matches expectations on overlapping turn ranges", () => {
+    const c1 = call("2026-07-03T00:00:01.000Z");
+    const c2 = call("2026-07-03T00:00:09.000Z");
+    // Two overlapping turns (sub-agent scenario): turn 2 starts before
+    // turn 1 ends, so a sample at 00:00:04 sits in both — the sweep
+    // must count it as bucketed because at least one range covers it.
+    const t1 = turn("p1", [c1], {
+      startedAt: "2026-07-03T00:00:01.000Z",
+      endedAt: "2026-07-03T00:00:10.000Z",
+    });
+    const t2 = turn("p2", [c2], {
+      startedAt: "2026-07-03T00:00:05.000Z",
+      endedAt: "2026-07-03T00:00:15.000Z",
+      isSidechain: true,
+    });
+    const samples = [
+      sample("2026-07-03T00:00:04.000Z"), // inside both (sweep picks the max endMs)
+      sample("2026-07-03T00:00:12.000Z"), // inside t2 only
+      sample("2026-07-03T00:00:20.000Z"), // outside both
+    ];
+    const s = reconcilePremium([c1, c2], [t1, t2], {
+      costSamples: samples,
+      turnBoundaries: [],
+    }).session;
+    expect(s.unbucketedTailCount).toBe(1);
+  });
 });
