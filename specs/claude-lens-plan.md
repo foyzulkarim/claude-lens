@@ -2,7 +2,7 @@
 
 Companion to `claude-lens-architecture.md` (how), `claude-lens-pages.md` (what), and `gates.md` (Report Card gates). This document is the **project-management view**: phases, milestones, and the task list that becomes GitHub issues.
 
-**How to use this doc:** each numbered task below becomes one GitHub issue, filed with its phase label (`phase-0` … `phase-5`). Issues are implemented sequentially in the order listed unless the dependency notes say otherwise. When starting a phase, re-read that phase's section here plus the spec sections it references. Check off tasks here as their issues close, so this file always shows where we are.
+**How to use this doc:** each numbered task below becomes one GitHub issue, filed with its phase label (`phase-0` … `phase-7`). Issues are implemented sequentially in the order listed unless the dependency notes say otherwise. When starting a phase, re-read that phase's section here plus the spec sections it references. Check off tasks here as their issues close, so this file always shows where we are.
 
 **Status legend:** `[ ]` not started · `[~]` in progress · `[x]` done · `[.]` delivered-as-spec (no implementation issue needed)
 
@@ -17,7 +17,11 @@ Phase 2  Data engine                  (parser → ingest → store → metrics; 
 Phase 3  Steel thread                 (one live chart end-to-end; go/no-go milestone)
 Phase 4  Pages & features             (11 pages, gates, premium tier, explore)
 Phase 5  Finalize & publish           (perf, package hygiene, docs, npm)
+Phase 6  Comprehension, differentiation & distribution  (explainability, evidence-linking, recommendation cards, premium polish, chart export, relaunch)
+Phase 7  Conversational delivery      (MCP data surface + opinion layer)
 ```
+
+Phases 6–7 are a second, post-v1 roadmap layered on top of the build plan above — not a continuation of the "ship v1" sequence Phases 0–5 encode. They reuse the phase-label/milestone mechanism (`phase-6`, `phase-7` labels + milestones need creating before filing, same #P0-6 precedent) purely for tracking continuity; there is no code-level dependency from Phase 5 onto Phase 6.
 
 Phases 0–3 are strictly sequential **at the code level** (each phase's tasks assume the prior phase's deliverables exist) — but a phase label doesn't mean every task in it is a hard gate on the next phase; see the 2026-07-10 decisions-log row for the per-consumer gate audit that let Phase 1 start with #P0-3/4 still open. Within Phase 4, tasks run **in parallel** after the #P4-1→#P4-19→#P4-2 spine — `claude-lens-phase4-parallelization.md` is the single execution companion, with conservative orchestration by default and maximum-throughput relaxations only by explicit choice.
 
@@ -194,7 +198,7 @@ Pages are cheap by design: filter state + preset `MetricsQuery`s + layout. The H
 - [x] **#P4-12 — Report Card UI + gate feeds**
   Report Card section on Session Detail; anomaly & gate-failure feed on Dashboard; gate pass-rate trend on Trends; gate-status filter/column on Sessions; replace the Projects gate-pass-rate stub with live results.
   *Acceptance:* turn-keyed evidence (V1/V2/P3/C3/K2) deep-links to Turn Inspector at the exact turn; session-keyed E1/E2 evidence links to Session Detail with `filePath`+`detail` (it has no `turnN` — gates.md §1, decisions log 2026-07-06).
-- [ ] **#P4-13 — Premium tier: C/B/L parsers + upgrades**
+- [x] **#P4-13 — Premium tier: C/B/L parsers + upgrades** *(closed 2026-07-21 via PR #109; checkbox was still `[ ]` — drift fixed, see decisions log)*
   `parse-premium.ts`; per-session tier detection wiring through to `TierFlags`; every 🟡 upgrade path lights up: observed $, intra-day resolution, true ctx %, waterfall widths from `api_duration_ms`, Δlines/api-vs-wall columns, latency/throughput on Models, context growth curves on Cache Lab; drift badge on Session Detail.
   *Acceptance:* verified upgrade-by-upgrade, not as one blob — run the Cypress harness twice (T-only fixture set, then T+C/B/L) and confirm each listed 🟡 upgrade flips: value changes where expected, tier badge updates, transcript-only sessions unaffected. Tier-upgrade component states (🟡 columns lighting up, drift badge) additionally covered by Storybook stories — these are hard to reproduce on demand with real data.
 - [x] **#P4-14 — Data Health page + `/api/health`** *(§9)*
@@ -209,7 +213,7 @@ Pages are cheap by design: filter state + preset `MetricsQuery`s + layout. The H
 - [x] **#P4-17 — Export**
   `GET /api/export?format=csv|json` streaming the current view; export + copy-permalink buttons in the global layer.
   *Acceptance:* exported CSV of a filtered Sessions view opens correctly; permalink reproduces the view.
-- [ ] **#P4-18 — Cross-page E2E flows (Cypress)**
+- [x] **#P4-18 — Cross-page E2E flows (Cypress)** *(closed 2026-07-21; checkbox was still `[ ]` — drift fixed, see decisions log)*
   The journeys that span pages, run against the fixture-root harness from #P3-5: prompt search → Session Detail at the matching turn; drill-anywhere from a Dashboard chart slice → Sessions filtered to that slice; permalink copy → paste reproduces the exact view; CSV export downloads; gate evidence link → Turn Inspector at the exact turn.
   *Acceptance:* all five flows green in CI.
 - [x] **#P4-20 — Dashboard live-update flicker fix** *(follow-up on #P4-2)* — closed complete-as-scoped; `Chart.tsx` merge-semantics change deferred, not tracked further under this task
@@ -234,6 +238,79 @@ Pages are cheap by design: filter state + preset `MetricsQuery`s + layout. The H
 - [ ] **#P5-4 — Publish v0.1.0**
   npm publish; GitHub release; tag.
   *Acceptance:* `npx claude-lens@latest` works from the public registry.
+  **Note (2026-07-22):** `origin/main`'s `package.json` is already at `1.0.1` with a `chore: release v1.0.1` commit predating #109's merge — a release has already shipped ahead of this issue closing, and #P6-1 below now needs to publish past it (with #109 included). This task's title/version target is stale; reconcile (close as superseded by #P6-1, or re-scope to whatever's actually missing) before Phase 5 is called done — not resolved here, flagging only.
+
+---
+
+## Phase 6 — Comprehension, differentiation & distribution
+
+Post-v1 roadmap, not a continuation of the "ship v1" build plan in Phases 0–5 — sequenced by dependency and leverage per the source roadmap doc (`claude-lens-remake-roadmap.md`-style ordering): clear the shipped-vs-published gap, make the product legible, make it opinionated, then make it spread. One phase/milestone for all of it, matching the Phase 4 precedent (many tasks, one milestone, ordered by dependency rather than split into per-theme phases) — the only genuinely separate concern is Phase 7 (MCP), which has its own audience and a real cross-phase dependency on this phase's output.
+
+`phase-6` label + milestone need creating before filing (#P0-6 precedent).
+
+- [ ] **#P6-1 — Release cut with premium-tier C/B/L parsers (#109)**
+  Tag and publish a release that actually includes #109's merged cost/API-latency/lines-changed parsers — `origin/main` shipped `v1.0.1` *before* #109 merged, so the published `npx claude-lens` package is currently missing them. Clears the shipped-vs-published gap before new work lands on top.
+  *Acceptance:* `npx claude-lens@latest` includes #109's premium-tier parsers; version bumped past `1.0.1`; release/tag recorded.
+  *Dependencies:* supersedes/reconciles the stale #P5-4 (#54) — see its note above; resolve which issue owns this before filing both.
+
+- [ ] **#P6-2 — Inline per-metric explainability**
+  A "why this number / why it matters" affordance on each metric and chart (spend, total tokens, cache hit %, avg $/session, anomalies) — opinionated teaching copy shown at the metric itself, not behind a help page. Becomes the substrate #P6-5 and #P7-2 reuse.
+  *Acceptance:* every headline metric across Dashboard/Sessions/Session Detail/Models/Cache Lab surfaces authored why-this-matters copy in place (not a generic tooltip).
+  *Dependencies:* feeds #P6-5, #P7-2.
+
+- [ ] **#P6-3 — Turn Inspector evidence-linking completion**
+  Make every derived claim — anomalies, gate results, metric callouts — click through to its exact source turn in the Turn Inspector (#P4-6). Turns "trust these numbers" into "verify these numbers."
+  *Acceptance:* every anomaly-feed item, gate-evidence link, and flagged metric callout across Dashboard/Sessions/Session Detail links to the exact turn in Turn Inspector that produced it.
+  *Dependencies:* builds on #P4-6 and the turn-keyed evidence links #P4-12 already shipped for gates — this closes remaining gaps (anomalies, metric callouts), not a rebuild; feeds #P6-5.
+
+- [ ] **#P6-4 — Gate engine V1 audit for recommendation-readiness**
+  Confirm the six gates (#P4-11, closed) and their evidence links (#P4-12, closed) are complete enough to be #P6-5's raw material — `gates.md` already states all six are transcript-only, so this is a verification/hardening pass against that bar, not new gate-building, unless the audit surfaces a real gap.
+  *Acceptance:* each of the six gates' evidence output reviewed against #P6-5's card format (what happened / why / what to do / proof link); gaps found are filed as scoped follow-ups, or the task closes delivered-as-spec if none are found.
+  *Dependencies:* feeds #P6-5.
+
+- [ ] **#P6-5 — Recommendation cards**
+  Productize gate (#P4-11/#P4-12) + anomaly (#P4-2) output into prescriptive, evidence-backed cards: what happened, why it matters (reuses #P6-2's copy), what to do, and a link to the proof (reuses #P6-3's evidence links). The differentiated core — turns Claude Lens from mirror to advisor.
+  *Acceptance:* recommendation cards render from real gate/anomaly output with all four elements present and the proof link landing on the exact Turn Inspector turn.
+  *Dependencies:* depends on #P6-2, #P6-3, #P6-4; unblocks #P7-2.
+
+- [ ] **#P6-6 — Premium-tier end-to-end polish**
+  Finish the observed-value tier as a coherent surface: clean transcript-only vs premium separation, graceful degradation when hooks are absent. In practice this is mostly closing out #P4-14 (Data Health reconciliation sections, still open, was blocked on #P4-13 which is now done).
+  *Acceptance:* #P4-14 ships; tier separation reads as one coherent surface across Session Detail, Sessions, Models, Cache Lab, Data Health.
+  *Dependencies:* depends on #P4-13 (done) and #P4-14/#46 (open — this task's main remaining scope).
+
+- [ ] **#P6-7 — Shareable branded chart export**
+  Per-chart "Share" producing a branded PNG (footer = install command + repo) plus a number-first caption and first-comment link block. The image is the billboard; turns every user into a distributor.
+  *Acceptance:* exporting any chart produces a branded PNG with footer + caption; matches whatever spec this scopes to.
+  *Dependencies:* **unresolved** — the source roadmap doc says this is "already scoped in a separate issue," but a search of this repo's open and closed issues found nothing matching (chart export, branded PNG, share). Confirm where it's scoped before filing, or run `/plan-requirements` to scope it fresh; unblocks #P6-8.
+
+- [ ] **#P6-8 — Stargazer relaunch**
+  Notify the ~228 warm-but-dormant V1 stargazers that the remake exists, using an exported branded chart (#P6-7) as the hero image and a number-first hook.
+  *Acceptance:* outreach sent; not clearly an engineering deliverable — likely doesn't need a code PR, may not fit the issue-tracker shape at all (marketing/community action item rather than a ticket).
+  *Dependencies:* depends on #P6-7.
+
+**Note:** the source roadmap also calls out two non-ticket threads that ride alongside this phase rather than needing their own tasks: #P6-2's explainability copy doubles as distribution content (the same teaching copy is a shareable post), and #P6-7+#P6-8 are the loop that converts the comprehension/differentiation work into reach.
+
+**Exit criteria:** #P6-1 through #P6-6 shipped; #P6-7/#P6-8 resolved one way or another (shipped, or explicitly deferred/moved out of the tracker).
+
+---
+
+## Phase 7 — Conversational delivery (MCP)
+
+A genuinely separate concern from Phase 6, not a further theme-split of it: different audience (Claude Code itself, not the web dashboard) and delivery surface, with only one real dependency crossing back into Phase 6.
+
+`phase-7` label + milestone need creating before filing (#P0-6 precedent).
+
+- [ ] **#P7-1 — Thin MCP data surface**
+  Expose structured metrics and gate results as MCP resources over the existing Fastify process (`/mcp`, Streamable HTTP — no runtime change). Gives conversational access to Claude Lens data from inside Claude Code early, while the opinion layer matures. Positioned as a data surface, not "the MCP feature."
+  *Acceptance:* an MCP client (e.g. Claude Code) can list and read metrics/gate-result resources from a running `claude-lens` instance without a separate process or runtime change.
+  *Dependencies:* none blocking — can start in parallel with Phase 6.
+
+- [ ] **#P7-2 — MCP opinion layer**
+  Deliver explainability (#P6-2) and recommendations (#P6-5) through MCP so questions like "why did cache hit drop this session?" get Claude Lens's computed opinion answered inside Claude Code, at the moment of work.
+  *Acceptance:* an MCP query surfaces the same why-this-matters copy and recommendation-card content the dashboard shows, not a re-derived answer.
+  *Dependencies:* depends on #P6-2 and #P6-5 — cannot close before Phase 6 does.
+
+**Exit criteria:** #P7-1 and #P7-2 shipped.
 
 ---
 
@@ -283,4 +360,5 @@ Current as of the dated rows; re-scan at each phase exit and prune rows that hav
 | 2026-07-17 | **Phase 4 scheduling and low-intervention orchestration consolidated into one companion.** `claude-lens-phase4-parallelization.md` now owns conservative start gates, live-state reconstruction, three-lane ready-queue selection, shared-file reservations, worktree/port lifecycle, recovery, user-intervention boundaries, and the optional maximum-throughput relaxations. The separate orchestration doc was removed to prevent duplicated dependency graphs and “stricter of two docs” reconciliation. | `claude-lens-phase4-parallelization.md`, `AGENTS.md`, `CLAUDE.md` |
 | 2026-07-17 | **Checkbox drift fixed: #P1-6 flipped to `[x]`** (issue #66 closed via PR #69 on 2026-07-13 and its artifacts were already archived to the wiki, but the checkbox was never flipped). Caught while archiving #85 (parallel-execution infrastructure chore, PR #86) to the wiki as `issue-085` under Unphased — the pre-#33 hygiene step from the parallelization companion §13. | #P1-6, #85 |
 | 2026-07-19 | **#P4-20 added — Dashboard live-update flicker, root-caused during a Rust-vs-Go server discussion.** User reported dashboard chart flicker/loading-flash under several concurrent Claude Code sessions and asked whether a server rewrite would fix it; tracing `client/src/ws.ts`, `SubscriptionWindow.tsx`, and `Chart.tsx` showed the mechanism is client-side (per-session invalidation fan-out + self-churning query keys + full chart redraws), and `server/ingest/tailer.ts` confirmed request handling never re-reads/re-parses transcripts — ruling out server language/runtime as a fix. Filed as a follow-up on #P4-2 (same insertion pattern as #P4-19 from PR #83) rather than reopening the already-closed #P4-2, since the page itself matches its mockup — this is a regression under load, not a missing section. | #P4-20, #P4-2, #P4-19 |
+| 2026-07-22 | **Phases 6–7 added: post-v1 product roadmap, layered on top of the v1 build plan, not a continuation of it.** Source: a user-provided sequenced roadmap doc (10 tickets, dependency-ordered: release cut → explainability → evidence-linking → gate finalization → recommendation cards → premium polish → chart export → relaunch → MCP data surface → MCP opinion layer). Collapsed into two phases rather than four-plus, matching the existing Phase-4 precedent (many tasks, one milestone, ordered by dependency, not split into a phase per theme) — the only task with a genuine cross-phase dependency is #P7-2 (needs #P6-5), so it's the one split that's load-bearing. Checked every ticket against ground truth first: ticket 1 (#109 release) is **not** done — `v1.0.1` shipped *before* #109 merged, so it's real work (#P6-1), superseding the stale #P5-4/#54 (still targets "v0.1.0" despite the repo already being past that). Ticket 4 (gate finalization) restates already-shipped work — `gates.md` already states all six gates are transcript-only and #P4-11/#P4-12 are closed — so it's narrowed to #P6-4, an audit rather than a build. Ticket 7's claimed "already scoped in a separate issue" could not be verified — no matching open or closed issue found by search; flagged unresolved rather than assumed. Also fixed in the same pass: #P4-13 and #P4-18 checkboxes were still `[ ]` despite both issues (#45, #50) being closed 2026-07-21 — drift fixed to `[x]`. | #P6-1..#P6-8, #P7-1, #P7-2, #P4-13, #P4-18, #P5-4 |
 | 2026-07-19 | **#P4-20 partially implemented: invalidation coalescing + stable query key shipped, chart-merge change deferred.** `client/src/ws.ts` now batches inbound WS messages over a 200ms window (`INVALIDATION_COALESCE_MS`) and dedupes their invalidation actions before applying them, so N concurrently-flushing sessions produce one shared `metrics`/`sessions` prefix invalidation instead of N (each session's own `session:<id>` detail invalidation is preserved). `SubscriptionWindow.tsx`'s `extentTo` is now floored to the enclosing minute before it enters the metrics query key/range, bounding key churn to at most once/minute instead of on every WS-driven refetch. The third proposed fix (`Chart.tsx`'s `notMerge: true` → partial-merge on live updates) is left for a follow-up — it's a shared-component boundary change (ARCH A9) needing an audit of every `Chart` consumer for `notMerge`-dependent behavior first, disproportionate to bundle with the other two. Checkbox stays `[~]` (in progress, not `[x]`) until that's done. | #P4-20, `client/src/ws.ts`, `SubscriptionWindow.tsx` |
