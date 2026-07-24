@@ -323,6 +323,7 @@ A genuinely separate concern from Phase 6, not a further theme-split of it: diff
 |---|---|---|---|---|---|---|
 | 2026-07-14 | #P2-7 | 0.21s | 0.03s | 179.2MB | 160 sessions / 4136 calls | baseline; single-threaded, no paging needed — well within "low hundreds of MB" band |
 | 2026-07-23 | #P5-1 | 0.29s | 0.06s | 230.6MB | 83.3MB · 128 sessions / 5541 calls | 3-run sample against real `~/.claude/projects`; single-threaded per §5.7; warm/cold 0.20x (cache hit verified); corpus grew 4136→5541 calls (+34%), cold 0.21s→0.29s tracks the call-count growth proportionally; well within 1s/100ms/500MB target band — no profiling required |
+| 2026-07-24 | #118 | 0.66s | 0.08s | 327.3MB | 216.6MB · 181 sessions / 14495 calls | **wide-range series query latency** (the #118 regression): `day×project · 3 measures · compare+ma7` = **0.04s**, `hour×model costComputed all-time` = **0.05s** — down from **28.8s / 91.5s** pre-inversion. Single-pass engine inversion (measure×group×bucket re-filter → one pass over records); ~1800× faster, well under the 100ms query target, on a corpus 2.6× the #P5-1 repro (5541→14495 calls). `bench:ingest` now also times these two shapes so the path regresses loudly. Cold/warm boot unchanged (query-only fix). |
 
 ## Decisions log
 

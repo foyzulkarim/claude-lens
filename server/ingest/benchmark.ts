@@ -10,6 +10,9 @@ import { basename, join } from "node:path";
 // into specs/claude-lens-plan.md's benchmark log.
 import { performance } from "node:perf_hooks";
 import fg from "fast-glob";
+import type { SeriesMetricsQuery } from "../../shared/metrics-contract.js";
+import { metrics, type MetricsInput } from "../metrics/engine.js";
+import { DEFAULT_PRICING_TABLE } from "../metrics/measures.js";
 import { parseRootsFlag } from "./argv.js";
 import { classifyPath, type ScanConfig, resolveScanConfig } from "./discovery.js";
 import { startIngest } from "./pipeline.js";
@@ -111,6 +114,75 @@ async function runOnce(
   return { ms, rssBytes, sessions: sessions.length, calls };
 }
 
+// #118: the two wide-range series shapes from the issue repro that pinned the
+// event loop for 28.8s / 91.5s before the single-pass inversion. #P5-1 passed
+// because it never exercised these — a query-latency phase here makes a future
+// regression to the series engine fail the benchmark loudly instead of shipping
+// silently. All-time range, mirroring the issue's curl bodies verbatim.
+const WIDE_RANGE = {
+  from: "2025-01-01T00:00:00.000Z",
+  to: "2026-07-24T23:59:59.999Z",
+} as const;
+
+const QUERY_CASES: { name: string; query: SeriesMetricsQuery }[] = [
+  {
+    name: "day × project · 3 measures · compare + ma7",
+    query: {
+      measures: ["costComputed", "apiCalls", "sessions"],
+      dimensions: ["time", "project"],
+      grain: "day",
+      range: { ...WIDE_RANGE },
+      compare: "previous-period",
+      smoothing: "ma7",
+    },
+  },
+  {
+    name: "hour × model · costComputed (all-time)",
+    query: {
+      measures: ["costComputed"],
+      dimensions: ["time", "model"],
+      grain: "hour",
+      range: { ...WIDE_RANGE },
+    },
+  },
+];
+
+/**
+ * Boots one pipeline, builds the same `MetricsInput` the metrics route
+ * assembles (`listCalls`/`listTurns`/`listSessions`, default pricing, empty
+ * gate summaries), and times `metrics()` over the pathological #118 shapes.
+ * Each case is run once to warm the JIT, then measured — the reported `ms` is
+ * the steady-state cost the event loop pays per query.
+ */
+async function runQueryBench(
+  cacheDir: string,
+  config: ScanConfig,
+): Promise<{ name: string; ms: number }[]> {
+  const warmCache = createWarmCache(cacheDir);
+  const pipeline = startIngest(config, { onInvalidate: () => {}, warmCache });
+  await pipeline.whenSettled();
+  pipeline.store.flushAll();
+
+  const input: MetricsInput = {
+    calls: pipeline.store.listCalls(),
+    turns: pipeline.store.listTurns(),
+    sessions: pipeline.store.listSessions(),
+    pricing: DEFAULT_PRICING_TABLE,
+    gateSummaries: new Map(),
+  };
+
+  const results: { name: string; ms: number }[] = [];
+  for (const testCase of QUERY_CASES) {
+    metrics(input, testCase.query); // warm-up (JIT, lazy store recompute)
+    const t0 = performance.now();
+    metrics(input, testCase.query);
+    results.push({ name: testCase.name, ms: performance.now() - t0 });
+  }
+
+  pipeline.stop();
+  return results;
+}
+
 async function main() {
   const { roots: configRoots } = parseRootsFlag(process.argv.slice(2));
   const scanConfig = resolveScanConfig({ roots: configRoots });
@@ -119,6 +191,7 @@ async function main() {
   try {
     const cold = await runOnce(cacheDir, scanConfig);
     const warm = await runOnce(cacheDir, scanConfig);
+    const queries = await runQueryBench(cacheDir, scanConfig);
 
     const dataSize = `${formatMb(dataBytes)} · ${cold.sessions} sessions / ${cold.calls} calls`;
     const ratio = cold.ms > 0 ? (warm.ms / cold.ms).toFixed(2) : "n/a";
@@ -131,9 +204,19 @@ async function main() {
     console.log(
       `Warm boot: ${formatMs(warm.ms)}  RSS: ${formatMb(warm.rssBytes)}  (warm/cold ratio: ${ratio}x)`,
     );
+
+    console.log("\n#118 wide-range series query latency (100ms target):\n");
+    for (const q of queries) {
+      console.log(`  ${formatMs(q.ms)}  ${q.name}`);
+    }
+    const slowest = queries.reduce((max, q) => Math.max(max, q.ms), 0);
+
     console.log("\nPaste into specs/claude-lens-plan.md benchmark log:\n");
     console.log(
       `| ${new Date().toISOString().slice(0, 10)} | #P5-1 | ${formatMs(cold.ms)} | ${formatMs(warm.ms)} | ${formatMb(cold.rssBytes)} | ${dataSize} | warm/cold ${ratio}x |`,
+    );
+    console.log(
+      `| ${new Date().toISOString().slice(0, 10)} | #118 | query | ${formatMs(slowest)} | ${formatMb(warm.rssBytes)} | ${dataSize} | wide-range series slowest of ${queries.length} shapes; was 28.8s/91.5s pre-inversion |`,
     );
   } finally {
     await rm(cacheDir, { recursive: true, force: true });
