@@ -6,7 +6,7 @@ import fastifyWebsocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from "fastify";
 import { createGatesCache, type GatesCache } from "./cache/gates-cache.js";
 import { getGateThresholds } from "./gates/thresholds.js";
-import { startEventLoopMonitor } from "./observability.js";
+import { type EventLoopMonitor, startEventLoopMonitor } from "./observability.js";
 import type { PipelineStats } from "./pipeline-stats.js";
 import { registerCacheLabRoute } from "./routes/cache-lab.js";
 import { registerCaptureAssetsRoute } from "./routes/capture-assets.js";
@@ -159,8 +159,17 @@ export function buildApp({
   // and stop it on `onClose` so a built-then-closed app leaves no sampling
   // interval behind — the guard against timer leakage across the test suite.
   if (enableEventLoopMonitor) {
-    const monitor = startEventLoopMonitor(app.log);
-    app.addHook("onClose", async () => monitor.stop());
+    // Started on `onReady`, not inline: the handle escapes only through the
+    // close hook, so a `buildApp` that throws after this point (a duplicate
+    // route, a failing cache construction) would leave the histogram and its
+    // interval running with no owner — `app.close()` is unreachable when the
+    // caller never received the app. `onReady` fires only once the build
+    // succeeded, making start/stop genuinely symmetric.
+    let monitor: EventLoopMonitor | null = null;
+    app.addHook("onReady", async () => {
+      monitor = startEventLoopMonitor(app.log);
+    });
+    app.addHook("onClose", async () => monitor?.stop());
   }
 
   // ARCH-p4-12 §Cross-Cutting: the gates cache is the only per-session

@@ -1,4 +1,4 @@
-import { appendFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -192,38 +192,72 @@ describe("buildApp — event-loop monitor lifecycle", () => {
     vi.restoreAllMocks();
   });
 
-  it("starts the monitor when enabled and stops it on close", async () => {
+  it("starts the monitor on ready (with the app's own logger) and stops it on close", async () => {
     const stop = vi.fn();
     const spy = vi.spyOn(observability, "startEventLoopMonitor").mockReturnValue({ stop });
     const store = new Store({ onInvalidate: () => {} });
     stores.push(store);
 
     const app = buildApp({ store, logger: false, enableEventLoopMonitor: true });
+    // Deferred to `onReady`: a build that throws must not leave a monitor
+    // running with no owner, since `app.close()` is unreachable then.
+    expect(spy).not.toHaveBeenCalled();
+
+    await app.ready();
     expect(spy).toHaveBeenCalledTimes(1);
+    // Not merely "called" — called with the app's logger, so a wrong logger
+    // (warns going nowhere in production) fails here.
+    expect(spy).toHaveBeenCalledWith(app.log);
 
     await app.close();
     expect(stop).toHaveBeenCalledTimes(1);
   });
 
-  it("does not start the monitor by default", () => {
+  it("does not start the monitor by default", async () => {
     const spy = vi.spyOn(observability, "startEventLoopMonitor");
     const store = new Store({ onInvalidate: () => {} });
     stores.push(store);
 
     const app = buildApp({ store, logger: false });
     apps.push(app);
+    await app.ready();
 
     expect(spy).not.toHaveBeenCalled();
   });
 
-  it("wires the real monitor and closes cleanly (no leaked interval)", async () => {
+  it("wires the real monitor and leaves no timer behind after close", async () => {
     const store = new Store({ onInvalidate: () => {} });
     stores.push(store);
 
-    // No mock: the real perf_hooks-backed monitor starts. Its interval is
-    // unref'd and the onClose hook stops it, so a clean close is the leak
-    // tripwire for the production wiring.
+    // No mock on the monitor itself: the real perf_hooks-backed one runs, and
+    // we watch the timer it creates. Asserting only that close() resolves
+    // would still pass with both the `unref` and the onClose hook removed —
+    // these two assertions fail in that case, which is the point.
+    // (`process.getActiveResourcesInfo()` can't serve here: it deliberately
+    // omits unref'd handles, so the interval is invisible to it either way.)
+    const setSpy = vi.spyOn(globalThis, "setInterval");
+    const clearSpy = vi.spyOn(globalThis, "clearInterval");
+
     const app = buildApp({ store, logger: false, enableEventLoopMonitor: true });
+    await app.ready();
+
+    const sampled = setSpy.mock.calls.findIndex(
+      ([, delay]) => delay === observability.EVENT_LOOP_SAMPLE_MS,
+    );
+    expect(sampled).toBeGreaterThanOrEqual(0);
+    const handle = setSpy.mock.results[sampled]?.value as ReturnType<typeof setInterval>;
+    expect(handle.hasRef()).toBe(false); // unref'd — never holds the process open
+
     await expect(app.close()).resolves.toBeUndefined();
+    expect(clearSpy).toHaveBeenCalledWith(handle); // onClose actually cleared it
+  });
+
+  // `cli.ts` boots a real server (ports, ingest, signal handlers), so it has
+  // no unit harness — but R4 only holds in production if that one flag stays
+  // wired. Reverting it would otherwise disable lag monitoring with a fully
+  // green suite, so the source text is the guard.
+  it("is enabled by cli.ts in production", async () => {
+    const source = await readFile(new URL("./cli.ts", import.meta.url), "utf8");
+    expect(source).toMatch(/enableEventLoopMonitor:\s*true/);
   });
 });

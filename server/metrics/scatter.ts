@@ -98,13 +98,20 @@ export function metricsScatter(
     ...query.sessionPopulation,
   };
   const { matched, fromMs, toMs } = applyRange(filter, input.sessions);
+  if (probe) probe.filterGroupMs += performance.now() - filterStart;
+
+  // `indexSessionsByScope` is scatter's record-scoping pass — the direct
+  // analogue of series mode's `buildCellScopes` — so it lands in `scopeMs`
+  // rather than being folded into the range filter. That keeps `filter` and
+  // `scope` meaning the same thing whichever mode produced the log line
+  // (ARCH-119 A6's best-effort mapping, made cross-mode comparable).
+  const scopeStart = performance.now();
   const scopes = indexSessionsByScope(matched, input.calls, input.turns);
   if (probe) {
-    // Best-effort mapping onto the uniform probe (ARCH-119 A6): range-filter
-    // + session indexing ≈ filterGroupMs, matched scope count ≈ groupCount,
-    // and scatter has no time buckets so bucketCount stays 0.
-    probe.filterGroupMs += performance.now() - filterStart;
-    probe.groupCount = scopes.size;
+    probe.scopeMs += performance.now() - scopeStart;
+    // Matched scope count ≈ groupCount; scatter has no time buckets, so
+    // bucketCount stays 0.
+    probe.groupCount = Math.max(probe.groupCount, scopes.size);
   }
 
   const computeStart = performance.now();

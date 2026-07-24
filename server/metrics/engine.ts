@@ -412,23 +412,33 @@ function computeSeriesForRange(
   range: { from: string; to: string },
   probe?: QueryProbe,
 ): Series[] {
-  const filterStart = performance.now();
-  const { groups, rangeFromMs, rangeToMs, hostBySessionId } = filterAndGroup(input, query, range);
+  // Bucket enumeration depends only on `range`/`grain`, so it sits outside
+  // the `filterGroupMs` window — that field means `filterAndGroup()` and
+  // nothing else. On the wide-range × hour-grain shape #119 exists to name,
+  // this loop allocates ~13.6k entries, which is not rounding error.
   const bucketByTime = query.dimensions.includes("time");
   const buckets: (number | null)[] = bucketByTime ? enumerateBuckets(range, query.grain) : [null];
+
+  const filterStart = performance.now();
+  const { groups, rangeFromMs, rangeToMs, hostBySessionId } = filterAndGroup(input, query, range);
   if (probe) {
     probe.filterGroupMs += performance.now() - filterStart;
-    probe.groupCount = groups.length;
+    // `Math.max`, not assignment: compare calls this twice with different
+    // ranges, and `buildGroups` derives groups from the calls *inside* that
+    // range — a branch that only exists this week yields 3 groups now and 0
+    // in the previous period. Last-write-wins would report the ghost run's
+    // count for work the primary range did.
+    probe.groupCount = Math.max(probe.groupCount, groups.length);
     probe.bucketCount += buckets.length;
   }
 
   // One pass builds every (group, bucket) cell up front (#118); the loops
-  // below only read cells and format points — no per-cell re-filtering.
-  // Timed inside `computeMs`: `filterGroupMs` is defined as `filterAndGroup()`
-  // alone, so the cell-scope pass — the record-scoping work the old per-cell
-  // `scopeFor` calls used to do inside the read loop — stays on the compute
-  // side of the split and `filter + compute` still accounts for the engine.
-  const computeStart = performance.now();
+  // below only read cells and format points — no per-cell re-filtering. Timed
+  // as its own `scopeMs` phase because it scales on record volume × group
+  // cardinality and is indifferent to bucket count, while the read loop below
+  // is the opposite — folding both into `computeMs` would point an operator
+  // at the bucket axis for a cost driven by records.
+  const scopeStart = performance.now();
   const cellScopes = buildCellScopes(
     groups,
     bucketByTime,
@@ -438,7 +448,9 @@ function computeSeriesForRange(
     rangeToMs,
     hostBySessionId,
   );
+  if (probe) probe.scopeMs += performance.now() - scopeStart;
 
+  const computeStart = performance.now();
   const series: Series[] = [];
   for (const measure of query.measures) {
     for (const group of groups) {
@@ -593,21 +605,27 @@ function computeDistributionSeries(
   );
   if (probe) {
     probe.filterGroupMs += performance.now() - filterStart;
-    probe.groupCount = groups.length;
+    // Single call per query here (no compare in distribution mode), but the
+    // `Math.max` keeps one semantic for the field across every mode.
+    probe.groupCount = Math.max(probe.groupCount, groups.length);
     // Distribution has no time buckets (decision A9) — bucketCount stays 0.
   }
 
-  const computeStart = performance.now();
   // Session-distribution path uses the indexed scopes (ARCH T1) — one
   // index per request, reused across every measure × group pair. The
   // path takes the same MeasureScope shape downstream callers already
   // see, so distribution semantics (entity → null exclusion, etc.) are
-  // unchanged from the legacy per-session filter.
+  // unchanged from the legacy per-session filter. This is the same
+  // record-scoping role `buildCellScopes` plays in series mode, so it's
+  // timed as `scopeMs` for cross-mode comparability.
+  const scopeStart = performance.now();
   const sessionIndex =
     query.distributionEntity === "session"
       ? buildSessionScopeIndex(input, rangeFromMs, rangeToMs, query.sessionPopulation)
       : null;
+  if (probe) probe.scopeMs += performance.now() - scopeStart;
 
+  const computeStart = performance.now();
   const series: Series[] = [];
   for (const measure of query.measures) {
     for (const group of groups) {

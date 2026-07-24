@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MetricsQuery } from "../../shared/metrics-contract.js";
 import type { ApiCall } from "../../shared/types.js";
 import { buildApp } from "../app.js";
+import * as engine from "../metrics/engine.js";
 import { DEFAULT_PRICING_TABLE } from "../metrics/measures.js";
 import { Store } from "../store/store.js";
 import { parseMetricsQuery } from "./metrics.js";
@@ -350,31 +351,39 @@ describe("POST /api/metrics — instrumentation (ARCH-119)", () => {
     }
   });
 
-  it("does not set Server-Timing on a 400 (validation fails before the engine)", async () => {
-    const app = buildApp({ store, logger: false });
+  it("emits neither a Server-Timing header nor a query log line on a 400", async () => {
+    // Both halves matter: validation returns before the probe exists, so
+    // moving the log emission above that return must fail here.
+    const { app, logs } = buildCapturingApp();
+    let res: Awaited<ReturnType<typeof app.inject>>;
     try {
-      const res = await app.inject({
+      res = await app.inject({
         method: "POST",
         url: "/api/metrics",
         payload: { measures: ["not-a-measure"] },
       });
-      expect(res.statusCode).toBe(400);
-      expect(res.headers["server-timing"]).toBeUndefined();
     } finally {
       await app.close();
     }
+    expect(res.statusCode).toBe(400);
+    expect(res.headers["server-timing"]).toBeUndefined();
+    expect(logs.some((l) => l.msg === "metrics query")).toBe(false);
   });
 
   it("logs one structured info line with query shape and timing breakdown", async () => {
     const { app, logs } = buildCapturingApp();
+    let res: Awaited<ReturnType<typeof app.inject>>;
     try {
-      await app.inject({ method: "POST", url: "/api/metrics", payload: seriesPayload });
+      res = await app.inject({ method: "POST", url: "/api/metrics", payload: seriesPayload });
     } finally {
       await app.close();
     }
 
-    const line = logs.find((l) => l.msg === "metrics query");
-    expect(line).toBeDefined();
+    // Exactly one — a duplicate emission (both branches, or an added hook) is
+    // a log-volume regression this signal exists to bound.
+    const lines = logs.filter((l) => l.msg === "metrics query");
+    expect(lines).toHaveLength(1);
+    const line = lines[0];
     expect(line).toMatchObject({
       measures: ["apiCalls"],
       dimensions: ["time"],
@@ -383,15 +392,93 @@ describe("POST /api/metrics — instrumentation (ARCH-119)", () => {
     });
     for (const key of [
       "rangeDays",
+      "inputMs",
       "filterGroupMs",
+      "scopeMs",
       "groupCount",
       "bucketCount",
       "computeMs",
+      "engineMs",
       "totalMs",
     ]) {
       expect(line).toHaveProperty(key);
     }
     expect(line?.level).toBe(30); // pino info
+    // The header carries the same phases, and the log's numbers are rounded
+    // the same way — so a DevTools timing and a log line are comparable.
+    expect(res.headers["server-timing"]).toMatch(
+      /^input;dur=[\d.]+, filter;dur=[\d.]+, scope;dur=[\d.]+, compute;dur=[\d.]+, engine;dur=[\d.]+, total;dur=[\d.]+$/,
+    );
+  });
+
+  it("logs the breakdown for distribution and scatter modes too", async () => {
+    const distributionPayload = {
+      measures: ["apiCalls"],
+      dimensions: [],
+      grain: "day",
+      range: { from: iso(2026, 6, 13, 0, 0), to: iso(2026, 6, 15, 23, 59) },
+      mode: "distribution",
+      distributionEntity: "session",
+    };
+
+    const { app, logs } = buildCapturingApp();
+    try {
+      await app.inject({ method: "POST", url: "/api/metrics", payload: distributionPayload });
+      await app.inject({ method: "POST", url: "/api/metrics", payload: scatterPayload });
+    } finally {
+      await app.close();
+    }
+
+    const lines = logs.filter((l) => l.msg === "metrics query");
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toMatchObject({ mode: "distribution", bucketCount: 0 });
+    expect(lines[1]).toMatchObject({ mode: "scatter", bucketCount: 0 });
+    for (const line of lines) {
+      expect(line).toHaveProperty("scopeMs");
+      expect(line).toHaveProperty("engineMs");
+    }
+  });
+
+  it("still emits the header and log line when the engine throws", async () => {
+    // The pathological query is the one worth diagnosing — it must not reach
+    // the error handler untraced.
+    const boom = new Error("engine exploded");
+    vi.spyOn(engine, "metrics").mockImplementation(() => {
+      throw boom;
+    });
+
+    const { app, logs } = buildCapturingApp();
+    let res: Awaited<ReturnType<typeof app.inject>>;
+    try {
+      res = await app.inject({ method: "POST", url: "/api/metrics", payload: seriesPayload });
+    } finally {
+      await app.close();
+    }
+
+    expect(res.statusCode).toBe(500);
+    expect(res.headers["server-timing"]).toContain("engine;dur=");
+    const line = logs.find((l) => l.msg === "metrics query");
+    expect(line).toMatchObject({ mode: "series", errored: true });
+  });
+
+  it("counts store materialization in inputMs, so a slow store escalates to warn", async () => {
+    // Every performance.now() reading advances 300ms. The first two readings
+    // bracket the store reads + gate batch, so inputMs alone clears the 250ms
+    // threshold — pinning that the window opens before the engine call rather
+    // than at it.
+    let clock = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => (clock += 300));
+
+    const { app, logs } = buildCapturingApp();
+    try {
+      await app.inject({ method: "POST", url: "/api/metrics", payload: seriesPayload });
+    } finally {
+      await app.close();
+    }
+
+    const line = logs.find((l) => l.msg === "metrics query");
+    expect(line?.inputMs).toBe(300);
+    expect(line?.level).toBe(40); // pino warn
   });
 
   it("escalates to a warn line when the query exceeds the slow threshold", async () => {

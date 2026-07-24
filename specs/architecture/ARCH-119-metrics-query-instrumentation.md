@@ -3,12 +3,12 @@
 > **Date:** 2026-07-24
 > **Issue:** #119
 > **Phase:** 2 of 5 (System Architecture)
-> **Requirements source:** Standalone brief — `specs/context/119.md` (GitHub issue #119); motivating incident `specs/issues/bug-metrics-engine-wide-range-queries-block-event-loop.md`. See Inferred Requirements.
+> **Requirements source:** Standalone brief — `specs/context/119.md` (GitHub issue #119); motivating incident [issue #118](https://github.com/foyzulkarim/claude-lens/issues/118) (archived working docs: wiki `issue-118`). See Inferred Requirements.
 > **Type:** infrastructure (server-side observability, no product behavior change)
 
 ## Architecture Summary
 
-Add three server-side observability signals to `/api/metrics`, none of which change the response body or any product behavior. (1) A **structured per-query log line** naming the query shape (measures, dimensions, grain, range span in days, mode, compare/smoothing) and a timing breakdown (`filterGroupMs`, `groupCount`, `bucketCount`, `computeMs`, total) — emitted at `info`, escalated to `warn` above a slow-query threshold. (2) A **`Server-Timing` response header** carrying the same breakdown so it's visible per chart in DevTools without log access. (3) An **event-loop lag monitor** (`perf_hooks.monitorEventLoopDelay`) that logs a `warn` when sustained p99 lag exceeds a threshold — the direct signal for "one synchronous query starved every other request."
+Add three server-side observability signals to `/api/metrics`, none of which change the response body or any product behavior. (1) A **structured per-query log line** naming the query shape (measures, dimensions, grain, range span in days, mode, compare/smoothing) and a timing breakdown (`inputMs`, `filterGroupMs`, `scopeMs`, `groupCount`, `bucketCount`, `computeMs`, `engineMs`, total) — emitted at `info`, escalated to `warn` above a slow-query threshold. (2) A **`Server-Timing` response header** carrying the same breakdown so it's visible per chart in DevTools without log access. (3) An **event-loop lag monitor** (`perf_hooks.monitorEventLoopDelay`) that logs a `warn` when sustained p99 lag exceeds a threshold — the direct signal for "one synchronous query starved every other request."
 
 The engine (`metrics()` / `metricsScatter()`) is a pure `Series[]`/`ScatterMetricsResult` function, so the internal timing/count breakdown escapes it via an **optional mutable probe parameter** the engine populates — leaving the return-type contract (and every existing caller and test) untouched. All thresholds, the probe type, the header/log formatters, and the event-loop monitor factory live in one new module, `server/observability.ts`.
 
@@ -16,7 +16,7 @@ The engine (`metrics()` / `metricsScatter()`) is a pure `Series[]`/`ScatterMetri
 
 | ID | Inferred Requirement | Source |
 |----|----------------------|--------|
-| R1 | Every `/api/metrics` request logs one structured line with query shape + timing breakdown (`filterGroupMs`, `groupCount`, `bucketCount`, `computeMs`, total). | Issue #119 §1, Acceptance ¶1 |
+| R1 | Every `/api/metrics` request logs one structured line with query shape + timing breakdown (`inputMs`, `filterGroupMs`, `scopeMs`, `groupCount`, `bucketCount`, `computeMs`, `engineMs`, total). | Issue #119 §1, Acceptance ¶1 |
 | R2 | Requests over a slow-query threshold (~250ms) log at `warn` instead of `info`. | Issue #119 §1, Acceptance ¶1 |
 | R3 | `/api/metrics` responses carry a `Server-Timing` header exposing the engine duration (and the sub-phase breakdown). | Issue #119 §2, Acceptance ¶2 |
 | R4 | Sustained event-loop delay (p99 over ~200ms) produces a `warn` log with the measured lag. | Issue #119 §3, Acceptance ¶3 |
@@ -35,10 +35,14 @@ The engine (`metrics()` / `metricsScatter()`) is a pure `Series[]`/`ScatterMetri
               │  parse → 400 on failure      │
               │  probe = newQueryProbe()     │
               │  t0 = performance.now()      │
+              │  store reads + gate batch    │
+              │    → probe.inputMs           │
               │  series = metrics(in,q,probe)│──────► metrics/engine.ts
-              │  totalMs = now()-t0          │        · filterAndGroup() → probe.filterGroupMs, groupCount
-              │  reply.header(Server-Timing) │        · compute loop     → probe.bucketCount, computeMs
-              │  log.info|warn({shape,probe})│◄────── (populates probe in place; returns Series[])
+              │    → probe.engineMs          │        · filterAndGroup()   → probe.filterGroupMs, groupCount
+              │  finally:                    │        · enumerateBuckets() → probe.bucketCount (outside filter)
+              │   totalMs = now()-t0         │        · buildCellScopes()  → probe.scopeMs
+              │   reply.header(Server-Timing)│        · read/format loop   → probe.computeMs
+              │   log.info|warn({shape,probe})◄────── (populates probe in place; returns Series[])
               └──────────────┬───────────────┘
                              │ return series (body + status UNCHANGED)
                              ▼
@@ -46,8 +50,10 @@ The engine (`metrics()` / `metricsScatter()`) is a pure `Series[]`/`ScatterMetri
 
   ── app lifecycle (server/app.ts) ─────────────────────────────
    buildApp({ …, enableEventLoopMonitor })
-     if enabled: monitor = startEventLoopMonitor(app.log)   ── server/observability.ts
-     app.addHook('onClose', () => monitor.stop())
+     if enabled: addHook('onReady', () => monitor = startEventLoopMonitor(app.log))
+                 addHook('onClose', () => monitor?.stop())   ── server/observability.ts
+                 (started on ready, not inline: a build that throws must not
+                  leave a monitor no one can stop)
    cli.ts passes enableEventLoopMonitor: true (prod); tests omit it (off)
 
   ── shared module (server/observability.ts) ──────────────────
@@ -67,7 +73,7 @@ The engine (`metrics()` / `metricsScatter()`) is a pure `Series[]`/`ScatterMetri
 | Breakdown transport | Optional mutable **probe** param on `metrics()`/`metricsScatter()` | (a) return `{series, breakdown}`; (b) time only at route boundary | (a) ripples to every caller + all engine/scatter tests; (b) can't produce `filterGroupMs`/`groupCount`/`bucketCount` (they're engine-internal) → fails R1. Optional param = zero ripple, full breakdown. |
 | High-res timing | `performance.now()` (`node:perf_hooks`) | `Date.now()` | Monotonic, sub-ms resolution; `Date.now()` is ms-granular and non-monotonic. |
 | Event-loop lag | `perf_hooks.monitorEventLoopDelay({ resolution })` + `unref`'d `setInterval` sampling p99 | `blocked-at` / `event-loop-lag` npm deps; per-request `setImmediate` probe | Native (Node ≥ 26 confirmed), zero new deps; histogram gives true p99, not a spot sample. Matches CLAUDE.md §2 "deps are pinned — deviating requires editing the doc first." |
-| Header format | W3C `Server-Timing` (`filter;dur=…, compute;dur=…, engine;dur=…`) | Custom `X-*` header | Standard; DevTools Network → Timing renders it natively (issue's stated goal). |
+| Header format | W3C `Server-Timing` (`input;dur=…, filter;dur=…, scope;dur=…, compute;dur=…, engine;dur=…, total;dur=…`) | Custom `X-*` header | Standard; DevTools Network → Timing renders it natively (issue's stated goal). |
 | Logging | Existing Fastify/pino `request.log` / `app.log` | New logger | Reuses the app's pino instance; structured fields are pino-native. |
 | Monitor gating | `buildApp({ enableEventLoopMonitor })` flag, default via `cli.ts` | Always-on; cli-only | Always-on spins an interval in every test app; cli-only makes it un-inject-testable. Flag = testable + no timer leakage in the suite. |
 
@@ -88,12 +94,15 @@ The engine (`metrics()` / `metricsScatter()`) is a pure `Series[]`/`ScatterMetri
 **Key fields:**
 | Field | Type / Constraint | Notes |
 |-------|-------------------|-------|
-| `filterGroupMs` | `number`, accumulates | Sum of `filterAndGroup()` durations (compare mode calls it twice → accumulates). |
-| `groupCount` | `number` | Number of dimension groups produced (last/aggregate; groups are identical across compare runs). |
+| `inputMs` | `number`, route-written | Store materialization (`listSessions`/`listCalls`/`listTurns`) + the awaited gate-summary batch, i.e. everything the handler does before the engine. Split out because `listSessions`/`listTurns` recompute stale sessions synchronously — a stall there is invisible to any engine-only timer (review M1). |
+| `filterGroupMs` | `number`, accumulates | Sum of `filterAndGroup()` durations, and nothing else (compare mode calls it twice → accumulates). Bucket enumeration is deliberately hoisted outside this window (review M3). |
+| `scopeMs` | `number`, accumulates | Record-scoping pass: `buildCellScopes` in series mode (#118's single pass), `buildSessionScopeIndex` in distribution, `indexSessionsByScope` in scatter. Scales on records × group cardinality and is indifferent to bucket count — the opposite of `computeMs`, hence its own phase (review M2). |
+| `groupCount` | `number`, **max** | Widest group fan-out in the query. `Math.max`, not last-write: `buildGroups` derives groups from the calls inside *that* range, so compare's previous-period run can produce a different — often zero — count (review H1). |
 | `bucketCount` | `number`, accumulates | Total enumerated time buckets across the query (compare adds the previous-period buckets). Compute-op count = `measures × groupCount × bucketCount`. |
-| `computeMs` | `number`, accumulates | Sum of the measure×group×bucket compute-loop durations. |
+| `computeMs` | `number`, accumulates | Sum of the measure×group×bucket **read/format** loop durations (scoping excluded — see `scopeMs`). |
+| `engineMs` | `number`, route-written | The `metrics()`/`metricsScatter()` call itself, so `engine;dur` keeps meaning the engine while `total` covers the request. |
 
-**Scatter best-effort mapping:** `filterGroupMs` ≈ `applyRange` + `indexSessionsByScope`; `computeMs` ≈ `buildScatterResult`; `groupCount` = matched scope count; `bucketCount` = 0 (scatter has no time buckets). Keeps one uniform log/header shape across all modes.
+**Scatter best-effort mapping:** `filterGroupMs` ≈ `applyRange`; `scopeMs` ≈ `indexSessionsByScope` (scatter's analogue of `buildCellScopes`, so `filter`/`scope` mean the same thing whichever mode produced the line); `computeMs` ≈ `buildScatterResult`; `groupCount` = matched scope count; `bucketCount` = 0 (scatter has no time buckets). Keeps one uniform log/header shape across all modes.
 
 **Lifecycle:** created per request in the route (`newQueryProbe()`) → mutated in place by the engine → read once to format the log line + header → discarded (GC).
 
@@ -109,7 +118,8 @@ The engine (`metrics()` / `metricsScatter()`) is a pure `Series[]`/`ScatterMetri
 | `mode` | `"series"\|"distribution"\|"scatter"` | Query shape |
 | `compare` | `boolean` | series-only; omitted otherwise |
 | `smoothing` | `"ma7"\|"none"` | series-only; omitted otherwise |
-| `filterGroupMs`,`groupCount`,`bucketCount`,`computeMs`,`totalMs` | `number` | Timing breakdown (`totalMs` = route-measured wall time) |
+| `inputMs`,`filterGroupMs`,`scopeMs`,`groupCount`,`bucketCount`,`computeMs`,`engineMs`,`totalMs` | `number` | Timing breakdown, rounded to 1dp by `probeLogFields` so the log and the header carry identical numbers (`totalMs` = route-measured handler wall time) |
+| `errored` | `true` | Present only when the engine threw — the header and this line are emitted from a `finally`, so a failing query is still traceable |
 
 No transcript content, no filter *values* beyond dimension keys where PII-adjacent — shape only (N2). (Filter dimension keys are safe; filter values are omitted from the log to stay shape-only.)
 
@@ -124,7 +134,8 @@ No transcript content, no filter *values* beyond dimension keys where PII-adjace
 |----|-----------|---------|---------|
 | `newQueryProbe` | `() => QueryProbe` | Fresh zeroed probe | `QueryProbe` |
 | `queryShape` | `(q: MetricsQuery) => Record<string,unknown>` | Log-safe shape fields | plain object |
-| `serverTimingHeader` | `(probe: QueryProbe, totalMs: number) => string` | Format `Server-Timing` value | `"filter;dur=…, compute;dur=…, engine;dur=…"` |
+| `serverTimingHeader` | `(probe: QueryProbe, totalMs: number) => string` | Format `Server-Timing` value | `"input;dur=…, filter;dur=…, scope;dur=…, compute;dur=…, engine;dur=…, total;dur=…"` |
+| `probeLogFields` | `(probe: QueryProbe, totalMs: number) => Record<string,number>` | Same rounding as the header, for the log line | plain object |
 | `isSlowQuery` | `(totalMs: number) => boolean` | `totalMs >= SLOW_QUERY_MS` | `boolean` (drives info↔warn) |
 | `startEventLoopMonitor` | `(log: FastifyBaseLogger) => { stop(): void }` | Enable histogram + unref'd sampling interval; warn on p99 breach; `stop()` disables + clears | handle |
 
@@ -176,9 +187,9 @@ Constants: `SLOW_QUERY_MS = 250`, `EVENT_LOOP_P99_MS = 200`, `EVENT_LOOP_SAMPLE_
 
 | Path | What changes here |
 |------|-------------------|
-| `server/metrics/engine.ts` | Add optional `probe?: QueryProbe` to `metrics()`; thread into `computeSeriesForRange`/`computeDistributionSeries`; time `filterAndGroup()` → `probe.filterGroupMs`, record `groups.length` → `probe.groupCount`, `buckets.length` → `probe.bucketCount`, time compute loop → `probe.computeMs`. Accumulate across compare's two range runs. |
-| `server/metrics/scatter.ts` | Add optional `probe?: QueryProbe` to `metricsScatter()`; best-effort phase timing (`applyRange`+index → `filterGroupMs`, `buildScatterResult` → `computeMs`, `scopes.size` → `groupCount`). |
-| `server/routes/metrics.ts` | In the handler: `const probe = newQueryProbe()`; wrap `metrics(...)`/`metricsScatter(...)` in `performance.now()` for `totalMs`; `reply.header("Server-Timing", serverTimingHeader(probe, totalMs))`; `request.log[isSlowQuery(totalMs) ? "warn" : "info"]({ ...queryShape(parsed), ...probe, totalMs }, "metrics query")`. Both the series **and** scatter branches. Return value unchanged. |
+| `server/metrics/engine.ts` | Add optional `probe?: QueryProbe` to `metrics()`; thread into `computeSeriesForRange`/`computeDistributionSeries`; time `filterAndGroup()` → `probe.filterGroupMs` (bucket enumeration hoisted outside it), the scoping pass → `probe.scopeMs`, the read loop → `probe.computeMs`; record `Math.max(…, groups.length)` → `probe.groupCount` and `buckets.length` → `probe.bucketCount`. Accumulate across compare's two range runs. |
+| `server/metrics/scatter.ts` | Add optional `probe?: QueryProbe` to `metricsScatter()`; best-effort phase timing (`applyRange` → `filterGroupMs`, `indexSessionsByScope` → `scopeMs`, `buildScatterResult` → `computeMs`, `scopes.size` → `groupCount`). |
+| `server/routes/metrics.ts` | In the handler: `const probe = newQueryProbe()` and `t0` **before** the store reads (their duration → `probe.inputMs`); the engine call in `try/finally` (its duration → `probe.engineMs`), with the `finally` emitting `reply.header("Server-Timing", serverTimingHeader(probe, totalMs))` and `request.log[isSlowQuery(totalMs) ? "warn" : "info"]({ ...queryShape(parsed), ...probeLogFields(probe, totalMs), ...(errored && { errored: true }) }, "metrics query")` — so a throwing query is still traced. Both the series **and** scatter branches. Return value unchanged. |
 | `server/app.ts` | Add `enableEventLoopMonitor?: boolean` to `BuildAppOptions`; when true, `const monitor = startEventLoopMonitor(app.log)` and `app.addHook("onClose", () => monitor.stop())`. |
 | `server/cli.ts` | Pass `enableEventLoopMonitor: true` in the production `buildApp({...})` call. |
 
@@ -226,10 +237,10 @@ Constants: `SLOW_QUERY_MS = 250`, `EVENT_LOOP_P99_MS = 200`, `EVENT_LOOP_SAMPLE_
 | # | Decision | Alternatives | Chosen Because | Satisfies |
 |---|----------|--------------|----------------|-----------|
 | A1 | Breakdown escapes the engine via an optional mutable `probe` out-param | return `{series,breakdown}`; route-boundary timing only | Preserves the pure `Series[]` contract; zero caller/test ripple; only path that yields the *internal* `filterGroupMs`/`groupCount`/`bucketCount` | R1, N1 |
-| A2 | `bucketCount` = total enumerated time buckets (accumulated over compare); compute-ops = `measures×groupCount×bucketCount` | count actual `computeMeasure` calls directly | Buckets are the range-span×grain signal that produced the "13608" culprit; op-count is derivable, so no extra counter in the hot loop | R1 |
+| A2 | `bucketCount` = total enumerated time buckets (accumulated over compare); compute-ops = `measures×groupCount×bucketCount`, where `groupCount` is the **max** across compare's runs | count actual `computeMeasure` calls directly | Buckets are the range-span×grain signal that produced the "13608" culprit; op-count is derivable, so no extra counter in the hot loop. (Amended post-review: last-write `groupCount` made this formula evaluate to 0 for compare queries whose previous period had no calls — H1.) | R1 |
 | A3 | One module `server/observability.ts` owns thresholds + formatters + monitor | scatter thresholds in `metrics/`, monitor in `app.ts` | R5 "constants in one place"; keeps the event-loop monitor (app-level, not metrics-specific) co-located with the query formatters that share its threshold discipline | R5 |
 | A4 | Event-loop monitor via native `perf_hooks.monitorEventLoopDelay` + unref'd `setInterval`, gated by `enableEventLoopMonitor` | npm lag deps; always-on; cli-only | Native (Node ≥26), zero deps; flag keeps it testable via `inject()` yet absent from the `logger:false` test suite; `unref` can't hang a process | R4, R6 |
-| A5 | `Server-Timing` with sub-phases `filter`/`compute`/`engine` | single `engine;dur` only | Same breakdown as the log, rendered natively in DevTools; still satisfies the issue's `engine;dur=…` example | R3 |
+| A5 | `Server-Timing` with sub-phases `input`/`filter`/`scope`/`compute`/`engine`/`total` | single `engine;dur` only; or the original `filter`/`compute`/`engine` triple | Same breakdown as the log, rendered natively in DevTools; still satisfies the issue's `engine;dur=…` example | R3 |
 | A6 | Scatter populates the same probe best-effort (`bucketCount:0`) | separate scatter-only shape; no scatter instrumentation | One uniform log/header across all modes; scatter is also a wide-range cost path worth timing | R1, R3 |
 
 ## Risk & Stress-Test Scenarios
@@ -304,7 +315,7 @@ The single module that both other tasks build on: threshold constants (R5), the 
 #### Test Scenarios
 
 ##### Probe
-- **newQueryProbe returns a zeroed probe** — GIVEN nothing WHEN `newQueryProbe()` THEN all four fields (`filterGroupMs`, `groupCount`, `bucketCount`, `computeMs`) are `0` _(verifies R1)_
+- **newQueryProbe returns a zeroed probe** — GIVEN nothing WHEN `newQueryProbe()` THEN all seven fields (`inputMs`, `filterGroupMs`, `scopeMs`, `groupCount`, `bucketCount`, `computeMs`, `engineMs`) are `0` _(verifies R1)_
 
 ##### Thresholds & slow-query predicate
 - **isSlowQuery false below threshold** — GIVEN `totalMs = SLOW_QUERY_MS - 1` WHEN `isSlowQuery` THEN `false` _(verifies R2)_

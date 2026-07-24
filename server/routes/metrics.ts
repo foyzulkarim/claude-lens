@@ -16,7 +16,13 @@ import type { Session } from "../../shared/types.js";
 import { metrics } from "../metrics/engine.js";
 import { DEFAULT_PRICING_TABLE, type PricingTable } from "../metrics/measures.js";
 import { metricsScatter } from "../metrics/scatter.js";
-import { isSlowQuery, newQueryProbe, queryShape, serverTimingHeader } from "../observability.js";
+import {
+  isSlowQuery,
+  newQueryProbe,
+  probeLogFields,
+  queryShape,
+  serverTimingHeader,
+} from "../observability.js";
 import type { Store } from "../store/store.js";
 
 // routes/ may only import store/ for data (architecture §3) — the metrics/
@@ -303,6 +309,16 @@ export function registerMetricsRoute(
       return { error: parsed };
     }
 
+    // Per-query instrumentation (ARCH-119) starts here, not at the engine
+    // call: `listSessions`/`listTurns` synchronously recompute stale sessions
+    // (see the event-loop caveat on `Store.listSessions`) and the gate batch
+    // below is awaited I/O, so a request can spend seconds before the engine
+    // runs. Timing only the engine would report `total: 40ms` at `info` for a
+    // request that stalled the loop for three seconds — the exact blind spot
+    // #119 exists to close. `engine;dur` still means the engine alone.
+    const probe = newQueryProbe();
+    const requestStart = performance.now();
+
     const sessions = store.listSessions();
     // Only resolve gate summaries when the query asks for `gatePassRate`
     // (#P4-12 review finding #6): on every non-gate query this would
@@ -326,27 +342,38 @@ export function registerMetricsRoute(
       gateSummaries,
     };
 
-    // Per-query instrumentation (ARCH-119): time the engine call, populate a
-    // write-only probe, emit the Server-Timing header + one structured log
-    // line (warn above the slow-query threshold). The engine's return shape
-    // is unchanged — the probe is an out-param, not part of the response.
-    const probe = newQueryProbe();
+    probe.inputMs = performance.now() - requestStart;
+
+    // The engine populates the rest of the probe in place; its return shape
+    // is unchanged (out-param, not part of the response). `finally` so a
+    // throwing query — the one most worth diagnosing — still emits its
+    // header and log line instead of reaching the error handler untraced.
     const engineStart = performance.now();
-    // Scatter returns its own discriminated response (`ScatterMetricsResult`);
-    // every other mode still returns `Series[]` — preserving the existing
-    // `metrics()` return-type contract for Dashboard callers (ARCH A4).
-    const result =
-      parsed.mode === "scatter"
+    let errored = false;
+    try {
+      // Scatter returns its own discriminated response (`ScatterMetricsResult`);
+      // every other mode still returns `Series[]` — preserving the existing
+      // `metrics()` return-type contract for Dashboard callers (ARCH A4).
+      return parsed.mode === "scatter"
         ? metricsScatter(input, parsed, probe)
         : metrics(input, parsed, probe);
-    const totalMs = performance.now() - engineStart;
-
-    reply.header("Server-Timing", serverTimingHeader(probe, totalMs));
-    request.log[isSlowQuery(totalMs) ? "warn" : "info"](
-      { ...queryShape(parsed), ...probe, totalMs },
-      "metrics query",
-    );
-    return result;
+    } catch (err) {
+      errored = true;
+      throw err;
+    } finally {
+      probe.engineMs = performance.now() - engineStart;
+      const totalMs = performance.now() - requestStart;
+      // Headers set before a throw survive into the error handler's reply.
+      reply.header("Server-Timing", serverTimingHeader(probe, totalMs));
+      request.log[isSlowQuery(totalMs) ? "warn" : "info"](
+        {
+          ...queryShape(parsed),
+          ...probeLogFields(probe, totalMs),
+          ...(errored ? { errored: true } : {}),
+        },
+        "metrics query",
+      );
+    }
   });
 }
 
