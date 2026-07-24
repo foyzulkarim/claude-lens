@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude Lens V2 — 127K lines in 21 days</title>
+<style>
+  :root {
+    --page:        #080b10;
+    --surface-1:   #10161f;   /* chart + card surface */
+    --surface-2:   #151c27;
+    --ink:         #f2f4f8;
+    --ink-2:       #aab2c0;
+    --ink-muted:   #7b8494;
+    --grid:        #232b38;
+    --baseline:    #333d4d;
+    --border:      rgba(255,255,255,0.08);
+    --accent:      #e8825a;   /* brand orange — headings/chrome only */
+    --series-blue: #3987e5;   /* validated data slot 1 */
+    --series-orange: #d95926; /* validated data slot 2 (emphasis) */
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: var(--page);
+    color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    overflow: hidden;
+  }
+  .deck { height: 100vh; position: relative; }
+  .slide {
+    position: absolute; inset: 0;
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    padding: 4.5vh 7vw;
+    background:
+      radial-gradient(1200px 600px at 85% 0%, rgba(232,130,90,0.06), transparent 60%),
+      linear-gradient(var(--page), var(--page));
+  }
+  .slide.active { display: flex; }
+  .slide-inner { width: 100%; max-width: 1150px; margin: 0 auto; }
+
+  .kicker {
+    color: var(--accent);
+    font-size: clamp(12px, 1.1vw, 15px);
+    font-weight: 700;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    margin-bottom: 1.2rem;
+  }
+  h1 { font-size: clamp(38px, 5.2vw, 68px); font-weight: 800; letter-spacing: -0.02em; line-height: 1.05; }
+  h1 .hl, h2 .hl { color: var(--accent); }
+  h2 { font-size: clamp(26px, 3.2vw, 42px); font-weight: 800; letter-spacing: -0.015em; line-height: 1.12; margin-bottom: 1.4rem; }
+  .sub { color: var(--ink-2); font-size: clamp(16px, 1.6vw, 22px); margin-top: 1rem; line-height: 1.45; }
+  .sub b, .sub strong { color: var(--ink); }
+
+  /* stat tiles (headline-card style) */
+  .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 2.6rem; }
+  .tile {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 22px;
+  }
+  .tile .v { font-size: clamp(26px, 2.8vw, 40px); font-weight: 800; letter-spacing: -0.01em; }
+  .tile .v.orange { color: var(--accent); }
+  .tile .l { color: var(--ink-2); font-size: clamp(12px, 1.15vw, 15px); margin-top: 6px; line-height: 1.35; }
+
+  /* bullets */
+  ul.pts { list-style: none; margin-top: 0.4rem; }
+  ul.pts li {
+    padding: 10px 0 10px 30px;
+    position: relative;
+    color: var(--ink-2);
+    font-size: clamp(15px, 1.55vw, 21px);
+    line-height: 1.45;
+  }
+  ul.pts li::before { content: "—"; position: absolute; left: 0; color: var(--accent); font-weight: 700; }
+  ul.pts li b, ul.pts li strong { color: var(--ink); }
+  ul.pts code, .lane code, .step code, td code {
+    font-family: var(--mono); font-size: 0.88em;
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 5px; padding: 1px 6px; color: var(--ink);
+  }
+
+  /* charts */
+  .chart-card {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px 20px 12px;
+    margin-top: 1.2rem;
+    position: relative;
+  }
+  .chart-title { font-size: 14px; font-weight: 700; color: var(--ink); }
+  .chart-sub { font-size: 12.5px; color: var(--ink-muted); margin-top: 2px; }
+  svg text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .tooltip {
+    position: absolute; pointer-events: none; display: none; z-index: 5;
+    background: #1b2432; border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 11px; font-size: 12.5px; line-height: 1.5; color: var(--ink-2);
+    box-shadow: 0 6px 24px rgba(0,0,0,0.5); white-space: nowrap;
+  }
+  .tooltip b { color: var(--ink); }
+  details.tbl { margin-top: 8px; }
+  details.tbl summary { cursor: pointer; color: var(--ink-muted); font-size: 12px; user-select: none; }
+  details.tbl table { border-collapse: collapse; margin-top: 8px; font-size: 12.5px; color: var(--ink-2); }
+  details.tbl th, details.tbl td { padding: 3px 14px 3px 0; text-align: right; font-variant-numeric: tabular-nums; }
+  details.tbl th { color: var(--ink-muted); font-weight: 600; text-align: right; border-bottom: 1px solid var(--grid); }
+  details.tbl th:first-child, details.tbl td:first-child { text-align: left; }
+
+  /* phase gantt rows */
+  .gantt-label { font-size: 12.5px; fill: var(--ink-2); }
+
+  /* lanes diagram */
+  .lanes { display: grid; grid-template-columns: 150px 1fr 190px; gap: 20px; align-items: center; margin-top: 1.6rem; }
+  .lane-col { display: flex; flex-direction: column; gap: 12px; }
+  .node {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
+    padding: 16px 14px; text-align: center; font-weight: 700; font-size: 15px;
+  }
+  .node small { display: block; font-weight: 400; color: var(--ink-muted); font-size: 12px; margin-top: 4px; }
+  .lane {
+    background: var(--surface-1); border: 1px solid var(--border); border-left: 3px solid var(--series-blue);
+    border-radius: 10px; padding: 12px 16px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    font-size: 14px; color: var(--ink-2);
+  }
+  .lane b { color: var(--ink); min-width: 118px; }
+  .lane .ok { color: #0ca30c; font-weight: 700; margin-left: auto; }
+  .arrow-note { text-align: center; color: var(--ink-muted); font-size: 12.5px; }
+
+  /* pipeline conveyor */
+  .conveyor { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin-top: 1.8rem; }
+  .step {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
+    padding: 16px 12px; position: relative;
+  }
+  .step .n { color: var(--accent); font-family: var(--mono); font-size: 11px; font-weight: 700; }
+  .step .name { font-family: var(--mono); font-weight: 700; font-size: clamp(12px, 1.15vw, 15px); margin: 6px 0 8px; color: var(--ink); }
+  .step .d { color: var(--ink-2); font-size: clamp(11px, 1.02vw, 13.5px); line-height: 1.45; }
+  .step:not(:last-child)::after {
+    content: "→"; position: absolute; right: -13px; top: 50%; transform: translateY(-50%);
+    color: var(--ink-muted); font-size: 15px; z-index: 2;
+  }
+  .beltnote { margin-top: 1.3rem; color: var(--ink-2); font-size: clamp(13px, 1.3vw, 17px); line-height: 1.55; }
+  .beltnote code { font-family: var(--mono); font-size: 0.86em; background: var(--surface-2); border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px; }
+
+  /* thesis pillars */
+  .pillars { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 2.4rem; }
+  .pillar { background: var(--surface-1); border: 1px solid var(--border); border-radius: 14px; padding: 26px 24px; }
+  .pillar .t { font-size: clamp(17px, 1.8vw, 23px); font-weight: 800; margin-bottom: 10px; }
+  .pillar .t span { color: var(--accent); }
+  .pillar .d { color: var(--ink-2); font-size: clamp(13px, 1.3vw, 16.5px); line-height: 1.5; }
+
+  /* adoption ladder */
+  .ladder { display: flex; flex-direction: column; gap: 14px; margin-top: 2rem; }
+  .rung { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 18px 22px; display: grid; grid-template-columns: 170px 1fr; gap: 18px; align-items: baseline; }
+  .rung .when { color: var(--accent); font-weight: 800; font-size: clamp(15px, 1.5vw, 19px); }
+  .rung .what { color: var(--ink-2); font-size: clamp(14px, 1.4vw, 18px); line-height: 1.5; }
+  .rung .what b { color: var(--ink); }
+  .rung .what code { font-family: var(--mono); font-size: 0.86em; background: var(--surface-2); border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px; }
+
+  .links { margin-top: 2.4rem; display: flex; gap: 26px; flex-wrap: wrap; }
+  .links a { color: var(--series-blue); font-family: var(--mono); font-size: clamp(13px, 1.35vw, 17px); text-decoration: none; }
+  .links a:hover { text-decoration: underline; }
+
+  /* chrome */
+  .counter {
+    position: fixed; bottom: 18px; right: 24px; z-index: 10;
+    color: var(--ink-muted); font-family: var(--mono); font-size: 12.5px;
+  }
+  .hint { position: fixed; bottom: 18px; left: 24px; z-index: 10; color: var(--ink-muted); font-size: 11.5px; font-family: var(--mono); }
+  .notes {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; display: none;
+    background: rgba(10, 14, 20, 0.97); border-top: 2px solid var(--accent);
+    padding: 16px 7vw 20px; max-height: 38vh; overflow-y: auto;
+  }
+  .notes.open { display: block; }
+  .notes .nt { color: var(--accent); font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
+  .notes .nb { color: var(--ink-2); font-size: 14.5px; line-height: 1.6; margin-top: 6px; white-space: pre-line; }
+
+  @media print {
+    body { overflow: visible; }
+    .slide { display: flex !important; position: relative; height: 100vh; page-break-after: always; }
+    .counter, .hint, .notes { display: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="deck" id="deck">
+
+  <!-- ═══════════ 1 · Cold open ═══════════ -->
+  <section class="slide" data-notes="0:00–0:45 · Don't explain yet — let the numbers land. Open with: 'Three weeks ago this product didn't exist. Today it's on npm with real users.' Point at the 127K tile: 'And no, it's not vibe code — that's the next ten minutes.' This is a brag with receipts, and the receipts start on slide 3.">
+    <div class="slide-inner">
+      <div class="kicker">Build Retrospective</div>
+      <h1>Claude Lens <span class="hl">V2</span></h1>
+      <p class="sub"><b>127,000 lines</b> of engineered code — shipped to production in <b>21 days</b>, by one engineer and an agent pipeline.</p>
+      <div class="tiles">
+        <div class="tile"><div class="v orange">21</div><div class="l">days — planning kickoff → final merge (Jul 3 → Jul 24)</div></div>
+        <div class="tile"><div class="v">54</div><div class="l">merged pull requests</div></div>
+        <div class="tile"><div class="v">+127,117</div><div class="l">lines added (−3,141 deleted)</div></div>
+        <div class="tile"><div class="v">+38,174</div><div class="l">biggest single day — Jul 18, across 4 PRs</div></div>
+        <div class="tile"><div class="v">~2,354</div><div class="l">average lines per PR</div></div>
+        <div class="tile"><div class="v orange">235</div><div class="l">npm installs in the first 48 hours</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════ 2 · What it is ═══════════ -->
+  <section class="slide" data-notes="0:45–1:30 · Keep this brief — the product is the evidence, the pipeline is the story. One sentence per bullet. If someone wants a demo, offer it for Q&A. Everyone in the room runs Claude Code, so the hook is: 'this answers the question you all have — what is my agent actually costing and doing?'">
+    <div class="slide-inner">
+      <div class="kicker">The Product · 60 seconds</div>
+      <h2>What is <span class="hl">Claude Lens</span>?</h2>
+      <ul class="pts">
+        <li>An <b>observability dashboard for your own Claude Code usage</b> — it tails the transcript files the CLI already writes and turns them into live metrics.</li>
+        <li><b>One npm package, one port</b>: Fastify server + React SPA. Byte-offset incremental ingest, an in-memory metrics engine, WebSocket live-refresh.</li>
+        <li><b>12 pages</b>: Dashboard, Sessions, Turn Inspector, Cache Lab, Models, Trends &amp; Budget, Report Card, Explore, Data Health&hellip;</li>
+        <li>A <b>cost-tier system</b>: 🟢 exact / 🟡 estimated from transcripts alone; optional capture files upgrade sessions to observed dollar costs.</li>
+        <li>Live on npm: <code>npx @foyzulkarim/claude-lens</code> — published Jul 21, mid-build.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ═══════════ 3 · The objection ═══════════ -->
+  <section class="slide" data-notes="1:30–2:45 · This is the credibility slide — name the objection before anyone in the room does. Say it out loud: '127 thousand AI lines. You're thinking slop.' Then walk the receipts top to bottom. The punchline is the last bullet: the tests and gates aren't excluded from the number — they ARE the number. Land on: 'quality wasn't inspected in at the end, it was installed at the start.'">
+    <div class="slide-inner">
+      <div class="kicker">The Objection</div>
+      <h2>127K AI-generated lines. You're thinking: <span class="hl">vibe code.</span></h2>
+      <ul class="pts">
+        <li><b>Specs merged before product code.</b> PR #5 — specs, gates, and the phased plan — landed before a single feature line. The repo's rule: <i>“Specs win over code or mockups.”</i></li>
+        <li><b>Gates existed before the product did.</b> Phase 1 was CI, Biome lint/format, Storybook, strict TypeScript — merged before Phase 2 wrote the engine.</li>
+        <li><b>Every PR traces to a numbered plan task.</b> <code>#P0-2</code> through <code>#P5-1</code>. No orphan work, no mystery diffs.</li>
+        <li><b>Review actually bit.</b> A revert (#68), a concurrency bug found under real load (#95), a sub-agent routing fix (#114) — real bugs, caught by real gates.</li>
+        <li><b>2.4% deletion ratio.</b> 3,141 deletions against 127K additions — what greenfield looks like when the plan is right the first time.</li>
+        <li><b>The 127K includes the safety net</b> — Cypress E2E, Storybook, CI, fixtures. The tests aren’t omitted from the brag; they <b>are</b> the brag.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ═══════════ 4 · The journey ═══════════ -->
+  <section class="slide" data-notes="2:45–4:00 · Walk the gantt top to bottom: evidence before code (P0 audited REAL transcript files before the parser was designed), toolchain before features, engine before UI, then twelve pages in five days. Trace the cumulative line with your hand — flat-ish for two weeks, then the elbow on Jul 18. Tease it: 'that elbow is the next slide.'">
+    <div class="slide-inner">
+      <div class="kicker">The Journey</div>
+      <h2>Five phases, <span class="hl">zero chaos</span></h2>
+      <div class="chart-card" id="journeyCard">
+        <div class="chart-title">Phase plan vs. cumulative lines merged</div>
+        <div class="chart-sub">Jul 5 → Jul 24, 2026 · phases from the build plan · line = cumulative additions on main</div>
+        <div id="journeyChart"></div>
+        <div class="tooltip" id="journeyTip"></div>
+        <details class="tbl"><summary>Data table</summary><div id="journeyTbl"></div></details>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════ 5 · The weekend ═══════════ -->
+  <section class="slide" data-notes="4:00–5:15 · The wow slide. Pause on the two orange bars. 'Saturday and Sunday: twelve PRs, sixty-two thousand lines — 49% of the entire product in one weekend.' Preempt the skeptic: these weren't scaffold dumps — Dashboard, Sessions, Session Detail, Cache Lab: four complete, tested, reviewed pages on Saturday alone. Then the turn: 'a single agent can't do this. The unlock is the NEXT slide.'">
+    <div class="slide-inner">
+      <div class="kicker">The Velocity Peak</div>
+      <h2>The weekend that shipped <span class="hl">half the product</span></h2>
+      <div class="chart-card" id="dailyCard">
+        <div class="chart-title">Lines merged to main per day</div>
+        <div class="chart-sub">Jul 18–19: 12 PRs, +62,865 lines — 49% of the entire V2 build</div>
+        <div id="dailyChart"></div>
+        <div class="tooltip" id="dailyTip"></div>
+        <details class="tbl"><summary>Data table</summary><div id="dailyTbl"></div></details>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════ 6 · Parallel lanes ═══════════ -->
+  <section class="slide" data-notes="5:15–6:45 · The screenshot slide — go slow. One GitHub issue = one git worktree = one agent lane. Each lane gets its own port block (so four dev servers run at once), its own npm ci, its own full verify gate. Lanes can't touch each other; the only merge point is the squash-merge queue back to main. Skills automate the lifecycle: /start-task opens it, /move-to-worktree parks it, /finish-worktree tears it down, /archive-issue retires the paperwork to the wiki. 'Parallelism is easy. SAFE parallelism is a system.'">
+    <div class="slide-inner">
+      <div class="kicker">How · Saturday, Jul 18</div>
+      <h2>Parallel agent lanes — <span class="hl">isolated by construction</span></h2>
+      <div class="lanes">
+        <div class="node">main<small>always green<br>squash-merges only</small></div>
+        <div class="lane-col">
+          <div class="lane"><b>.worktrees/89</b> Dashboard page <code>ports 4328+</code> <span class="ok">verify ✓</span></div>
+          <div class="lane"><b>.worktrees/93</b> Sessions page <code>ports 4428+</code> <span class="ok">verify ✓</span></div>
+          <div class="lane"><b>.worktrees/92</b> Session Detail <code>ports 4528+</code> <span class="ok">verify ✓</span></div>
+          <div class="lane"><b>.worktrees/91</b> Cache Lab <code>ports 4628+</code> <span class="ok">verify ✓</span></div>
+        </div>
+        <div class="node">squash-merge<br>queue<small>one lane at a time,<br>gate re-run on main</small></div>
+      </div>
+      <p class="beltnote" style="margin-top:1.6rem">One issue = one worktree = one agent = one port block = one gate run. Lifecycle automated by skills:
+      <code>/start-task</code> → <code>/move-to-worktree</code> → build → <code>/finish-worktree</code> → <code>/archive-issue</code>.</p>
+    </div>
+  </section>
+
+  <!-- ═══════════ 7 · The engine ═══════════ -->
+  <section class="slide" data-notes="6:45–8:00 · The showcase of github.com/foyzulkarim/skills. Don't teach each skill — characterize the belt: 'every one of the 54 PRs rode this conveyor.' Call out two differentiators: /generate-tasks assigns every task a verification MODE (TDD, test-after, UI evidence, checklist) so 'done' is defined before code exists; /review fans out up to 16 domain checks in parallel and compiles one report. This is prompting turned into infrastructure — versioned, reusable, and public.">
+    <div class="slide-inner">
+      <div class="kicker">The Engine · github.com/foyzulkarim/skills</div>
+      <h2>Not prompts — a <span class="hl">pipeline</span></h2>
+      <div class="conveyor">
+        <div class="step"><div class="n">1</div><div class="name">/plan-requirements</div><div class="d">Socratic interview → REQ doc. Claude interviews; the engineer decides.</div></div>
+        <div class="step"><div class="n">2</div><div class="name">/plan-architecture</div><div class="d">System design + change-footprint map → ARCH doc.</div></div>
+        <div class="step"><div class="n">3</div><div class="name">/generate-tasks</div><div class="d">Slices ARCH into tasks, each with a verification mode: tdd · test-after · ui · checklist.</div></div>
+        <div class="step"><div class="n">4</div><div class="name">/implement</div><div class="d">Executes each task under its verification discipline; commits per task.</div></div>
+        <div class="step"><div class="n">5</div><div class="name">/review</div><div class="d">Triage-first: fans out up to 16 domain checks in parallel, one compiled report.</div></div>
+        <div class="step"><div class="n">6</div><div class="name">/commit</div><div class="d">One-shot conventional commits with full diff context. Any stage.</div></div>
+      </div>
+      <p class="beltnote">Wrapped by lane management — <code>/create-issue</code>, <code>/start-task</code>, <code>/move-to-worktree</code>, <code>/finish-worktree</code>, <code>/archive-issue</code> — so the conveyor runs <b>in parallel without collisions</b>. Applied end-to-end across all 54 PRs.</p>
+    </div>
+  </section>
+
+  <!-- ═══════════ 8 · Thesis ═══════════ -->
+  <section class="slide" data-notes="8:00–8:45 · The one slide to remember. Read the headline, then one line per pillar. 'The model was never the bottleneck — the process around it was. Specs settle arguments before they start. Gates make done objective, so an agent can be trusted with volume. Lanes make throughput additive.' The skills made the pipeline; the pipeline made the 21 days.">
+    <div class="slide-inner">
+      <div class="kicker">The Thesis</div>
+      <h2>The speed didn’t come from the model <span class="hl">typing fast</span></h2>
+      <div class="pillars">
+        <div class="pillar"><div class="t"><span>Specs</span> settle arguments</div><div class="d">Written and merged first, binding over code and mockups. Every decision made once — no agent re-litigates it mid-build.</div></div>
+        <div class="pillar"><div class="t"><span>Gates</span> make “done” objective</div><div class="d">Typecheck, lint, format, tests, E2E — enforced on every push. An agent that can’t argue with the gate ships quality by default.</div></div>
+        <div class="pillar"><div class="t"><span>Lanes</span> make agents additive</div><div class="d">Isolated worktrees, ports, and gate runs mean four agents on a Saturday multiply output instead of stepping on each other.</div></div>
+      </div>
+      <p class="sub" style="margin-top:2.2rem">The skills made the pipeline. <b>The pipeline made the 21 days.</b></p>
+    </div>
+  </section>
+
+  <!-- ═══════════ 9 · Takeaways ═══════════ -->
+  <section class="slide" data-notes="8:45–9:30 · Keep this invitational, not prescriptive — 'here's what I'd borrow, take what fits.' /commit and /review cost nothing and drop into any repo as-is. /plan-architecture is the natural next experiment on a real new task. And the pipeline isn't sacred — the skills are just files; every team should reshape them around how it already works. The repo is public.">
+    <div class="slide-inner">
+      <div class="kicker">For Your Team</div>
+      <h2>What <span class="hl">we</span> could borrow</h2>
+      <div class="ladder">
+        <div class="rung"><div class="when">Start small</div><div class="what">We can use <code>/commit</code> and <code>/review</code> right now — they drop into any repo with zero process change.</div></div>
+        <div class="rung"><div class="when">Experiment</div><div class="what">We can try <code>/plan-architecture</code> on new tasks going forward and see how design-first feels on real work.</div></div>
+        <div class="rung"><div class="when">Make it ours</div><div class="what">And tweak our own pipeline to our <b>team DNA</b> — the skills are just markdown; fork them, reshape them, keep what earns its place.</div></div>
+      </div>
+      <div class="links">
+        <a href="https://github.com/foyzulkarim/skills">github.com/foyzulkarim/skills</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════ 10 · Close ═══════════ -->
+  <section class="slide" data-notes="9:30–10:00 · Close on the numbers, then the reframe: 'the interesting number isn't 127K lines — it's 21 days, at production quality, with the safety net included. That's a pipeline property, not a model property. The pipeline is public. Questions?'">
+    <div class="slide-inner">
+      <div class="kicker">Close</div>
+      <h1><span class="hl">21 days.</span> 54 PRs.<br>127K engineered lines.</h1>
+      <p class="sub">A brilliant dev pipeline is the anchor of a super-speedy, high-quality work pipeline.</p>
+      <div class="links">
+        <a href="https://github.com/foyzulkarim/skills">github.com/foyzulkarim/skills</a>
+        <a href="https://www.npmjs.com/package/@foyzulkarim/claude-lens">npmjs.com/package/@foyzulkarim/claude-lens</a>
+      </div>
+      <p class="sub" style="margin-top:2.6rem; color: var(--ink-muted); font-size: clamp(14px,1.3vw,17px)">Questions?</p>
+    </div>
+  </section>
+
+</div>
+
+<div class="counter" id="counter"></div>
+<div class="hint">←/→ slides · N notes</div>
+<div class="notes" id="notes"><div class="nt">Speaker notes</div><div class="nb" id="notesBody"></div></div>
+
+<script>
+/* ───────────────── data (from docs/merged-pr-report.csv, V2 build = 54 PRs, excl. pre-V2 #2) ───────────────── */
+const DAILY = [
+  { d: 5,  lines: 0,     prs: 0 },
+  { d: 6,  lines: 3980,  prs: 2 },
+  { d: 7,  lines: 63,    prs: 1 },
+  { d: 8,  lines: 0,     prs: 0 },
+  { d: 9,  lines: 0,     prs: 0 },
+  { d: 10, lines: 7431,  prs: 5 },
+  { d: 11, lines: 4673,  prs: 3 },
+  { d: 12, lines: 907,   prs: 2 },
+  { d: 13, lines: 6669,  prs: 6 },
+  { d: 14, lines: 5285,  prs: 4 },
+  { d: 15, lines: 4808,  prs: 3 },
+  { d: 16, lines: 4760,  prs: 2 },
+  { d: 17, lines: 3859,  prs: 3 },
+  { d: 18, lines: 38174, prs: 4 },
+  { d: 19, lines: 24691, prs: 8 },
+  { d: 20, lines: 9705,  prs: 4 },
+  { d: 21, lines: 4546,  prs: 1 },
+  { d: 22, lines: 0,     prs: 0 },
+  { d: 23, lines: 7566,  prs: 6 },
+  { d: 24, lines: 0,     prs: 0 },
+];
+let acc = 0;
+const CUM = DAILY.map(r => ({ d: r.d, cum: (acc += r.lines) }));
+const PHASES = [
+  { name: "P0 · Foundation & evidence", a: 5,  b: 11 },
+  { name: "P1 · Toolchain & gates",     a: 10, b: 11 },
+  { name: "P2 · Ingest & metrics",      a: 11, b: 14 },
+  { name: "P3 · React shell",           a: 14, b: 15 },
+  { name: "P4 · Twelve pages",          a: 16, b: 23, hot: true },
+  { name: "P5 · Hardening",             a: 19, b: 24 },
+];
+const BLUE = "#3987e5", ORANGE = "#d95926";
+const INK2 = "#aab2c0", MUTED = "#7b8494", GRID = "#232b38", BASE = "#333d4d", SURF = "#10161f";
+const fmt = n => n.toLocaleString("en-US");
+const NS = "http://www.w3.org/2000/svg";
+function el(tag, attrs, parent, text) {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (text != null) e.textContent = text;
+  parent.appendChild(e);
+  return e;
+}
+function svgRoot(mount, w, h, label) {
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+  svg.setAttribute("width", "100%");
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", label);
+  document.getElementById(mount).appendChild(svg);
+  return svg;
+}
+function tip(id, card, html, x, y) {
+  const t = document.getElementById(id);
+  t.innerHTML = html;
+  t.style.display = "block";
+  const cr = card.getBoundingClientRect();
+  let left = x - cr.left + 14, top = y - cr.top - 10;
+  if (left + t.offsetWidth > cr.width - 8) left = x - cr.left - t.offsetWidth - 14;
+  t.style.left = left + "px";
+  t.style.top = top + "px";
+}
+const hideTip = id => (document.getElementById(id).style.display = "none");
+
+/* ───────────────── slide 4 · phase gantt + cumulative line ───────────────── */
+(function journey() {
+  const W = 1080, H = 470, ML = 235, MR = 24;
+  const gTop = 24, rowH = 30, gH = PHASES.length * rowH;         // gantt block
+  const cTop = gTop + gH + 42, cBot = H - 34;                    // cumulative block
+  const svg = svgRoot("journeyChart", W, H, "Phase timeline (gantt) above a cumulative lines-merged line chart, July 5 to 24");
+  const x = d => ML + ((d - 5) / 19) * (W - ML - MR);
+  const y = v => cBot - (v / 130000) * (cBot - cTop);
+
+  // gantt rows
+  PHASES.forEach((p, i) => {
+    const ry = gTop + i * rowH;
+    el("text", { x: ML - 14, y: ry + 15, "text-anchor": "end", "font-size": 12, fill: INK2 }, svg, p.name);
+    el("rect", { x: x(p.a), y: ry + 4, width: Math.max(x(p.b) - x(p.a), 6), height: 14, rx: 4, fill: p.hot ? ORANGE : BLUE }, svg);
+  });
+  el("text", { x: x(19.5), y: gTop + 4 * rowH - 8, "font-size": 11.5, "font-weight": 700, fill: "#f2f4f8", "text-anchor": "middle" }, svg, "12 pages in 5 days — parallel lanes");
+
+  // cumulative axes
+  [0, 40000, 80000, 120000].forEach(v => {
+    el("line", { x1: ML, x2: W - MR, y1: y(v), y2: y(v), stroke: v ? GRID : BASE, "stroke-width": 1 }, svg);
+    el("text", { x: ML - 8, y: y(v) + 4, "text-anchor": "end", "font-size": 11, fill: MUTED }, svg, v ? v / 1000 + "K" : "0");
+  });
+  [5, 10, 15, 20, 24].forEach(d =>
+    el("text", { x: x(d), y: H - 12, "text-anchor": "middle", "font-size": 11, fill: MUTED }, svg, "Jul " + d));
+
+  // area + line
+  const pts = CUM.map(r => `${x(r.d)},${y(r.cum)}`).join(" ");
+  el("polygon", { points: `${x(5)},${y(0)} ${pts} ${x(24)},${y(0)}`, fill: BLUE, opacity: 0.12 }, svg);
+  el("polyline", { points: pts, fill: "none", stroke: BLUE, "stroke-width": 2, "stroke-linejoin": "round" }, svg);
+  // end marker + direct label (2px surface ring)
+  el("circle", { cx: x(24), cy: y(127117), r: 5, fill: BLUE, stroke: SURF, "stroke-width": 2 }, svg);
+  el("text", { x: x(24) - 8, y: y(127117) - 12, "text-anchor": "end", "font-size": 12.5, "font-weight": 700, fill: "#f2f4f8" }, svg, "127,117 lines");
+
+  // hover: nearest-day crosshair
+  const card = document.getElementById("journeyCard");
+  const guide = el("line", { y1: cTop - 6, y2: cBot, stroke: MUTED, "stroke-width": 1, "stroke-dasharray": "3 3", opacity: 0 }, svg);
+  const dot = el("circle", { r: 4.5, fill: BLUE, stroke: SURF, "stroke-width": 2, opacity: 0 }, svg);
+  el("rect", { x: ML, y: cTop - 6, width: W - ML - MR, height: cBot - cTop + 6, fill: "transparent" }, svg)
+    .addEventListener("mousemove", ev => {
+      const box = svg.getBoundingClientRect();
+      const d = Math.max(5, Math.min(24, Math.round(5 + ((ev.clientX - box.left) * (W / box.width) - ML) / ((W - ML - MR) / 19))));
+      const r = CUM[d - 5], daily = DAILY[d - 5];
+      guide.setAttribute("x1", x(d)); guide.setAttribute("x2", x(d)); guide.setAttribute("opacity", 1);
+      dot.setAttribute("cx", x(d)); dot.setAttribute("cy", y(r.cum)); dot.setAttribute("opacity", 1);
+      tip("journeyTip", card, `<b>Jul ${d}</b><br>cumulative <b>${fmt(r.cum)}</b> lines<br>${daily.prs} PR${daily.prs === 1 ? "" : "s"} merged this day`, ev.clientX, ev.clientY);
+    });
+  svg.addEventListener("mouseleave", () => { guide.setAttribute("opacity", 0); dot.setAttribute("opacity", 0); hideTip("journeyTip"); });
+
+  document.getElementById("journeyTbl").innerHTML =
+    "<table><tr><th>Date</th><th>Cumulative lines</th></tr>" +
+    CUM.filter(r => DAILY[r.d - 5].prs > 0 || r.d === 24).map(r => `<tr><td>Jul ${r.d}</td><td>${fmt(r.cum)}</td></tr>`).join("") +
+    "</table>";
+})();
+
+/* ───────────────── slide 5 · daily bars ───────────────── */
+(function daily() {
+  const W = 1080, H = 430, ML = 60, MR = 24, MT = 30, MB = 40;
+  const svg = svgRoot("dailyChart", W, H, "Bar chart of lines merged to main per day, July 5 to 24; July 18 and 19 highlighted");
+  const plotW = W - ML - MR, slot = plotW / DAILY.length, barW = Math.min(slot - 8, 34);
+  const y = v => H - MB - (v / 40000) * (H - MT - MB);
+  const card = document.getElementById("dailyCard");
+
+  [0, 10000, 20000, 30000, 40000].forEach(v => {
+    el("line", { x1: ML, x2: W - MR, y1: y(v), y2: y(v), stroke: v ? GRID : BASE, "stroke-width": 1 }, svg);
+    el("text", { x: ML - 8, y: y(v) + 4, "text-anchor": "end", "font-size": 11, fill: MUTED }, svg, v ? v / 1000 + "K" : "0");
+  });
+
+  DAILY.forEach((r, i) => {
+    const cx = ML + slot * i + slot / 2;
+    const hot = r.d === 18 || r.d === 19;
+    if (r.lines > 0) {
+      const h = Math.max(y(0) - y(r.lines), 3);
+      const bar = el("rect", {
+        x: cx - barW / 2, y: y(0) - h, width: barW, height: h, fill: hot ? ORANGE : BLUE,
+      }, svg);
+      // 4px rounded data-end anchored to the baseline
+      bar.setAttribute("clip-path", "inset(0 round 4px 4px 0 0)");
+      if (hot) el("text", { x: cx, y: y(r.lines) - 8, "text-anchor": "middle", "font-size": 12.5, "font-weight": 700, fill: "#f2f4f8" }, svg, "+" + fmt(r.lines));
+    }
+    // hover target wider than the mark
+    el("rect", { x: ML + slot * i, y: MT, width: slot, height: H - MT - MB, fill: "transparent" }, svg)
+      .addEventListener("mousemove", ev =>
+        tip("dailyTip", card, `<b>Jul ${r.d}</b><br><b>${r.lines ? "+" + fmt(r.lines) : "0"}</b> lines · ${r.prs} PR${r.prs === 1 ? "" : "s"}`, ev.clientX, ev.clientY));
+    if (r.d % 2 === 0 || r.d === 5)
+      el("text", { x: cx, y: H - 14, "text-anchor": "middle", "font-size": 11, fill: hot ? "#f2f4f8" : MUTED, "font-weight": hot ? 700 : 400 }, svg, (r.d === 5 ? "Jul " : "") + r.d);
+  });
+  svg.addEventListener("mouseleave", () => hideTip("dailyTip"));
+
+  document.getElementById("dailyTbl").innerHTML =
+    "<table><tr><th>Date</th><th>Lines added</th><th>PRs</th></tr>" +
+    DAILY.filter(r => r.prs > 0).map(r => `<tr><td>Jul ${r.d}</td><td>+${fmt(r.lines)}</td><td>${r.prs}</td></tr>`).join("") +
+    "</table>";
+})();
+
+/* ───────────────── deck navigation ───────────────── */
+const slides = [...document.querySelectorAll(".slide")];
+let cur = Math.min(Math.max((parseInt(location.hash.slice(1), 10) || 1) - 1, 0), slides.length - 1);
+function show(i) {
+  cur = Math.min(Math.max(i, 0), slides.length - 1);
+  slides.forEach((s, j) => s.classList.toggle("active", j === cur));
+  document.getElementById("counter").textContent = (cur + 1) + " / " + slides.length;
+  document.getElementById("notesBody").textContent = slides[cur].dataset.notes || "";
+  history.replaceState(null, "", "#" + (cur + 1));
+}
+document.addEventListener("keydown", e => {
+  if (["ArrowRight", " ", "PageDown"].includes(e.key)) { e.preventDefault(); show(cur + 1); }
+  else if (["ArrowLeft", "PageUp"].includes(e.key)) { e.preventDefault(); show(cur - 1); }
+  else if (e.key === "Home") show(0);
+  else if (e.key === "End") show(slides.length - 1);
+  else if (e.key.toLowerCase() === "n") document.getElementById("notes").classList.toggle("open");
+});
+document.getElementById("deck").addEventListener("click", e => {
+  if (e.target.closest("a, details, summary, .tooltip")) return;
+  show(cur + 1);
+});
+show(cur);
+</script>
+</body>
+</html>
