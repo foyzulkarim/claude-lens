@@ -4,6 +4,10 @@ A local-first observability dashboard for [Claude Code](https://claude.ai/code) 
 
 The dashboard reads directly from your `~/.claude` transcripts; nothing leaves your machine.
 
+## Presentation
+
+https://foyzulkarim.github.io/claude-lens/claude-lens-v2-presentation.html#1
+
 ## Dashboard
 
 <img width="2940" height="1604" alt="lens-v2" src="https://github.com/user-attachments/assets/86107d01-9440-4046-996d-7eac2503671b" />
