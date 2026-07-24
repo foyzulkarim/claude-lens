@@ -303,6 +303,101 @@ function filterAndGroup(
   return { groups, rangeFromMs, rangeToMs, hostBySessionId };
 }
 
+/**
+ * Shared empty scope for dense (group, bucket) cells that hold no records
+ * (#118). `computeMeasure(EMPTY_SCOPE, …)` returns each measure's established
+ * empty value (0 for activity measures, `null` for unavailable ones) — byte-
+ * for-byte identical to the pre-inversion result of running `computeMeasure`
+ * on an empty `scopeFor` cell. `computeMeasure` only ever reads a scope (never
+ * pushes/sorts/mutates), so a single shared instance is safe to hand to every
+ * empty cell rather than allocating a fresh `{[],[],[]}` per gap point.
+ */
+const EMPTY_SCOPE: MeasureScope = { calls: [], turns: [], sessions: [] };
+
+/** Get-or-create the `MeasureScope` for one `(group, bucket)` cell, materializing the group's bucket map and the cell lazily on first record. */
+function scopeForCell(
+  cells: Map<Group, Map<number | null, MeasureScope>>,
+  group: Group,
+  bucket: number | null,
+): MeasureScope {
+  let byBucket = cells.get(group);
+  if (!byBucket) {
+    byBucket = new Map();
+    cells.set(group, byBucket);
+  }
+  let scope = byBucket.get(bucket);
+  if (!scope) {
+    scope = { calls: [], turns: [], sessions: [] };
+    byBucket.set(bucket, scope);
+  }
+  return scope;
+}
+
+/**
+ * Single pass over records → `group → (bucketStartMs|null → MeasureScope)`
+ * (#118, decision A1). Replaces the old `measure × group × bucket` `scopeFor`
+ * triple loop that re-filtered every call/turn/session (with a fresh
+ * `Date.parse`) for every cell — `O(measures × groups × buckets × (C+T+S))`.
+ * Here each record is parsed once, matched to its group(s), and dropped into
+ * its bucket cell: `O(C + T×G + S×G)`, with the `buckets` (and re-scan)
+ * multiplier gone entirely.
+ *
+ * Equivalence is load-bearing (ARCH A3), so this reuses the exact predicates
+ * the old `scopeFor` used: `group.calls` is already range/filter/group-scoped
+ * by `buildGroups`; turns and sessions are range-filtered and group-matched
+ * with the same `Number.isFinite`/range guards and `turnMatchesGroup`/
+ * `sessionMatchesGroup` checks; bucketing reuses the same
+ * `bucketStart(Date.parse(ts), grain)` expression. `bucketByTime === false`
+ * collapses to a single `null` bucket per group, mirroring the old
+ * `buckets = [null]` path (whole group's calls, range-filtered turns/sessions).
+ *
+ * Groups with no records simply never appear in the returned map; the caller's
+ * dense read loop falls back to `EMPTY_SCOPE`, so an empty-range/empty-group
+ * query still emits a full dense axis of 0/`null` points.
+ */
+function buildCellScopes(
+  groups: Group[],
+  bucketByTime: boolean,
+  grain: Grain,
+  input: MetricsInput,
+  rangeFromMs: number,
+  rangeToMs: number,
+  hostBySessionId: Map<string, string>,
+): Map<Group, Map<number | null, MeasureScope>> {
+  const cells = new Map<Group, Map<number | null, MeasureScope>>();
+
+  for (const group of groups) {
+    for (const call of group.calls) {
+      const bucket = bucketByTime ? bucketStart(Date.parse(call.timestamp), grain) : null;
+      scopeForCell(cells, group, bucket).calls.push(call);
+    }
+  }
+
+  for (const turn of input.turns) {
+    const ts = Date.parse(turn.startedAt);
+    if (!Number.isFinite(ts) || ts < rangeFromMs || ts > rangeToMs) continue;
+    const bucket = bucketByTime ? bucketStart(ts, grain) : null;
+    for (const group of groups) {
+      if (turnMatchesGroup(turn, group, hostBySessionId)) {
+        scopeForCell(cells, group, bucket).turns.push(turn);
+      }
+    }
+  }
+
+  for (const session of input.sessions) {
+    const ts = Date.parse(session.firstAt);
+    if (!Number.isFinite(ts) || ts < rangeFromMs || ts > rangeToMs) continue;
+    const bucket = bucketByTime ? bucketStart(ts, grain) : null;
+    for (const group of groups) {
+      if (sessionMatchesGroup(session, group)) {
+        scopeForCell(cells, group, bucket).sessions.push(session);
+      }
+    }
+  }
+
+  return cells;
+}
+
 /** The `mode: "series"` pipeline, parameterized on `range` so it can also serve compare's shifted previous-period run (decision A7) — everything else (measures/dimensions/grain/filters) comes from `query`. */
 function computeSeriesForRange(
   input: MetricsInput,
@@ -313,19 +408,24 @@ function computeSeriesForRange(
   const bucketByTime = query.dimensions.includes("time");
   const buckets: (number | null)[] = bucketByTime ? enumerateBuckets(range, query.grain) : [null];
 
+  // One pass builds every (group, bucket) cell up front (#118); the loops
+  // below only read cells and format points — no per-cell re-filtering.
+  const cellScopes = buildCellScopes(
+    groups,
+    bucketByTime,
+    query.grain,
+    input,
+    rangeFromMs,
+    rangeToMs,
+    hostBySessionId,
+  );
+
   const series: Series[] = [];
   for (const measure of query.measures) {
     for (const group of groups) {
+      const byBucket = cellScopes.get(group);
       const points: SeriesPoint[] = buckets.map((bucketStartMs) => {
-        const scope = scopeFor(
-          group,
-          bucketStartMs,
-          query.grain,
-          input,
-          rangeFromMs,
-          rangeToMs,
-          hostBySessionId,
-        );
+        const scope = byBucket?.get(bucketStartMs) ?? EMPTY_SCOPE;
         const value = computeMeasure(measure, scope, input.pricing, input.gateSummaries);
         // `t` must be a machine-readable ISO-8601 instant, not a display
         // label: ECharts' `xAxis: { type: "time" }` parser requires an
