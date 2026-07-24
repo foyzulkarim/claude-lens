@@ -1,543 +1,1680 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Claude Lens V2 — 127K lines in 21 days</title>
-<style>
-  :root {
-    --page:        #080b10;
-    --surface-1:   #10161f;   /* chart + card surface */
-    --surface-2:   #151c27;
-    --ink:         #f2f4f8;
-    --ink-2:       #aab2c0;
-    --ink-muted:   #7b8494;
-    --grid:        #232b38;
-    --baseline:    #333d4d;
-    --border:      rgba(255,255,255,0.08);
-    --accent:      #e8825a;   /* brand orange — headings/chrome only */
-    --series-blue: #3987e5;   /* validated data slot 1 */
-    --series-orange: #d95926; /* validated data slot 2 (emphasis) */
-    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { height: 100%; }
-  body {
-    background: var(--page);
-    color: var(--ink);
-    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-    overflow: hidden;
-  }
-  .deck { height: 100vh; position: relative; }
-  .slide {
-    position: absolute; inset: 0;
-    display: none;
-    flex-direction: column;
-    justify-content: center;
-    padding: 4.5vh 7vw;
-    background:
-      radial-gradient(1200px 600px at 85% 0%, rgba(232,130,90,0.06), transparent 60%),
-      linear-gradient(var(--page), var(--page));
-  }
-  .slide.active { display: flex; }
-  .slide-inner { width: 100%; max-width: 1150px; margin: 0 auto; }
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Claude Lens V2 build retrospective: a local-first Claude Code observability product shipped in 21 days."
+    />
+    <title>Claude Lens V2 — 21 days, measured</title>
+    <style>
+      :root {
+        --void: #070a0f;
+        --panel: #0d121a;
+        --panel-2: #121925;
+        --line: #25303e;
+        --line-soft: rgba(130, 151, 177, 0.16);
+        --white: #f4f7fb;
+        --silver: #a6b1c0;
+        --muted: #7a8799;
+        --cyan: #62ddec;
+        --amber: #ffb24d;
+        --green: #68d391;
+        --red: #ff6b6b;
+        --display: Arial, Helvetica, sans-serif;
+        --mono: "SFMono-Regular", "Cascadia Code", "Roboto Mono", Consolas, monospace;
+      }
 
-  .kicker {
-    color: var(--accent);
-    font-size: clamp(12px, 1.1vw, 15px);
-    font-weight: 700;
-    letter-spacing: 0.28em;
-    text-transform: uppercase;
-    margin-bottom: 1.2rem;
-  }
-  h1 { font-size: clamp(38px, 5.2vw, 68px); font-weight: 800; letter-spacing: -0.02em; line-height: 1.05; }
-  h1 .hl, h2 .hl { color: var(--accent); }
-  h2 { font-size: clamp(26px, 3.2vw, 42px); font-weight: 800; letter-spacing: -0.015em; line-height: 1.12; margin-bottom: 1.4rem; }
-  .sub { color: var(--ink-2); font-size: clamp(16px, 1.6vw, 22px); margin-top: 1rem; line-height: 1.45; }
-  .sub b, .sub strong { color: var(--ink); }
+      * {
+        box-sizing: border-box;
+      }
 
-  /* stat tiles (headline-card style) */
-  .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 2.6rem; }
-  .tile {
-    background: var(--surface-1);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 20px 22px;
-  }
-  .tile .v { font-size: clamp(26px, 2.8vw, 40px); font-weight: 800; letter-spacing: -0.01em; }
-  .tile .v.orange { color: var(--accent); }
-  .tile .l { color: var(--ink-2); font-size: clamp(12px, 1.15vw, 15px); margin-top: 6px; line-height: 1.35; }
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+      }
 
-  /* bullets */
-  ul.pts { list-style: none; margin-top: 0.4rem; }
-  ul.pts li {
-    padding: 10px 0 10px 30px;
-    position: relative;
-    color: var(--ink-2);
-    font-size: clamp(15px, 1.55vw, 21px);
-    line-height: 1.45;
-  }
-  ul.pts li::before { content: "—"; position: absolute; left: 0; color: var(--accent); font-weight: 700; }
-  ul.pts li b, ul.pts li strong { color: var(--ink); }
-  ul.pts code, .lane code, .step code, td code {
-    font-family: var(--mono); font-size: 0.88em;
-    background: var(--surface-2); border: 1px solid var(--border);
-    border-radius: 5px; padding: 1px 6px; color: var(--ink);
-  }
+      body {
+        overflow: hidden;
+        color: var(--white);
+        background: var(--void);
+        font-family: var(--display);
+        -webkit-font-smoothing: antialiased;
+      }
 
-  /* charts */
-  .chart-card {
-    background: var(--surface-1);
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    padding: 18px 20px 12px;
-    margin-top: 1.2rem;
-    position: relative;
-  }
-  .chart-title { font-size: 14px; font-weight: 700; color: var(--ink); }
-  .chart-sub { font-size: 12.5px; color: var(--ink-muted); margin-top: 2px; }
-  svg text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
-  .tooltip {
-    position: absolute; pointer-events: none; display: none; z-index: 5;
-    background: #1b2432; border: 1px solid var(--border); border-radius: 8px;
-    padding: 8px 11px; font-size: 12.5px; line-height: 1.5; color: var(--ink-2);
-    box-shadow: 0 6px 24px rgba(0,0,0,0.5); white-space: nowrap;
-  }
-  .tooltip b { color: var(--ink); }
-  details.tbl { margin-top: 8px; }
-  details.tbl summary { cursor: pointer; color: var(--ink-muted); font-size: 12px; user-select: none; }
-  details.tbl table { border-collapse: collapse; margin-top: 8px; font-size: 12.5px; color: var(--ink-2); }
-  details.tbl th, details.tbl td { padding: 3px 14px 3px 0; text-align: right; font-variant-numeric: tabular-nums; }
-  details.tbl th { color: var(--ink-muted); font-weight: 600; text-align: right; border-bottom: 1px solid var(--grid); }
-  details.tbl th:first-child, details.tbl td:first-child { text-align: left; }
+      button,
+      a {
+        font: inherit;
+      }
 
-  /* phase gantt rows */
-  .gantt-label { font-size: 12.5px; fill: var(--ink-2); }
+      a {
+        color: inherit;
+      }
 
-  /* lanes diagram */
-  .lanes { display: grid; grid-template-columns: 150px 1fr 190px; gap: 20px; align-items: center; margin-top: 1.6rem; }
-  .lane-col { display: flex; flex-direction: column; gap: 12px; }
-  .node {
-    background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
-    padding: 16px 14px; text-align: center; font-weight: 700; font-size: 15px;
-  }
-  .node small { display: block; font-weight: 400; color: var(--ink-muted); font-size: 12px; margin-top: 4px; }
-  .lane {
-    background: var(--surface-1); border: 1px solid var(--border); border-left: 3px solid var(--series-blue);
-    border-radius: 10px; padding: 12px 16px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
-    font-size: 14px; color: var(--ink-2);
-  }
-  .lane b { color: var(--ink); min-width: 118px; }
-  .lane .ok { color: #0ca30c; font-weight: 700; margin-left: auto; }
-  .arrow-note { text-align: center; color: var(--ink-muted); font-size: 12.5px; }
+      button:focus-visible,
+      a:focus-visible {
+        outline: 2px solid var(--cyan);
+        outline-offset: 4px;
+      }
 
-  /* pipeline conveyor */
-  .conveyor { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin-top: 1.8rem; }
-  .step {
-    background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
-    padding: 16px 12px; position: relative;
-  }
-  .step .n { color: var(--accent); font-family: var(--mono); font-size: 11px; font-weight: 700; }
-  .step .name { font-family: var(--mono); font-weight: 700; font-size: clamp(12px, 1.15vw, 15px); margin: 6px 0 8px; color: var(--ink); }
-  .step .d { color: var(--ink-2); font-size: clamp(11px, 1.02vw, 13.5px); line-height: 1.45; }
-  .step:not(:last-child)::after {
-    content: "→"; position: absolute; right: -13px; top: 50%; transform: translateY(-50%);
-    color: var(--ink-muted); font-size: 15px; z-index: 2;
-  }
-  .beltnote { margin-top: 1.3rem; color: var(--ink-2); font-size: clamp(13px, 1.3vw, 17px); line-height: 1.55; }
-  .beltnote code { font-family: var(--mono); font-size: 0.86em; background: var(--surface-2); border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px; }
+      .deck {
+        position: relative;
+        width: 100%;
+        height: 100dvh;
+        isolation: isolate;
+      }
 
-  /* thesis pillars */
-  .pillars { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 2.4rem; }
-  .pillar { background: var(--surface-1); border: 1px solid var(--border); border-radius: 14px; padding: 26px 24px; }
-  .pillar .t { font-size: clamp(17px, 1.8vw, 23px); font-weight: 800; margin-bottom: 10px; }
-  .pillar .t span { color: var(--accent); }
-  .pillar .d { color: var(--ink-2); font-size: clamp(13px, 1.3vw, 16.5px); line-height: 1.5; }
+      .deck::before {
+        position: fixed;
+        inset: 0;
+        z-index: -2;
+        background:
+          linear-gradient(rgba(97, 125, 156, 0.045) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(97, 125, 156, 0.045) 1px, transparent 1px);
+        background-size: clamp(48px, 6vw, 96px) clamp(48px, 6vw, 96px);
+        content: "";
+        mask-image: linear-gradient(to bottom, black, transparent 90%);
+      }
 
-  /* adoption ladder */
-  .ladder { display: flex; flex-direction: column; gap: 14px; margin-top: 2rem; }
-  .rung { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 18px 22px; display: grid; grid-template-columns: 170px 1fr; gap: 18px; align-items: baseline; }
-  .rung .when { color: var(--accent); font-weight: 800; font-size: clamp(15px, 1.5vw, 19px); }
-  .rung .what { color: var(--ink-2); font-size: clamp(14px, 1.4vw, 18px); line-height: 1.5; }
-  .rung .what b { color: var(--ink); }
-  .rung .what code { font-family: var(--mono); font-size: 0.86em; background: var(--surface-2); border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px; }
+      .slide {
+        --tone: var(--cyan);
+        position: absolute;
+        inset: 0;
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        gap: clamp(1rem, 2vh, 1.5rem);
+        padding: clamp(22px, 4vw, 64px) clamp(24px, 6vw, 96px) clamp(18px, 3vw, 48px);
+        overflow: hidden;
+        visibility: hidden;
+        opacity: 0;
+        transform: translateX(2.5%);
+        transition:
+          opacity 320ms ease,
+          transform 480ms cubic-bezier(0.22, 1, 0.36, 1),
+          visibility 0s linear 480ms;
+      }
 
-  .links { margin-top: 2.4rem; display: flex; gap: 26px; flex-wrap: wrap; }
-  .links a { color: var(--series-blue); font-family: var(--mono); font-size: clamp(13px, 1.35vw, 17px); text-decoration: none; }
-  .links a:hover { text-decoration: underline; }
+      .slide[data-tone="amber"] {
+        --tone: var(--amber);
+      }
 
-  /* chrome */
-  .counter {
-    position: fixed; bottom: 18px; right: 24px; z-index: 10;
-    color: var(--ink-muted); font-family: var(--mono); font-size: 12.5px;
-  }
-  .hint { position: fixed; bottom: 18px; left: 24px; z-index: 10; color: var(--ink-muted); font-size: 11.5px; font-family: var(--mono); }
-  .notes {
-    position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; display: none;
-    background: rgba(10, 14, 20, 0.97); border-top: 2px solid var(--accent);
-    padding: 16px 7vw 20px; max-height: 38vh; overflow-y: auto;
-  }
-  .notes.open { display: block; }
-  .notes .nt { color: var(--accent); font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
-  .notes .nb { color: var(--ink-2); font-size: 14.5px; line-height: 1.6; margin-top: 6px; white-space: pre-line; }
+      .slide[data-tone="green"] {
+        --tone: var(--green);
+      }
 
-  @media print {
-    body { overflow: visible; }
-    .slide { display: flex !important; position: relative; height: 100vh; page-break-after: always; }
-    .counter, .hint, .notes { display: none !important; }
-  }
-</style>
-</head>
-<body>
-<div class="deck" id="deck">
+      .slide.active {
+        visibility: visible;
+        opacity: 1;
+        transform: translateX(0);
+        transition-delay: 0s;
+      }
 
-  <!-- ═══════════ 1 · Cold open ═══════════ -->
-  <section class="slide" data-notes="0:00–0:45 · Don't explain yet — let the numbers land. Open with: 'Three weeks ago this product didn't exist. Today it's on npm with real users.' Point at the 127K tile: 'And no, it's not vibe code — that's the next ten minutes.' This is a brag with receipts, and the receipts start on slide 3.">
-    <div class="slide-inner">
-      <div class="kicker">Build Retrospective</div>
-      <h1>Claude Lens <span class="hl">V2</span></h1>
-      <p class="sub"><b>127,000 lines</b> of engineered code — shipped to production in <b>21 days</b>, by one engineer and an agent pipeline.</p>
-      <div class="tiles">
-        <div class="tile"><div class="v orange">21</div><div class="l">days — planning kickoff → final merge (Jul 3 → Jul 24)</div></div>
-        <div class="tile"><div class="v">54</div><div class="l">merged pull requests</div></div>
-        <div class="tile"><div class="v">+127,117</div><div class="l">lines added (−3,141 deleted)</div></div>
-        <div class="tile"><div class="v">+38,174</div><div class="l">biggest single day — Jul 18, across 4 PRs</div></div>
-        <div class="tile"><div class="v">~2,354</div><div class="l">average lines per PR</div></div>
-        <div class="tile"><div class="v orange">235</div><div class="l">npm installs in the first 48 hours</div></div>
-      </div>
-    </div>
-  </section>
+      .slide.previous {
+        transform: translateX(-2.5%);
+      }
 
-  <!-- ═══════════ 2 · What it is ═══════════ -->
-  <section class="slide" data-notes="0:45–1:30 · Keep this brief — the product is the evidence, the pipeline is the story. One sentence per bullet. If someone wants a demo, offer it for Q&A. Everyone in the room runs Claude Code, so the hook is: 'this answers the question you all have — what is my agent actually costing and doing?'">
-    <div class="slide-inner">
-      <div class="kicker">The Product · 60 seconds</div>
-      <h2>What is <span class="hl">Claude Lens</span>?</h2>
-      <ul class="pts">
-        <li>An <b>observability dashboard for your own Claude Code usage</b> — it tails the transcript files the CLI already writes and turns them into live metrics.</li>
-        <li><b>One npm package, one port</b>: Fastify server + React SPA. Byte-offset incremental ingest, an in-memory metrics engine, WebSocket live-refresh.</li>
-        <li><b>12 pages</b>: Dashboard, Sessions, Turn Inspector, Cache Lab, Models, Trends &amp; Budget, Report Card, Explore, Data Health&hellip;</li>
-        <li>A <b>cost-tier system</b>: 🟢 exact / 🟡 estimated from transcripts alone; optional capture files upgrade sessions to observed dollar costs.</li>
-        <li>Live on npm: <code>npx @foyzulkarim/claude-lens</code> — published Jul 21, mid-build.</li>
-      </ul>
-    </div>
-  </section>
+      .slide::after {
+        position: absolute;
+        top: -25vmin;
+        right: -20vmin;
+        z-index: -1;
+        width: 62vmin;
+        height: 62vmin;
+        border: 1px solid color-mix(in srgb, var(--tone) 18%, transparent);
+        border-radius: 50%;
+        box-shadow:
+          0 0 0 9vmin color-mix(in srgb, var(--tone) 3%, transparent),
+          0 0 0 18vmin color-mix(in srgb, var(--tone) 2%, transparent);
+        content: "";
+      }
 
-  <!-- ═══════════ 3 · The objection ═══════════ -->
-  <section class="slide" data-notes="1:30–2:45 · This is the credibility slide — name the objection before anyone in the room does. Say it out loud: '127 thousand AI lines. You're thinking slop.' Then walk the receipts top to bottom. The punchline is the last bullet: the tests and gates aren't excluded from the number — they ARE the number. Land on: 'quality wasn't inspected in at the end, it was installed at the start.'">
-    <div class="slide-inner">
-      <div class="kicker">The Objection</div>
-      <h2>127K AI-generated lines. You're thinking: <span class="hl">vibe code.</span></h2>
-      <ul class="pts">
-        <li><b>Specs merged before product code.</b> PR #5 — specs, gates, and the phased plan — landed before a single feature line. The repo's rule: <i>“Specs win over code or mockups.”</i></li>
-        <li><b>Gates existed before the product did.</b> Phase 1 was CI, Biome lint/format, Storybook, strict TypeScript — merged before Phase 2 wrote the engine.</li>
-        <li><b>Every PR traces to a numbered plan task.</b> <code>#P0-2</code> through <code>#P5-1</code>. No orphan work, no mystery diffs.</li>
-        <li><b>Review actually bit.</b> A revert (#68), a concurrency bug found under real load (#95), a sub-agent routing fix (#114) — real bugs, caught by real gates.</li>
-        <li><b>2.4% deletion ratio.</b> 3,141 deletions against 127K additions — what greenfield looks like when the plan is right the first time.</li>
-        <li><b>The 127K includes the safety net</b> — Cypress E2E, Storybook, CI, fixtures. The tests aren’t omitted from the brag; they <b>are</b> the brag.</li>
-      </ul>
-    </div>
-  </section>
+      .chrome,
+      .foot {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        min-width: 0;
+        font-family: var(--mono);
+        font-size: clamp(10px, 0.8vw, 13px);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
 
-  <!-- ═══════════ 4 · The journey ═══════════ -->
-  <section class="slide" data-notes="2:45–4:00 · Walk the gantt top to bottom: evidence before code (P0 audited REAL transcript files before the parser was designed), toolchain before features, engine before UI, then twelve pages in five days. Trace the cumulative line with your hand — flat-ish for two weeks, then the elbow on Jul 18. Tease it: 'that elbow is the next slide.'">
-    <div class="slide-inner">
-      <div class="kicker">The Journey</div>
-      <h2>Five phases, <span class="hl">zero chaos</span></h2>
-      <div class="chart-card" id="journeyCard">
-        <div class="chart-title">Phase plan vs. cumulative lines merged</div>
-        <div class="chart-sub">Jul 5 → Jul 24, 2026 · phases from the build plan · line = cumulative additions on main</div>
-        <div id="journeyChart"></div>
-        <div class="tooltip" id="journeyTip"></div>
-        <details class="tbl"><summary>Data table</summary><div id="journeyTbl"></div></details>
-      </div>
-    </div>
-  </section>
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.75rem;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+        text-transform: lowercase;
+      }
 
-  <!-- ═══════════ 5 · The weekend ═══════════ -->
-  <section class="slide" data-notes="4:00–5:15 · The wow slide. Pause on the two orange bars. 'Saturday and Sunday: twelve PRs, sixty-two thousand lines — 49% of the entire product in one weekend.' Preempt the skeptic: these weren't scaffold dumps — Dashboard, Sessions, Session Detail, Cache Lab: four complete, tested, reviewed pages on Saturday alone. Then the turn: 'a single agent can't do this. The unlock is the NEXT slide.'">
-    <div class="slide-inner">
-      <div class="kicker">The Velocity Peak</div>
-      <h2>The weekend that shipped <span class="hl">half the product</span></h2>
-      <div class="chart-card" id="dailyCard">
-        <div class="chart-title">Lines merged to main per day</div>
-        <div class="chart-sub">Jul 18–19: 12 PRs, +62,865 lines — 49% of the entire V2 build</div>
-        <div id="dailyChart"></div>
-        <div class="tooltip" id="dailyTip"></div>
-        <details class="tbl"><summary>Data table</summary><div id="dailyTbl"></div></details>
-      </div>
-    </div>
-  </section>
+      .brand-mark {
+        color: var(--cyan);
+        font-size: 1.15em;
+      }
 
-  <!-- ═══════════ 6 · Parallel lanes ═══════════ -->
-  <section class="slide" data-notes="5:15–6:45 · The screenshot slide — go slow. One GitHub issue = one git worktree = one agent lane. Each lane gets its own port block (so four dev servers run at once), its own npm ci, its own full verify gate. Lanes can't touch each other; the only merge point is the squash-merge queue back to main. Skills automate the lifecycle: /start-task opens it, /move-to-worktree parks it, /finish-worktree tears it down, /archive-issue retires the paperwork to the wiki. 'Parallelism is easy. SAFE parallelism is a system.'">
-    <div class="slide-inner">
-      <div class="kicker">How · Saturday, Jul 18</div>
-      <h2>Parallel agent lanes — <span class="hl">isolated by construction</span></h2>
-      <div class="lanes">
-        <div class="node">main<small>always green<br>squash-merges only</small></div>
-        <div class="lane-col">
-          <div class="lane"><b>.worktrees/89</b> Dashboard page <code>ports 4328+</code> <span class="ok">verify ✓</span></div>
-          <div class="lane"><b>.worktrees/93</b> Sessions page <code>ports 4428+</code> <span class="ok">verify ✓</span></div>
-          <div class="lane"><b>.worktrees/92</b> Session Detail <code>ports 4528+</code> <span class="ok">verify ✓</span></div>
-          <div class="lane"><b>.worktrees/91</b> Cache Lab <code>ports 4628+</code> <span class="ok">verify ✓</span></div>
+      .chapter {
+        max-width: 45vw;
+        overflow: hidden;
+        color: var(--muted);
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .content {
+        display: grid;
+        align-content: center;
+        width: min(100%, 1440px);
+        margin: 0 auto;
+        min-height: 0;
+      }
+
+      .eyebrow {
+        margin: 0 0 clamp(0.75rem, 1.7vh, 1.2rem);
+        color: var(--tone);
+        font-family: var(--mono);
+        font-size: clamp(11px, 0.95vw, 15px);
+        font-weight: 800;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+
+      h1,
+      h2,
+      p {
+        margin-top: 0;
+      }
+
+      h1,
+      h2 {
+        max-width: 13ch;
+        margin-bottom: 0;
+        font-weight: 800;
+        letter-spacing: -0.04em;
+        line-height: 0.94;
+        text-wrap: balance;
+      }
+
+      h1 {
+        font-size: clamp(52px, 8.1vw, 128px);
+      }
+
+      h2 {
+        font-size: clamp(38px, 5.7vw, 88px);
+      }
+
+      .accent {
+        color: var(--tone);
+      }
+
+      .lede {
+        max-width: 54ch;
+        margin: clamp(1rem, 2.5vh, 2rem) 0 0;
+        color: var(--silver);
+        font-size: clamp(16px, 1.45vw, 24px);
+        line-height: 1.45;
+        text-wrap: balance;
+      }
+
+      .foot {
+        gap: 1rem;
+        color: var(--muted);
+      }
+
+      .merge-trace {
+        display: grid;
+        flex: 1;
+        grid-template-columns: repeat(54, 1fr);
+        gap: clamp(1px, 0.16vw, 3px);
+        max-width: 560px;
+        height: 10px;
+      }
+
+      .merge-trace i {
+        display: block;
+        align-self: end;
+        height: 3px;
+        background: var(--line);
+      }
+
+      .merge-trace i:nth-child(3n) {
+        height: 6px;
+      }
+
+      .merge-trace i:nth-child(9n) {
+        height: 10px;
+      }
+
+      .merge-trace i.done {
+        background: var(--tone);
+      }
+
+      .count {
+        min-width: 4.8rem;
+        color: var(--silver);
+        text-align: right;
+      }
+
+      .hero-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.05fr) minmax(380px, 0.95fr);
+        gap: clamp(2rem, 5vw, 7rem);
+        align-items: center;
+      }
+
+      .hero-number {
+        position: relative;
+        color: var(--white);
+        font-size: clamp(180px, 30vw, 470px);
+        font-weight: 900;
+        letter-spacing: -0.12em;
+        line-height: 0.68;
+      }
+
+      .hero-number::after {
+        position: absolute;
+        right: -0.08em;
+        bottom: -0.08em;
+        color: var(--amber);
+        font-family: var(--mono);
+        font-size: 0.08em;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        content: "days";
+      }
+
+      .hero-copy h1 {
+        max-width: 8ch;
+      }
+
+      .hero-copy .lede {
+        max-width: 38ch;
+      }
+
+      .metric-strip {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        margin-top: clamp(1.5rem, 4vh, 3.5rem);
+        border-top: 1px solid var(--line);
+      }
+
+      .metric {
+        padding: clamp(0.8rem, 1.8vw, 1.5rem) 1rem 0 0;
+      }
+
+      .metric + .metric {
+        padding-left: clamp(0.8rem, 1.8vw, 1.5rem);
+        border-left: 1px solid var(--line);
+      }
+
+      .metric strong {
+        display: block;
+        color: var(--white);
+        font-family: var(--mono);
+        font-size: clamp(24px, 3vw, 48px);
+        letter-spacing: -0.05em;
+      }
+
+      .metric span {
+        display: block;
+        margin-top: 0.35rem;
+        color: var(--muted);
+        font-size: clamp(10px, 0.9vw, 14px);
+        line-height: 1.35;
+        text-transform: uppercase;
+      }
+
+      .scope-note {
+        margin: 1rem 0 0;
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: clamp(9px, 0.72vw, 11px);
+        line-height: 1.5;
+      }
+
+      .instrument-layout {
+        display: grid;
+        grid-template-columns: minmax(320px, 0.72fr) minmax(560px, 1.28fr);
+        gap: clamp(2rem, 5vw, 7rem);
+        align-items: center;
+      }
+
+      .instrument-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1px;
+        border: 1px solid var(--line);
+        background: var(--line);
+      }
+
+      .readout {
+        position: relative;
+        min-height: clamp(130px, 17vh, 180px);
+        padding: clamp(1rem, 2vw, 1.7rem);
+        overflow: hidden;
+        background: var(--panel);
+      }
+
+      .readout::after {
+        position: absolute;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        height: 2px;
+        background: linear-gradient(90deg, var(--tone), transparent 72%);
+        content: "";
+        opacity: 0.7;
+      }
+
+      .readout strong {
+        display: block;
+        color: var(--white);
+        font-family: var(--mono);
+        font-size: clamp(30px, 3.8vw, 58px);
+        letter-spacing: -0.07em;
+        line-height: 0.95;
+      }
+
+      .readout span {
+        display: block;
+        margin-top: 0.8rem;
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: clamp(9px, 0.78vw, 12px);
+        line-height: 1.4;
+        text-transform: uppercase;
+      }
+
+      .readout em {
+        color: var(--tone);
+        font-style: normal;
+      }
+
+      .source-note {
+        grid-column: 1 / -1;
+        margin: 0;
+        padding: 0.7rem 0.9rem;
+        color: var(--muted);
+        background: var(--void);
+        font-family: var(--mono);
+        font-size: clamp(8px, 0.66vw, 10px);
+        line-height: 1.5;
+      }
+
+      .command {
+        display: inline-flex;
+        max-width: 100%;
+        margin-top: clamp(1.4rem, 3vh, 2.5rem);
+        padding: 0.8rem 1rem;
+        overflow: hidden;
+        border: 1px solid color-mix(in srgb, var(--tone) 45%, var(--line));
+        color: var(--white);
+        background: rgba(7, 10, 15, 0.72);
+        font-family: var(--mono);
+        font-size: clamp(11px, 1vw, 15px);
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .command::before {
+        margin-right: 0.75rem;
+        color: var(--tone);
+        content: "$";
+      }
+
+      .surface-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 1px;
+        height: min(52vh, 520px);
+        margin-top: clamp(1rem, 2.5vh, 1.8rem);
+        border: 1px solid var(--line);
+        background: var(--line);
+      }
+
+      .surface-card {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        min-width: 0;
+        padding: clamp(0.75rem, 1.4vw, 1.25rem);
+        background: var(--panel);
+      }
+
+      .surface-card:nth-child(4n + 1) {
+        background: linear-gradient(135deg, color-mix(in srgb, var(--tone) 7%, var(--panel)), var(--panel));
+      }
+
+      .surface-card b {
+        color: var(--tone);
+        font-family: var(--mono);
+        font-size: clamp(8px, 0.68vw, 10px);
+        font-weight: 600;
+      }
+
+      .surface-card strong {
+        display: block;
+        margin-top: 0.5rem;
+        font-size: clamp(13px, 1.25vw, 19px);
+        line-height: 1.05;
+      }
+
+      .surface-card span {
+        margin-top: 0.8rem;
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: clamp(8px, 0.66vw, 10px);
+        line-height: 1.35;
+        text-transform: uppercase;
+      }
+
+      .system-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 0.7fr) minmax(520px, 1.3fr);
+        gap: clamp(2rem, 5vw, 7rem);
+        align-items: center;
+      }
+
+      .pipeline {
+        position: relative;
+        display: grid;
+        gap: 0;
+        align-items: stretch;
+      }
+
+      .pipe {
+        position: relative;
+        display: grid;
+        grid-template-columns: 88px 1fr auto;
+        gap: 1rem;
+        align-items: center;
+        min-height: clamp(62px, 8vh, 92px);
+        padding: 0.75rem 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .pipe:first-child {
+        border-top: 1px solid var(--line);
+      }
+
+      .pipe .id {
+        color: var(--tone);
+        font-family: var(--mono);
+        font-size: 0.75rem;
+        letter-spacing: 0.1em;
+      }
+
+      .pipe strong {
+        font-size: clamp(16px, 1.35vw, 22px);
+      }
+
+      .pipe small {
+        max-width: 24ch;
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: clamp(9px, 0.75vw, 12px);
+        line-height: 1.4;
+        text-align: right;
+      }
+
+      .pipe::after {
+        position: absolute;
+        bottom: -5px;
+        left: 40px;
+        z-index: 2;
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: var(--tone);
+        box-shadow: 0 0 16px var(--tone);
+        content: "";
+      }
+
+      .phase-layout {
+        display: grid;
+        grid-template-columns: minmax(320px, 0.7fr) minmax(560px, 1.3fr);
+        gap: clamp(2rem, 5vw, 7rem);
+        align-items: center;
+      }
+
+      .timeline {
+        display: grid;
+        grid-template-columns: repeat(6, 1fr);
+        align-items: end;
+        height: min(50vh, 500px);
+        border-bottom: 2px solid var(--tone);
+      }
+
+      .phase {
+        --height: 30%;
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+        height: var(--height);
+        min-height: 110px;
+        padding: 0.9rem clamp(0.45rem, 1vw, 1rem);
+        border-top: 2px solid var(--tone);
+        border-left: 1px solid var(--line);
+        background: linear-gradient(to bottom, color-mix(in srgb, var(--tone) 10%, transparent), transparent);
+      }
+
+      .phase strong {
+        display: block;
+        font-size: clamp(12px, 1.1vw, 17px);
+        line-height: 1.1;
+      }
+
+      .phase span {
+        display: block;
+        margin-top: 0.45rem;
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: clamp(8px, 0.7vw, 11px);
+        line-height: 1.35;
+      }
+
+      .phase b {
+        position: absolute;
+        top: -2rem;
+        color: var(--silver);
+        font-family: var(--mono);
+        font-size: clamp(9px, 0.7vw, 11px);
+        font-weight: 500;
+      }
+
+      .lane-layout {
+        display: grid;
+        grid-template-columns: minmax(320px, 0.74fr) minmax(540px, 1.26fr);
+        gap: clamp(2rem, 5vw, 7rem);
+        align-items: center;
+      }
+
+      .weekend-number {
+        margin-top: clamp(1.5rem, 4vh, 3rem);
+        color: var(--amber);
+        font-family: var(--mono);
+        font-size: clamp(54px, 7vw, 106px);
+        font-weight: 800;
+        letter-spacing: -0.08em;
+        line-height: 0.9;
+      }
+
+      .weekend-number span {
+        display: block;
+        margin-top: 0.9rem;
+        color: var(--muted);
+        font-family: var(--display);
+        font-size: clamp(11px, 1vw, 15px);
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        line-height: 1.3;
+        text-transform: uppercase;
+      }
+
+      .lanes {
+        position: relative;
+        display: grid;
+        gap: clamp(0.7rem, 1.6vh, 1.2rem);
+      }
+
+      .lanes::before {
+        position: absolute;
+        top: 8%;
+        bottom: 8%;
+        left: 27px;
+        width: 1px;
+        background: var(--line);
+        content: "";
+      }
+
+      .lane {
+        position: relative;
+        display: grid;
+        grid-template-columns: 55px minmax(140px, 0.55fr) minmax(200px, 1fr) auto;
+        gap: clamp(0.6rem, 1.5vw, 1.4rem);
+        align-items: center;
+        min-height: clamp(62px, 8vh, 86px);
+        padding: 0.8rem 1rem 0.8rem 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .lane .dot {
+        z-index: 1;
+        width: 11px;
+        height: 11px;
+        margin-left: 22px;
+        border: 2px solid var(--void);
+        border-radius: 50%;
+        background: var(--cyan);
+        box-shadow: 0 0 0 4px var(--void);
+      }
+
+      .lane code,
+      .lane small {
+        font-family: var(--mono);
+      }
+
+      .lane code {
+        color: var(--cyan);
+        font-size: clamp(10px, 0.85vw, 13px);
+      }
+
+      .lane strong {
+        font-size: clamp(13px, 1.15vw, 18px);
+      }
+
+      .lane small {
+        color: var(--green);
+        font-size: clamp(9px, 0.75vw, 11px);
+        text-align: right;
+        text-transform: uppercase;
+      }
+
+      .equation {
+        margin-top: 1.8rem;
+        color: var(--silver);
+        font-family: var(--mono);
+        font-size: clamp(10px, 0.9vw, 14px);
+        line-height: 1.8;
+      }
+
+      .equation b {
+        color: var(--tone);
+      }
+
+      .velocity-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1.3fr) minmax(280px, 0.7fr);
+        gap: clamp(2rem, 5vw, 6rem);
+        align-items: center;
+      }
+
+      .bars {
+        display: grid;
+        grid-template-columns: repeat(20, 1fr);
+        gap: clamp(3px, 0.55vw, 10px);
+        align-items: end;
+        height: min(55vh, 530px);
+        padding-top: 2.5rem;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .bar {
+        --value: 10;
+        position: relative;
+        min-height: 3px;
+        height: calc(var(--value) * 1%);
+        background: color-mix(in srgb, var(--cyan) 72%, var(--line));
+        transform-origin: bottom;
+      }
+
+      .slide.active .bar {
+        animation: rise 750ms cubic-bezier(0.22, 1, 0.36, 1) both;
+        animation-delay: calc(var(--i) * 24ms);
+      }
+
+      .bar.hot {
+        background: var(--amber);
+        box-shadow: 0 0 28px color-mix(in srgb, var(--amber) 22%, transparent);
+      }
+
+      .bar::after {
+        position: absolute;
+        bottom: -1.8rem;
+        left: 50%;
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: clamp(7px, 0.6vw, 10px);
+        content: attr(data-day);
+        transform: translateX(-50%);
+      }
+
+      .bar.hot::before {
+        position: absolute;
+        top: -1.8rem;
+        left: 50%;
+        color: var(--white);
+        font-family: var(--mono);
+        font-size: clamp(8px, 0.7vw, 11px);
+        font-weight: 800;
+        content: attr(data-lines);
+        transform: translateX(-50%);
+        white-space: nowrap;
+      }
+
+      @keyframes rise {
+        from {
+          transform: scaleY(0);
+        }
+      }
+
+      .big-proof {
+        padding-left: clamp(1rem, 2vw, 2rem);
+        border-left: 1px solid var(--line);
+      }
+
+      .big-proof strong {
+        display: block;
+        color: var(--amber);
+        font-family: var(--mono);
+        font-size: clamp(68px, 10vw, 154px);
+        letter-spacing: -0.09em;
+        line-height: 0.8;
+      }
+
+      .big-proof p {
+        max-width: 20ch;
+        margin: 1.5rem 0 0;
+        color: var(--silver);
+        font-size: clamp(16px, 1.5vw, 24px);
+        line-height: 1.35;
+      }
+
+      .big-proof .micro {
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: clamp(10px, 0.8vw, 12px);
+        text-transform: uppercase;
+      }
+
+      .quality-layout {
+        display: grid;
+        grid-template-columns: minmax(340px, 0.72fr) minmax(560px, 1.28fr);
+        gap: clamp(2rem, 5vw, 7rem);
+        align-items: center;
+      }
+
+      .gate-strip {
+        display: flex;
+        gap: 0.45rem;
+        flex-wrap: wrap;
+        margin-top: 1.5rem;
+      }
+
+      .gate-strip span {
+        padding: 0.45rem 0.6rem;
+        border: 1px solid var(--line);
+        color: var(--muted);
+        background: var(--panel);
+        font-family: var(--mono);
+        font-size: clamp(8px, 0.68vw, 10px);
+      }
+
+      .caught {
+        display: grid;
+        gap: 1px;
+        border: 1px solid var(--line);
+        background: var(--line);
+      }
+
+      .bug {
+        display: grid;
+        grid-template-columns: minmax(90px, 0.3fr) 1fr;
+        gap: clamp(1rem, 2vw, 2rem);
+        align-items: center;
+        min-height: clamp(120px, 15vh, 160px);
+        padding: clamp(1rem, 2vw, 1.7rem);
+        background: var(--panel);
+      }
+
+      .bug code {
+        color: var(--red);
+        font-family: var(--mono);
+        font-size: clamp(11px, 1vw, 15px);
+        font-weight: 700;
+      }
+
+      .bug strong {
+        display: block;
+        font-size: clamp(16px, 1.55vw, 24px);
+        line-height: 1.15;
+      }
+
+      .bug p {
+        margin: 0.5rem 0 0;
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: clamp(9px, 0.75vw, 11px);
+        line-height: 1.45;
+      }
+
+      .release-layout {
+        display: grid;
+        grid-template-columns: minmax(360px, 0.84fr) minmax(460px, 1.16fr);
+        gap: clamp(2rem, 5vw, 7rem);
+        align-items: center;
+      }
+
+      .release-card {
+        position: relative;
+        padding: clamp(1.5rem, 3vw, 3rem);
+        border: 1px solid var(--line);
+        background:
+          linear-gradient(135deg, color-mix(in srgb, var(--green) 8%, transparent), transparent 45%),
+          var(--panel);
+      }
+
+      .release-card::before {
+        display: block;
+        width: 12px;
+        height: 12px;
+        margin-bottom: 2rem;
+        border-radius: 50%;
+        background: var(--green);
+        box-shadow: 0 0 28px var(--green);
+        content: "";
+      }
+
+      .release-card .npm {
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: clamp(10px, 0.9vw, 13px);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .release-card strong {
+        display: block;
+        margin: 0.6rem 0 0;
+        font-family: var(--mono);
+        font-size: clamp(48px, 7vw, 110px);
+        letter-spacing: -0.08em;
+        line-height: 0.9;
+      }
+
+      .release-card p {
+        max-width: 24ch;
+        margin: 1rem 0 0;
+        color: var(--silver);
+        font-size: clamp(14px, 1.2vw, 18px);
+        line-height: 1.4;
+      }
+
+      .close-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 3rem;
+        align-items: end;
+      }
+
+      .close-layout h1 {
+        max-width: 10ch;
+      }
+
+      .thesis {
+        display: grid;
+        align-self: stretch;
+        min-width: min(32vw, 460px);
+        border-left: 1px solid var(--line);
+      }
+
+      .thesis div {
+        display: grid;
+        grid-template-columns: 5rem 1fr;
+        gap: 1rem;
+        align-items: baseline;
+        padding: 1.15rem 0 1.15rem 1.5rem;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .thesis span {
+        color: var(--tone);
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .thesis strong {
+        font-size: clamp(16px, 1.5vw, 24px);
+      }
+
+      .links {
+        display: flex;
+        gap: 1.25rem;
+        flex-wrap: wrap;
+        margin-top: 2rem;
+      }
+
+      .links a {
+        padding-bottom: 0.25rem;
+        border-bottom: 1px solid var(--tone);
+        color: var(--silver);
+        font-family: var(--mono);
+        font-size: clamp(10px, 0.85vw, 13px);
+        text-decoration: none;
+      }
+
+      .links a:hover {
+        color: var(--white);
+      }
+
+      .nav {
+        position: fixed;
+        right: clamp(14px, 2vw, 28px);
+        bottom: 50%;
+        z-index: 20;
+        display: grid;
+        gap: 8px;
+        transform: translateY(50%);
+      }
+
+      .nav button {
+        width: 20px;
+        height: 10px;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        cursor: pointer;
+      }
+
+      .nav button::before {
+        display: block;
+        width: 8px;
+        height: 2px;
+        margin-left: auto;
+        background: var(--muted);
+        content: "";
+        transition: 180ms ease;
+      }
+
+      .nav button[aria-current="true"]::before {
+        width: 20px;
+        background: var(--white);
+      }
+
+      .notes {
+        position: fixed;
+        right: 7vw;
+        bottom: 6vh;
+        z-index: 30;
+        display: none;
+        width: min(520px, 86vw);
+        max-height: 38vh;
+        padding: 1.25rem;
+        overflow: auto;
+        border: 1px solid var(--line);
+        color: var(--silver);
+        background: rgba(7, 10, 15, 0.96);
+        box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
+        font-size: 0.9rem;
+        line-height: 1.55;
+      }
+
+      .notes.open {
+        display: block;
+      }
+
+      .notes strong {
+        display: block;
+        margin-bottom: 0.5rem;
+        color: var(--cyan);
+        font-family: var(--mono);
+        font-size: 0.7rem;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+
+      @media screen and (max-width: 900px) {
+        .slide {
+          padding-inline: 24px 42px;
+        }
+
+        .hero-grid,
+        .instrument-layout,
+        .system-layout,
+        .phase-layout,
+        .lane-layout,
+        .velocity-layout,
+        .quality-layout,
+        .release-layout,
+        .close-layout {
+          grid-template-columns: 1fr;
+          gap: 1.4rem;
+        }
+
+        .hero-number {
+          position: absolute;
+          right: 8vw;
+          bottom: 12vh;
+          z-index: -1;
+          color: rgba(244, 247, 251, 0.06);
+        }
+
+
+        .phase-layout,
+        .lane-layout,
+        .quality-layout {
+          align-items: center;
+        }
+
+        .timeline {
+          height: 36vh;
+        }
+
+        .lane {
+          grid-template-columns: 45px 0.65fr 1fr;
+        }
+
+        .lane small {
+          display: none;
+        }
+
+        .weekend-number {
+          position: absolute;
+          right: 8vw;
+          bottom: 10vh;
+          z-index: -1;
+          opacity: 0.12;
+        }
+
+        .bars {
+          height: 35vh;
+        }
+
+        .big-proof {
+          display: flex;
+          align-items: baseline;
+          gap: 1.5rem;
+        }
+
+        .big-proof p {
+          margin-top: 0;
+        }
+
+        .release-card {
+          max-width: 520px;
+        }
+
+        .thesis {
+          min-width: 0;
+        }
+      }
+
+      @media screen and (max-width: 620px) {
+        .slide {
+          gap: 0.65rem;
+          padding-top: 18px;
+          padding-bottom: 16px;
+        }
+
+        .chapter,
+        .merge-trace,
+        .lede.optional {
+          display: none;
+        }
+
+        h1 {
+          font-size: clamp(44px, 16vw, 76px);
+        }
+
+        h2 {
+          font-size: clamp(36px, 12vw, 60px);
+        }
+
+        .lede {
+          font-size: 15px;
+        }
+
+        .metric-strip {
+          margin-top: 1.2rem;
+        }
+
+        .metric strong {
+          font-size: clamp(20px, 7vw, 32px);
+        }
+
+        .metric span {
+          font-size: 8px;
+        }
+
+        .instrument-grid {
+          grid-template-columns: 1fr 1fr;
+        }
+
+        .readout {
+          min-height: 96px;
+        }
+
+        .surface-grid {
+          grid-template-columns: repeat(3, 1fr);
+          height: auto;
+        }
+
+        .surface-card {
+          min-height: 76px;
+          padding: 0.6rem;
+        }
+
+        .surface-card span {
+          margin-top: 0.35rem;
+        }
+
+        .pipe {
+          grid-template-columns: 52px 1fr;
+        }
+
+        .pipe small {
+          display: none;
+        }
+
+        .timeline {
+          grid-template-columns: repeat(3, 1fr);
+          align-items: stretch;
+          height: 49vh;
+          border-bottom: 0;
+        }
+
+        .phase {
+          height: auto;
+          min-height: 0;
+        }
+
+        .phase b {
+          display: none;
+        }
+
+        .lane {
+          min-height: 58px;
+          grid-template-columns: 36px 0.62fr 1fr;
+        }
+
+        .lane .dot {
+          margin-left: 14px;
+        }
+
+        .lanes::before {
+          left: 19px;
+        }
+
+        .bars {
+          gap: 3px;
+          height: 34vh;
+        }
+
+        .bar::after {
+          display: none;
+        }
+
+        .big-proof strong {
+          font-size: 78px;
+        }
+
+        .quality-layout {
+          grid-template-columns: 1fr;
+        }
+
+        .bug {
+          grid-template-columns: 70px 1fr;
+          min-height: 80px;
+        }
+
+        .thesis div {
+          padding-block: 0.7rem;
+        }
+
+        .nav {
+          right: 10px;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          scroll-behavior: auto !important;
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.01ms !important;
+        }
+      }
+
+      @media print {
+        @page {
+          size: 16in 9in;
+          margin: 0;
+        }
+
+        body {
+          overflow: visible;
+          background: var(--void);
+          print-color-adjust: exact;
+          -webkit-print-color-adjust: exact;
+        }
+
+        .deck {
+          height: auto;
+        }
+
+        .slide {
+          position: relative;
+          display: grid;
+          grid-template-rows: 0.28in minmax(0, 1fr) 0.18in;
+          gap: 0.14in;
+          width: 16in;
+          height: 9in;
+          padding: 0.48in 0.72in 0.34in;
+          visibility: visible;
+          opacity: 1;
+          transform: none;
+          break-after: page;
+        }
+
+        .slide::after {
+          display: none;
+        }
+
+        .content {
+          width: 100%;
+          height: 100%;
+          align-content: center;
+        }
+
+        h1,
+        h2 {
+          letter-spacing: -0.035em;
+        }
+
+        .instrument-grid,
+        .surface-grid,
+        .pipeline,
+        .timeline,
+        .lanes,
+        .bars,
+        .caught,
+        .release-card,
+        .thesis {
+          align-self: center;
+        }
+
+        .surface-grid {
+          height: 4.35in;
+        }
+
+        .timeline {
+          height: 4.65in;
+        }
+
+        .bars {
+          height: 4.7in;
+        }
+
+        .lane {
+          min-height: 0.68in;
+        }
+
+        .bug {
+          min-height: 1.25in;
+        }
+
+        .nav,
+        .notes {
+          display: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="deck" id="deck" aria-live="polite">
+      <section
+        class="slide"
+        data-title="The build"
+        data-tone="amber"
+        data-notes="Open on shipped scope, not line count. One engineer and a disciplined agent pipeline took Claude Lens from the first planning issue to the final V2 merge in 21 calendar days. The small scope line defines exactly what the deck counts."
+      >
+        <header class="chrome">
+          <div class="brand"><span class="brand-mark">[⊙]</span> claude lens</div>
+          <div class="chapter">Build retrospective · July 2026</div>
+        </header>
+        <div class="content hero-grid">
+          <div class="hero-number" aria-hidden="true">21</div>
+          <div class="hero-copy">
+            <p class="eyebrow">One engineer + an agent pipeline</p>
+            <h1>A full product. <span class="accent">Live.</span></h1>
+            <p class="lede">Claude Code observability, rebuilt and shipped in three weeks.</p>
+            <div class="metric-strip" aria-label="Build metrics">
+              <div class="metric"><strong>12</strong><span>production surfaces</span></div>
+              <div class="metric"><strong>54</strong><span>merged V2 pull requests</span></div>
+              <div class="metric"><strong>DAY 18</strong><span>live on npm</span></div>
+            </div>
+            <p class="scope-note">Scope: Jul 3–24 · excludes pre-V2 PR #2 (+3) · 127,117 V2 additions</p>
+          </div>
         </div>
-        <div class="node">squash-merge<br>queue<small>one lane at a time,<br>gate re-run on main</small></div>
-      </div>
-      <p class="beltnote" style="margin-top:1.6rem">One issue = one worktree = one agent = one port block = one gate run. Lifecycle automated by skills:
-      <code>/start-task</code> → <code>/move-to-worktree</code> → build → <code>/finish-worktree</code> → <code>/archive-issue</code>.</p>
-    </div>
-  </section>
+        <footer class="foot"><div class="merge-trace" aria-hidden="true"></div><span class="count"></span></footer>
+      </section>
 
-  <!-- ═══════════ 7 · The engine ═══════════ -->
-  <section class="slide" data-notes="6:45–8:00 · The showcase of github.com/foyzulkarim/skills. Don't teach each skill — characterize the belt: 'every one of the 54 PRs rode this conveyor.' Call out two differentiators: /generate-tasks assigns every task a verification MODE (TDD, test-after, UI evidence, checklist) so 'done' is defined before code exists; /review fans out up to 16 domain checks in parallel and compiles one report. This is prompting turned into infrastructure — versioned, reusable, and public.">
-    <div class="slide-inner">
-      <div class="kicker">The Engine · github.com/foyzulkarim/skills</div>
-      <h2>Not prompts — a <span class="hl">pipeline</span></h2>
-      <div class="conveyor">
-        <div class="step"><div class="n">1</div><div class="name">/plan-requirements</div><div class="d">Socratic interview → REQ doc. Claude interviews; the engineer decides.</div></div>
-        <div class="step"><div class="n">2</div><div class="name">/plan-architecture</div><div class="d">System design + change-footprint map → ARCH doc.</div></div>
-        <div class="step"><div class="n">3</div><div class="name">/generate-tasks</div><div class="d">Slices ARCH into tasks, each with a verification mode: tdd · test-after · ui · checklist.</div></div>
-        <div class="step"><div class="n">4</div><div class="name">/implement</div><div class="d">Executes each task under its verification discipline; commits per task.</div></div>
-        <div class="step"><div class="n">5</div><div class="name">/review</div><div class="d">Triage-first: fans out up to 16 domain checks in parallel, one compiled report.</div></div>
-        <div class="step"><div class="n">6</div><div class="name">/commit</div><div class="d">One-shot conventional commits with full diff context. Any stage.</div></div>
-      </div>
-      <p class="beltnote">Wrapped by lane management — <code>/create-issue</code>, <code>/start-task</code>, <code>/move-to-worktree</code>, <code>/finish-worktree</code>, <code>/archive-issue</code> — so the conveyor runs <b>in parallel without collisions</b>. Applied end-to-end across all 54 PRs.</p>
-    </div>
-  </section>
 
-  <!-- ═══════════ 8 · Thesis ═══════════ -->
-  <section class="slide" data-notes="8:00–8:45 · The one slide to remember. Read the headline, then one line per pillar. 'The model was never the bottleneck — the process around it was. Specs settle arguments before they start. Gates make done objective, so an agent can be trusted with volume. Lanes make throughput additive.' The skills made the pipeline; the pipeline made the 21 days.">
-    <div class="slide-inner">
-      <div class="kicker">The Thesis</div>
-      <h2>The speed didn’t come from the model <span class="hl">typing fast</span></h2>
-      <div class="pillars">
-        <div class="pillar"><div class="t"><span>Specs</span> settle arguments</div><div class="d">Written and merged first, binding over code and mockups. Every decision made once — no agent re-litigates it mid-build.</div></div>
-        <div class="pillar"><div class="t"><span>Gates</span> make “done” objective</div><div class="d">Typecheck, lint, format, tests, E2E — enforced on every push. An agent that can’t argue with the gate ships quality by default.</div></div>
-        <div class="pillar"><div class="t"><span>Lanes</span> make agents additive</div><div class="d">Isolated worktrees, ports, and gate runs mean four agents on a Saturday multiply output instead of stepping on each other.</div></div>
-      </div>
-      <p class="sub" style="margin-top:2.2rem">The skills made the pipeline. <b>The pipeline made the 21 days.</b></p>
-    </div>
-  </section>
+      <section
+        class="slide"
+        data-title="Twelve surfaces"
+        data-notes="V2 is not one dashboard stretched across routes. Each surface answers a different operational question, from portfolio-level spend down to one turn's causal evidence. Report Card is embedded in session detail but ships as its own task-specific surface."
+      >
+        <header class="chrome">
+          <div class="brand"><span class="brand-mark">[⊙]</span> claude lens</div>
+          <div class="chapter">12 shipped surfaces</div>
+        </header>
+        <div class="content">
+          <p class="eyebrow">One product · twelve questions</p>
+          <h2>From fleet signal to <span class="accent">one turn.</span></h2>
+          <div class="surface-grid" aria-label="Twelve Claude Lens product surfaces">
+            <div class="surface-card"><b>01</b><strong>Dashboard</strong><span>spend + burn</span></div>
+            <div class="surface-card"><b>02</b><strong>Sessions</strong><span>fleet index</span></div>
+            <div class="surface-card"><b>03</b><strong>Session Detail</strong><span>full trace</span></div>
+            <div class="surface-card"><b>04</b><strong>Turn Inspector</strong><span>causal evidence</span></div>
+            <div class="surface-card"><b>05</b><strong>Projects</strong><span>portfolio</span></div>
+            <div class="surface-card"><b>06</b><strong>Models</strong><span>mix + price</span></div>
+            <div class="surface-card"><b>07</b><strong>Cache Lab</strong><span>reuse economics</span></div>
+            <div class="surface-card"><b>08</b><strong>Trends</strong><span>calendar + budget</span></div>
+            <div class="surface-card"><b>09</b><strong>Report Card</strong><span>quality gates</span></div>
+            <div class="surface-card"><b>10</b><strong>Explore</strong><span>pivot builder</span></div>
+            <div class="surface-card"><b>11</b><strong>Data Health</strong><span>coverage + trust</span></div>
+            <div class="surface-card"><b>12</b><strong>Settings</strong><span>control plane</span></div>
+          </div>
+        </div>
+        <footer class="foot"><div class="merge-trace" aria-hidden="true"></div><span class="count"></span></footer>
+      </section>
 
-  <!-- ═══════════ 9 · Takeaways ═══════════ -->
-  <section class="slide" data-notes="8:45–9:30 · Keep this invitational, not prescriptive — 'here's what I'd borrow, take what fits.' /commit and /review cost nothing and drop into any repo as-is. /plan-architecture is the natural next experiment on a real new task. And the pipeline isn't sacred — the skills are just files; every team should reshape them around how it already works. The repo is public.">
-    <div class="slide-inner">
-      <div class="kicker">For Your Team</div>
-      <h2>What <span class="hl">we</span> could borrow</h2>
-      <div class="ladder">
-        <div class="rung"><div class="when">Start small</div><div class="what">We can use <code>/commit</code> and <code>/review</code> right now — they drop into any repo with zero process change.</div></div>
-        <div class="rung"><div class="when">Experiment</div><div class="what">We can try <code>/plan-architecture</code> on new tasks going forward and see how design-first feels on real work.</div></div>
-        <div class="rung"><div class="when">Make it ours</div><div class="what">And tweak our own pipeline to our <b>team DNA</b> — the skills are just markdown; fork them, reshape them, keep what earns its place.</div></div>
-      </div>
-      <div class="links">
-        <a href="https://github.com/foyzulkarim/skills">github.com/foyzulkarim/skills</a>
-      </div>
-    </div>
-  </section>
+      <section
+        class="slide"
+        data-title="The system"
+        data-notes="The architecture is deliberately boring and efficient: incremental byte-offset reads instead of rescans, one in-memory source of truth, a metrics engine behind a single API, and lightweight WebSocket invalidations that trigger refetches rather than sending data over the socket."
+      >
+        <header class="chrome">
+          <div class="brand"><span class="brand-mark">[⊙]</span> claude lens</div>
+          <div class="chapter">Architecture</div>
+        </header>
+        <div class="content system-layout">
+          <div>
+            <p class="eyebrow">Built like a system, not a demo</p>
+            <h2>Fast because it reads <span class="accent">only what changed.</span></h2>
+            <p class="lede optional">A local data plane from raw transcript to live interface.</p>
+          </div>
+          <div class="pipeline" aria-label="Claude Lens architecture flow">
+            <div class="pipe"><span class="id">INPUT</span><strong>Claude transcripts</strong><small>~/.claude/**/*.jsonl + optional cost capture</small></div>
+            <div class="pipe"><span class="id">TAIL</span><strong>Incremental ingest</strong><small>byte offsets · dedupe · warm-start cache</small></div>
+            <div class="pipe"><span class="id">CORE</span><strong>Metrics engine</strong><small>calls · turns · sessions · dimensions</small></div>
+            <div class="pipe"><span class="id">EDGE</span><strong>Fastify API + WebSocket</strong><small>one process · invalidations only</small></div>
+            <div class="pipe"><span class="id">VIEW</span><strong>React product</strong><small>12 pages · filters · charts · exports</small></div>
+          </div>
+        </div>
+        <footer class="foot"><div class="merge-trace" aria-hidden="true"></div><span class="count"></span></footer>
+      </section>
 
-  <!-- ═══════════ 10 · Close ═══════════ -->
-  <section class="slide" data-notes="9:30–10:00 · Close on the numbers, then the reframe: 'the interesting number isn't 127K lines — it's 21 days, at production quality, with the safety net included. That's a pipeline property, not a model property. The pipeline is public. Questions?'">
-    <div class="slide-inner">
-      <div class="kicker">Close</div>
-      <h1><span class="hl">21 days.</span> 54 PRs.<br>127K engineered lines.</h1>
-      <p class="sub">A brilliant dev pipeline is the anchor of a super-speedy, high-quality work pipeline.</p>
-      <div class="links">
-        <a href="https://github.com/foyzulkarim/skills">github.com/foyzulkarim/skills</a>
-        <a href="https://www.npmjs.com/package/@foyzulkarim/claude-lens">npmjs.com/package/@foyzulkarim/claude-lens</a>
-      </div>
-      <p class="sub" style="margin-top:2.6rem; color: var(--ink-muted); font-size: clamp(14px,1.3vw,17px)">Questions?</p>
-    </div>
-  </section>
+      <section
+        class="slide"
+        data-title="The plan"
+        data-tone="green"
+        data-notes="The order matters. Specs and gates landed before feature code. Real transcript evidence informed contracts and parsers. The engine preceded the UI. The page blitz happened only after shared primitives, E2E, and parallel-lane rules existed."
+      >
+        <header class="chrome">
+          <div class="brand"><span class="brand-mark">[⊙]</span> claude lens</div>
+          <div class="chapter">The plan</div>
+        </header>
+        <div class="content phase-layout">
+          <div>
+            <p class="eyebrow">Evidence first · product second</p>
+            <h2>The build order removed <span class="accent">guesswork.</span></h2>
+            <p class="lede optional">Every V2 pull request traced to a numbered plan task.</p>
+            <p class="scope-note">54 scoped V2 PRs · pre-V2 PR #2 excluded</p>
+          </div>
+          <div class="timeline" aria-label="Build phases from July 5 to July 24">
+            <div class="phase" style="--height: 31%"><b>Jul 5</b><strong>Specs</strong><span>#5 · gates + phased plan</span></div>
+            <div class="phase" style="--height: 42%"><b>Jul 10</b><strong>Toolchain</strong><span>TS · CI · Biome · Storybook</span></div>
+            <div class="phase" style="--height: 58%"><b>Jul 11</b><strong>Engine</strong><span>ingest · metrics · API · WS</span></div>
+            <div class="phase" style="--height: 67%"><b>Jul 14</b><strong>Shell</strong><span>routing · filters · charts</span></div>
+            <div class="phase" style="--height: 100%"><b>Jul 16</b><strong>12 pages</strong><span>E2E · lanes · product blitz</span></div>
+            <div class="phase" style="--height: 78%"><b>Jul 19</b><strong>Harden</strong><span>load fixes · capture · bench</span></div>
+          </div>
+        </div>
+        <footer class="foot"><div class="merge-trace" aria-hidden="true"></div><span class="count"></span></footer>
+      </section>
 
-</div>
+      <section
+        class="slide"
+        data-title="Parallel lanes"
+        data-tone="amber"
+        data-notes="Isolation prevented working-tree, port, and dev-server collisions. It did not pretend integration risk disappeared: completed lanes returned through a serialized merge queue and the gate ran again. That distinction makes the model credible."
+      >
+        <header class="chrome">
+          <div class="brand"><span class="brand-mark">[⊙]</span> claude lens</div>
+          <div class="chapter">Safe parallelism</div>
+        </header>
+        <div class="content lane-layout">
+          <div>
+            <p class="eyebrow">Then the build went wide</p>
+            <h2>Isolated to build. <span class="accent">Integrated at merge.</span></h2>
+            <div class="weekend-number">62,865<span>additions · 12 PRs · one weekend</span></div>
+          </div>
+          <div>
+            <div class="lanes" aria-label="Four parallel worktree lanes">
+              <div class="lane"><i class="dot"></i><code>.worktrees/89</code><strong>Dashboard</strong><small>isolated ✓</small></div>
+              <div class="lane"><i class="dot"></i><code>.worktrees/93</code><strong>Sessions</strong><small>isolated ✓</small></div>
+              <div class="lane"><i class="dot"></i><code>.worktrees/92</code><strong>Session Detail</strong><small>isolated ✓</small></div>
+              <div class="lane"><i class="dot"></i><code>.worktrees/91</code><strong>Cache Lab</strong><small>isolated ✓</small></div>
+            </div>
+            <p class="equation"><b>ISOLATE</b> → build → verify → serialized merge → verify again</p>
+          </div>
+        </div>
+        <footer class="foot"><div class="merge-trace" aria-hidden="true"></div><span class="count"></span></footer>
+      </section>
 
-<div class="counter" id="counter"></div>
-<div class="hint">←/→ slides · N notes</div>
-<div class="notes" id="notes"><div class="nt">Speaker notes</div><div class="nb" id="notesBody"></div></div>
+      <section
+        class="slide"
+        data-title="The acceleration"
+        data-tone="amber"
+        data-notes="The merge history makes the effect visible. July 18 and 19 account for 62,865 additions—49 percent of the V2 build. Those were complete pages and supporting systems, each independently gated, not one generated scaffold dump."
+      >
+        <header class="chrome">
+          <div class="brand"><span class="brand-mark">[⊙]</span> claude lens</div>
+          <div class="chapter">Merge history · additions per day</div>
+        </header>
+        <div class="content velocity-layout">
+          <div class="bars" role="img" aria-label="Daily additions from July 5 to 24, peaking at 38,174 on July 18 and 24,691 on July 19">
+            <i class="bar" style="--value: 0; --i: 1" data-day="5"></i>
+            <i class="bar" style="--value: 10; --i: 2" data-day="6"></i>
+            <i class="bar" style="--value: 1; --i: 3" data-day="7"></i>
+            <i class="bar" style="--value: 0; --i: 4" data-day="8"></i>
+            <i class="bar" style="--value: 0; --i: 5" data-day="9"></i>
+            <i class="bar" style="--value: 19; --i: 6" data-day="10"></i>
+            <i class="bar" style="--value: 12; --i: 7" data-day="11"></i>
+            <i class="bar" style="--value: 3; --i: 8" data-day="12"></i>
+            <i class="bar" style="--value: 17; --i: 9" data-day="13"></i>
+            <i class="bar" style="--value: 14; --i: 10" data-day="14"></i>
+            <i class="bar" style="--value: 13; --i: 11" data-day="15"></i>
+            <i class="bar" style="--value: 12; --i: 12" data-day="16"></i>
+            <i class="bar" style="--value: 10; --i: 13" data-day="17"></i>
+            <i class="bar hot" style="--value: 100; --i: 14" data-day="18" data-lines="+38,174"></i>
+            <i class="bar hot" style="--value: 65; --i: 15" data-day="19" data-lines="+24,691"></i>
+            <i class="bar" style="--value: 26; --i: 16" data-day="20"></i>
+            <i class="bar" style="--value: 12; --i: 17" data-day="21"></i>
+            <i class="bar" style="--value: 0; --i: 18" data-day="22"></i>
+            <i class="bar" style="--value: 20; --i: 19" data-day="23"></i>
+            <i class="bar" style="--value: 0; --i: 20" data-day="24"></i>
+          </div>
+          <div class="big-proof">
+            <strong>49%</strong>
+            <p>of the entire V2 build landed in one weekend.</p>
+            <p class="micro">Jul 18–19 · 12 merged PRs</p>
+          </div>
+        </div>
+        <footer class="foot"><div class="merge-trace" aria-hidden="true"></div><span class="count"></span></footer>
+      </section>
 
-<script>
-/* ───────────────── data (from docs/merged-pr-report.csv, V2 build = 54 PRs, excl. pre-V2 #2) ───────────────── */
-const DAILY = [
-  { d: 5,  lines: 0,     prs: 0 },
-  { d: 6,  lines: 3980,  prs: 2 },
-  { d: 7,  lines: 63,    prs: 1 },
-  { d: 8,  lines: 0,     prs: 0 },
-  { d: 9,  lines: 0,     prs: 0 },
-  { d: 10, lines: 7431,  prs: 5 },
-  { d: 11, lines: 4673,  prs: 3 },
-  { d: 12, lines: 907,   prs: 2 },
-  { d: 13, lines: 6669,  prs: 6 },
-  { d: 14, lines: 5285,  prs: 4 },
-  { d: 15, lines: 4808,  prs: 3 },
-  { d: 16, lines: 4760,  prs: 2 },
-  { d: 17, lines: 3859,  prs: 3 },
-  { d: 18, lines: 38174, prs: 4 },
-  { d: 19, lines: 24691, prs: 8 },
-  { d: 20, lines: 9705,  prs: 4 },
-  { d: 21, lines: 4546,  prs: 1 },
-  { d: 22, lines: 0,     prs: 0 },
-  { d: 23, lines: 7566,  prs: 6 },
-  { d: 24, lines: 0,     prs: 0 },
-];
-let acc = 0;
-const CUM = DAILY.map(r => ({ d: r.d, cum: (acc += r.lines) }));
-const PHASES = [
-  { name: "P0 · Foundation & evidence", a: 5,  b: 11 },
-  { name: "P1 · Toolchain & gates",     a: 10, b: 11 },
-  { name: "P2 · Ingest & metrics",      a: 11, b: 14 },
-  { name: "P3 · React shell",           a: 14, b: 15 },
-  { name: "P4 · Twelve pages",          a: 16, b: 23, hot: true },
-  { name: "P5 · Hardening",             a: 19, b: 24 },
-];
-const BLUE = "#3987e5", ORANGE = "#d95926";
-const INK2 = "#aab2c0", MUTED = "#7b8494", GRID = "#232b38", BASE = "#333d4d", SURF = "#10161f";
-const fmt = n => n.toLocaleString("en-US");
-const NS = "http://www.w3.org/2000/svg";
-function el(tag, attrs, parent, text) {
-  const e = document.createElementNS(NS, tag);
-  for (const k in attrs) e.setAttribute(k, attrs[k]);
-  if (text != null) e.textContent = text;
-  parent.appendChild(e);
-  return e;
-}
-function svgRoot(mount, w, h, label) {
-  const svg = document.createElementNS(NS, "svg");
-  svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
-  svg.setAttribute("width", "100%");
-  svg.setAttribute("role", "img");
-  svg.setAttribute("aria-label", label);
-  document.getElementById(mount).appendChild(svg);
-  return svg;
-}
-function tip(id, card, html, x, y) {
-  const t = document.getElementById(id);
-  t.innerHTML = html;
-  t.style.display = "block";
-  const cr = card.getBoundingClientRect();
-  let left = x - cr.left + 14, top = y - cr.top - 10;
-  if (left + t.offsetWidth > cr.width - 8) left = x - cr.left - t.offsetWidth - 14;
-  t.style.left = left + "px";
-  t.style.top = top + "px";
-}
-const hideTip = id => (document.getElementById(id).style.display = "none");
+      <section
+        class="slide"
+        data-title="The safety net"
+        data-tone="green"
+        data-notes="Green checks only prove commands ran. These three interventions prove the process changed outcomes: a decision was reverted, a real load defect was fixed, and session ownership was corrected. The smaller strip names the machinery behind those outcomes."
+      >
+        <header class="chrome">
+          <div class="brand"><span class="brand-mark">[⊙]</span> claude lens</div>
+          <div class="chapter">Quality · built in</div>
+        </header>
+        <div class="content quality-layout">
+          <div>
+            <p class="eyebrow">The gates changed outcomes</p>
+            <h2>Review wasn't <span class="accent">theater.</span></h2>
+            <p class="lede optional">Three receipts from the merge history.</p>
+            <div class="gate-strip" aria-label="Verification machinery">
+              <span>strict TS</span><span>Biome</span><span>Vitest</span><span>Cypress</span><span>a11y</span><span>Storybook</span>
+            </div>
+          </div>
+          <div class="caught" aria-label="Examples of issues caught and fixed">
+            <div class="bug"><code>#68 · REVERT</code><div><strong>Wrong archive convention</strong><p>The spec rule won; the rename did not survive review.</p></div></div>
+            <div class="bug"><code>#95 · FIX</code><div><strong>Concurrent-load flicker</strong><p>Real multi-session pressure exposed an integration defect.</p></div></div>
+            <div class="bug"><code>#114 · FIX</code><div><strong>Sub-agent session routing</strong><p>Child transcripts were reassigned to their parent sessions.</p></div></div>
+          </div>
+        </div>
+        <footer class="foot"><div class="merge-trace" aria-hidden="true"></div><span class="count"></span></footer>
+      </section>
 
-/* ───────────────── slide 4 · phase gantt + cumulative line ───────────────── */
-(function journey() {
-  const W = 1080, H = 470, ML = 235, MR = 24;
-  const gTop = 24, rowH = 30, gH = PHASES.length * rowH;         // gantt block
-  const cTop = gTop + gH + 42, cBot = H - 34;                    // cumulative block
-  const svg = svgRoot("journeyChart", W, H, "Phase timeline (gantt) above a cumulative lines-merged line chart, July 5 to 24");
-  const x = d => ML + ((d - 5) / 19) * (W - ML - MR);
-  const y = v => cBot - (v / 130000) * (cBot - cTop);
+      <section
+        class="slide"
+        data-title="The release"
+        data-tone="green"
+        data-notes="The important number is the day, not the download count. V2 reached npm on day 18 while hardening pull requests were still landing. The first 235 downloads are supporting evidence that the release was public and installable, not the headline."
+      >
+        <header class="chrome">
+          <div class="brand"><span class="brand-mark">[⊙]</span> claude lens</div>
+          <div class="chapter">Production</div>
+        </header>
+        <div class="content release-layout">
+          <div>
+            <p class="eyebrow">Published before the build stopped</p>
+            <h2>Live on npm by <span class="accent">day 18.</span></h2>
+            <p class="lede">Ship. Measure. Harden.</p>
+            <div class="command">npx @foyzulkarim/claude-lens@latest</div>
+          </div>
+          <div class="release-card">
+            <span class="npm">npm release · Jul 21</span>
+            <strong>DAY 18</strong>
+            <p>v1.0.0 and v1.0.1 shipped while final Phase 5 pull requests were still landing.</p>
+            <p class="scope-note">235 downloads in the first ~48 hours</p>
+          </div>
+        </div>
+        <footer class="foot"><div class="merge-trace" aria-hidden="true"></div><span class="count"></span></footer>
+      </section>
 
-  // gantt rows
-  PHASES.forEach((p, i) => {
-    const ry = gTop + i * rowH;
-    el("text", { x: ML - 14, y: ry + 15, "text-anchor": "end", "font-size": 12, fill: INK2 }, svg, p.name);
-    el("rect", { x: x(p.a), y: ry + 4, width: Math.max(x(p.b) - x(p.a), 6), height: 14, rx: 4, fill: p.hot ? ORANGE : BLUE }, svg);
-  });
-  el("text", { x: x(19.5), y: gTop + 4 * rowH - 8, "font-size": 11.5, "font-weight": 700, fill: "#f2f4f8", "text-anchor": "middle" }, svg, "12 pages in 5 days — parallel lanes");
+      <section
+        class="slide"
+        data-title="The thesis"
+        data-notes="Close on the system, not the line count. The model produced volume, but the surrounding pipeline converted volume into a releasable product: specs removed ambiguity, gates made done objective, and isolated lanes made parallel work additive."
+      >
+        <header class="chrome">
+          <div class="brand"><span class="brand-mark">[⊙]</span> claude lens</div>
+          <div class="chapter">The takeaway</div>
+        </header>
+        <div class="content close-layout">
+          <div>
+            <p class="eyebrow">The model typed fast · the system shipped</p>
+            <h1>The pipeline made the <span class="accent">21 days.</span></h1>
+            <div class="links">
+              <a href="https://github.com/foyzulkarim/claude-lens">github.com/foyzulkarim/claude-lens</a>
+              <a href="https://github.com/foyzulkarim/skills">github.com/foyzulkarim/skills</a>
+              <a href="https://www.npmjs.com/package/@foyzulkarim/claude-lens">npm package</a>
+            </div>
+          </div>
+          <div class="thesis" aria-label="Three build principles">
+            <div><span>Specs</span><strong>settle</strong></div>
+            <div><span>Gates</span><strong>decide</strong></div>
+            <div><span>Lanes</span><strong>multiply</strong></div>
+          </div>
+        </div>
+        <footer class="foot"><div class="merge-trace" aria-hidden="true"></div><span class="count"></span></footer>
+      </section>
+    </main>
 
-  // cumulative axes
-  [0, 40000, 80000, 120000].forEach(v => {
-    el("line", { x1: ML, x2: W - MR, y1: y(v), y2: y(v), stroke: v ? GRID : BASE, "stroke-width": 1 }, svg);
-    el("text", { x: ML - 8, y: y(v) + 4, "text-anchor": "end", "font-size": 11, fill: MUTED }, svg, v ? v / 1000 + "K" : "0");
-  });
-  [5, 10, 15, 20, 24].forEach(d =>
-    el("text", { x: x(d), y: H - 12, "text-anchor": "middle", "font-size": 11, fill: MUTED }, svg, "Jul " + d));
+    <nav class="nav" id="nav" aria-label="Presentation slides"></nav>
+    <aside class="notes" id="notes" aria-hidden="true"><strong>Speaker notes</strong><span id="notes-copy"></span></aside>
 
-  // area + line
-  const pts = CUM.map(r => `${x(r.d)},${y(r.cum)}`).join(" ");
-  el("polygon", { points: `${x(5)},${y(0)} ${pts} ${x(24)},${y(0)}`, fill: BLUE, opacity: 0.12 }, svg);
-  el("polyline", { points: pts, fill: "none", stroke: BLUE, "stroke-width": 2, "stroke-linejoin": "round" }, svg);
-  // end marker + direct label (2px surface ring)
-  el("circle", { cx: x(24), cy: y(127117), r: 5, fill: BLUE, stroke: SURF, "stroke-width": 2 }, svg);
-  el("text", { x: x(24) - 8, y: y(127117) - 12, "text-anchor": "end", "font-size": 12.5, "font-weight": 700, fill: "#f2f4f8" }, svg, "127,117 lines");
+    <script>
+      const slides = [...document.querySelectorAll(".slide")];
+      const nav = document.getElementById("nav");
+      const notes = document.getElementById("notes");
+      const notesCopy = document.getElementById("notes-copy");
+      let current = Math.min(Math.max(Number(location.hash.slice(1)) || 1, 1), slides.length) - 1;
+      let touchStartX = 0;
 
-  // hover: nearest-day crosshair
-  const card = document.getElementById("journeyCard");
-  const guide = el("line", { y1: cTop - 6, y2: cBot, stroke: MUTED, "stroke-width": 1, "stroke-dasharray": "3 3", opacity: 0 }, svg);
-  const dot = el("circle", { r: 4.5, fill: BLUE, stroke: SURF, "stroke-width": 2, opacity: 0 }, svg);
-  el("rect", { x: ML, y: cTop - 6, width: W - ML - MR, height: cBot - cTop + 6, fill: "transparent" }, svg)
-    .addEventListener("mousemove", ev => {
-      const box = svg.getBoundingClientRect();
-      const d = Math.max(5, Math.min(24, Math.round(5 + ((ev.clientX - box.left) * (W / box.width) - ML) / ((W - ML - MR) / 19))));
-      const r = CUM[d - 5], daily = DAILY[d - 5];
-      guide.setAttribute("x1", x(d)); guide.setAttribute("x2", x(d)); guide.setAttribute("opacity", 1);
-      dot.setAttribute("cx", x(d)); dot.setAttribute("cy", y(r.cum)); dot.setAttribute("opacity", 1);
-      tip("journeyTip", card, `<b>Jul ${d}</b><br>cumulative <b>${fmt(r.cum)}</b> lines<br>${daily.prs} PR${daily.prs === 1 ? "" : "s"} merged this day`, ev.clientX, ev.clientY);
-    });
-  svg.addEventListener("mouseleave", () => { guide.setAttribute("opacity", 0); dot.setAttribute("opacity", 0); hideTip("journeyTip"); });
+      document.querySelectorAll(".slide").forEach((slide, slideIndex) => {
+        const completed = Math.round(((slideIndex + 1) / slides.length) * 54);
+        slide.querySelector(".merge-trace").innerHTML = Array.from(
+          { length: 54 },
+          (_, tick) => `<i class="${tick < completed ? "done" : ""}"></i>`,
+        ).join("");
+      });
 
-  document.getElementById("journeyTbl").innerHTML =
-    "<table><tr><th>Date</th><th>Cumulative lines</th></tr>" +
-    CUM.filter(r => DAILY[r.d - 5].prs > 0 || r.d === 24).map(r => `<tr><td>Jul ${r.d}</td><td>${fmt(r.cum)}</td></tr>`).join("") +
-    "</table>";
-})();
+      slides.forEach((slide, index) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.setAttribute("aria-label", `Go to slide ${index + 1}: ${slide.dataset.title}`);
+        button.addEventListener("click", () => show(index));
+        nav.appendChild(button);
+      });
 
-/* ───────────────── slide 5 · daily bars ───────────────── */
-(function daily() {
-  const W = 1080, H = 430, ML = 60, MR = 24, MT = 30, MB = 40;
-  const svg = svgRoot("dailyChart", W, H, "Bar chart of lines merged to main per day, July 5 to 24; July 18 and 19 highlighted");
-  const plotW = W - ML - MR, slot = plotW / DAILY.length, barW = Math.min(slot - 8, 34);
-  const y = v => H - MB - (v / 40000) * (H - MT - MB);
-  const card = document.getElementById("dailyCard");
+      const navButtons = [...nav.querySelectorAll("button")];
 
-  [0, 10000, 20000, 30000, 40000].forEach(v => {
-    el("line", { x1: ML, x2: W - MR, y1: y(v), y2: y(v), stroke: v ? GRID : BASE, "stroke-width": 1 }, svg);
-    el("text", { x: ML - 8, y: y(v) + 4, "text-anchor": "end", "font-size": 11, fill: MUTED }, svg, v ? v / 1000 + "K" : "0");
-  });
+      function show(index) {
+        current = Math.min(Math.max(index, 0), slides.length - 1);
+        slides.forEach((slide, slideIndex) => {
+          const active = slideIndex === current;
+          slide.classList.toggle("active", active);
+          slide.classList.toggle("previous", slideIndex < current);
+          slide.setAttribute("aria-hidden", String(!active));
+          slide.style.setProperty("--progress", Math.round(((slideIndex + 1) / slides.length) * 54));
+          slide.querySelector(".count").textContent = `${String(slideIndex + 1).padStart(2, "0")} / ${String(slides.length).padStart(2, "0")}`;
+        });
+        navButtons.forEach((button, buttonIndex) => {
+          button.setAttribute("aria-current", String(buttonIndex === current));
+        });
+        notesCopy.textContent = slides[current].dataset.notes || "";
+        history.replaceState(null, "", `#${current + 1}`);
+        document.title = `${slides[current].dataset.title} — Claude Lens V2`;
+      }
 
-  DAILY.forEach((r, i) => {
-    const cx = ML + slot * i + slot / 2;
-    const hot = r.d === 18 || r.d === 19;
-    if (r.lines > 0) {
-      const h = Math.max(y(0) - y(r.lines), 3);
-      const bar = el("rect", {
-        x: cx - barW / 2, y: y(0) - h, width: barW, height: h, fill: hot ? ORANGE : BLUE,
-      }, svg);
-      // 4px rounded data-end anchored to the baseline
-      bar.setAttribute("clip-path", "inset(0 round 4px 4px 0 0)");
-      if (hot) el("text", { x: cx, y: y(r.lines) - 8, "text-anchor": "middle", "font-size": 12.5, "font-weight": 700, fill: "#f2f4f8" }, svg, "+" + fmt(r.lines));
-    }
-    // hover target wider than the mark
-    el("rect", { x: ML + slot * i, y: MT, width: slot, height: H - MT - MB, fill: "transparent" }, svg)
-      .addEventListener("mousemove", ev =>
-        tip("dailyTip", card, `<b>Jul ${r.d}</b><br><b>${r.lines ? "+" + fmt(r.lines) : "0"}</b> lines · ${r.prs} PR${r.prs === 1 ? "" : "s"}`, ev.clientX, ev.clientY));
-    if (r.d % 2 === 0 || r.d === 5)
-      el("text", { x: cx, y: H - 14, "text-anchor": "middle", "font-size": 11, fill: hot ? "#f2f4f8" : MUTED, "font-weight": hot ? 700 : 400 }, svg, (r.d === 5 ? "Jul " : "") + r.d);
-  });
-  svg.addEventListener("mouseleave", () => hideTip("dailyTip"));
+      function toggleNotes() {
+        const open = notes.classList.toggle("open");
+        notes.setAttribute("aria-hidden", String(!open));
+      }
 
-  document.getElementById("dailyTbl").innerHTML =
-    "<table><tr><th>Date</th><th>Lines added</th><th>PRs</th></tr>" +
-    DAILY.filter(r => r.prs > 0).map(r => `<tr><td>Jul ${r.d}</td><td>+${fmt(r.lines)}</td><td>${r.prs}</td></tr>`).join("") +
-    "</table>";
-})();
+      document.addEventListener("keydown", (event) => {
+        if (["ArrowRight", "PageDown", " "].includes(event.key)) {
+          event.preventDefault();
+          show(current + 1);
+        } else if (["ArrowLeft", "PageUp"].includes(event.key)) {
+          event.preventDefault();
+          show(current - 1);
+        } else if (event.key === "Home") {
+          show(0);
+        } else if (event.key === "End") {
+          show(slides.length - 1);
+        } else if (event.key.toLowerCase() === "n") {
+          toggleNotes();
+        } else if (event.key === "Escape" && notes.classList.contains("open")) {
+          toggleNotes();
+        }
+      });
 
-/* ───────────────── deck navigation ───────────────── */
-const slides = [...document.querySelectorAll(".slide")];
-let cur = Math.min(Math.max((parseInt(location.hash.slice(1), 10) || 1) - 1, 0), slides.length - 1);
-function show(i) {
-  cur = Math.min(Math.max(i, 0), slides.length - 1);
-  slides.forEach((s, j) => s.classList.toggle("active", j === cur));
-  document.getElementById("counter").textContent = (cur + 1) + " / " + slides.length;
-  document.getElementById("notesBody").textContent = slides[cur].dataset.notes || "";
-  history.replaceState(null, "", "#" + (cur + 1));
-}
-document.addEventListener("keydown", e => {
-  if (["ArrowRight", " ", "PageDown"].includes(e.key)) { e.preventDefault(); show(cur + 1); }
-  else if (["ArrowLeft", "PageUp"].includes(e.key)) { e.preventDefault(); show(cur - 1); }
-  else if (e.key === "Home") show(0);
-  else if (e.key === "End") show(slides.length - 1);
-  else if (e.key.toLowerCase() === "n") document.getElementById("notes").classList.toggle("open");
-});
-document.getElementById("deck").addEventListener("click", e => {
-  if (e.target.closest("a, details, summary, .tooltip")) return;
-  show(cur + 1);
-});
-show(cur);
-</script>
-</body>
+      document.getElementById("deck").addEventListener("click", (event) => {
+        if (!event.target.closest("a, button")) show(current + 1);
+      });
+
+      document.addEventListener("touchstart", (event) => {
+        touchStartX = event.changedTouches[0].screenX;
+      });
+
+      document.addEventListener("touchend", (event) => {
+        const distance = event.changedTouches[0].screenX - touchStartX;
+        if (Math.abs(distance) > 50) show(current + (distance < 0 ? 1 : -1));
+      });
+
+      show(current);
+    </script>
+  </body>
 </html>
