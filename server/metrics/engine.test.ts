@@ -1323,3 +1323,277 @@ describe("metrics — new dashboard measures (toolErrors, cacheSavingsComputed, 
     }
   });
 });
+
+// #118 — the series pipeline was inverted from a `measure × group × bucket`
+// re-filter into a single pass that assigns each record to its (group, bucket)
+// cell once. These cases pin the risk points that inversion could silently
+// break: dense multi-bucket density, the empty-cell 0-vs-null contract,
+// multi-group × multi-bucket cross-product placement, tool fan-out under
+// bucketing, and per-record bucketing of turns AND sessions (not just calls).
+// They assert current (correct) behavior and must stay green across the
+// refactor. Combined with the ~50 existing series cases above, this is the
+// equivalence net (ARCH A3).
+describe("metrics — single-pass inversion equivalence (#118)", () => {
+  it("places each call in exactly its own (group, bucket) cell — multi-group × multi-bucket", () => {
+    // alpha has a call only on day 0; beta only on day 2. A correct inversion
+    // puts each call in one cell and leaves every other cell empty (0). A
+    // re-filter bug (e.g. a call leaking across groups or buckets) shows up as
+    // a nonzero value in a cell that should be empty.
+    const calls = [
+      call({ uuid: "alpha-d0", cwd: "/repo/alpha", timestamp: iso(2026, 6, 13, 10, 0) }),
+      call({ uuid: "beta-d2", cwd: "/repo/beta", timestamp: iso(2026, 6, 15, 10, 0) }),
+    ];
+    const input: MetricsInput = { calls, turns: [], sessions: [], pricing: PRICING };
+    const query = baseQuery({
+      measures: ["apiCalls"],
+      dimensions: ["time", "project"],
+      grain: "day",
+      range: { from: iso(2026, 6, 13, 0, 0), to: iso(2026, 6, 15, 23, 59) },
+    });
+    const result = metrics(input, query);
+
+    const alpha = result.find((s) => s.dimensionKey === "project:/repo/alpha");
+    const beta = result.find((s) => s.dimensionKey === "project:/repo/beta");
+    expect(alpha?.points.map((p) => p.value)).toEqual([1, 0, 0]); // day 0 only
+    expect(beta?.points.map((p) => p.value)).toEqual([0, 0, 1]); // day 2 only
+  });
+
+  it("keeps the empty-cell contract: a null-returning measure yields null (not 0) in empty buckets", () => {
+    // cacheSavingsComputed returns null for an empty call scope and a number
+    // for a non-empty one (measures.ts). Across a dense 3-day axis with calls
+    // only on days 0 and 2, the middle bucket must be null — proving empty
+    // cells reach computeMeasure exactly as the old empty `scopeFor` did,
+    // rather than being fabricated as 0.
+    const calls = [
+      call({
+        uuid: "d0",
+        timestamp: iso(2026, 6, 13, 10, 0),
+        usage: { inputTokens: 100, outputTokens: 0, cacheReadTokens: 50, cacheCreateTokens: 0 },
+      }),
+      call({
+        uuid: "d2",
+        timestamp: iso(2026, 6, 15, 10, 0),
+        usage: { inputTokens: 200, outputTokens: 0, cacheReadTokens: 80, cacheCreateTokens: 0 },
+      }),
+    ];
+    const input: MetricsInput = { calls, turns: [], sessions: [], pricing: PRICING };
+    const query = baseQuery({
+      measures: ["cacheSavingsComputed"],
+      dimensions: ["time"],
+      grain: "day",
+      range: { from: iso(2026, 6, 13, 0, 0), to: iso(2026, 6, 15, 23, 59) },
+    });
+    const points = metrics(input, query)[0]?.points ?? [];
+    expect(points).toHaveLength(3);
+    expect(points[0]?.value).not.toBeNull(); // day 0: has calls → savings number
+    expect(points[1]?.value).toBeNull(); // day 1: empty cell → null, never 0
+    expect(points[2]?.value).not.toBeNull(); // day 2: has calls → savings number
+  });
+
+  it("buckets sessions by firstAt into their own cells (session-grain measure over a dense axis)", () => {
+    // The inversion must place sessions (not only calls) into per-bucket cells.
+    // Two sessions first-seen on different days; the `sessions` measure over a
+    // day-grain axis must count each in its own bucket, zero elsewhere.
+    const sessions = [
+      session({
+        sessionId: "s-d0",
+        firstAt: iso(2026, 6, 13, 9, 0),
+        lastAt: iso(2026, 6, 13, 9, 5),
+      }),
+      session({
+        sessionId: "s-d2",
+        firstAt: iso(2026, 6, 15, 9, 0),
+        lastAt: iso(2026, 6, 15, 9, 5),
+      }),
+    ];
+    const input: MetricsInput = { calls: [], turns: [], sessions, pricing: PRICING };
+    const query = baseQuery({
+      measures: ["sessions"],
+      dimensions: ["time"],
+      grain: "day",
+      range: { from: iso(2026, 6, 13, 0, 0), to: iso(2026, 6, 15, 23, 59) },
+    });
+    const points = metrics(input, query)[0]?.points ?? [];
+    expect(points.map((p) => p.value)).toEqual([1, 0, 1]);
+  });
+
+  it("buckets turns by startedAt into their own cells (turn-grain measure over a dense axis)", () => {
+    // wallMinutes is turn-grain; the inversion must bucket turns by startedAt.
+    // Two turns starting on different days, each 2 minutes long.
+    const turns = [
+      turn({
+        promptId: "t-d0",
+        startedAt: iso(2026, 6, 13, 10, 0),
+        endedAt: iso(2026, 6, 13, 10, 2),
+        calls: [call({ uuid: "tc0", timestamp: iso(2026, 6, 13, 10, 0) })],
+      }),
+      turn({
+        promptId: "t-d2",
+        startedAt: iso(2026, 6, 15, 10, 0),
+        endedAt: iso(2026, 6, 15, 10, 2),
+        calls: [call({ uuid: "tc2", timestamp: iso(2026, 6, 15, 10, 0) })],
+      }),
+    ];
+    const input: MetricsInput = {
+      calls: turns.flatMap((t) => t.calls),
+      turns,
+      sessions: [],
+      pricing: PRICING,
+    };
+    const query = baseQuery({
+      measures: ["wallMinutes"],
+      dimensions: ["time"],
+      grain: "day",
+      range: { from: iso(2026, 6, 13, 0, 0), to: iso(2026, 6, 15, 23, 59) },
+    });
+    const points = metrics(input, query)[0]?.points ?? [];
+    expect(points.map((p) => p.value)).toEqual([2, 0, 2]);
+  });
+
+  it("preserves tool multi-value fan-out under time bucketing (documented double-count)", () => {
+    // One call using two tools fans into two tool groups (groupKeysForCall).
+    // Under time bucketing each tool group's bucket must still count the call
+    // once — the fan-out is unchanged by the inversion, not accidentally
+    // collapsed or multiplied.
+    const calls = [
+      call({
+        uuid: "two-tools",
+        timestamp: iso(2026, 6, 13, 10, 0),
+        tools: [
+          { id: "t1", name: "Read", inputBytes: 1 },
+          { id: "t2", name: "Edit", inputBytes: 1 },
+        ],
+      }),
+    ];
+    const input: MetricsInput = { calls, turns: [], sessions: [], pricing: PRICING };
+    const query = baseQuery({
+      measures: ["apiCalls"],
+      dimensions: ["time", "tool"],
+      grain: "day",
+      range: { from: iso(2026, 6, 13, 0, 0), to: iso(2026, 6, 13, 23, 59) },
+    });
+    const result = metrics(input, query);
+    const read = result.find((s) => s.dimensionKey === "tool:Read");
+    const edit = result.find((s) => s.dimensionKey === "tool:Edit");
+    expect(read?.points.map((p) => p.value)).toEqual([1]);
+    expect(edit?.points.map((p) => p.value)).toEqual([1]);
+  });
+
+  it("wide multi-day hour-grain axis stays dense and correctly bucketed", () => {
+    // A smaller stand-in for the pathological all-time-hour shape: a 2-day
+    // range at hour grain (48 buckets) with calls in three specific hours.
+    // Asserts the dense axis length and that each call lands in exactly its
+    // hour bucket, everything else 0.
+    const calls = [
+      call({ uuid: "h-d0-10", timestamp: iso(2026, 6, 13, 10, 30) }),
+      call({ uuid: "h-d0-14", timestamp: iso(2026, 6, 13, 14, 5) }),
+      call({ uuid: "h-d1-09", timestamp: iso(2026, 6, 14, 9, 45) }),
+    ];
+    const input: MetricsInput = { calls, turns: [], sessions: [], pricing: PRICING };
+    const query = baseQuery({
+      measures: ["apiCalls"],
+      dimensions: ["time"],
+      grain: "hour",
+      range: { from: iso(2026, 6, 13, 0, 0), to: iso(2026, 6, 14, 23, 59) },
+    });
+    const points = metrics(input, query)[0]?.points ?? [];
+    expect(points).toHaveLength(48); // 2 days × 24 hours, dense
+    const nonzero = points.filter((p) => p.value !== 0);
+    expect(nonzero).toHaveLength(3);
+    // Day 0 hour 10, day 0 hour 14, day 1 hour 9 (= index 33) each hold one call.
+    expect(points[10]?.value).toBe(1);
+    expect(points[14]?.value).toBe(1);
+    expect(points[24 + 9]?.value).toBe(1);
+    expect(points.reduce((sum, p) => sum + (p.value ?? 0), 0)).toBe(3);
+  });
+
+  it("fans a multi-model session into every matching group (session inner-loop push)", () => {
+    // Calls pre-fan by group (buildGroups), but turns and sessions are matched
+    // to groups inside buildCellScopes' own `for (const group of groups)` push
+    // loop — the exact code the inversion introduced. A session whose `models`
+    // spans two groups must land in BOTH (a realistic Models-page query). A
+    // regression to first-match/`break` instead of push-to-all would silently
+    // drop it from one series and no other test would catch it.
+    const calls = [
+      call({ uuid: "c-sonnet", model: "claude-sonnet-5" }),
+      call({ uuid: "c-haiku", model: "claude-haiku-4-5" }),
+    ];
+    const sessions = [
+      session({ sessionId: "multi", models: ["claude-sonnet-5", "claude-haiku-4-5"] }),
+    ];
+    const input: MetricsInput = { calls, turns: [], sessions, pricing: PRICING };
+    const query = baseQuery({ measures: ["sessions"], dimensions: ["model"] });
+    const result = metrics(input, query);
+
+    const sonnet = result.find((s) => s.dimensionKey === "model:claude-sonnet-5");
+    const haiku = result.find((s) => s.dimensionKey === "model:claude-haiku-4-5");
+    expect(sonnet?.points.map((p) => p.value)).toEqual([1]);
+    expect(haiku?.points.map((p) => p.value)).toEqual([1]);
+  });
+
+  it("fans a multi-tool turn into every matching group (turn inner-loop push)", () => {
+    // Turn-grain twin of the session case: the representative call (turn.calls[0])
+    // uses two tools, so turnMatchesGroup matches both tool groups and the turn's
+    // wall minutes must land in each — the documented tool fan-out preserved for
+    // turns, not just calls.
+    const repCall = call({
+      uuid: "rep",
+      timestamp: iso(2026, 6, 14, 10, 0),
+      tools: [
+        { id: "t1", name: "Read", inputBytes: 1 },
+        { id: "t2", name: "Edit", inputBytes: 1 },
+      ],
+    });
+    const turns = [
+      turn({
+        promptId: "multi-tool",
+        startedAt: iso(2026, 6, 14, 10, 0),
+        endedAt: iso(2026, 6, 14, 10, 2),
+        calls: [repCall],
+      }),
+    ];
+    const input: MetricsInput = { calls: [repCall], turns, sessions: [], pricing: PRICING };
+    const query = baseQuery({ measures: ["wallMinutes"], dimensions: ["tool"] });
+    const result = metrics(input, query);
+
+    const read = result.find((s) => s.dimensionKey === "tool:Read");
+    const edit = result.find((s) => s.dimensionKey === "tool:Edit");
+    expect(read?.points.map((p) => p.value)).toEqual([2]);
+    expect(edit?.points.map((p) => p.value)).toEqual([2]);
+  });
+
+  it("places records only in their correct cross-product cell (two breakdown dims)", () => {
+    // Two non-time breakdown dims force each group's keyEntries to carry two
+    // values; a record must land only in the cell whose project AND model both
+    // match, never in a mismatched cross combo.
+    const calls = [
+      call({ uuid: "a-sonnet", cwd: "/repo/alpha", model: "claude-sonnet-5" }),
+      call({ uuid: "b-haiku", cwd: "/repo/beta", model: "claude-haiku-4-5" }),
+    ];
+    const input: MetricsInput = { calls, turns: [], sessions: [], pricing: PRICING };
+    const query = baseQuery({
+      measures: ["apiCalls"],
+      dimensions: ["time", "project", "model"],
+      grain: "day",
+      range: { from: iso(2026, 6, 14, 0, 0), to: iso(2026, 6, 14, 23, 59) },
+    });
+    const result = metrics(input, query);
+
+    const alphaSonnet = result.find(
+      (s) => s.dimensionKey === "project:/repo/alpha|model:claude-sonnet-5",
+    );
+    const betaHaiku = result.find(
+      (s) => s.dimensionKey === "project:/repo/beta|model:claude-haiku-4-5",
+    );
+    expect(alphaSonnet?.points.map((p) => p.value)).toEqual([1]);
+    expect(betaHaiku?.points.map((p) => p.value)).toEqual([1]);
+    // The mismatched cross combos never had a call, so buildGroups never
+    // creates them — no alpha×haiku or beta×sonnet series exists.
+    expect(
+      result.find((s) => s.dimensionKey === "project:/repo/alpha|model:claude-haiku-4-5"),
+    ).toBeUndefined();
+    expect(
+      result.find((s) => s.dimensionKey === "project:/repo/beta|model:claude-sonnet-5"),
+    ).toBeUndefined();
+  });
+});
