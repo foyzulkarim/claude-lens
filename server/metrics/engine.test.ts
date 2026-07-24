@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { MetricsQuery, SeriesMetricsQuery } from "../../shared/metrics-contract.js";
 import type { ApiCall, Session, Turn } from "../../shared/types.js";
+import { newQueryProbe } from "../observability.js";
 import { type MetricsInput, metrics } from "./engine.js";
 import { DEFAULT_PRICING_TABLE } from "./measures.js";
 
@@ -1595,5 +1596,63 @@ describe("metrics — single-pass inversion equivalence (#118)", () => {
     expect(
       result.find((s) => s.dimensionKey === "project:/repo/beta|model:claude-sonnet-5"),
     ).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ARCH-119 T2: probe instrumentation. The engine populates a write-only
+// QueryProbe when one is passed; the 2-arg contract (guarded by every test
+// above) is unaffected.
+// ---------------------------------------------------------------------------
+
+describe("metrics — probe instrumentation", () => {
+  const calls = [
+    call({ gitBranch: "main", timestamp: iso(2026, 6, 14, 10, 0) }),
+    call({ gitBranch: "dev", timestamp: iso(2026, 6, 14, 11, 0) }),
+  ];
+  const input: MetricsInput = { calls, turns: [], sessions: [], pricing: PRICING };
+
+  it("populates group/bucket counts and phase timings for a series query", () => {
+    const probe = newQueryProbe();
+    metrics(
+      input,
+      baseQuery({ measures: ["apiCalls"], dimensions: ["gitBranch", "time"], grain: "day" }),
+      probe,
+    );
+    // two distinct gitBranch groups; three day buckets (06-13..06-15).
+    expect(probe.groupCount).toBe(2);
+    expect(probe.bucketCount).toBe(3);
+    expect(probe.filterGroupMs).toBeGreaterThanOrEqual(0);
+    expect(probe.computeMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("accumulates bucketCount across both ranges under compare", () => {
+    const plain = newQueryProbe();
+    metrics(
+      input,
+      baseQuery({ measures: ["apiCalls"], dimensions: ["time"], grain: "day" }),
+      plain,
+    );
+
+    const compared = newQueryProbe();
+    metrics(
+      input,
+      baseQuery({
+        measures: ["apiCalls"],
+        dimensions: ["time"],
+        grain: "day",
+        compare: "previous-period",
+      }) as SeriesMetricsQuery,
+      compared,
+    );
+    expect(compared.bucketCount).toBeGreaterThan(plain.bucketCount);
+  });
+
+  it("leaves the probe untouched-shaped when omitted (2-arg contract)", () => {
+    const withProbe = newQueryProbe();
+    const q = baseQuery({ measures: ["apiCalls"], dimensions: ["time"], grain: "day" });
+    const a = metrics(input, q, withProbe);
+    const b = metrics(input, q);
+    expect(b).toEqual(a);
   });
 });

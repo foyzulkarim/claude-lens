@@ -1,5 +1,6 @@
+import { performance } from "node:perf_hooks";
 import type { FastifyInstance } from "fastify";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MetricsQuery } from "../../shared/metrics-contract.js";
 import type { ApiCall } from "../../shared/types.js";
 import { buildApp } from "../app.js";
@@ -261,5 +262,153 @@ describe("POST /api/metrics", () => {
         sessionPopulation: {},
       }),
     ).toEqual(expect.any(String));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ARCH-119 T2: per-query instrumentation — Server-Timing header + structured
+// log line. The response body/status is unchanged (guarded by the suite
+// above); these tests cover the additive header + log seam only.
+// ---------------------------------------------------------------------------
+
+describe("POST /api/metrics — instrumentation (ARCH-119)", () => {
+  let store: Store;
+
+  beforeEach(() => {
+    store = new Store({ onInvalidate: () => {} });
+    store.applyRecords("s1", {
+      calls: [call({ uuid: "c1", timestamp: iso(2026, 6, 14, 10, 0) })],
+      prompts: [],
+      toolResultBytes: [],
+      compactions: [],
+      rawLines: 0,
+      skippedLines: 0,
+      duplicateCount: 0,
+      malformedCount: 0,
+    });
+  });
+
+  afterEach(() => {
+    store.stop();
+    vi.restoreAllMocks();
+  });
+
+  const seriesPayload = {
+    measures: ["apiCalls"],
+    dimensions: ["time"],
+    grain: "day",
+    range: { from: iso(2026, 6, 13, 0, 0), to: iso(2026, 6, 15, 23, 59) },
+  };
+
+  const scatterPayload = {
+    measures: ["totalTokens", "turns"],
+    dimensions: [],
+    grain: "day",
+    range: { from: iso(2026, 6, 13), to: iso(2026, 6, 15) },
+    mode: "scatter",
+    entity: "session",
+    xMeasure: "totalTokens",
+    yMeasure: "turns",
+    sessionPopulation: {},
+  };
+
+  /** Build an app whose pino logger writes JSON lines into a captured array. */
+  function buildCapturingApp() {
+    const logs: Record<string, unknown>[] = [];
+    const stream = {
+      write: (line: string) => {
+        logs.push(JSON.parse(line));
+      },
+    };
+    const app = buildApp({ store, logger: { level: "info", stream } });
+    return { app, logs };
+  }
+
+  it("sets a Server-Timing header on a series response", async () => {
+    const app = buildApp({ store, logger: false });
+    try {
+      const res = await app.inject({ method: "POST", url: "/api/metrics", payload: seriesPayload });
+      expect(res.statusCode).toBe(200);
+      expect(res.headers["server-timing"]).toContain("engine;dur=");
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("sets a Server-Timing header on a scatter response (uniform across modes)", async () => {
+    const app = buildApp({ store, logger: false });
+    try {
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/metrics",
+        payload: scatterPayload,
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.headers["server-timing"]).toContain("engine;dur=");
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("does not set Server-Timing on a 400 (validation fails before the engine)", async () => {
+    const app = buildApp({ store, logger: false });
+    try {
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/metrics",
+        payload: { measures: ["not-a-measure"] },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.headers["server-timing"]).toBeUndefined();
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("logs one structured info line with query shape and timing breakdown", async () => {
+    const { app, logs } = buildCapturingApp();
+    try {
+      await app.inject({ method: "POST", url: "/api/metrics", payload: seriesPayload });
+    } finally {
+      await app.close();
+    }
+
+    const line = logs.find((l) => l.msg === "metrics query");
+    expect(line).toBeDefined();
+    expect(line).toMatchObject({
+      measures: ["apiCalls"],
+      dimensions: ["time"],
+      grain: "day",
+      mode: "series",
+    });
+    for (const key of [
+      "rangeDays",
+      "filterGroupMs",
+      "groupCount",
+      "bucketCount",
+      "computeMs",
+      "totalMs",
+    ]) {
+      expect(line).toHaveProperty(key);
+    }
+    expect(line?.level).toBe(30); // pino info
+  });
+
+  it("escalates to a warn line when the query exceeds the slow threshold", async () => {
+    // Force totalMs >= SLOW_QUERY_MS deterministically: every performance.now()
+    // call advances 1s, so the route's (after - before) delta is well over
+    // the 250ms threshold regardless of real timing.
+    let clock = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => (clock += 1000));
+
+    const { app, logs } = buildCapturingApp();
+    try {
+      await app.inject({ method: "POST", url: "/api/metrics", payload: seriesPayload });
+    } finally {
+      await app.close();
+    }
+
+    const line = logs.find((l) => l.msg === "metrics query");
+    expect(line?.level).toBe(40); // pino warn
   });
 });

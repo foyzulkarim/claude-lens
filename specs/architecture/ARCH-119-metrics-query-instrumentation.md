@@ -356,7 +356,7 @@ Build `newQueryProbe` + `isSlowQuery` + `queryShape` + `serverTimingHeader` (pur
 
 ## Task T2: Per-query log line + `Server-Timing` header on `/api/metrics`
 
-> **Status:** not started
+> **Status:** done
 > **Verification:** test-after
 > **Effort:** m
 > **Priority:** high

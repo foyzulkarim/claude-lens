@@ -1,3 +1,4 @@
+import { performance } from "node:perf_hooks";
 import type {
   ScatterMeasure,
   ScatterMetricsQuery,
@@ -7,6 +8,7 @@ import type {
   ScatterRegression,
 } from "../../shared/metrics-contract.js";
 import type { SessionPopulationFilter } from "../../shared/sessions-contract.js";
+import type { QueryProbe } from "../observability.js";
 import type { MetricsInput } from "./engine.js";
 import type { MeasureScope, PricingTable } from "./measures.js";
 import {
@@ -88,19 +90,31 @@ export function valueForSessionMeasure(
 export function metricsScatter(
   input: MetricsInput,
   query: ScatterMetricsQuery,
+  probe?: QueryProbe,
 ): ScatterMetricsResult {
+  const filterStart = performance.now();
   const filter: SessionPopulationFilter = {
     range: query.range,
     ...query.sessionPopulation,
   };
   const { matched, fromMs, toMs } = applyRange(filter, input.sessions);
   const scopes = indexSessionsByScope(matched, input.calls, input.turns);
+  if (probe) {
+    // Best-effort mapping onto the uniform probe (ARCH-119 A6): range-filter
+    // + session indexing ≈ filterGroupMs, matched scope count ≈ groupCount,
+    // and scatter has no time buckets so bucketCount stays 0.
+    probe.filterGroupMs += performance.now() - filterStart;
+    probe.groupCount = scopes.size;
+  }
 
-  return buildScatterResult(scopes, input.pricing, query, {
+  const computeStart = performance.now();
+  const result = buildScatterResult(scopes, input.pricing, query, {
     matched: matched.length,
     fromMs,
     toMs,
   });
+  if (probe) probe.computeMs += performance.now() - computeStart;
+  return result;
 }
 
 /** Inputs handed to `buildScatterResult` to keep the pure helper

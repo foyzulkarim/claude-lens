@@ -1,6 +1,5 @@
+import { performance } from "node:perf_hooks";
 import type { FastifyInstance } from "fastify";
-import type { Session } from "../../shared/types.js";
-import type { SessionPopulationCriteria } from "../../shared/sessions-contract.js";
 import type { GateSummaryLite } from "../../shared/gates-cache-contract.js";
 import {
   DIMENSIONS,
@@ -12,9 +11,12 @@ import {
   type ScatterMeasure,
   type ScatterMetricsQuery,
 } from "../../shared/metrics-contract.js";
+import type { SessionPopulationCriteria } from "../../shared/sessions-contract.js";
+import type { Session } from "../../shared/types.js";
 import { metrics } from "../metrics/engine.js";
 import { DEFAULT_PRICING_TABLE, type PricingTable } from "../metrics/measures.js";
 import { metricsScatter } from "../metrics/scatter.js";
+import { isSlowQuery, newQueryProbe, queryShape, serverTimingHeader } from "../observability.js";
 import type { Store } from "../store/store.js";
 
 // routes/ may only import store/ for data (architecture §3) — the metrics/
@@ -324,13 +326,27 @@ export function registerMetricsRoute(
       gateSummaries,
     };
 
+    // Per-query instrumentation (ARCH-119): time the engine call, populate a
+    // write-only probe, emit the Server-Timing header + one structured log
+    // line (warn above the slow-query threshold). The engine's return shape
+    // is unchanged — the probe is an out-param, not part of the response.
+    const probe = newQueryProbe();
+    const engineStart = performance.now();
     // Scatter returns its own discriminated response (`ScatterMetricsResult`);
     // every other mode still returns `Series[]` — preserving the existing
     // `metrics()` return-type contract for Dashboard callers (ARCH A4).
-    if (parsed.mode === "scatter") {
-      return metricsScatter(input, parsed);
-    }
-    return metrics(input, parsed);
+    const result =
+      parsed.mode === "scatter"
+        ? metricsScatter(input, parsed, probe)
+        : metrics(input, parsed, probe);
+    const totalMs = performance.now() - engineStart;
+
+    reply.header("Server-Timing", serverTimingHeader(probe, totalMs));
+    request.log[isSlowQuery(totalMs) ? "warn" : "info"](
+      { ...queryShape(parsed), ...probe, totalMs },
+      "metrics query",
+    );
+    return result;
   });
 }
 

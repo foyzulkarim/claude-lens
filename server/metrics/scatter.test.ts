@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ScatterMetricsQuery, ScatterPoint } from "../../shared/metrics-contract.js";
 import type { ApiCall, Session, Turn } from "../../shared/types.js";
+import { newQueryProbe } from "../observability.js";
 import type { MetricsInput } from "./engine.js";
 import { DEFAULT_PRICING_TABLE } from "./measures.js";
 import {
@@ -357,5 +358,29 @@ describe("metricsScatter — scale cap returns ≤ 500 visible points", () => {
     expect(result.points.length).toBeLessThanOrEqual(SCATTER_VISUAL_CAP);
     expect(result.population.sampled).toBe(true);
     expect(result.population.returned).toBe(result.points.length);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ARCH-119 T2/A6: scatter populates the same probe best-effort (groupCount =
+// matched scope count; scatter has no time buckets so bucketCount stays 0).
+// ---------------------------------------------------------------------------
+
+describe("metricsScatter — probe instrumentation", () => {
+  it("populates groupCount from matched scopes and leaves bucketCount at 0", () => {
+    const sessions = [
+      baseSession({ sessionId: "sa", firstAt: iso(2026, 6, 13, 10, 0) }),
+      baseSession({ sessionId: "sb", firstAt: iso(2026, 6, 14, 10, 0) }),
+    ];
+    const calls = [call({ sessionId: "sa" }), call({ sessionId: "sb" })];
+    const input: MetricsInput = { calls, turns: [], sessions, pricing: DEFAULT_PRICING_TABLE };
+
+    const probe = newQueryProbe();
+    metricsScatter(input, baseQuery(), probe);
+
+    expect(probe.groupCount).toBe(2);
+    expect(probe.bucketCount).toBe(0);
+    expect(probe.filterGroupMs).toBeGreaterThanOrEqual(0);
+    expect(probe.computeMs).toBeGreaterThanOrEqual(0);
   });
 });
