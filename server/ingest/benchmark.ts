@@ -147,12 +147,25 @@ const QUERY_CASES: { name: string; query: SeriesMetricsQuery }[] = [
   },
 ];
 
+// Iterations timed per query shape after warm-up. `metrics()` is a pure
+// function with no memoization, so each run pays the full cost; the median of
+// several samples is a stable, reproducible figure (a single sample can't
+// distinguish 0.04s from 0.08s), while the order-of-magnitude win over the
+// 28.8s/91.5s baseline is obvious from any one of them.
+const QUERY_SAMPLES = 20;
+
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
 /**
  * Boots one pipeline, builds the same `MetricsInput` the metrics route
  * assembles (`listCalls`/`listTurns`/`listSessions`, default pricing, empty
  * gate summaries), and times `metrics()` over the pathological #118 shapes.
- * Each case is run once to warm the JIT, then measured — the reported `ms` is
- * the steady-state cost the event loop pays per query.
+ * Each case is warmed once, then sampled `QUERY_SAMPLES` times; the reported
+ * `ms` is the median — the steady-state cost the event loop pays per query.
  */
 async function runQueryBench(
   cacheDir: string,
@@ -160,27 +173,33 @@ async function runQueryBench(
 ): Promise<{ name: string; ms: number }[]> {
   const warmCache = createWarmCache(cacheDir);
   const pipeline = startIngest(config, { onInvalidate: () => {}, warmCache });
-  await pipeline.whenSettled();
-  pipeline.store.flushAll();
+  try {
+    await pipeline.whenSettled();
+    pipeline.store.flushAll();
 
-  const input: MetricsInput = {
-    calls: pipeline.store.listCalls(),
-    turns: pipeline.store.listTurns(),
-    sessions: pipeline.store.listSessions(),
-    pricing: DEFAULT_PRICING_TABLE,
-    gateSummaries: new Map(),
-  };
+    const input: MetricsInput = {
+      calls: pipeline.store.listCalls(),
+      turns: pipeline.store.listTurns(),
+      sessions: pipeline.store.listSessions(),
+      pricing: DEFAULT_PRICING_TABLE,
+      gateSummaries: new Map(),
+    };
 
-  const results: { name: string; ms: number }[] = [];
-  for (const testCase of QUERY_CASES) {
-    metrics(input, testCase.query); // warm-up (JIT, lazy store recompute)
-    const t0 = performance.now();
-    metrics(input, testCase.query);
-    results.push({ name: testCase.name, ms: performance.now() - t0 });
+    const results: { name: string; ms: number }[] = [];
+    for (const testCase of QUERY_CASES) {
+      metrics(input, testCase.query); // warm-up (JIT, lazy store recompute)
+      const samples: number[] = [];
+      for (let i = 0; i < QUERY_SAMPLES; i++) {
+        const t0 = performance.now();
+        metrics(input, testCase.query);
+        samples.push(performance.now() - t0);
+      }
+      results.push({ name: testCase.name, ms: median(samples) });
+    }
+    return results;
+  } finally {
+    pipeline.stop();
   }
-
-  pipeline.stop();
-  return results;
 }
 
 async function main() {
@@ -205,7 +224,9 @@ async function main() {
       `Warm boot: ${formatMs(warm.ms)}  RSS: ${formatMb(warm.rssBytes)}  (warm/cold ratio: ${ratio}x)`,
     );
 
-    console.log("\n#118 wide-range series query latency (100ms target):\n");
+    console.log(
+      `\n#118 wide-range series query latency — median of ${QUERY_SAMPLES} samples (100ms target):\n`,
+    );
     for (const q of queries) {
       console.log(`  ${formatMs(q.ms)}  ${q.name}`);
     }
@@ -215,8 +236,11 @@ async function main() {
     console.log(
       `| ${new Date().toISOString().slice(0, 10)} | #P5-1 | ${formatMs(cold.ms)} | ${formatMs(warm.ms)} | ${formatMb(cold.rssBytes)} | ${dataSize} | warm/cold ${ratio}x |`,
     );
+    // The #118 row is query-latency, not boot: the cold-boot column is `n/a
+    // (query)` and the warm column carries the slowest shape's median so the
+    // cells don't masquerade as this table's cold/warm boot semantics.
     console.log(
-      `| ${new Date().toISOString().slice(0, 10)} | #118 | query | ${formatMs(slowest)} | ${formatMb(warm.rssBytes)} | ${dataSize} | wide-range series slowest of ${queries.length} shapes; was 28.8s/91.5s pre-inversion |`,
+      `| ${new Date().toISOString().slice(0, 10)} | #118 | n/a (query) | ${formatMs(slowest)} | ${formatMb(warm.rssBytes)} | ${dataSize} | wide-range series slowest of ${queries.length} shapes (median of ${QUERY_SAMPLES}); was 28.8s/91.5s pre-inversion |`,
     );
   } finally {
     await rm(cacheDir, { recursive: true, force: true });

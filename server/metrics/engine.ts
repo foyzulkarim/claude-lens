@@ -238,37 +238,35 @@ function sessionMatchesGroup(session: Session, group: Group): boolean {
   );
 }
 
+/**
+ * Whole-group, range-filtered scope for the distribution / non-time path: the
+ * group's calls plus every range-filtered turn/session matching the group, with
+ * no time bucketing. Since the #118 inversion the series path buckets records
+ * via `buildCellScopes`, so this is the only remaining caller and it never
+ * buckets — bucketing now lives in exactly one place, so there are no longer
+ * two functions that must stay bit-identical (the old `bucketStartMs`/`grain`
+ * branches here were dead once the triple loop was replaced).
+ */
 function scopeFor(
   group: Group,
-  bucketStartMs: number | null,
-  grain: Grain,
   input: MetricsInput,
   rangeFromMs: number,
   rangeToMs: number,
   hostBySessionId: Map<string, string>,
 ): MeasureScope {
-  const calls =
-    bucketStartMs === null
-      ? group.calls
-      : group.calls.filter(
-          (call) => bucketStart(Date.parse(call.timestamp), grain) === bucketStartMs,
-        );
-
   const turns = input.turns.filter((turn) => {
     const ts = Date.parse(turn.startedAt);
     if (!Number.isFinite(ts) || ts < rangeFromMs || ts > rangeToMs) return false;
-    if (bucketStartMs !== null && bucketStart(ts, grain) !== bucketStartMs) return false;
     return turnMatchesGroup(turn, group, hostBySessionId);
   });
 
   const sessions = input.sessions.filter((session) => {
     const ts = Date.parse(session.firstAt);
     if (!Number.isFinite(ts) || ts < rangeFromMs || ts > rangeToMs) return false;
-    if (bucketStartMs !== null && bucketStart(ts, grain) !== bucketStartMs) return false;
     return sessionMatchesGroup(session, group);
   });
 
-  return { calls, turns, sessions };
+  return { calls: group.calls, turns, sessions };
 }
 
 /** Filters calls to the range/filters and groups them by breakdown dims — shared by both the series and distribution pipelines below. */
@@ -310,12 +308,19 @@ function filterAndGroup(
  * for-byte identical to the pre-inversion result of running `computeMeasure`
  * on an empty `scopeFor` cell. `computeMeasure` only ever reads a scope (never
  * pushes/sorts/mutates), so a single shared instance is safe to hand to every
- * empty cell rather than allocating a fresh `{[],[],[]}` per gap point.
+ * empty cell rather than allocating a fresh `{[],[],[]}` per gap point. Frozen
+ * (object + arrays) so that invariant is enforced, not just documented: a
+ * future measure that mutates its scope in place throws here instead of
+ * silently corrupting the shared sentinel and leaking across cells/requests.
  */
 const EMPTY_SCOPE: MeasureScope = { calls: [], turns: [], sessions: [] };
+Object.freeze(EMPTY_SCOPE.calls);
+Object.freeze(EMPTY_SCOPE.turns);
+Object.freeze(EMPTY_SCOPE.sessions);
+Object.freeze(EMPTY_SCOPE);
 
-/** Get-or-create the `MeasureScope` for one `(group, bucket)` cell, materializing the group's bucket map and the cell lazily on first record. */
-function scopeForCell(
+/** Get-or-create the mutable accumulator `MeasureScope` for one `(group, bucket)` cell, materializing the group's bucket map and the cell lazily on first record. */
+function getOrCreateCell(
   cells: Map<Group, Map<number | null, MeasureScope>>,
   group: Group,
   bucket: number | null,
@@ -369,7 +374,7 @@ function buildCellScopes(
   for (const group of groups) {
     for (const call of group.calls) {
       const bucket = bucketByTime ? bucketStart(Date.parse(call.timestamp), grain) : null;
-      scopeForCell(cells, group, bucket).calls.push(call);
+      getOrCreateCell(cells, group, bucket).calls.push(call);
     }
   }
 
@@ -379,7 +384,7 @@ function buildCellScopes(
     const bucket = bucketByTime ? bucketStart(ts, grain) : null;
     for (const group of groups) {
       if (turnMatchesGroup(turn, group, hostBySessionId)) {
-        scopeForCell(cells, group, bucket).turns.push(turn);
+        getOrCreateCell(cells, group, bucket).turns.push(turn);
       }
     }
   }
@@ -390,7 +395,7 @@ function buildCellScopes(
     const bucket = bucketByTime ? bucketStart(ts, grain) : null;
     for (const group of groups) {
       if (sessionMatchesGroup(session, group)) {
-        scopeForCell(cells, group, bucket).sessions.push(session);
+        getOrCreateCell(cells, group, bucket).sessions.push(session);
       }
     }
   }
@@ -586,15 +591,7 @@ function computeDistributionSeries(input: MetricsInput, query: DistributionMetri
         // indexed path is functionally identical but linear in C+T+S.
         entityScopes = sessionEntityScopesFromIndex(sessionIndex);
       } else {
-        const scope = scopeFor(
-          group,
-          null,
-          query.grain,
-          input,
-          rangeFromMs,
-          rangeToMs,
-          hostBySessionId,
-        );
+        const scope = scopeFor(group, input, rangeFromMs, rangeToMs, hostBySessionId);
         entityScopes = entityScopesFor(query.distributionEntity, scope);
       }
       const values = entityScopes
