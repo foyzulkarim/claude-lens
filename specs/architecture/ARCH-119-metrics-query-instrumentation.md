@@ -283,7 +283,7 @@ _Generated 2026-07-24. Three tasks: T1 (foundation module) → T2 (query log + h
 
 ## Task T1: Observability module — probe, formatters, thresholds, event-loop monitor
 
-> **Status:** not started
+> **Status:** done
 > **Verification:** tdd
 > **Effort:** m
 > **Priority:** high
