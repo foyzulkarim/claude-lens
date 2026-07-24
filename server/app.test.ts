@@ -3,11 +3,12 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { FastifyInstance } from "fastify";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { WsServerMessage } from "../shared/ws-protocol.js";
 import { buildApp, isAllowedOrigin } from "./app.js";
 import type { IngestPipeline } from "./ingest/pipeline.js";
 import { startIngest } from "./ingest/pipeline.js";
+import * as observability from "./observability.js";
 import { Store } from "./store/store.js";
 import { createBroadcaster } from "./ws/broadcaster.js";
 
@@ -178,5 +179,51 @@ describe("isAllowedOrigin — /ws origin allowlist", () => {
     expect(isAllowedOrigin("http://127.0.0.1.evil.com")).toBe(false);
     expect(isAllowedOrigin("not a url")).toBe(false);
     expect(isAllowedOrigin("")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ARCH-119 T3: event-loop lag monitor lifecycle. Off by default (no interval
+// in the test suite); started + stopped via onClose when enabled.
+// ---------------------------------------------------------------------------
+
+describe("buildApp — event-loop monitor lifecycle", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("starts the monitor when enabled and stops it on close", async () => {
+    const stop = vi.fn();
+    const spy = vi.spyOn(observability, "startEventLoopMonitor").mockReturnValue({ stop });
+    const store = new Store({ onInvalidate: () => {} });
+    stores.push(store);
+
+    const app = buildApp({ store, logger: false, enableEventLoopMonitor: true });
+    expect(spy).toHaveBeenCalledTimes(1);
+
+    await app.close();
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not start the monitor by default", () => {
+    const spy = vi.spyOn(observability, "startEventLoopMonitor");
+    const store = new Store({ onInvalidate: () => {} });
+    stores.push(store);
+
+    const app = buildApp({ store, logger: false });
+    apps.push(app);
+
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("wires the real monitor and closes cleanly (no leaked interval)", async () => {
+    const store = new Store({ onInvalidate: () => {} });
+    stores.push(store);
+
+    // No mock: the real perf_hooks-backed monitor starts. Its interval is
+    // unref'd and the onClose hook stops it, so a clean close is the leak
+    // tripwire for the production wiring.
+    const app = buildApp({ store, logger: false, enableEventLoopMonitor: true });
+    await expect(app.close()).resolves.toBeUndefined();
   });
 });

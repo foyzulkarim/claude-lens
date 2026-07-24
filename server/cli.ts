@@ -174,6 +174,9 @@ async function main() {
     configPath,
     localStorePath,
     pipeline: ingest,
+    // ARCH-119 R4: the event-loop lag monitor runs in the production process
+    // (off by default for the test suite).
+    enableEventLoopMonitor: true,
   });
 
   // Ingest now holds real poller/tailer timers and open file handles; tear it

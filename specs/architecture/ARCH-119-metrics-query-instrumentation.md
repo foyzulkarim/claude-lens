@@ -426,7 +426,7 @@ Thread an optional `probe` through `metrics()`/`metricsScatter()`, populate it d
 
 ## Task T3: Event-loop lag monitor lifecycle in the app
 
-> **Status:** not started
+> **Status:** done
 > **Verification:** test-after
 > **Effort:** s
 > **Priority:** medium
