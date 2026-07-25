@@ -232,15 +232,15 @@ Pages are cheap by design: filter state + preset `MetricsQuery`s + layout. The H
 - [x] **#P5-1 — Performance pass**
   Cold/warm boot and RSS on a large real history; warm-cache hit verification; profile only if numbers miss targets (single-threaded until proven otherwise, §5.7).
   *Acceptance:* numbers recorded below; warm boot near-instant.
-- [ ] **#P5-2 — Package hygiene + npx cold-start**
+- [x] **#P5-2 — Package hygiene + npx cold-start** *(closed 2026-07-23 by verifying the live `@foyzulkarim/claude-lens@1.0.1` tarball — no PR; checkbox was still `[ ]`, drift fixed at archive time)*
   Publish `dist/` only; no postinstall, no native modules (hard rules, §12); package size a few MB. Test `npx claude-lens` from a packed tarball on a clean environment (macOS + Linux at minimum). Verify `.storybook/`, `*.stories.tsx`, and `cypress/` are excluded from the tarball.
   *Acceptance:* tarball size recorded; cold `npx` boot works with zero prior installs; no dev-tooling files in the published package.
-- [ ] **#P5-3 — Docs**
+- [x] **#P5-3 — Docs** *(closed 2026-07-23 via PR #116; checkbox was still `[ ]`, drift fixed at archive time)*
   README (install, screenshots, tier explanation), cost-capture setup guide (statusline + Stop hook), CHANGELOG. `legacy/` pointer note.
   *Acceptance:* a new user can go from `npx claude-lens` to premium tier using docs alone.
-- [ ] **#P5-4 — Publish v0.1.0**
+- [x] **#P5-4 — Publish v0.1.0** *(closed 2026-07-23 recording the already-shipped `@foyzulkarim/claude-lens@1.0.1` — no PR; checkbox was still `[ ]`, drift fixed at archive time)*
   npm publish; GitHub release; tag.
-  *Acceptance:* `npx claude-lens@latest` works from the public registry.
+  *Acceptance:* `npx claude-lens@latest` works from the public registry. **Stale as written** — the unscoped `claude-lens` name on npm belongs to another publisher, so the literal command resolves elsewhere; the criterion is met by the scoped `npx @foyzulkarim/claude-lens@latest` secured under #P0-4.
   **Note (2026-07-22):** `origin/main`'s `package.json` is already at `1.0.1` with a `chore: release v1.0.1` commit predating #109's merge — a release has already shipped ahead of this issue closing, and #P6-1 below now needs to publish past it (with #109 included). This task's title/version target is stale; reconcile (close as superseded by #P6-1, or re-scope to whatever's actually missing) before Phase 5 is called done — not resolved here, flagging only.
 
 ---
