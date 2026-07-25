@@ -27,7 +27,7 @@ If the request maps to several plan tasks (e.g. a whole phase), file one issue p
 
 **plan-task / page:** Read the task's entry in `specs/claude-lens-plan.md` — the task body is the scope, and the *Acceptance:* line must be copied **verbatim** into the issue (plan-doc rule). Follow the task's spec references before writing the body:
 
-- architecture §N → `specs/claude-lens-architecture.md`
+- architecture §N → `docs/claude-lens-architecture.md`
 - pages §N → `specs/claude-lens-pages.md`
 - gates → `specs/gates.md`
 - mockups → `specs/pages/<page>.html`

@@ -28,7 +28,7 @@ compute the ready queue, and follow the lifecycle in this document.
 
 Use sources in this order for different questions:
 
-1. **What must ship:** `claude-lens-pages.md`, `gates.md`, `claude-lens-architecture.md`, then the
+1. **What must ship:** `claude-lens-pages.md`, `gates.md`, `../docs/claude-lens-architecture.md`, then the
    matching task in `claude-lens-plan.md`. Page section tables beat HTML mockups.
 2. **What one issue owns:** its filed GitHub body and local `specs/issues/` record.
 3. **Whether an issue may start:** the conservative start-gate table in this document.

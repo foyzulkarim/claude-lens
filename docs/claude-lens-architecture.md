@@ -1,6 +1,6 @@
 # Claude Lens — Architecture Specification
 
-Companion to `claude-lens-pages.md` (IA + data dependencies) and `gates.md` (Report Card gate specs). This document defines **how** the system is built; those define **what** it shows. Conflict resolution: on **data semantics** the page spec wins; on **routing, URL encoding, and implementation mechanics** this document wins (e.g. global filters live in the query string, not the URL hash — see §11).
+Companion to `../specs/claude-lens-pages.md` (IA + data dependencies) and `../specs/gates.md` (Report Card gate specs). This document defines **how** the system is built; those define **what** it shows. Conflict resolution: on **data semantics** the page spec wins; on **routing, URL encoding, and implementation mechanics** this document wins (e.g. global filters live in the query string, not the URL hash — see §11).
 
 ---
 
@@ -126,7 +126,7 @@ claude-lens/
 │   │   └── distributions.ts  # percentiles, histograms, pareto
 │   ├── gates/
 │   │   ├── engine.ts         # run gates per session; score
-│   │   └── gates/            # one file per gate (initial set of six; later gates from gates.md's deferred list land here too)
+│   │   └── gates/            # one file per gate (initial set of six; later gates from ../specs/gates.md's deferred list land here too)
 │   ├── routes/
 │   │   ├── metrics.ts        # POST /api/metrics
 │   │   ├── sessions.ts       # list, detail, compare
@@ -167,7 +167,7 @@ claude-lens/
 
 ## 4. Data sources (input contract)
 
-Per `claude-lens-pages.md` legend. Filename classification within scan roots:
+Per `../specs/claude-lens-pages.md` legend. Filename classification within scan roots:
 
 | Pattern | Source | Tier |
 |---|---|---|
@@ -267,7 +267,7 @@ Why not push data over WS: it duplicates the query layer inside the socket proto
 
 ## 8. Metrics engine (server-side query contract)
 
-From the parser contract in `claude-lens-pages.md`:
+From the parser contract in `../specs/claude-lens-pages.md`:
 
 ```ts
 metrics(query: MetricsQuery): Series[]
@@ -345,7 +345,7 @@ Highest-value, in order:
 1. **Parser + dedupe** (`parse-transcript`) against synthetic fixtures — the compact-record contract must not regress.
 2. **Tailer edge cases:** partial trailing line, truncation/rewrite fallback, offset advancement.
 3. **Metrics engine:** grain bucketing, period-over-period alignment, percentiles, computed-vs-observed labeling.
-4. **Gate engine** per `gates.md` specs.
+4. **Gate engine** per `../specs/gates.md` specs.
 
 UI testing: Storybook stories cover component states, Cypress covers the E2E smoke and cross-page flows (see the build plan), and manual review against the mockup HTML pages remains the final visual check — no automated visual regression (consciously skipped, see plan decisions log).
 

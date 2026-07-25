@@ -92,7 +92,7 @@ The installer copies four `.cjs` scripts to `~/.claude/scripts/` and merges a `s
 
 **Verify it worked:** open `/settings` in claude-lens and check the "Cost capture setup" panel — it should show the latest sample timestamp and the capturing-session count. Run one Claude Code session anywhere; the next time claude-lens polls your `~/.claude` directory, matching sessions flip to 🟢.
 
-See `specs/claude-lens-architecture.md` for the full design and `specs/claude-lens-pages.md` for what each page shows.
+See `docs/claude-lens-architecture.md` for the full design and `specs/claude-lens-pages.md` for what each page shows.
 
 ## Legacy (V1)
 

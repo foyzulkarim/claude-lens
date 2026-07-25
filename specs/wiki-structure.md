@@ -182,14 +182,19 @@ a group, same as any other push to shared state.
   `issue-NNN` wiki page (and its sub-pages) is overwritten (not merged) the next time that issue
   closes and is re-archived.
 
-## What stays in `specs/`
+## What stays active
 
-The four authoritative V2 docs (`claude-lens-architecture.md`, `claude-lens-pages.md`,
-`claude-lens-data-model.md`, `claude-lens-field-definitions.md`), `claude-lens-plan.md`, `gates.md`,
-`pages/*.html` mockups, and `issues/` / `context/` / `requirements/` / `architecture/` entries for
-issues that are still open or in flight. Once an issue closes and gets archived, its entries in
-those four subdirectories are removed — that's the "empty the specs directory" half of this
-convention; `specs/` should only ever hold what the *current* pipeline needs, not project history.
+`docs/claude-lens-architecture.md` is the one reader-facing design document — it's what `README.md`
+points newcomers at, so it lives in `docs/` rather than among the pipeline specs. That placement is
+about audience, not permanence: it is **not** a rule that living documents move out of `specs/`.
+
+Everything else the active pipeline reads stays in `specs/`: the remaining authoritative V2 specs
+(`claude-lens-pages.md`, `claude-lens-data-model.md`, `claude-lens-field-definitions.md`,
+`claude-lens-plan.md`, `claude-lens-phase4-parallelization.md`, `gates.md`), the `pages/*.html`
+mockups, and `issues/` / `context/` / `requirements/` / `architecture/` entries for issues that are
+still open or in flight. Once an issue closes and gets archived, its entries in those four
+subdirectories are removed — that's the "empty the specs directory" half of this convention;
+`specs/` should only ever hold what the *current* pipeline needs, not project history.
 None of these living documents are ever mirrored into the wiki — it holds retired issue artifacts and
 a thin navigation layer over them, never a copy of the current specs.
 
