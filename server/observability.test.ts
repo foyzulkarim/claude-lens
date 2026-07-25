@@ -184,7 +184,7 @@ describe("serverTimingHeader", () => {
   it("rounds fractional durations to one decimal", () => {
     const probe: QueryProbe = {
       inputMs: 0.04,
-      filterGroupMs: 3.14159,
+      filterGroupMs: Math.PI,
       scopeMs: 2.06,
       groupCount: 1,
       bucketCount: 1,
@@ -201,7 +201,7 @@ describe("probeLogFields", () => {
   it("rounds the same way the header does, so log and header agree", () => {
     const probe: QueryProbe = {
       inputMs: 1.2345,
-      filterGroupMs: 3.14159,
+      filterGroupMs: Math.PI,
       scopeMs: 2.06,
       groupCount: 4,
       bucketCount: 13,
