@@ -433,6 +433,61 @@ describe("ChartCard — tokens composition (#122)", () => {
     expect(Object.keys(rows[0].values)).toEqual(["Cost", "Secondary cost series"]);
   });
 
+  // A stacked chart can't render the previous-period ghost, so the control
+  // is disabled rather than left pressable-but-inert, and the comparison is
+  // dropped from the query instead of fetched and thrown away.
+  it("disables Compare in tokens mode instead of leaving it inert", async () => {
+    const user = userEvent.setup();
+    renderCard();
+    await waitFor(() => expect(postMetricsMock).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("button", { name: "Compare" })).toBeEnabled();
+
+    postMetricsMock.mockResolvedValue(tokenSeries);
+    await user.click(screen.getByRole("button", { name: "tokens" }));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Compare" })).toBeDisabled());
+    expect(screen.getByRole("button", { name: "Compare" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+  });
+
+  it("drops an already-on comparison from the query when switching to tokens", async () => {
+    const user = userEvent.setup();
+    renderCard();
+    await waitFor(() => expect(postMetricsMock).toHaveBeenCalledTimes(1));
+
+    await user.click(screen.getByRole("button", { name: "Compare" }));
+    await waitFor(() => expect(postMetricsMock).toHaveBeenCalledTimes(2));
+    expect(latestQuery<{ compare?: string }>().compare).toBe("previous-period");
+
+    postMetricsMock.mockResolvedValue(tokenSeries);
+    await user.click(screen.getByRole("button", { name: "tokens" }));
+
+    await waitFor(() => expect(latestQuery<{ measures: string[] }>().measures).toHaveLength(4));
+    expect(latestQuery<{ compare?: string }>().compare).toBeUndefined();
+  });
+
+  // The toggle's own state survives so the comparison comes back on its own
+  // when the unit does — the user set it, a display constraint suppressed it.
+  it("restores the comparison when the unit leaves tokens", async () => {
+    const user = userEvent.setup();
+    renderCard();
+    await waitFor(() => expect(postMetricsMock).toHaveBeenCalledTimes(1));
+
+    await user.click(screen.getByRole("button", { name: "Compare" }));
+    postMetricsMock.mockResolvedValue(tokenSeries);
+    await user.click(screen.getByRole("button", { name: "tokens" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Compare" })).toBeDisabled());
+
+    await user.click(screen.getByRole("button", { name: "$" }));
+
+    await waitFor(() =>
+      expect(latestQuery<{ compare?: string }>().compare).toBe("previous-period"),
+    );
+    expect(screen.getByRole("button", { name: "Compare" })).toHaveAttribute("aria-pressed", "true");
+  });
+
   it("summarises the chart total across all four token series", () => {
     // Each series contributes value + 2×value across its two buckets, so the
     // total is 3 × (12 + 340 + 8_000 + 1_500_000) — dominated by cache reads,

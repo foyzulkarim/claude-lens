@@ -20,9 +20,10 @@ export interface BuildTimeseriesOptions {
    *
    * Never applies to `"lines"`: a stacked plain line is visually
    * indistinguishable from absolute values, so it would misreport rather
-   * than clarify. Also suppresses the `compareGhost` overlay, whose
-   * absolute per-series values read at the wrong magnitude over cumulative
-   * bands.
+   * than clarify. Where stacking *does* apply it also suppresses the
+   * `compareGhost` overlay, whose absolute per-series values read at the
+   * wrong magnitude over cumulative bands — the `"lines"` family keeps its
+   * ghost, since nothing there is cumulative to read it against.
    *
    * Defaults to `false` so every existing unstacked call site is
    * unaffected.
@@ -82,6 +83,11 @@ export function buildTimeseriesOption(
 ): TimeseriesOption {
   const seriesOption: (LineSeriesOption | BarSeriesOption)[] = [];
   const distinctMeasureCount = new Set(series.map((s) => s.measure)).size;
+  // Whether stacking is actually *applied*, not merely requested — `lines`
+  // opts out entirely. Both the `stack` option and the ghost suppression key
+  // off this, so a `lines` chart can never lose its ghost to a `stacked`
+  // flag that had no other effect.
+  const stacking = stacked && family !== "lines";
 
   for (const s of series) {
     const name = seriesName(s, distinctMeasureCount);
@@ -91,7 +97,7 @@ export function buildTimeseriesOption(
         type: "bar",
         name,
         data: toData(s.points),
-        ...(stacked ? { stack: "total" } : {}),
+        ...(stacking ? { stack: "total" } : {}),
       });
     } else if (family === "lines") {
       seriesOption.push({
@@ -105,11 +111,11 @@ export function buildTimeseriesOption(
         name,
         data: toData(s.points),
         areaStyle: {},
-        ...(stacked ? { stack: "total" } : {}),
+        ...(stacking ? { stack: "total" } : {}),
       });
     }
 
-    if (s.compareGhost && !stacked) {
+    if (s.compareGhost && !stacking) {
       seriesOption.push({
         type: "line",
         name: `${name} (previous period)`,

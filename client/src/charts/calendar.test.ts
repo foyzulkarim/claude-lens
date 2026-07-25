@@ -126,6 +126,13 @@ describe("buildCalendarHeatmapOption", () => {
       ]);
     });
 
+    it("formats the tooltip value in the active unit, not as a raw number", () => {
+      const option = buildCalendarHeatmapOption(tokenSeries, { unit: "tokens", range: RANGE });
+      const formatter = (option.tooltip as { formatter: (params: unknown) => string }).formatter;
+      expect(formatter({ value: ["2026-07-01", 43_210] })).toBe("2026-07-01: 43K");
+      expect(formatter({})).toBe("");
+    });
+
     it("names the series for the aggregate, not the first series' group label", () => {
       const option = buildCalendarHeatmapOption(tokenSeries, { unit: "tokens", range: RANGE });
       const [heatmapSeries] = option.series as { name: string }[];

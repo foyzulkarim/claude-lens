@@ -7,7 +7,7 @@ import type {
 import type { ComposeOption } from "echarts/core";
 import type { Series } from "../../../shared/metrics-contract.js";
 import { pointValue } from "./series-math.js";
-import type { Unit } from "./units.js";
+import { formatUnitValue, type Unit } from "./units.js";
 
 export type CalendarHeatmapOption = ComposeOption<
   HeatmapSeriesOption | CalendarComponentOption | VisualMapComponentOption | TooltipComponentOption
@@ -63,10 +63,14 @@ export function buildCalendarHeatmapOption(
 
   return {
     tooltip: {
+      // Unit-formatted, not the raw number: a day's summed token total is
+      // seven digits ("43210000" vs "43.2M") and a `$` day is an unrounded
+      // float. Same formatter the timeseries axis/tooltip uses, so the two
+      // Trends panels read consistently.
       formatter: (params: unknown) => {
         const p = params as { value?: [string, number] };
         if (!p.value) return "";
-        return `${p.value[0]}: ${p.value[1]}`;
+        return `${p.value[0]}: ${formatUnitValue(p.value[1], unit)}`;
       },
     },
     visualMap: {

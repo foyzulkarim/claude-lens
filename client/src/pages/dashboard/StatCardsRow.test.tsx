@@ -96,6 +96,32 @@ describe("StatCardsRow — Total-tokens cache-read share (#122)", () => {
     await waitFor(() => expect(screen.getByText("67% cache reads")).toBeInTheDocument());
   });
 
+  it("never rounds a partial share up to an absolute 100% or down to 0%", async () => {
+    respondWith({
+      inputTokens: 4,
+      outputTokens: 0,
+      cacheCreateTokens: 0,
+      cacheReadTokens: 996,
+    });
+    renderRow();
+
+    // 99.6% — reported as 99%, since "100% cache reads" on a tile explaining
+    // a total reads as "nothing was fresh", which is false.
+    await waitFor(() => expect(screen.getByText("99% cache reads")).toBeInTheDocument());
+  });
+
+  it("reports a genuinely total cache-read range as 100%", async () => {
+    respondWith({
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheCreateTokens: 0,
+      cacheReadTokens: 1_000,
+    });
+    renderRow();
+
+    await waitFor(() => expect(screen.getByText("100% cache reads")).toBeInTheDocument());
+  });
+
   it("omits the sub-line entirely for a zero-token range — no NaN%, no 0%", async () => {
     respondWith({
       inputTokens: 0,

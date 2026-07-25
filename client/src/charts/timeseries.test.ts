@@ -171,6 +171,27 @@ describe("buildTimeseriesOption — compare ghost", () => {
     expect(entries).toHaveLength(1);
     expect(entries[0].name).not.toContain("previous period");
   });
+
+  // Suppression is tied to stacking actually applying, not to the flag: the
+  // `lines` family opts out of stacking entirely, so there are no cumulative
+  // bands for the ghost to be misread against and it must survive.
+  it("keeps the ghost in the lines family even when stacking is requested", () => {
+    const input = series({
+      compareGhost: [
+        { t: "2026-06-24T00:00:00Z", value: 0.5 },
+        { t: "2026-06-25T00:00:00Z", value: 1.5 },
+      ],
+    });
+    const option = buildTimeseriesOption([input], {
+      family: "lines",
+      unit: "tokens",
+      stacked: true,
+    });
+    const entries = option.series as { name?: string; stack?: string }[];
+    expect(entries).toHaveLength(2);
+    expect(entries[1].name).toContain("previous period");
+    for (const entry of entries) expect(entry.stack).toBeUndefined();
+  });
 });
 
 describe("buildTimeseriesOption — malformed input", () => {

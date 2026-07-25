@@ -150,7 +150,13 @@ export function cacheReadShareLabel(
   allTokensTotal: number,
 ): string | undefined {
   const share = safeDivide(cacheReadTotal, allTokensTotal);
-  return share === undefined ? undefined : `${Math.round(share * 100)}% cache reads`;
+  if (share === undefined) return undefined;
+  // Rounding alone would claim an absolute "100% cache reads" at 99.6% and
+  // "0%" at 0.4% — both read as exact on a tile whose whole job is
+  // explaining a total. Only a true 1 or 0 gets the absolute reading.
+  const pct = Math.round(share * 100);
+  const clamped = pct === 100 && share < 1 ? 99 : pct === 0 && share > 0 ? 1 : pct;
+  return `${clamped}% cache reads`;
 }
 
 function findSeries(data: Series[] | undefined, measure: Series["measure"]): Series | undefined {
@@ -327,7 +333,10 @@ export function StatCardsRow({ now: injectedNow }: StatCardsRowProps = {}) {
   // biome-ignore lint/correctness/useExhaustiveDependencies: filters is covered by its stable serialized identity (filtersKey); now ticks on its own via useStableNow
   const tokensQuery = useMemo<SeriesMetricsQuery>(
     () => ({
-      measures: ["inputTokens", "outputTokens", "cacheReadTokens", "cacheCreateTokens"],
+      // Same order as `UNIT_MEASURES.tokens` — these are the four measures
+      // the Dashboard chart below plots, and one ordering across the page
+      // keeps the tile, the chart, and their query keys aligned.
+      measures: ["inputTokens", "outputTokens", "cacheCreateTokens", "cacheReadTokens"],
       dimensions: ["time"],
       grain: GRAIN,
       compare: "previous-period",
