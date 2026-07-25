@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ScatterMetricsQuery, ScatterPoint } from "../../shared/metrics-contract.js";
 import type { ApiCall, Session, Turn } from "../../shared/types.js";
+import { newQueryProbe } from "../observability.js";
 import type { MetricsInput } from "./engine.js";
 import { DEFAULT_PRICING_TABLE } from "./measures.js";
 import {
@@ -357,5 +358,57 @@ describe("metricsScatter — scale cap returns ≤ 500 visible points", () => {
     expect(result.points.length).toBeLessThanOrEqual(SCATTER_VISUAL_CAP);
     expect(result.population.sampled).toBe(true);
     expect(result.population.returned).toBe(result.points.length);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ARCH-119 T2/A6: scatter populates the same probe best-effort (groupCount =
+// matched scope count; scatter has no time buckets so bucketCount stays 0).
+// ---------------------------------------------------------------------------
+
+describe("metricsScatter — probe instrumentation", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  // The third session sits outside the query range, so `scopes.size` (2)
+  // differs from `input.sessions.length` (3) — without it the assertion
+  // can't tell which quantity `groupCount` actually reports.
+  function probeInput(): MetricsInput {
+    const sessions = [
+      baseSession({ sessionId: "sa", firstAt: iso(2026, 6, 13, 10, 0) }),
+      baseSession({ sessionId: "sb", firstAt: iso(2026, 6, 14, 10, 0) }),
+      baseSession({ sessionId: "sc", firstAt: iso(2026, 5, 1, 10, 0) }), // out of range
+    ];
+    const calls = [call({ sessionId: "sa" }), call({ sessionId: "sb" }), call({ sessionId: "sc" })];
+    return { calls, turns: [], sessions, pricing: DEFAULT_PRICING_TABLE };
+  }
+
+  it("populates groupCount from matched scopes and leaves bucketCount at 0", () => {
+    const probe = newQueryProbe();
+    metricsScatter(probeInput(), baseQuery(), probe);
+
+    expect(probe.groupCount).toBe(2); // matched scopes, not the 3 input sessions
+    expect(probe.bucketCount).toBe(0);
+    expect(probe.filterGroupMs).toBeGreaterThanOrEqual(0);
+    expect(probe.computeMs).toBeGreaterThanOrEqual(0);
+  });
+
+  // Same guard as the engine's: with a 5ms-per-reading clock, a phase that is
+  // never written stays at 0, so deleting any `probe.xMs +=` fails here.
+  it("actually writes each phase timing (filter, scope, compute)", () => {
+    let t = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => {
+      t += 5;
+      return t;
+    });
+    const probe = newQueryProbe();
+    metricsScatter(probeInput(), baseQuery(), probe);
+
+    expect(probe.filterGroupMs).toBe(5);
+    expect(probe.scopeMs).toBe(5);
+    expect(probe.computeMs).toBe(5);
+    expect(probe.inputMs).toBe(0); // route-owned
+    expect(probe.engineMs).toBe(0); // route-owned
   });
 });

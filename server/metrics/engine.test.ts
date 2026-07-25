@@ -1,6 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MetricsQuery, SeriesMetricsQuery } from "../../shared/metrics-contract.js";
 import type { ApiCall, Session, Turn } from "../../shared/types.js";
+import { newQueryProbe } from "../observability.js";
 import { type MetricsInput, metrics } from "./engine.js";
 import { DEFAULT_PRICING_TABLE } from "./measures.js";
 
@@ -1595,5 +1596,138 @@ describe("metrics — single-pass inversion equivalence (#118)", () => {
     expect(
       result.find((s) => s.dimensionKey === "project:/repo/beta|model:claude-sonnet-5"),
     ).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ARCH-119 T2: probe instrumentation. The engine populates a write-only
+// QueryProbe when one is passed; the 2-arg contract (guarded by every test
+// above) is unaffected.
+// ---------------------------------------------------------------------------
+
+describe("metrics — probe instrumentation", () => {
+  const calls = [
+    call({ gitBranch: "main", timestamp: iso(2026, 6, 14, 10, 0) }),
+    call({ gitBranch: "dev", timestamp: iso(2026, 6, 14, 11, 0) }),
+  ];
+  const input: MetricsInput = { calls, turns: [], sessions: [], pricing: PRICING };
+
+  /**
+   * Deterministic clock: every `performance.now()` reading advances 5ms, so a
+   * phase that is actually timed reports a multiple of 5 and one that is never
+   * written stays at `newQueryProbe()`'s 0. Without this, `>= 0` assertions
+   * pass even if every `probe.xMs +=` line is deleted.
+   */
+  function stubClock(): void {
+    let t = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => {
+      t += 5;
+      return t;
+    });
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("populates group/bucket counts and phase timings for a series query", () => {
+    const probe = newQueryProbe();
+    metrics(
+      input,
+      baseQuery({ measures: ["apiCalls"], dimensions: ["gitBranch", "time"], grain: "day" }),
+      probe,
+    );
+    // two distinct gitBranch groups; three day buckets (06-13..06-15).
+    expect(probe.groupCount).toBe(2);
+    expect(probe.bucketCount).toBe(3);
+    expect(probe.filterGroupMs).toBeGreaterThanOrEqual(0);
+    expect(probe.computeMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("actually writes each phase timing (filter, scope, compute)", () => {
+    stubClock();
+    const probe = newQueryProbe();
+    metrics(
+      input,
+      baseQuery({ measures: ["apiCalls"], dimensions: ["gitBranch", "time"], grain: "day" }),
+      probe,
+    );
+    // Each phase brackets exactly one start/end pair → exactly one 5ms tick.
+    expect(probe.filterGroupMs).toBe(5);
+    expect(probe.scopeMs).toBe(5);
+    expect(probe.computeMs).toBe(5);
+    // The route owns these two; the engine must not touch them.
+    expect(probe.inputMs).toBe(0);
+    expect(probe.engineMs).toBe(0);
+  });
+
+  it("accumulates bucketCount across both ranges under compare", () => {
+    const plain = newQueryProbe();
+    metrics(
+      input,
+      baseQuery({ measures: ["apiCalls"], dimensions: ["time"], grain: "day" }),
+      plain,
+    );
+
+    const compared = newQueryProbe();
+    metrics(
+      input,
+      baseQuery({
+        measures: ["apiCalls"],
+        dimensions: ["time"],
+        grain: "day",
+        compare: "previous-period",
+      }) as SeriesMetricsQuery,
+      compared,
+    );
+    // Current + previous period, exactly — not merely "more than one range".
+    expect(plain.bucketCount).toBe(3);
+    expect(compared.bucketCount).toBe(plain.bucketCount * 2);
+  });
+
+  // Regression guard for the compare/groupCount defect: the previous-period
+  // run produces *zero* groups here (no calls back then), so a last-write-wins
+  // assignment would report groupCount 0 for a query that returned 2 series.
+  it("reports the widest group fan-out under compare, not the ghost range's", () => {
+    const probe = newQueryProbe();
+    const series = metrics(
+      input,
+      baseQuery({
+        measures: ["apiCalls"],
+        dimensions: ["gitBranch", "time"],
+        grain: "day",
+        compare: "previous-period",
+      }) as SeriesMetricsQuery,
+      probe,
+    );
+    expect(series).toHaveLength(2); // main + dev, both from the current range
+    expect(probe.groupCount).toBe(2);
+  });
+
+  it("populates the probe for a distribution query (no time buckets)", () => {
+    stubClock();
+    const probe = newQueryProbe();
+    metrics(
+      input,
+      {
+        ...baseQuery({ measures: ["apiCalls"], dimensions: ["gitBranch"], grain: "day" }),
+        mode: "distribution",
+        distributionEntity: "call",
+      } as MetricsQuery,
+      probe,
+    );
+    expect(probe.groupCount).toBe(2);
+    expect(probe.bucketCount).toBe(0); // decision A9 — distribution has no buckets
+    expect(probe.filterGroupMs).toBe(5);
+    expect(probe.scopeMs).toBe(5);
+    expect(probe.computeMs).toBe(5);
+  });
+
+  it("returns identical series with and without a probe (2-arg contract)", () => {
+    const withProbe = newQueryProbe();
+    const q = baseQuery({ measures: ["apiCalls"], dimensions: ["time"], grain: "day" });
+    const a = metrics(input, q, withProbe);
+    const b = metrics(input, q);
+    expect(b).toEqual(a);
   });
 });

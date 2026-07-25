@@ -1,3 +1,5 @@
+import { performance } from "node:perf_hooks";
+import type { GateSummaryLite } from "../../shared/gates-cache-contract.js";
 import type {
   Dimension,
   DistributionEntity,
@@ -8,8 +10,8 @@ import type {
   SeriesMetricsQuery,
   SeriesPoint,
 } from "../../shared/metrics-contract.js";
-import type { GateSummaryLite } from "../../shared/gates-cache-contract.js";
 import type { ApiCall, Session, Turn } from "../../shared/types.js";
+import type { QueryProbe } from "../observability.js";
 import { groupLogicalTurns, type LogicalTurn } from "../store/logical-turns.js";
 import {
   type CallDimension,
@@ -408,13 +410,35 @@ function computeSeriesForRange(
   input: MetricsInput,
   query: SeriesMetricsQuery | DistributionMetricsQuery,
   range: { from: string; to: string },
+  probe?: QueryProbe,
 ): Series[] {
-  const { groups, rangeFromMs, rangeToMs, hostBySessionId } = filterAndGroup(input, query, range);
+  // Bucket enumeration depends only on `range`/`grain`, so it sits outside
+  // the `filterGroupMs` window — that field means `filterAndGroup()` and
+  // nothing else. On the wide-range × hour-grain shape #119 exists to name,
+  // this loop allocates ~13.6k entries, which is not rounding error.
   const bucketByTime = query.dimensions.includes("time");
   const buckets: (number | null)[] = bucketByTime ? enumerateBuckets(range, query.grain) : [null];
 
+  const filterStart = performance.now();
+  const { groups, rangeFromMs, rangeToMs, hostBySessionId } = filterAndGroup(input, query, range);
+  if (probe) {
+    probe.filterGroupMs += performance.now() - filterStart;
+    // `Math.max`, not assignment: compare calls this twice with different
+    // ranges, and `buildGroups` derives groups from the calls *inside* that
+    // range — a branch that only exists this week yields 3 groups now and 0
+    // in the previous period. Last-write-wins would report the ghost run's
+    // count for work the primary range did.
+    probe.groupCount = Math.max(probe.groupCount, groups.length);
+    probe.bucketCount += buckets.length;
+  }
+
   // One pass builds every (group, bucket) cell up front (#118); the loops
-  // below only read cells and format points — no per-cell re-filtering.
+  // below only read cells and format points — no per-cell re-filtering. Timed
+  // as its own `scopeMs` phase because it scales on record volume × group
+  // cardinality and is indifferent to bucket count, while the read loop below
+  // is the opposite — folding both into `computeMs` would point an operator
+  // at the bucket axis for a cost driven by records.
+  const scopeStart = performance.now();
   const cellScopes = buildCellScopes(
     groups,
     bucketByTime,
@@ -424,7 +448,9 @@ function computeSeriesForRange(
     rangeToMs,
     hostBySessionId,
   );
+  if (probe) probe.scopeMs += performance.now() - scopeStart;
 
+  const computeStart = performance.now();
   const series: Series[] = [];
   for (const measure of query.measures) {
     for (const group of groups) {
@@ -459,6 +485,7 @@ function computeSeriesForRange(
       });
     }
   }
+  if (probe) probe.computeMs += performance.now() - computeStart;
   return series;
 }
 
@@ -565,23 +592,40 @@ function buildSessionScopeIndex(
 }
 
 /** The `mode: "distribution"` pipeline (decision A9: `"time"` in `dimensions` is ignored — always one population per breakdown-dim group across the whole range). Entities where `computeMeasure` returns null are excluded from the population, which is what lets an all-premium-gated measure cascade to `computeDistribution([])`'s honest-null result with no special-casing here. */
-function computeDistributionSeries(input: MetricsInput, query: DistributionMetricsQuery): Series[] {
+function computeDistributionSeries(
+  input: MetricsInput,
+  query: DistributionMetricsQuery,
+  probe?: QueryProbe,
+): Series[] {
+  const filterStart = performance.now();
   const { groups, rangeFromMs, rangeToMs, hostBySessionId } = filterAndGroup(
     input,
     query,
     query.range,
   );
+  if (probe) {
+    probe.filterGroupMs += performance.now() - filterStart;
+    // Single call per query here (no compare in distribution mode), but the
+    // `Math.max` keeps one semantic for the field across every mode.
+    probe.groupCount = Math.max(probe.groupCount, groups.length);
+    // Distribution has no time buckets (decision A9) — bucketCount stays 0.
+  }
 
   // Session-distribution path uses the indexed scopes (ARCH T1) — one
   // index per request, reused across every measure × group pair. The
   // path takes the same MeasureScope shape downstream callers already
   // see, so distribution semantics (entity → null exclusion, etc.) are
-  // unchanged from the legacy per-session filter.
+  // unchanged from the legacy per-session filter. This is the same
+  // record-scoping role `buildCellScopes` plays in series mode, so it's
+  // timed as `scopeMs` for cross-mode comparability.
+  const scopeStart = performance.now();
   const sessionIndex =
     query.distributionEntity === "session"
       ? buildSessionScopeIndex(input, rangeFromMs, rangeToMs, query.sessionPopulation)
       : null;
+  if (probe) probe.scopeMs += performance.now() - scopeStart;
 
+  const computeStart = performance.now();
   const series: Series[] = [];
   for (const measure of query.measures) {
     for (const group of groups) {
@@ -609,6 +653,7 @@ function computeDistributionSeries(input: MetricsInput, query: DistributionMetri
       });
     }
   }
+  if (probe) probe.computeMs += performance.now() - computeStart;
   return series;
 }
 
@@ -637,9 +682,9 @@ function mergeCompareGhost(series: Series[], previousSeries: Series[]): Series[]
 }
 
 /** THE query function (architecture §8): dispatches on `query.mode`, then applies `compare`/`smoothing` post-processing to `mode: "series"` output (decisions A6, A7, A9). */
-export function metrics(input: MetricsInput, query: MetricsQuery): Series[] {
+export function metrics(input: MetricsInput, query: MetricsQuery, probe?: QueryProbe): Series[] {
   if (query.mode === "distribution") {
-    return computeDistributionSeries(input, query);
+    return computeDistributionSeries(input, query, probe);
   }
 
   // Scatter mode returns a different shape (`ScatterMetricsResult`), so the
@@ -655,7 +700,7 @@ export function metrics(input: MetricsInput, query: MetricsQuery): Series[] {
   // Narrowed at this point: distribution + scatter were both handled above,
   // so `query` is `SeriesMetricsQuery`. The `as` cast keeps `tsc --strict`
   // honest without changing `MetricsQuery`'s shape.
-  let series = computeSeriesForRange(input, query, query.range);
+  let series = computeSeriesForRange(input, query, query.range, probe);
   const seriesQuery: SeriesMetricsQuery = query;
 
   if (seriesQuery.compare === "previous-period") {
@@ -663,6 +708,7 @@ export function metrics(input: MetricsInput, query: MetricsQuery): Series[] {
       input,
       seriesQuery,
       previousPeriodRange(seriesQuery.range),
+      probe,
     );
     series = mergeCompareGhost(series, previousSeries);
   }
