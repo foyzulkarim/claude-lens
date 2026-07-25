@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Series } from "../../../shared/metrics-contract.js";
-import { buildTimeseriesOption } from "./timeseries.js";
+import { buildTimeseriesOption, seriesName } from "./timeseries.js";
 import { formatUnitValue, UNIT_MEASURES } from "./units.js";
 
 function series(overrides: Partial<Series> = {}): Series {
@@ -54,6 +54,68 @@ describe("buildTimeseriesOption — family rendering", () => {
   });
 });
 
+// Issue #122: the Dashboard tokens chart needs a cumulative top edge that
+// reconciles with the Total-tokens tile, so `stacked` grew from bars-only to
+// bars-and-filled-area. Plain lines still never stack (a stacked line chart
+// silently reads as absolute values), and every existing unstacked call site
+// depends on the default staying false.
+describe("buildTimeseriesOption — stacking by family", () => {
+  const tokenSeries = [
+    series({ measure: "inputTokens", label: "All" }),
+    series({ measure: "cacheReadTokens", label: "All" }),
+  ];
+
+  it("stacked area keeps its fill and joins one shared stack", () => {
+    const option = buildTimeseriesOption(tokenSeries, {
+      family: "area",
+      unit: "tokens",
+      stacked: true,
+    });
+    const entries = option.series as { stack?: string; areaStyle?: object }[];
+    expect(entries.map((e) => e.stack)).toEqual(["total", "total"]);
+    for (const entry of entries) expect(entry.areaStyle).toBeDefined();
+  });
+
+  it("lines never stack, even when asked to", () => {
+    const option = buildTimeseriesOption(tokenSeries, {
+      family: "lines",
+      unit: "tokens",
+      stacked: true,
+    });
+    const entries = option.series as { stack?: string }[];
+    for (const entry of entries) expect(entry.stack).toBeUndefined();
+  });
+
+  it("defaults to unstacked in every family", () => {
+    for (const family of ["area", "bars", "lines"] as const) {
+      const option = buildTimeseriesOption(tokenSeries, { family, unit: "tokens" });
+      const entries = option.series as { stack?: string }[];
+      for (const entry of entries) expect(entry.stack).toBeUndefined();
+    }
+  });
+
+  it("renders a null point as a gap while stacked, never coerced to 0", () => {
+    const input = series({
+      points: [
+        { t: "2026-07-01T00:00:00Z", value: 1 },
+        { t: "2026-07-02T00:00:00Z", value: null },
+      ],
+    });
+    const option = buildTimeseriesOption([input], {
+      family: "area",
+      unit: "tokens",
+      stacked: true,
+    });
+    const [entry] = option.series as { data: [string, number | null][] }[];
+    expect(entry.data[1][1]).toBeNull();
+  });
+
+  it("returns a renderable option for empty input while stacked", () => {
+    const option = buildTimeseriesOption([], { family: "area", unit: "tokens", stacked: true });
+    expect(option.series).toEqual([]);
+  });
+});
+
 describe("buildTimeseriesOption — null and empty handling", () => {
   it("renders a null point as a gap, not zero", () => {
     const input = series({
@@ -89,6 +151,26 @@ describe("buildTimeseriesOption — compare ghost", () => {
     expect(ghost.lineStyle?.type).toBe("dashed");
     expect(ghost.name).toBe(`${input.label} (previous period)`);
   });
+
+  // A previous-period ghost carries absolute per-series values. Drawn over
+  // stacked bands (which are cumulative) it reads at the wrong magnitude, so
+  // stacking suppresses it rather than inventing a cumulative comparison.
+  it("omits the ghost overlay while stacked", () => {
+    const input = series({
+      compareGhost: [
+        { t: "2026-06-24T00:00:00Z", value: 0.5 },
+        { t: "2026-06-25T00:00:00Z", value: 1.5 },
+      ],
+    });
+    const option = buildTimeseriesOption([input], {
+      family: "area",
+      unit: "tokens",
+      stacked: true,
+    });
+    const entries = option.series as { name?: string }[];
+    expect(entries).toHaveLength(1);
+    expect(entries[0].name).not.toContain("previous period");
+  });
 });
 
 describe("buildTimeseriesOption — malformed input", () => {
@@ -116,8 +198,22 @@ describe("buildTimeseriesOption — unit formatting", () => {
 
   it("maps units to measures correctly", () => {
     expect(UNIT_MEASURES.$).toEqual(["costComputed"]);
-    expect(UNIT_MEASURES.tokens).toEqual(["inputTokens", "outputTokens"]);
     expect(UNIT_MEASURES.calls).toEqual(["apiCalls"]);
+  });
+
+  // Issue #122: "tokens" used to mean inputTokens+outputTokens only, which
+  // plots the *uncached* input slice — a few-digit number for a full day of
+  // real use — while the Dashboard's Total-tokens tile sums all four. The
+  // array order is the ECharts stack order (the engine emits series in
+  // `query.measures` order), so the small fresh series sit at the baseline
+  // and the dominant cache-read band lands on top.
+  it("tokens means all four token measures, in stack order", () => {
+    expect(UNIT_MEASURES.tokens).toEqual([
+      "inputTokens",
+      "outputTokens",
+      "cacheCreateTokens",
+      "cacheReadTokens",
+    ]);
   });
 });
 
@@ -157,5 +253,35 @@ describe("buildTimeseriesOption — multi-measure disambiguation", () => {
     const option = buildTimeseriesOption([input], { family: "bars", unit: "$" });
     const entries = option.series as { name?: string }[];
     expect(entries.map((e) => e.name)).toEqual(["All"]);
+  });
+});
+
+// Exported (issue #122) so ChartCard's data table keys its columns by the
+// exact same display identity the canvas legend uses — keying on the group
+// label alone collapsed the four token series into one last-write-wins
+// "All" column.
+describe("seriesName", () => {
+  it("returns the bare group label for single-measure data", () => {
+    expect(seriesName(series({ measure: "cacheHitPct", label: "All" }), 1)).toBe("All");
+    expect(seriesName(series({ label: "claude-lens" }), 1)).toBe("claude-lens");
+  });
+
+  it("names each measure distinctly when several share the 'All' group label", () => {
+    const names = (["inputTokens", "outputTokens", "cacheCreateTokens", "cacheReadTokens"] as const)
+      .map((measure) => series({ measure, label: "All" }))
+      .map((s) => seriesName(s, 4));
+    expect(new Set(names).size).toBe(4);
+    expect(names).toEqual([
+      "Input tokens",
+      "Output tokens",
+      "Cache create tokens",
+      "Cache read tokens",
+    ]);
+  });
+
+  it("combines a real group label with the measure name", () => {
+    expect(seriesName(series({ measure: "inputTokens", label: "claude-lens" }), 4)).toBe(
+      "claude-lens · Input tokens",
+    );
   });
 });

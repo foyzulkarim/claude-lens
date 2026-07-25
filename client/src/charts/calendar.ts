@@ -30,19 +30,34 @@ function toDateKey(timestamp: string): string {
 
 /**
  * Pure `Series[] → EChartsOption` mapping for the calendar-heatmap family
- * (ARCH-trends-calendar-budget.md, Trends Calendar panel). Reads only the
- * first series in `series` — the panel always requests exactly one measure
- * at `grain: "day"`. Missing days within `range` render as an explicit `0`
- * cell (a day with no activity really did cost $0 — distinct from the
- * "never fabricate 0" rule for *unavailable* measures, per `pointValue`'s
- * existing display-aggregation convention).
+ * (ARCH-trends-calendar-budget.md, Trends Calendar panel). Sums *every*
+ * returned series into one value per day: the panel requests whichever
+ * measures its active unit maps to, and since issue #122 `tokens` is four
+ * of them. Reading `series[0]` alone (the previous behavior, correct only
+ * while every unit was single-measure) silently plotted `inputTokens` —
+ * the uncached prompt slice, typically single digits per call.
+ *
+ * Missing days within `range` render as an explicit `0` cell (a day with no
+ * activity really did cost $0 — distinct from the "never fabricate 0" rule
+ * for *unavailable* measures, per `pointValue`'s existing display-
+ * aggregation convention).
  */
 export function buildCalendarHeatmapOption(
   series: Series[],
   { unit, range }: BuildCalendarHeatmapOptions,
 ): CalendarHeatmapOption {
-  const [primary] = series;
-  const data = (primary?.points ?? []).map((point) => [toDateKey(point.t), pointValue(point)]);
+  // Buckets align across the measures of a single query (architecture
+  // decision A5), so folding by date key needs no index alignment.
+  const byDate = new Map<string, number>();
+  for (const s of series) {
+    for (const point of s.points) {
+      const key = toDateKey(point.t);
+      byDate.set(key, (byDate.get(key) ?? 0) + pointValue(point));
+    }
+  }
+  const data = [...byDate.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, value]) => [date, value]);
   const values = data.map(([, value]) => value as number);
   const max = values.length > 0 ? Math.max(...values, 0) : 0;
 
@@ -72,7 +87,10 @@ export function buildCalendarHeatmapOption(
       {
         type: "heatmap",
         coordinateSystem: "calendar",
-        name: primary ? `${primary.label} (${unit})` : unit,
+        // Names the aggregate, not `series[0].label` — with four token
+        // series all labeled "All", the old name described one band of a
+        // total (#122).
+        name: `Total (${unit})`,
         data,
       },
     ],

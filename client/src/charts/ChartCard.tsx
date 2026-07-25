@@ -14,7 +14,7 @@ import { useStableNow } from "../pages/dashboard/useStableNow.js";
 import { TOGGLE_ACTIVE_CLASS, TOGGLE_CLASS } from "../ui/toggleStyles.js";
 import { Chart } from "./Chart.js";
 import { sessionsHrefForBucket } from "./drilldown.js";
-import { buildTimeseriesOption } from "./timeseries.js";
+import { buildTimeseriesOption, seriesName } from "./timeseries.js";
 import { formatUnitValue, UNIT_MEASURES, type Unit } from "./units.js";
 
 type Family = "area" | "bars";
@@ -98,20 +98,39 @@ export interface BucketRow {
   values: Record<string, number | null | undefined>;
 }
 
+/** The display identity of each series in `data` — the canonical
+ * `seriesName` (group label alone for single-measure data, group label plus
+ * measure name when several measures share a chart), in fetch order and
+ * deduplicated. Both the bucket-value keys and the data table's column set
+ * are built from this, so the table can never disagree with the canvas
+ * legend (issue #122). */
+function seriesNames(data: Series[]): string[] {
+  const distinctMeasureCount = new Set(data.map((s) => s.measure)).size;
+  return [...new Set(data.map((s) => seriesName(s, distinctMeasureCount)))];
+}
+
 /** Pivots `Series[]` into one row per bucket timestamp — the non-canvas
  * representation of range/trend/bucket values (issue #84), and the shape
- * `DataTable` renders as the keyboard-operable data table. */
+ * `DataTable` renders as the keyboard-operable data table.
+ *
+ * Keyed by `seriesName`, not `series.label`: in a multi-measure unit like
+ * `tokens` every series carries the same "All" group label, so keying by
+ * label made the four measures overwrite each other into a single
+ * last-write-wins column (issue #122). Single-measure data is unaffected —
+ * its canonical name *is* the group label. */
 export function bucketRows(data: Series[] | undefined): BucketRow[] {
   if (!data || data.length === 0) return [];
+  const distinctMeasureCount = new Set(data.map((s) => s.measure)).size;
   const byTimestamp = new Map<string, BucketRow>();
   for (const series of data) {
+    const name = seriesName(series, distinctMeasureCount);
     for (const point of series.points) {
       let row = byTimestamp.get(point.t);
       if (!row) {
         row = { t: point.t, values: {} };
         byTimestamp.set(point.t, row);
       }
-      row.values[series.label] = point.value;
+      row.values[name] = point.value;
     }
   }
   return [...byTimestamp.values()].sort((a, b) => a.t.localeCompare(b.t));
@@ -183,8 +202,8 @@ function formatBucketLabel(timestamp: string, grain: Grain): string {
 
 const bucketColumnHelper = createColumnHelper<BucketRow>();
 
-/** Timestamp column + one column per series label, rebuilt only when the
- * fetched series set, display unit, or grain changes. */
+/** Timestamp column + one column per canonical series name, rebuilt only
+ * when the fetched series set, display unit, or grain changes. */
 function buildBucketColumns(
   seriesLabels: string[],
   unit: Unit,
@@ -271,9 +290,17 @@ export function ChartCard({ title, defaultUnit, now: injectedNow }: ChartCardPro
     placeholderData: keepPreviousData,
   });
 
+  // Tokens is the only multi-measure unit: stacking its four bands makes the
+  // chart's cumulative top edge reconcile with the Total-tokens stat tile
+  // above it (issue #122). `$` and `calls` are single-measure — stacking one
+  // series is a no-op visually but would still suppress their compare ghost,
+  // so they stay unstacked. Derived from the live `unit` rather than stored
+  // in state, so no toggle sequence can strand a `$` chart stacked.
+  const stacked = unit === "tokens";
+
   const option = useMemo(
-    () => buildTimeseriesOption(data ?? [], { family, unit }),
-    [data, family, unit],
+    () => buildTimeseriesOption(data ?? [], { family, unit, stacked }),
+    [data, family, unit, stacked],
   );
 
   const ariaLabel = useMemo(() => chartAriaLabel(data, title, unit), [data, title, unit]);
@@ -281,9 +308,11 @@ export function ChartCard({ title, defaultUnit, now: injectedNow }: ChartCardPro
   const trendSummary = useMemo(() => chartTrendSummary(data), [data]);
   const rows = useMemo(() => bucketRows(data), [data]);
   // Joined into a stable string key (not a fresh array) so `bucketColumns`
-  // only rebuilds when the actual label *set* changes, not on every `data`
+  // only rebuilds when the actual name *set* changes, not on every `data`
   // identity change (e.g. a same-labels refetch) — see review finding R1.
-  const seriesLabelsKey = (data ?? []).map((s) => s.label).join("|");
+  // Canonical names (not raw group labels) so the columns match the keys
+  // `bucketRows` writes — issue #122's collapsed-token-column fix.
+  const seriesLabelsKey = seriesNames(data ?? []).join("|");
   const bucketColumns = useMemo(
     () => buildBucketColumns(seriesLabelsKey ? seriesLabelsKey.split("|") : [], unit, grain),
     [seriesLabelsKey, unit, grain],

@@ -46,6 +46,18 @@ function latestQuery<T>(): T {
   return call[0] as T;
 }
 
+/** The `stack` value of every series in the most recently rendered chart
+ * option — `undefined` per entry when that series is unstacked. */
+function latestStacks(): (string | undefined)[] {
+  const lastCall = chartSpy.mock.calls.at(-1)?.[0] as ChartProps;
+  return (lastCall.option.series as { stack?: string }[]).map((e) => e.stack);
+}
+
+function latestSeriesTypes(): string[] {
+  const lastCall = chartSpy.mock.calls.at(-1)?.[0] as ChartProps;
+  return (lastCall.option.series as { type: string }[]).map((e) => e.type);
+}
+
 const sampleSeries: Series[] = [
   {
     measure: "costComputed",
@@ -79,6 +91,26 @@ const summarySeries: Series[] = [
     points: [{ t: "2026-07-08T00:00:00.000Z", value: 2 }],
   },
 ];
+
+// A realistic tokens-mode response (issue #122): four measures, every one
+// carrying the same "All" group label because no breakdown dimension is
+// active, and cache reads dwarfing the uncached input slice.
+const tokenSeries: Series[] = (
+  [
+    ["inputTokens", 12],
+    ["outputTokens", 340],
+    ["cacheCreateTokens", 8_000],
+    ["cacheReadTokens", 1_500_000],
+  ] as const
+).map(([measure, value]) => ({
+  measure,
+  dimensionKey: "time",
+  label: "All",
+  points: [
+    { t: "2026-07-08T00:00:00.000Z", value },
+    { t: "2026-07-09T00:00:00.000Z", value: value * 2 },
+  ],
+}));
 
 function renderCard(search = "") {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -335,6 +367,81 @@ describe("ChartCard — range/trend/bucket summary (#84)", () => {
   });
 });
 
+// Issue #122: the tokens chart plotted `inputTokens`+`outputTokens` only —
+// a few-digit reading for a full day of use — while the Total-tokens tile
+// above it summed all four measures. Stacking all four makes the chart's top
+// edge reconcile with the tile and keeps the composition legible.
+describe("ChartCard — tokens composition (#122)", () => {
+  it("stacks the four token bands so the top edge reads as the total", async () => {
+    const user = userEvent.setup();
+    renderCard();
+    await waitFor(() => expect(postMetricsMock).toHaveBeenCalledTimes(1));
+    postMetricsMock.mockResolvedValue(tokenSeries);
+
+    await user.click(screen.getByRole("button", { name: "tokens" }));
+    await waitFor(() => {
+      expect(latestStacks()).toEqual(["total", "total", "total", "total"]);
+    });
+  });
+
+  it("leaves the single-measure $ and calls modes unstacked", async () => {
+    const user = userEvent.setup();
+    renderCard();
+    await waitFor(() => expect(chartSpy).toHaveBeenCalled());
+    expect(latestStacks()).toEqual([undefined]);
+
+    await user.click(screen.getByRole("button", { name: "calls" }));
+    await waitFor(() => expect(postMetricsMock).toHaveBeenCalledTimes(2));
+    expect(latestStacks()).toEqual([undefined]);
+  });
+
+  // Stacking is derived from the active unit on every render rather than
+  // latched into state, so no toggle sequence can leave a `$` chart stacked.
+  it("keeps stacking tied to the unit across a family toggle", async () => {
+    const user = userEvent.setup();
+    renderCard();
+    await waitFor(() => expect(postMetricsMock).toHaveBeenCalledTimes(1));
+    postMetricsMock.mockResolvedValue(tokenSeries);
+
+    await user.click(screen.getByRole("button", { name: "tokens" }));
+    await waitFor(() => expect(postMetricsMock).toHaveBeenCalledTimes(2));
+    await user.click(screen.getByRole("button", { name: "bars" }));
+
+    await waitFor(() => {
+      expect(latestSeriesTypes()).toEqual(["bar", "bar", "bar", "bar"]);
+      expect(latestStacks()).toEqual(["total", "total", "total", "total"]);
+    });
+    // Family is display-only: still no refetch.
+    expect(postMetricsMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("keys bucket values by measure so no token series overwrites another", () => {
+    const rows = bucketRows(tokenSeries);
+    expect(rows[0].values).toEqual({
+      "Input tokens": 12,
+      "Output tokens": 340,
+      "Cache create tokens": 8_000,
+      "Cache read tokens": 1_500_000,
+    });
+  });
+
+  it("still keys single-measure buckets by the plain group label", () => {
+    // `summarySeries` is two `costComputed` series — one distinct measure, so
+    // the canonical name is the group label, exactly as before. Guards Cache
+    // Lab's hit-rate table, which pivots single-measure data through here.
+    const rows = bucketRows(summarySeries);
+    expect(Object.keys(rows[0].values)).toEqual(["Cost", "Secondary cost series"]);
+  });
+
+  it("summarises the chart total across all four token series", () => {
+    // Each series contributes value + 2×value across its two buckets, so the
+    // total is 3 × (12 + 340 + 8_000 + 1_500_000) — dominated by cache reads,
+    // which the old input+output-only chart made invisible.
+    expect(chartAriaLabel(tokenSeries, "Cost over time", "tokens")).toContain("4 series");
+    expect(chartAriaLabel(tokenSeries, "Cost over time", "tokens")).toContain("4.5M");
+  });
+});
+
 describe("ChartCard — controls", () => {
   it("unit toggle requeries with the mapped measure(s)", async () => {
     const user = userEvent.setup();
@@ -344,7 +451,12 @@ describe("ChartCard — controls", () => {
     await user.click(screen.getByRole("button", { name: "tokens" }));
     await waitFor(() => expect(postMetricsMock).toHaveBeenCalledTimes(2));
     const lastQuery = postMetricsMock.mock.calls.at(-1)?.[0] as { measures: string[] };
-    expect(lastQuery.measures).toEqual(["inputTokens", "outputTokens"]);
+    expect(lastQuery.measures).toEqual([
+      "inputTokens",
+      "outputTokens",
+      "cacheCreateTokens",
+      "cacheReadTokens",
+    ]);
   });
 
   it("family toggle re-renders the chart as a bar series without requerying", async () => {
@@ -473,6 +585,28 @@ describe("ChartCard — controls", () => {
     expect(screen.getAllByText("—").length).toBeGreaterThan(0);
   });
 
+  // Issue #122: four token series all carry the group label "All", so keying
+  // bucket values by `label` collapsed them into one last-write-wins column
+  // that silently showed only `cacheReadTokens`. Columns are keyed by the
+  // canonical `seriesName` (the same identity the canvas legend uses) instead.
+  it("gives each token measure its own data table column instead of collapsing them", async () => {
+    const user = userEvent.setup();
+    postMetricsMock.mockResolvedValue(tokenSeries);
+    renderCard();
+    await waitFor(() => expect(chartSpy).toHaveBeenCalled());
+
+    await user.click(screen.getByRole("button", { name: "Data table" }));
+
+    for (const header of [
+      "Input tokens",
+      "Output tokens",
+      "Cache create tokens",
+      "Cache read tokens",
+    ]) {
+      expect(screen.getByRole("columnheader", { name: header })).toBeInTheDocument();
+    }
+  });
+
   it("settles on the last selection when unit and grain are toggled in quick succession", async () => {
     const user = userEvent.setup();
     renderCard();
@@ -486,7 +620,12 @@ describe("ChartCard — controls", () => {
 
     await waitFor(() => {
       const last = latestQuery<{ measures: string[]; grain: string }>();
-      expect(last.measures).toEqual(["inputTokens", "outputTokens"]);
+      expect(last.measures).toEqual([
+        "inputTokens",
+        "outputTokens",
+        "cacheCreateTokens",
+        "cacheReadTokens",
+      ]);
       expect(last.grain).toBe("week");
     });
   });
