@@ -2,6 +2,25 @@
 
 V2 changelog. V1 history lives in [`legacy/CHANGELOG.md`](legacy/CHANGELOG.md).
 
+## v1.1.0 — 2026-07-25
+
+### Features
+- **Per-query instrumentation for `/api/metrics`** (#119) — a new
+  `server/observability.ts` adds a write-only `QueryProbe` threaded
+  through the metrics engine, a `Server-Timing` response header, one
+  structured per-query log line (warned above the slow-query
+  threshold), and an event-loop-lag monitor. Response bodies and
+  status codes are unchanged.
+
+### Fixes
+- **Wide-range series metrics computed in a single pass** (#118) —
+  series-mode `/api/metrics` queries over wide date ranges no longer
+  block the event loop for 15–90s. The `measure×group×bucket` triple
+  loop (which re-filtered and re-parsed every record per cell) is
+  replaced by a single pass that parses each record once and places it
+  into its `(group, bucket)` cell. Output is byte-for-byte identical to
+  the previous implementation.
+
 ## v1.0.1 — 2026-07-21
 
 ### Features
