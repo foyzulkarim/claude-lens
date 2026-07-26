@@ -2,8 +2,10 @@
 
 Producer side of claude-lens's premium cost-capture tier. These scripts run
 **inside your own Claude Code session**, not inside claude-lens — they have
-zero dependency on this repo or the claude-lens server. See
-`specs/architecture/ARCH-producer-cost-capture-tier.md` for the full design.
+zero dependency on this repo or the claude-lens server. The full design is
+archived on the wiki:
+[ARCH-producer-cost-capture-tier](https://github.com/foyzulkarim/claude-lens/wiki/ARCH-producer-cost-capture-tier)
+(issue [#112](https://github.com/foyzulkarim/claude-lens/issues/112), plan task #P4-21).
 
 ## What each file does
 
@@ -13,9 +15,16 @@ zero dependency on this repo or the claude-lens server. See
 | `turn-logger.cjs` | `hooks.Stop` command | Writes one B line per completed turn |
 | `statusline-command.cjs` | `statusLine.command` | Full statusline (model, $, context bar, timers) + calls `cost-logger.cjs` |
 | `statusline-wrapper.cjs` | `statusLine.command` | For machines that already have a statusline: captures cost, then delegates to your original command |
+| `statusline-payload.cjs` | required by the statusline scripts | Shared parsing of the statusline stdin payload |
+| `state-dir.cjs` | required by the loggers | Resolves the per-session state directory |
+| `mapped-dir.cjs` | required by the loggers | Maps a working directory to Claude Code's project-slug directory |
 | `merge-settings.cjs` | invoked by `install.sh` | The settings.json merge engine |
 | `settings.snippet.json` | reference | Copy-paste `statusLine` + `hooks.Stop` shape for manual setup |
 | `install.sh` | `bash capture/install.sh` | Idempotent installer — see below |
+
+The first seven `.cjs` files are what `install.sh` copies into
+`~/.claude/scripts/`; `merge-settings.cjs` runs from this repo and is not
+installed.
 
 ## Install
 
@@ -23,7 +32,7 @@ zero dependency on this repo or the claude-lens server. See
 bash capture/install.sh
 ```
 
-This copies the four `.cjs` scripts into `~/.claude/scripts/` and merges the
+This copies the seven runtime `.cjs` scripts into `~/.claude/scripts/` and merges the
 `statusLine` and `hooks.Stop` wiring into `~/.claude/settings.json`:
 
 - If you have no `statusLine` configured, it's set to `statusline-command.cjs`
@@ -46,8 +55,9 @@ using the most recent backup file.
 
 ### Manual setup
 
-If you'd rather not run the script, copy the four `.cjs` files into
-`~/.claude/scripts/` yourself and merge `settings.snippet.json`'s
+If you'd rather not run the script, copy the seven runtime `.cjs` files into
+`~/.claude/scripts/` yourself (everything in the table above except
+`merge-settings.cjs`) and merge `settings.snippet.json`'s
 `statusLine` + `hooks.Stop` keys into your own `~/.claude/settings.json`.
 
 ## Verifying it worked

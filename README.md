@@ -86,9 +86,9 @@ To upgrade matching sessions from 🟡 to 🟢, install the producer scripts tha
 bash capture/install.sh
 ```
 
-The installer copies four `.cjs` scripts to `~/.claude/scripts/` and merges a `statusLine` (cost-aware) + `hooks.Stop` (turn-boundary) entry into your `~/.claude/settings.json`. It's idempotent — re-run it any time; if nothing needs to change it reports "already configured" and touches nothing. It backs up your existing `settings.json` to `settings.json.backup-<timestamp>` before writing, so rollback is a single `cp` away.
+The installer copies seven `.cjs` scripts to `~/.claude/scripts/` and merges a `statusLine` (cost-aware) + `hooks.Stop` (turn-boundary) entry into your `~/.claude/settings.json`. It's idempotent — re-run it any time; if nothing needs to change it reports "already configured" and touches nothing. It backs up your existing `settings.json` to `settings.json.backup-<timestamp>` before writing, so rollback is a single `cp` away.
 
-**Manual setup** (if you'd rather not run the script): copy the four `.cjs` files into `~/.claude/scripts/` yourself and merge the `statusLine` + `hooks.Stop` keys from [`capture/settings.snippet.json`](capture/settings.snippet.json) into your own `~/.claude/settings.json`. See [`capture/README.md`](capture/README.md) for the exact file layout and field names — those are load-bearing and read directly by `server/ingest/parse-premium.ts` in this repo.
+**Manual setup** (if you'd rather not run the script): copy the seven `.cjs` files into `~/.claude/scripts/` yourself and merge the `statusLine` + `hooks.Stop` keys from [`capture/settings.snippet.json`](capture/settings.snippet.json) into your own `~/.claude/settings.json`. See [`capture/README.md`](capture/README.md) for the exact file layout and field names — those are load-bearing and read directly by `server/ingest/parse-premium.ts` in this repo.
 
 **Verify it worked:** open `/settings` in claude-lens and check the "Cost capture setup" panel — it should show the latest sample timestamp and the capturing-session count. Run one Claude Code session anywhere; the next time claude-lens polls your `~/.claude` directory, matching sessions flip to 🟢.
 
