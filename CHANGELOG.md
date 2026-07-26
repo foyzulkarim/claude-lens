@@ -2,6 +2,17 @@
 
 V2 changelog. V1 history lives in [`legacy/CHANGELOG.md`](legacy/CHANGELOG.md).
 
+## v1.1.1 — 2026-07-26
+
+### Fixes
+- **Dashboard token visualizations reconciled** (#122) — token measures
+  render as a stacked composition with measure identity preserved in
+  accessible chart data, and the Trends calendar aggregates total tokens
+  correctly. Compare is disabled while stacking applies (the toggle's
+  state survives and returns with the unit), the calendar tooltip
+  formats in the active unit, and cache-read share is clamped off an
+  absolute 100%/0% when the true share is partial.
+
 ## v1.1.0 — 2026-07-25
 
 ### Features
