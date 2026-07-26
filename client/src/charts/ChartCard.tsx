@@ -14,7 +14,7 @@ import { useStableNow } from "../pages/dashboard/useStableNow.js";
 import { TOGGLE_ACTIVE_CLASS, TOGGLE_CLASS } from "../ui/toggleStyles.js";
 import { Chart } from "./Chart.js";
 import { sessionsHrefForBucket } from "./drilldown.js";
-import { buildTimeseriesOption } from "./timeseries.js";
+import { buildTimeseriesOption, seriesName } from "./timeseries.js";
 import { formatUnitValue, UNIT_MEASURES, type Unit } from "./units.js";
 
 type Family = "area" | "bars";
@@ -98,20 +98,39 @@ export interface BucketRow {
   values: Record<string, number | null | undefined>;
 }
 
+/** The display identity of each series in `data` — the canonical
+ * `seriesName` (group label alone for single-measure data, group label plus
+ * measure name when several measures share a chart), in fetch order and
+ * deduplicated. Both the bucket-value keys and the data table's column set
+ * are built from this, so the table can never disagree with the canvas
+ * legend (issue #122). */
+function seriesNames(data: Series[]): string[] {
+  const distinctMeasureCount = new Set(data.map((s) => s.measure)).size;
+  return [...new Set(data.map((s) => seriesName(s, distinctMeasureCount)))];
+}
+
 /** Pivots `Series[]` into one row per bucket timestamp — the non-canvas
  * representation of range/trend/bucket values (issue #84), and the shape
- * `DataTable` renders as the keyboard-operable data table. */
+ * `DataTable` renders as the keyboard-operable data table.
+ *
+ * Keyed by `seriesName`, not `series.label`: in a multi-measure unit like
+ * `tokens` every series carries the same "All" group label, so keying by
+ * label made the four measures overwrite each other into a single
+ * last-write-wins column (issue #122). Single-measure data is unaffected —
+ * its canonical name *is* the group label. */
 export function bucketRows(data: Series[] | undefined): BucketRow[] {
   if (!data || data.length === 0) return [];
+  const distinctMeasureCount = new Set(data.map((s) => s.measure)).size;
   const byTimestamp = new Map<string, BucketRow>();
   for (const series of data) {
+    const name = seriesName(series, distinctMeasureCount);
     for (const point of series.points) {
       let row = byTimestamp.get(point.t);
       if (!row) {
         row = { t: point.t, values: {} };
         byTimestamp.set(point.t, row);
       }
-      row.values[series.label] = point.value;
+      row.values[name] = point.value;
     }
   }
   return [...byTimestamp.values()].sort((a, b) => a.t.localeCompare(b.t));
@@ -135,9 +154,17 @@ const RANGE_DATE_FORMAT = new Intl.DateTimeFormat("en-US", {
 });
 
 /** Visible (not just `aria-label`-only) range text — the first/last bucket
- * timestamps rendered as dates. */
-export function chartRangeSummary(data: Series[] | undefined): string | undefined {
-  const rows = bucketRows(data);
+ * timestamps rendered as dates.
+ *
+ * `rows` defaults to `bucketRows(data)` but can be passed in by a caller
+ * that already pivoted the same data — `ChartCard` renders the range, the
+ * trend, and the table from one `Series[]`, and tokens mode quadrupled the
+ * series count, so recomputing the pivot per summary is three passes over
+ * the same points. */
+export function chartRangeSummary(
+  data: Series[] | undefined,
+  rows: BucketRow[] = bucketRows(data),
+): string | undefined {
   if (rows.length === 0) return undefined;
   const first = RANGE_DATE_FORMAT.format(new Date(rows[0].t));
   const last = RANGE_DATE_FORMAT.format(new Date(rows[rows.length - 1].t));
@@ -145,9 +172,13 @@ export function chartRangeSummary(data: Series[] | undefined): string | undefine
 }
 
 /** Visible trend text: compares the bucket-value sum across the first half
- * of the range to the second half. Needs at least two buckets to say anything. */
-export function chartTrendSummary(data: Series[] | undefined): string | undefined {
-  const rows = bucketRows(data);
+ * of the range to the second half. Needs at least two buckets to say
+ * anything. `rows` is the same optional precomputed-pivot seam as
+ * `chartRangeSummary`. */
+export function chartTrendSummary(
+  data: Series[] | undefined,
+  rows: BucketRow[] = bucketRows(data),
+): string | undefined {
   if (rows.length < 2) return undefined;
   const mid = Math.ceil(rows.length / 2);
   const firstHalf = rows.slice(0, mid).reduce((sum, row) => sum + bucketTotal(row), 0);
@@ -181,10 +212,16 @@ function formatBucketLabel(timestamp: string, grain: Grain): string {
   return formatter.format(new Date(timestamp));
 }
 
+/** Joins the series-name set into one stable string dependency for
+ * `bucketColumns`. `\u0000` rather than a printable delimiter because series
+ * names embed user data — a project or model literally containing the
+ * delimiter would otherwise split one column into two. */
+const SERIES_KEY_SEPARATOR = "\u0000";
+
 const bucketColumnHelper = createColumnHelper<BucketRow>();
 
-/** Timestamp column + one column per series label, rebuilt only when the
- * fetched series set, display unit, or grain changes. */
+/** Timestamp column + one column per canonical series name, rebuilt only
+ * when the fetched series set, display unit, or grain changes. */
 function buildBucketColumns(
   seriesLabels: string[],
   unit: Unit,
@@ -245,6 +282,23 @@ export function ChartCard({ title, defaultUnit, now: injectedNow }: ChartCardPro
   const previousSummary = useRef<string | undefined>(undefined);
   const dataTableId = useId();
 
+  // Tokens is the only multi-measure unit: stacking its four bands makes the
+  // chart's cumulative top edge reconcile with the Total-tokens stat tile
+  // above it (issue #122). `$` and `calls` are single-measure — stacking one
+  // series is a no-op visually but would still suppress their compare ghost,
+  // so they stay unstacked. Derived from the live `unit` rather than stored
+  // in state, so no toggle sequence can strand a `$` chart stacked.
+  const stacked = unit === "tokens";
+
+  // A stacked chart can't render the previous-period ghost (absolute
+  // per-series values over cumulative bands read at the wrong magnitude), so
+  // the comparison is dropped from the *query* too rather than fetched and
+  // discarded — otherwise toggling Compare in tokens mode would change the
+  // query key and pay for a server-side previous-period computation that
+  // nothing displays. The button is disabled to match (see below), and
+  // `compare` state survives untouched for when the unit switches back.
+  const compareActive = compare && !stacked;
+
   // Memoized on filtersKey + the query-affecting control primitives — never
   // on a fresh object — so unrelated re-renders (e.g. opening the data
   // table) don't change the query's identity and trigger a spurious
@@ -259,10 +313,10 @@ export function ChartCard({ title, defaultUnit, now: injectedNow }: ChartCardPro
       dimensions: ["time"],
       grain,
       ...filtersToQuery(filters, now),
-      ...(compare ? { compare: "previous-period" as const } : {}),
+      ...(compareActive ? { compare: "previous-period" as const } : {}),
       ...(smoothing ? { smoothing: "ma7" as const } : {}),
     }),
-    [filtersKey, unit, grain, compare, smoothing, now],
+    [filtersKey, unit, grain, compareActive, smoothing, now],
   );
 
   const { data, isPending, isError, error } = useQuery({
@@ -272,20 +326,31 @@ export function ChartCard({ title, defaultUnit, now: injectedNow }: ChartCardPro
   });
 
   const option = useMemo(
-    () => buildTimeseriesOption(data ?? [], { family, unit }),
-    [data, family, unit],
+    () => buildTimeseriesOption(data ?? [], { family, unit, stacked }),
+    [data, family, unit, stacked],
   );
 
   const ariaLabel = useMemo(() => chartAriaLabel(data, title, unit), [data, title, unit]);
-  const rangeSummary = useMemo(() => chartRangeSummary(data), [data]);
-  const trendSummary = useMemo(() => chartTrendSummary(data), [data]);
+  // One pivot feeds the table and both summaries — see `chartRangeSummary`.
   const rows = useMemo(() => bucketRows(data), [data]);
+  const rangeSummary = useMemo(() => chartRangeSummary(data, rows), [data, rows]);
+  const trendSummary = useMemo(() => chartTrendSummary(data, rows), [data, rows]);
   // Joined into a stable string key (not a fresh array) so `bucketColumns`
-  // only rebuilds when the actual label *set* changes, not on every `data`
+  // only rebuilds when the actual name *set* changes, not on every `data`
   // identity change (e.g. a same-labels refetch) — see review finding R1.
-  const seriesLabelsKey = (data ?? []).map((s) => s.label).join("|");
+  // Canonical names (not raw group labels) so the columns match the keys
+  // `bucketRows` writes — issue #122's collapsed-token-column fix. NUL is
+  // the separator because series names embed user data (project and model
+  // names, which may contain any printable character) — a name containing
+  // the separator would otherwise split one column into two.
+  const seriesLabelsKey = seriesNames(data ?? []).join(SERIES_KEY_SEPARATOR);
   const bucketColumns = useMemo(
-    () => buildBucketColumns(seriesLabelsKey ? seriesLabelsKey.split("|") : [], unit, grain),
+    () =>
+      buildBucketColumns(
+        seriesLabelsKey ? seriesLabelsKey.split(SERIES_KEY_SEPARATOR) : [],
+        unit,
+        grain,
+      ),
     [seriesLabelsKey, unit, grain],
   );
 
@@ -353,11 +418,27 @@ export function ChartCard({ title, defaultUnit, now: injectedNow }: ChartCardPro
               </option>
             ))}
           </select>
+          {/* Disabled (not hidden) while stacked: the stacked token
+              composition has no meaningful previous-period overlay, and a
+              button that stays pressable but changes nothing on the canvas
+              reads as a broken control. `aria-pressed` follows the effective
+              state so a screen reader is never told a suppressed comparison
+              is on. */}
           <button
             type="button"
             onClick={() => setCompare((v) => !v)}
-            aria-pressed={compare}
-            className={clsx(TOGGLE_CLASS, compare && TOGGLE_ACTIVE_CLASS)}
+            aria-pressed={compareActive}
+            disabled={stacked}
+            title={
+              stacked
+                ? "Unavailable while the tokens chart is stacked — a previous-period overlay can't be read against cumulative bands"
+                : undefined
+            }
+            className={clsx(
+              TOGGLE_CLASS,
+              compareActive && TOGGLE_ACTIVE_CLASS,
+              "disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent",
+            )}
           >
             Compare
           </button>

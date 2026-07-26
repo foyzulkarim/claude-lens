@@ -7,12 +7,27 @@ import type { Measure } from "../../../shared/metrics-contract.js";
  */
 export type Unit = "$" | "tokens" | "calls";
 
-/** `tokens` sums input+output only — cache tokens have their own dedicated
- * cache-hit-rate treatment elsewhere per the pages spec (ARCH Open Questions,
- * resolved default). */
+/**
+ * `tokens` means *all four* token measures (issue #122). Anthropic's
+ * `usage.input_tokens` counts only the prompt slice that was neither read
+ * from nor written to the prompt cache — with Claude Code caching
+ * essentially the whole conversation, that's typically single digits per
+ * call while the real volume lands in `cache_read_input_tokens`. An
+ * input+output-only "tokens" therefore plotted a few-digit number for a
+ * full day of use, contradicting the Dashboard's Total-tokens tile (which
+ * has always summed all four) by orders of magnitude.
+ *
+ * Array order is the ECharts stack order — the engine emits series in
+ * `query.measures` order (server/metrics/engine.ts) — so the small fresh
+ * series sit at the baseline and the dominant cache-read band lands on top.
+ *
+ * Page-specific exceptions opt out explicitly rather than reinterpreting
+ * this mapping (e.g. `ModelMixOverTime.tsx` requests `outputTokens` alone,
+ * because model *mix* is a different question from token volume).
+ */
 export const UNIT_MEASURES: Record<Unit, Measure[]> = {
   $: ["costComputed"],
-  tokens: ["inputTokens", "outputTokens"],
+  tokens: ["inputTokens", "outputTokens", "cacheCreateTokens", "cacheReadTokens"],
   calls: ["apiCalls"],
 };
 

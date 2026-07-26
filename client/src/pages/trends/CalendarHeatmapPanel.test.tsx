@@ -86,7 +86,7 @@ describe("CalendarHeatmapPanel", () => {
     await userEvent.click(screen.getByRole("button", { name: "tokens" }));
     await waitFor(() =>
       expect(postMetricsMock.mock.calls.at(-1)?.[0]).toMatchObject({
-        measures: ["inputTokens", "outputTokens"],
+        measures: ["inputTokens", "outputTokens", "cacheCreateTokens", "cacheReadTokens"],
       }),
     );
   });

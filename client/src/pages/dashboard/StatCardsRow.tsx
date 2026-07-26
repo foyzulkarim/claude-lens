@@ -133,6 +133,32 @@ export function safeDivide(numerator: number, denominator: number): number | und
   return denominator > 0 ? numerator / denominator : undefined;
 }
 
+/**
+ * The Total-tokens tile's explanatory sub-line: what share of all token
+ * volume was served from the prompt cache (issue #122). Returns `undefined`
+ * for a zero-token range so an empty window renders no line at all rather
+ * than "NaN%" or a meaningless "0%".
+ *
+ * Deliberately a *different* denominator from the Cache-hit-% tile, which
+ * excludes output tokens (`cacheRead / (input + cacheRead + cacheCreate)`).
+ * That one answers "how well is the cache working?"; this one answers "what
+ * is this total made of?" — the two percentages will not match, and unifying
+ * them would break whichever question it were unified toward.
+ */
+export function cacheReadShareLabel(
+  cacheReadTotal: number,
+  allTokensTotal: number,
+): string | undefined {
+  const share = safeDivide(cacheReadTotal, allTokensTotal);
+  if (share === undefined) return undefined;
+  // Rounding alone would claim an absolute "100% cache reads" at 99.6% and
+  // "0%" at 0.4% — both read as exact on a tile whose whole job is
+  // explaining a total. Only a true 1 or 0 gets the absolute reading.
+  const pct = Math.round(share * 100);
+  const clamped = pct === 100 && share < 1 ? 99 : pct === 0 && share > 0 ? 1 : pct;
+  return `${clamped}% cache reads`;
+}
+
 function findSeries(data: Series[] | undefined, measure: Series["measure"]): Series | undefined {
   return data?.find((s) => s.measure === measure);
 }
@@ -215,6 +241,10 @@ interface DrillStatCardProps {
   sparkline: number[];
   href: string;
   drillLabel: string;
+  /** Optional explanatory line under the value (issue #122's "NN% cache
+   * reads" on Total tokens). Rendered by `StatCard`, which already supports
+   * `sub`, *and* folded into this link's `aria-label` below. */
+  sub?: string;
 }
 
 /** Wraps `StatCard` in a `wouter` `Link` without modifying `StatCard`
@@ -229,12 +259,25 @@ function DrillStatCard({
   sparkline,
   href,
   drillLabel,
+  sub,
 }: DrillStatCardProps) {
-  const ariaLabel = `${label}: ${value} — view in ${drillLabel}`;
+  // An explicit `aria-label` on the anchor *overrides* its descendant text,
+  // so a `sub` rendered only inside `StatCard` would be visible but silent
+  // to a screen reader. One string feeds both so they can't drift.
+  const ariaLabel = [`${label}: ${value}`, sub, `view in ${drillLabel}`]
+    .filter(Boolean)
+    .join(" — ");
   return (
     <Link href={href} aria-label={ariaLabel} className="contents">
       {delta ? (
-        <StatCard label={label} value={value} accent={accent} delta={delta} sparkline={sparkline} />
+        <StatCard
+          label={label}
+          value={value}
+          accent={accent}
+          delta={delta}
+          sparkline={sparkline}
+          sub={sub}
+        />
       ) : (
         <StatCard
           label={label}
@@ -242,6 +285,7 @@ function DrillStatCard({
           accent={accent}
           sparkline={sparkline}
           sparklineLabel={sparklineTrendLabel(sparkline)}
+          sub={sub}
         />
       )}
     </Link>
@@ -289,7 +333,10 @@ export function StatCardsRow({ now: injectedNow }: StatCardsRowProps = {}) {
   // biome-ignore lint/correctness/useExhaustiveDependencies: filters is covered by its stable serialized identity (filtersKey); now ticks on its own via useStableNow
   const tokensQuery = useMemo<SeriesMetricsQuery>(
     () => ({
-      measures: ["inputTokens", "outputTokens", "cacheReadTokens", "cacheCreateTokens"],
+      // Same order as `UNIT_MEASURES.tokens` — these are the four measures
+      // the Dashboard chart below plots, and one ordering across the page
+      // keeps the tile, the chart, and their query keys aligned.
+      measures: ["inputTokens", "outputTokens", "cacheCreateTokens", "cacheReadTokens"],
       dimensions: ["time"],
       grain: GRAIN,
       compare: "previous-period",
@@ -348,6 +395,8 @@ export function StatCardsRow({ now: injectedNow }: StatCardsRowProps = {}) {
     cacheCreateSeries,
   ]);
 
+  const cacheReadShare = cacheReadShareLabel(sumPoints(cacheReadSeries?.points), tokensTotal);
+
   const cacheHitRatio = cacheHitTotal(inputSeries, cacheReadSeries, cacheCreateSeries);
   const cacheHitPrevious = cacheHitPreviousTotal(inputSeries, cacheReadSeries, cacheCreateSeries);
   const cacheHitSpark = cacheHitSparkline(inputSeries, cacheReadSeries, cacheCreateSeries);
@@ -387,6 +436,7 @@ export function StatCardsRow({ now: injectedNow }: StatCardsRowProps = {}) {
           <DrillStatCard
             label="Total tokens"
             value={formatUnitValue(tokensTotal, "tokens")}
+            sub={cacheReadShare}
             delta={pctDelta(tokensTotal, tokensPrevious, "cost")}
             sparkline={tokensSparkline}
             href={drillHref("/models", filtersQuery)}
