@@ -626,7 +626,7 @@ The pure serving-layer projector consuming cached cores: fixed bands below the c
 
 ## Task T5: Scorecard HTTP routes + registration
 
-> **Status:** not started
+> **Status:** done
 > **Verification:** tdd
 > **Effort:** m
 > **Priority:** critical

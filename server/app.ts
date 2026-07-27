@@ -15,6 +15,7 @@ import { registerExportRoute } from "./routes/export.js";
 import { registerGatesRoute } from "./routes/gates.js";
 import { registerHealthRoute } from "./routes/health.js";
 import { registerMetricsRoute } from "./routes/metrics.js";
+import { registerScorecardRoutes } from "./routes/scorecard.js";
 import { registerSearchRoute } from "./routes/search.js";
 import { registerSessionDetailRoute } from "./routes/session-detail.js";
 import { registerSessionsRoute } from "./routes/sessions.js";
@@ -274,6 +275,8 @@ export function buildApp({
   // Note: when configPath/userHomeDir are absent, the route reads the real
   // `~/.claude-lens/config.json` and `~/.claude/CLAUDE.md` from `homedir()`
   // — the production behavior. Tests pass overrides via BuildAppOptions.
+
+  registerScorecardRoutes(app, store, configPath ? { configPath } : undefined);
 
   // ARCH §HTTP errors: every uncaught error in any route handler (today:
   // the gates engine and the config PUT) must surface as the documented
