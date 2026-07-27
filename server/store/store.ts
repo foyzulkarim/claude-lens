@@ -6,6 +6,10 @@ import type {
 } from "../../shared/health-contract.js";
 import { LOCAL_STORE_STRING_MAX } from "../../shared/local-store-contract.js";
 import type { SearchIndexResponse } from "../../shared/search-index-contract.js";
+import type {
+  CacheScorecardCore,
+  CacheScorecardCoreWithMeta,
+} from "../../shared/scorecard-contract.js";
 import type { ScanRootConfig } from "../../shared/settings-contract.js";
 import type { ApiCall, CompactionRecord, Session, Turn } from "../../shared/types.js";
 import type { WsServerMessage } from "../../shared/ws-protocol.js";
@@ -17,6 +21,7 @@ import type {
   ToolResultBytesRecord,
 } from "../ingest/parse-transcript.js";
 import type { PricingTable } from "../metrics/measures.js";
+import { computeScorecard } from "../scorecard/engine.js";
 import { buildSearchSnapshot } from "./build-search-snapshot.js";
 import {
   type ContextResolver,
@@ -75,6 +80,7 @@ interface SessionState {
   costLogRow?: CostLogRow;
   turns: Turn[];
   session: Session | null;
+  scorecardCore: CacheScorecardCore | null;
   /** Absolute path of this session's transcript `.jsonl` file, set by the
    * ingest pipeline when the file is first discovered (#P4-6). Used only by
    * the Turn Inspector transcript-peek route for an on-demand raw-file
@@ -217,6 +223,14 @@ export class Store {
     }
   }
 
+  getPricing(): PricingTable | undefined {
+    return this.pricing ? structuredClone(this.pricing) : undefined;
+  }
+
+  getPricer(): Pricer | undefined {
+    return this.pricer;
+  }
+
   /**
    * Swap the root->label map and refresh every session's `host` in place
    * (ARCH-settings-local-store.md). Mirrors `updatePricing`'s "relabel takes
@@ -260,6 +274,7 @@ export class Store {
         turnBoundaries: [],
         turns: [],
         session: null,
+        scorecardCore: null,
         rawLineCount: 0,
         duplicateCount: 0,
         malformedCount: 0,
@@ -302,6 +317,7 @@ export class Store {
     state.prompts.push(...result.prompts);
     state.toolResultBytes.push(...result.toolResultBytes);
     state.compactions.push(...result.compactions);
+    state.scorecardCore = null;
     // #P4-14: accumulate transcript-tier health counters additively. The
     // tailer calls applyRecords once per batch with the batch's per-line
     // counts; rolling them up gives the Data Health page its "raw lines
@@ -450,6 +466,7 @@ export class Store {
         turnBoundaries: [],
         turns: [],
         session: null,
+        scorecardCore: null,
         rawLineCount: 0,
         duplicateCount: 0,
         malformedCount: 0,
@@ -728,6 +745,7 @@ export class Store {
     state.compactions = [];
     state.turns = [];
     state.session = null;
+    state.scorecardCore = null;
     // #P4-14: zero transcript-tier health counters too. The tailer
     // re-reads the whole file from byte 0 on a truncation; without
     // this, the fleet's malformed/duplicate counts would inflate on
@@ -770,6 +788,7 @@ export class Store {
     });
     state.calls = reconciled.calls;
     state.turns = reconciled.turns;
+    state.scorecardCore = computeScorecard(state.calls, state.turns);
     const rootPath = this.sessionRoot.get(sessionId);
     const host = rootPath ? (this.hostLabels.get(rootPath) ?? rootPath) : undefined;
     state.session = deriveSession(
@@ -795,6 +814,32 @@ export class Store {
 
   getCalls(sessionId: string): ApiCall[] {
     return this.sessions.get(sessionId)?.calls ?? [];
+  }
+
+  getScorecardCore(sessionId: string): CacheScorecardCore | undefined {
+    const state = this.sessions.get(sessionId);
+    if (!state) return undefined;
+    if (!state.scorecardCore) this.recompute(sessionId);
+    return state.scorecardCore ? structuredClone(state.scorecardCore) : undefined;
+  }
+
+  listScorecardCores(): CacheScorecardCoreWithMeta[] {
+    const result: CacheScorecardCoreWithMeta[] = [];
+    for (const [sessionId, state] of this.sessions) {
+      if (!state.scorecardCore || !state.session) this.recompute(sessionId);
+      if (!state.scorecardCore || !state.session) continue;
+      result.push({
+        ...structuredClone(state.scorecardCore),
+        sessionMeta: {
+          sessionId,
+          project: state.session.project,
+          models: state.session.models.slice(),
+          branch: state.session.gitBranch,
+          host: state.session.host,
+        },
+      });
+    }
+    return result;
   }
 
   /**
