@@ -924,7 +924,7 @@ The one-investigation card: the single largest in-range waste event with `kind`/
 
 ## Task T10: Settings scorecard threshold panel (UI)
 
-> **Status:** not started
+> **Status:** done
 > **Verification:** ui
 > **Effort:** s
 > **Priority:** medium

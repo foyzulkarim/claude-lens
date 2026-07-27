@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import type { GateThresholds } from "../../../../shared/gates-contract.js";
+import type { ScorecardThresholds } from "../../../../shared/scorecard-contract.js";
+import { isValidScorecardThresholds } from "../../../../shared/settings-contract.js";
 import { getConfig, putConfig } from "../../api/config.js";
 import { qk } from "../../api/queryKeys.js";
 import { TOGGLE_CLASS } from "../../ui/toggleStyles.js";
@@ -17,6 +19,19 @@ const DEFAULT_GATE_THRESHOLDS: GateThresholds = {
   e2MaxLines: 60,
 };
 
+/** Mirrors `server/scorecard/thresholds.ts`'s `DEFAULT_SCORECARD_THRESHOLDS`
+ * / `specs/gates.md`'s "Grade thresholds and calibration" section —
+ * duplicated as a display-only fallback for the same reason as
+ * `DEFAULT_GATE_THRESHOLDS` above (the client can't import server code). */
+const DEFAULT_SCORECARD_THRESHOLDS: ScorecardThresholds = {
+  floorCalls: 10,
+  calibrationMinSessions: 20,
+  A: 95,
+  B: 85,
+  C: 70,
+  D: 50,
+};
+
 const DEFAULT_ANOMALY_FACTOR = 5;
 
 const GATE_FIELDS: { key: keyof GateThresholds; label: string }[] = [
@@ -27,10 +42,25 @@ const GATE_FIELDS: { key: keyof GateThresholds; label: string }[] = [
   { key: "e2MaxLines", label: "E2 CLAUDE.md max lines" },
 ];
 
+/** Count fields (no upper bound — floor/calibration are call/session counts). */
+const SCORECARD_COUNT_FIELDS: { key: "floorCalls" | "calibrationMinSessions"; label: string }[] = [
+  { key: "floorCalls", label: "Scorecard grade floor (main-thread calls)" },
+  { key: "calibrationMinSessions", label: "Scorecard calibration minimum (sessions)" },
+];
+
+/** Band fields — integer percentages in [0,100], ordered A > B > C > D. */
+const SCORECARD_BAND_FIELDS: { key: "A" | "B" | "C" | "D"; label: string }[] = [
+  { key: "A", label: "Scorecard band A (%, min)" },
+  { key: "B", label: "Scorecard band B (%, min)" },
+  { key: "C", label: "Scorecard band C (%, min)" },
+  { key: "D", label: "Scorecard band D (%, min)" },
+];
+
 interface ThresholdsSeed {
   budgetInput: string;
   anomalyInput: string;
   gateThresholds: GateThresholds;
+  scorecardThresholds: ScorecardThresholds;
 }
 
 function seedThresholds(cfg: object): ThresholdsSeed {
@@ -38,11 +68,13 @@ function seedThresholds(cfg: object): ThresholdsSeed {
     budget?: number | null;
     anomalyFactor?: number;
     gateThresholds?: Partial<GateThresholds>;
+    scorecardThresholds?: Partial<ScorecardThresholds>;
   };
   return {
     budgetInput: c.budget != null ? String(c.budget) : "",
     anomalyInput: c.anomalyFactor != null ? String(c.anomalyFactor) : "",
     gateThresholds: { ...DEFAULT_GATE_THRESHOLDS, ...(c.gateThresholds ?? {}) },
+    scorecardThresholds: { ...DEFAULT_SCORECARD_THRESHOLDS, ...(c.scorecardThresholds ?? {}) },
   };
 }
 
@@ -70,6 +102,7 @@ export function ThresholdsPanel() {
     budgetInput: "",
     anomalyInput: "",
     gateThresholds: { ...DEFAULT_GATE_THRESHOLDS },
+    scorecardThresholds: { ...DEFAULT_SCORECARD_THRESHOLDS },
   });
   const [validationError, setValidationError] = useState<string | null>(null);
   const sync = useConfigSyncedFormState<ThresholdsSeed>({
@@ -78,17 +111,22 @@ export function ThresholdsPanel() {
     setRows: setSeed,
   });
 
-  const { budgetInput, anomalyInput, gateThresholds } = seed;
+  const { budgetInput, anomalyInput, gateThresholds, scorecardThresholds } = seed;
 
   const saveMutation = useMutation({
     mutationFn: (patch: {
       budget: number | null;
       anomalyFactor?: number;
       gateThresholds: GateThresholds;
+      scorecardThresholds: ScorecardThresholds;
     }) => putConfig(patch),
     onSuccess: () => {
       sync.accept();
       queryClient.invalidateQueries({ queryKey: qk.prefixes.config });
+      // Scorecard grades depend on scorecardThresholds — a floor/band edit
+      // here can change every session's grade, so both scorecard query
+      // shapes (session scorecard + fleet Biggest Lever) must refetch.
+      queryClient.invalidateQueries({ queryKey: qk.prefixes.scorecard });
     },
   });
 
@@ -100,6 +138,38 @@ export function ThresholdsPanel() {
       gateThresholds: {
         ...prev.gateThresholds,
         [key]: Number.isFinite(n) && n >= 0 ? Math.round(n) : 0,
+      },
+    }));
+  }
+
+  function updateScorecardCountField(
+    key: "floorCalls" | "calibrationMinSessions",
+    value: string,
+  ): void {
+    sync.markDirty();
+    const n = Number(value);
+    setSeed((prev) => ({
+      ...prev,
+      scorecardThresholds: {
+        ...prev.scorecardThresholds,
+        [key]: Number.isFinite(n) && n >= 0 ? Math.round(n) : 0,
+      },
+    }));
+  }
+
+  function updateScorecardBandField(key: "A" | "B" | "C" | "D", value: string): void {
+    sync.markDirty();
+    const n = Number(value);
+    setSeed((prev) => ({
+      ...prev,
+      scorecardThresholds: {
+        ...prev.scorecardThresholds,
+        // Clamp to [0,100] as the user types (matches the server validator's
+        // range check) — order violations (A <= B etc.) are NOT blocked here
+        // so a user reordering bands one field at a time isn't fought
+        // mid-edit; that check runs once at save (handleSave below), same
+        // as the server's isValidScorecardThresholds.
+        [key]: Number.isFinite(n) ? Math.min(100, Math.max(0, Math.round(n))) : 0,
       },
     }));
   }
@@ -125,8 +195,19 @@ export function ThresholdsPanel() {
       anomalyFactor = parsed;
     }
 
+    // Mirrors the server's isValidScorecardThresholds exactly (same
+    // function, imported from shared/) so a save that would 400 is caught
+    // here first — range [0,100] + safe-integer counts + pairwise A>B>C>D
+    // order among the bands.
+    if (!isValidScorecardThresholds(scorecardThresholds)) {
+      setValidationError(
+        "Scorecard thresholds must be integer percentages in 0-100 with A > B > C > D.",
+      );
+      return;
+    }
+
     setValidationError(null);
-    saveMutation.mutate({ budget, anomalyFactor, gateThresholds });
+    saveMutation.mutate({ budget, anomalyFactor, gateThresholds, scorecardThresholds });
   }
 
   const errorMessage =
@@ -210,6 +291,13 @@ export function ThresholdsPanel() {
                 />
               </td>
             </tr>
+            <tr>
+              <td colSpan={2} className="pt-3 pb-1">
+                <h3 className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-[#8A96A5]">
+                  Gate thresholds
+                </h3>
+              </td>
+            </tr>
             {GATE_FIELDS.map((f) => (
               <tr key={f.key} className="border-t border-slate-100 dark:border-[#232B36]">
                 <td className="py-1.5">
@@ -223,6 +311,54 @@ export function ThresholdsPanel() {
                     step="1"
                     value={gateThresholds[f.key]}
                     onChange={(e) => updateGateField(f.key, e.target.value)}
+                    className="w-24 rounded border border-slate-200 bg-transparent px-1 py-0.5 text-right dark:border-[#2A323D]"
+                  />
+                </td>
+              </tr>
+            ))}
+
+            <tr>
+              <td colSpan={2} className="pt-3 pb-1">
+                <h3
+                  data-testid="scorecard-thresholds-heading"
+                  className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-[#8A96A5]"
+                >
+                  Cache Scorecard thresholds
+                </h3>
+              </td>
+            </tr>
+            {SCORECARD_COUNT_FIELDS.map((f) => (
+              <tr key={f.key} className="border-t border-slate-100 dark:border-[#232B36]">
+                <td className="py-1.5">
+                  <label htmlFor={`settings-scorecard-${f.key}`}>{f.label}</label>
+                </td>
+                <td className="py-1.5 text-right">
+                  <input
+                    id={`settings-scorecard-${f.key}`}
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={scorecardThresholds[f.key]}
+                    onChange={(e) => updateScorecardCountField(f.key, e.target.value)}
+                    className="w-24 rounded border border-slate-200 bg-transparent px-1 py-0.5 text-right dark:border-[#2A323D]"
+                  />
+                </td>
+              </tr>
+            ))}
+            {SCORECARD_BAND_FIELDS.map((f) => (
+              <tr key={f.key} className="border-t border-slate-100 dark:border-[#232B36]">
+                <td className="py-1.5">
+                  <label htmlFor={`settings-scorecard-${f.key}`}>{f.label}</label>
+                </td>
+                <td className="py-1.5 text-right">
+                  <input
+                    id={`settings-scorecard-${f.key}`}
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="1"
+                    value={scorecardThresholds[f.key]}
+                    onChange={(e) => updateScorecardBandField(f.key, e.target.value)}
                     className="w-24 rounded border border-slate-200 bg-transparent px-1 py-0.5 text-right dark:border-[#2A323D]"
                   />
                 </td>
