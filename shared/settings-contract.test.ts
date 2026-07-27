@@ -4,6 +4,7 @@ import {
   isValidBudget,
   isValidGateThresholds,
   isValidScanRoots,
+  isValidScorecardThresholds,
 } from "./settings-contract.js";
 
 describe("isValidBudget", () => {
@@ -88,6 +89,58 @@ describe("isValidGateThresholds (#P4-11)", () => {
   it("rejects non-numeric values for known fields", () => {
     expect(isValidGateThresholds({ v2Repeat: "3" })).toBe(false);
     expect(isValidGateThresholds({ v2Repeat: null })).toBe(false);
+  });
+});
+
+describe("isValidScorecardThresholds (#124)", () => {
+  it("accepts valid complete, empty, and partial threshold objects", () => {
+    expect(isValidScorecardThresholds({})).toBe(true);
+    expect(isValidScorecardThresholds({ floorCalls: 15 })).toBe(true);
+    expect(isValidScorecardThresholds({ A: 95, C: 70 })).toBe(true);
+    expect(
+      isValidScorecardThresholds({
+        floorCalls: 10,
+        calibrationMinSessions: 20,
+        A: 95,
+        B: 85,
+        C: 70,
+        D: 50,
+      }),
+    ).toBe(true);
+  });
+
+  it("rejects unknown fields", () => {
+    expect(isValidScorecardThresholds({ flrCalls: 10 })).toBe(false);
+  });
+
+  it.each([
+    -1,
+    1.5,
+    2 ** 60,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    null,
+    "10",
+  ])("rejects an invalid count (%s)", (floorCalls) => {
+    expect(isValidScorecardThresholds({ floorCalls })).toBe(false);
+  });
+
+  it.each([
+    -1,
+    70.5,
+    101,
+    2 ** 60,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    null,
+    "70",
+  ])("rejects an invalid band (%s)", (C) => {
+    expect(isValidScorecardThresholds({ C })).toBe(false);
+  });
+
+  it("enforces descending order among whichever bands are present", () => {
+    expect(isValidScorecardThresholds({ A: 80, B: 90 })).toBe(false);
+    expect(isValidScorecardThresholds({ A: 95, C: 70 })).toBe(true);
   });
 });
 

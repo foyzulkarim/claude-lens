@@ -6,6 +6,7 @@ import {
   isValidGateThresholds,
   isValidPricingTable,
   isValidScanRoots,
+  isValidScorecardThresholds,
 } from "../../shared/settings-contract.js";
 import { buildHostLabels, buildRuntimeMetadata } from "../runtime.js";
 import { readConfig, writeConfig } from "../settings.js";
@@ -52,6 +53,16 @@ export function parseConfigPatch(body: unknown): Partial<AppConfig> | string {
       );
     }
     patch.gateThresholds = b.gateThresholds;
+  }
+
+  if ("scorecardThresholds" in b) {
+    if (!isValidScorecardThresholds(b.scorecardThresholds)) {
+      return (
+        "scorecardThresholds must be an object with valid non-negative integer counts " +
+        "and ordered integer bands (A, B, C, D) in [0,100]; use {} to reset to defaults"
+      );
+    }
+    patch.scorecardThresholds = b.scorecardThresholds;
   }
 
   if ("pricing" in b) {

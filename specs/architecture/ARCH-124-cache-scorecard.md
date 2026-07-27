@@ -318,7 +318,7 @@ None. REQ questions are resolved by A5 (fixed defaults plus a one-letter percent
 
 ## Task T1: Scorecard contract + thresholds + config validation
 
-> **Status:** not started
+> **Status:** done
 > **Verification:** tdd
 > **Effort:** m
 > **Priority:** critical

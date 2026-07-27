@@ -9,6 +9,7 @@
 
 import type { GateThresholds } from "./gates-contract.js";
 import { isValidPricingTable, type PricingTable } from "./pricing-contract.js";
+import type { ScorecardThresholds } from "./scorecard-contract.js";
 
 /**
  * `budget` is `null`/absent when no monthly cap is set (the BurnRateCard's
@@ -30,6 +31,7 @@ export interface ScanRootConfig {
 export interface AppConfig {
   budget?: number | null;
   gateThresholds?: Partial<GateThresholds>;
+  scorecardThresholds?: Partial<ScorecardThresholds>;
   /** Model -> rate table (#P4-15). Absent means the server's built-in `DEFAULT_PRICING_TABLE` applies. */
   pricing?: PricingTable;
   /** Scan roots + host labels (#P4-15). Absent means the CLI's `--roots` flag / default `~/.claude/projects` applies. Path changes need a restart; label changes are live. */
@@ -72,6 +74,43 @@ export function isValidGateThresholds(value: unknown): value is Partial<GateThre
     // also rejects the next hand-edited config.json with `2 ** 60`.
     if (typeof v !== "number" || !Number.isSafeInteger(v) || v < 0) {
       return false;
+    }
+  }
+  return true;
+}
+
+export function isValidScorecardThresholds(value: unknown): value is Partial<ScorecardThresholds> {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const knownFields = ["floorCalls", "calibrationMinSessions", "A", "B", "C", "D"] as const;
+  const record = value as Record<string, unknown>;
+  if (!Object.keys(record).every((key) => (knownFields as readonly string[]).includes(key))) {
+    return false;
+  }
+  for (const field of ["floorCalls", "calibrationMinSessions"] as const) {
+    const fieldValue = record[field];
+    if (fieldValue === undefined) continue;
+    if (typeof fieldValue !== "number" || !Number.isSafeInteger(fieldValue) || fieldValue < 0) {
+      return false;
+    }
+  }
+  for (const field of ["A", "B", "C", "D"] as const) {
+    const fieldValue = record[field];
+    if (fieldValue === undefined) continue;
+    if (
+      typeof fieldValue !== "number" ||
+      !Number.isSafeInteger(fieldValue) ||
+      fieldValue < 0 ||
+      fieldValue > 100
+    ) {
+      return false;
+    }
+  }
+  const bands = ["A", "B", "C", "D"] as const;
+  for (let leftIndex = 0; leftIndex < bands.length; leftIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < bands.length; rightIndex += 1) {
+      const left = record[bands[leftIndex] as keyof typeof record];
+      const right = record[bands[rightIndex] as keyof typeof record];
+      if (typeof left === "number" && typeof right === "number" && left <= right) return false;
     }
   }
   return true;
