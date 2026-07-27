@@ -320,19 +320,23 @@ describe("projectTurnInspector — cache narrative", () => {
   });
 
   it("attaches a narrative to unexplained drops", () => {
+    // T6 (ARCH-124-cache-scorecard.md, R2): cause is sourced from the shared
+    // `classifyCacheWrite` classifier, which only classifies calls with
+    // positive `cacheCreateTokens` — every call here needs one to be
+    // classified at all (a zero-create call falls back to "unexplained").
     const calls = [
       call("m1", "2026-07-14T10:00:00.000Z", {
-        usage: usage({ inputTokens: 100, cacheReadTokens: 0, cacheCreateTokens: 0 }),
+        usage: usage({ inputTokens: 100, cacheReadTokens: 0, cacheCreateTokens: 100 }),
       }),
       call("m2", "2026-07-14T10:00:10.000Z", {
         model: "claude-fable-5",
-        usage: usage({ inputTokens: 100, cacheReadTokens: 0, cacheCreateTokens: 0 }),
+        usage: usage({ inputTokens: 100, cacheReadTokens: 0, cacheCreateTokens: 100 }),
       }),
       call("m3", "2026-07-14T10:00:20.000Z", {
         // Same model as m2, but a cache hit dropped — the "unexplained"
         // branch only fires when no model switch / compaction explains it.
         model: "claude-fable-5",
-        usage: usage({ inputTokens: 100, cacheReadTokens: 0, cacheCreateTokens: 0 }),
+        usage: usage({ inputTokens: 100, cacheReadTokens: 0, cacheCreateTokens: 100 }),
       }),
     ];
     const turns = [turn("p1", false, calls)];

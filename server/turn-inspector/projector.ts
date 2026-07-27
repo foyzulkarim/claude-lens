@@ -176,13 +176,8 @@ function buildCacheNarrative(
     const bMs = b.timestamp ? Date.parse(b.timestamp) : Number.POSITIVE_INFINITY;
     return aMs - bMs;
   });
-  const { timeline, compactionsAfterCall } = buildTimeline(
-    snapshot.calls,
-    logicalTurns,
-    orderedCompactions,
-    runtime,
-  );
-  const cachePoints = buildCacheStrip(snapshot.calls, compactionsAfterCall);
+  const { timeline } = buildTimeline(snapshot.calls, logicalTurns, orderedCompactions, runtime);
+  const cachePoints = buildCacheStrip(snapshot.calls);
 
   const turnCallUuids = new Set(orderedTurnCalls(group).map((c) => c.uuid));
   const points: TurnInspectorCachePoint[] = [];

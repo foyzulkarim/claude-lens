@@ -7,6 +7,7 @@ import type {
   TokenUsage,
   Turn,
 } from "../../shared/types.js";
+import { classifyCacheWrite, partitionCacheStreams } from "../cache/classifier.js";
 import type { PromptTextRecord, ToolResultBytesRecord } from "../ingest/parse-transcript.js";
 import type { SessionSnapshot } from "../store/store.js";
 import { projectSessionDetail } from "./projector.js";
@@ -326,12 +327,28 @@ describe("projectSessionDetail — timeline", () => {
 });
 
 describe("projectSessionDetail — cache strip causes", () => {
+  // T6 (ARCH-124-cache-scorecard.md, R2): `cause` is now sourced from the
+  // shared `classifyCacheWrite` classifier at threshold zero instead of a
+  // local heuristic, so every fixture call needs real `cacheCreateTokens`
+  // to be classified at all (a non-write call falls back to "unexplained").
   it("first call → first-call; subsequent same-model → unexplained; model switch → model-switch", () => {
     const calls = [
-      call("m1", "2026-07-14T10:00:00.000Z", { model: "claude-sonnet-5" }),
-      call("m2", "2026-07-14T10:01:00.000Z", { model: "claude-sonnet-5" }),
-      call("m3", "2026-07-14T10:02:00.000Z", { model: "claude-fable-5" }),
-      call("m4", "2026-07-14T10:03:00.000Z", { model: "claude-fable-5" }),
+      call("m1", "2026-07-14T10:00:00.000Z", {
+        model: "claude-sonnet-5",
+        usage: usage({ cacheCreateTokens: 100 }),
+      }),
+      call("m2", "2026-07-14T10:01:00.000Z", {
+        model: "claude-sonnet-5",
+        usage: usage({ cacheCreateTokens: 100 }),
+      }),
+      call("m3", "2026-07-14T10:02:00.000Z", {
+        model: "claude-fable-5",
+        usage: usage({ cacheCreateTokens: 100 }),
+      }),
+      call("m4", "2026-07-14T10:03:00.000Z", {
+        model: "claude-fable-5",
+        usage: usage({ cacheCreateTokens: 100 }),
+      }),
     ];
     const snap = snapshotWith(sessionWithTier(), calls, [turn("p1", false, calls)], []);
 
@@ -345,10 +362,21 @@ describe("projectSessionDetail — cache strip causes", () => {
     ]);
   });
 
-  it("compaction marker → compaction cause on the call at/after the marker", () => {
+  it("a bare CompactionRecord marker with no read-delta evidence no longer classifies as compaction (intentional R2 shift)", () => {
+    // Only 2 calls: the shared classifier needs a 3-call window (current,
+    // previous, before-previous) to detect a read-delta drop, so a marker
+    // alone — with nothing upstream of it — can no longer explain the call.
+    // This pins the deliberate behavior change from the old
+    // seenCompaction-marker heuristic (T6 regression guard).
     const calls = [
-      call("m1", "2026-07-14T10:00:00.000Z", { model: "claude-sonnet-5" }),
-      call("m2", "2026-07-14T10:02:00.000Z", { model: "claude-sonnet-5" }),
+      call("m1", "2026-07-14T10:00:00.000Z", {
+        model: "claude-sonnet-5",
+        usage: usage({ cacheCreateTokens: 100 }),
+      }),
+      call("m2", "2026-07-14T10:02:00.000Z", {
+        model: "claude-sonnet-5",
+        usage: usage({ cacheCreateTokens: 100 }),
+      }),
     ];
     const snap = snapshotWith(
       sessionWithTier(),
@@ -362,7 +390,34 @@ describe("projectSessionDetail — cache strip causes", () => {
     const result = projectSessionDetail(snap, [], [], {});
 
     expect(result.cache[0]?.cause).toBe("first-call");
-    expect(result.cache[1]?.cause).toBe("compaction");
+    expect(result.cache[1]?.cause).toBe("unexplained");
+  });
+
+  it("classifies a genuine cache-read drop as compaction, agreeing with the shared classifier for the same call (R2)", () => {
+    const calls = [
+      call("m1", "2026-07-14T10:00:00.000Z", {
+        model: "claude-sonnet-5",
+        usage: usage({ cacheReadTokens: 10_000, cacheCreateTokens: 100 }),
+      }),
+      call("m2", "2026-07-14T10:01:00.000Z", {
+        model: "claude-sonnet-5",
+        usage: usage({ cacheReadTokens: 1_000, cacheCreateTokens: 100 }),
+      }),
+      call("m3", "2026-07-14T10:02:00.000Z", {
+        model: "claude-sonnet-5",
+        usage: usage({ cacheReadTokens: 0, cacheCreateTokens: 5_000 }),
+      }),
+    ];
+    const snap = snapshotWith(sessionWithTier(), calls, [turn("p1", false, calls)], []);
+
+    const result = projectSessionDetail(snap, [], [], {});
+
+    expect(result.cache.map((p) => p.cause)).toEqual(["first-call", "unexplained", "compaction"]);
+
+    const streams = partitionCacheStreams(calls);
+    const mainStream = streams.get("s1::main") ?? [];
+    const classification = classifyCacheWrite(mainStream, 2, { threshold: 0 });
+    expect(classification?.baseCause).toBe(result.cache[2]?.cause);
   });
 });
 

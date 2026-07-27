@@ -696,7 +696,7 @@ Two thin localhost routes reading cached cores + live Store pricing, resolving c
 
 ## Task T6: CacheStrip shared-cause swap (R2 agreement)
 
-> **Status:** not started
+> **Status:** done
 > **Verification:** tdd
 > **Effort:** s
 > **Priority:** high
