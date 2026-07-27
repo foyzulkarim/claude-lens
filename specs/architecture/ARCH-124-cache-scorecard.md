@@ -549,7 +549,7 @@ Wire the engine into the Store's existing lazy per-session `recompute()` so core
 
 ## Task T4: Fleet projector (bands, grade, pricing, biggest-lever)
 
-> **Status:** not started
+> **Status:** done
 > **Verification:** tdd
 > **Effort:** l
 > **Priority:** critical
