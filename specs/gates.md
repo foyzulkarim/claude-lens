@@ -78,6 +78,52 @@ Each gate emits: `{ gateId, status: pass|warn|fail, evidence: [{turnN?, callId?,
 - Session score = `passes / (passes + 0.5·warns + fails)` across the six checks (a warn counts half weight in the denominator) — display as letter or fraction, not a percentage with false precision.
 - Fleet trend (V2 of the product, not now): gate failure rate per week.
 
+## Cache Scorecard scoring
+
+The cache scorecard is a separate transcript-only (🟢) hygiene grade. It reuses K2's
+`classifyCacheWrite` and TTL attribution verbatim, but the configured `K2_SPIKE` remains an alert
+threshold only: the scorecard classifies every positive cache write with `threshold: 0`.
+
+### Cache-creation decomposition
+
+- Score only main-thread calls and sort them chronologically. Deduplication by `message.id` occurs
+  upstream.
+- Within an epoch, keep an `established` high-water mark. For every call, including read-only
+  calls, `footprint = cacheRead + cacheCreate`.
+- A positive write classified as first-call, model-switch, or compaction starts a new epoch. Its
+  full creation is `warmup`, never waste. A zero-create model switch resets the epoch separately.
+- Otherwise, `incremental = min(cacheCreate, max(0, footprint - established))` and
+  `rewritten = cacheCreate - incremental`. After each call, update the high-water mark from its
+  footprint.
+- Every positive write becomes one chronological ledger entry. Each entry with `rewritten > 0` is
+  a waste event carrying K2's canonical `baseCause` and `attribution`. `prefix-change` maps to
+  `prefix-bust`, `ttl-lapse` maps to `idle-expiry`, and `unknown` maps to `unattributed`.
+- A rewrite is `duplicated-warmup` when it has zero cache read and repeats an earlier-epoch warmup
+  with the same `promptId` and model. This kind takes precedence over the attribution mapping.
+
+### Hygiene score and evidence
+
+Only confirmed-fixable waste (`prefix-bust` and `duplicated-warmup`) affects hygiene. TTL lapse and
+unattributed rewrites remain visible and priceable but are grade-neutral.
+
+`scoreableCreation = warmup + incremental + confirmedFixableWaste`
+
+`hygieneScore = 1 - confirmedFixableWaste / scoreableCreation`
+
+The score is unavailable when `scoreableCreation = 0`. The deterministic cached evidence is the
+complete positive-write ledger, aggregate `{warmup, incremental, rewritten}`, cache-read total,
+waste ratio, hit ratio, raw score inputs, and hygiene score. It never contains a letter grade,
+pricing, fleet state, or an evaluation timestamp.
+
+### Grade thresholds and calibration
+
+Sessions below `floorCalls = 10` main-thread calls are explicitly too short to grade. Fixed integer
+percentage bands are `A >= 95`, `B >= 85`, `C >= 70`, and `D >= 50`. Once at least
+`calibrationMinSessions = 20` sessions are gradeable, fleet calibration uses nearest-rank
+p80/p60/p40/p20 thresholds. Calibration may improve the fixed result by at most one letter and may
+never lower it; equal scores share a grade. All six values are configurable under
+`scorecardThresholds`, with ordered bands required (`A > B > C > D`).
+
 ## Configurable constants (Settings → Gate thresholds)
 
 | Constant | Default | Gate |

@@ -397,7 +397,7 @@ The foundation every other task imports: the wire contract (`CacheScorecardCore`
 
 ## Task T2: Scorecard engine core (decomposition + K2 events + score)
 
-> **Status:** not started
+> **Status:** done
 > **Verification:** tdd
 > **Effort:** l
 > **Priority:** critical
