@@ -59,6 +59,7 @@ Any dimension × any measure is a valid chart — the pages below are the curate
 | Most recent session card (trace thumb, turns, ctx %) | T+P; ctx % true value C | 🟡 | → 3 |
 | Top sessions / top projects / top models mini-leaderboards (tabbed) | T+P | 🟢 | → 3 / 5 / 6 |
 | Anomaly & gate-failure feed | T+P+fs; capture-gap items B/C | 🟡 | → 4, → 3 §Report Card, → 9 |
+| Biggest lever this week: largest cache-waste event in the active range (cause, tokens, $, session) — positive first-write-share summary when none | T | 🟢 | One event only, never a list; respects global range + filters; → 3 §Cache Scorecard; specs in `gates.md` §Cache Scorecard scoring |
 | Records strip: most expensive day/session/turn ever, longest session, biggest cache save | T+P | 🟢 | Small, fun, sticky |
 | Subscription window tracker: 5h + 7d usage bars, "resets in Xh Ym", vs historical peak; user-calibrated limit | T (trailing-window token sums) + ⚑N calibration value | 🟢 | Estimated until first observed limit event; possibly the #1 install reason for sub users |
 | Leverage ratio headline: tokens served from cache ÷ fresh-billed (e.g. "20×") | T | 🟢 | Same data as hit rate, better headline |

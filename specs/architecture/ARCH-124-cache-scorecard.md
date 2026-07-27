@@ -871,7 +871,7 @@ The R6 section: grade badge or explicit ungraded state, the R1 metrics, and one 
 
 ## Task T9: Dashboard Biggest Lever card (UI)
 
-> **Status:** not started
+> **Status:** done
 > **Verification:** ui
 > **Effort:** m
 > **Priority:** high
