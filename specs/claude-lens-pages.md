@@ -92,6 +92,7 @@ Any dimension × any measure is a valid chart — the pages below are the curate
 | Tool mix panel (+ tool timeline: which tools when) | T+P | 🟢 | |
 | Prompt list (per-turn user text) | T | 🟢 | |
 | Report Card (gates, session score, evidence links) | T+fs | 🟢 | Specs in `gates.md` |
+| Cache Scorecard (hygiene grade or ungraded reason, R1 metrics, one row per waste event with cause/tokens/$/deep link) | T | 🟢 | Distinct from Report Card grade (own heading + badge label prefix); specs in `gates.md` §Cache Scorecard scoring |
 | Workflow funnel: read → plan → edit → verify → commit coverage across turns | T | 🟢 | Same signals as gates V1/P3 rendered as a funnel |
 | Token funnel: context offered → served from cache → fresh-billed → output | T+P | 🟢 | Shows output is ~1% of wire |
 | Context composition: tool_result bytes by tool (Read vs Bash vs Grep…) | T | 🟢 | "My context is 80% file reads" |

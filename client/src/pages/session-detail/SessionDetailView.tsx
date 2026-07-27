@@ -6,6 +6,7 @@ import { CostTimeline } from "./CostTimeline.js";
 import { Header } from "./Header.js";
 import { PromptList } from "./PromptList.js";
 import { ReportCard } from "./ReportCard.js";
+import { Scorecard } from "./Scorecard.js";
 import { TokenFunnel } from "./TokenFunnel.js";
 import { ToolMix } from "./ToolMix.js";
 import { TurnsSection } from "./TurnsSection.js";
@@ -37,6 +38,7 @@ export function SessionDetailView({ data }: SessionDetailViewProps): ReactNode {
         distribution={data.turnDistribution}
       />
       <ReportCard sessionId={data.header.sessionId} />
+      <Scorecard sessionId={data.header.sessionId} />
       <CacheStrip cache={data.cache} />
       <ToolMix toolMix={data.toolMix} toolTimeline={data.toolTimeline} />
       <PromptList prompts={data.prompts} />

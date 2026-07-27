@@ -817,7 +817,7 @@ The client-side plumbing that keeps both scorecard surfaces fresh: typed query f
 
 ## Task T8: Session Detail Scorecard section (UI)
 
-> **Status:** not started
+> **Status:** done
 > **Verification:** ui
 > **Effort:** m
 > **Priority:** high
