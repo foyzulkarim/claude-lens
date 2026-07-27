@@ -752,7 +752,7 @@ Make CacheStrip and the scorecard agree literally on cause (R2) by sourcing Cach
 
 ## Task T7: Client data layer (query fns, keys, invalidation)
 
-> **Status:** not started
+> **Status:** done
 > **Verification:** tdd
 > **Effort:** m
 > **Priority:** high

@@ -69,6 +69,12 @@ export function PricingEditor() {
     onSuccess: () => {
       sync.accept();
       queryClient.invalidateQueries({ queryKey: qk.prefixes.config });
+      // ARCH-124 (#2): scorecard waste-event dollar estimates are priced
+      // from the Store's live pricing at request time, not a startup
+      // closure — without this, a rate edit here would leave the
+      // Scorecard section / Biggest Lever card showing stale dollars
+      // until an unrelated refetch happened to fire.
+      queryClient.invalidateQueries({ queryKey: qk.prefixes.scorecard });
     },
   });
 

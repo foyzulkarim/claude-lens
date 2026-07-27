@@ -91,7 +91,8 @@ type InvalidationAction =
   | { kind: "turnInspectorSession"; sessionId: string }
   | { kind: "gates" }
   | { kind: "searchIndex" }
-  | { kind: "health" };
+  | { kind: "health" }
+  | { kind: "scorecard" };
 
 function actionKey(action: InvalidationAction): string {
   switch (action.kind) {
@@ -105,6 +106,7 @@ function actionKey(action: InvalidationAction): string {
     case "gates":
     case "searchIndex":
     case "health":
+    case "scorecard":
       return action.kind;
   }
 }
@@ -140,7 +142,10 @@ function actionsForMessage(message: WsServerMessage): InvalidationAction[] {
       // Dashboard feed `staleTime: 60s`). The Data Health page (#P4-14)
       // also invalidates: an append changes per-session dedup/malformed
       // counters, so without this the page would be stale during a live
-      // transcript write.
+      // transcript write. The scorecard prefix covers both surfaces
+      // (ARCH-124, T7/R9): the appended session's own Scorecard section
+      // AND the fleet-wide Dashboard Biggest Lever card, which shares the
+      // same `["scorecard", ...]` prefix.
       return [
         { kind: "metrics" },
         { kind: "session", sessionId: message.sessionId },
@@ -148,6 +153,7 @@ function actionsForMessage(message: WsServerMessage): InvalidationAction[] {
         { kind: "sessions" },
         { kind: "gates" },
         { kind: "health" },
+        { kind: "scorecard" },
       ];
     case "session-prompts-changed":
       // Prompt-only mutation (#P4-3, ARCH A2): the search index is the
@@ -203,6 +209,12 @@ function applyInvalidationAction(queryClient: QueryClient, action: InvalidationA
       // fleet rollup. `scan-updated`'s `all` action already covers
       // this via `queryClient.invalidateQueries()` with no key.
       queryClient.invalidateQueries({ queryKey: qk.prefixes.health });
+      return;
+    case "scorecard":
+      // ARCH-124, T7/R9: matches both `qk.scorecard(sessionId)` and
+      // `qk.biggestLever(params)` — no scorecard data ever travels over
+      // WS, the client just refetches mounted queries by prefix.
+      queryClient.invalidateQueries({ queryKey: qk.prefixes.scorecard });
       return;
     default: {
       // Exhaustive check, mirroring actionsForMessage's switch above: a
