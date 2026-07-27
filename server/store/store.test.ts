@@ -592,6 +592,19 @@ describe("Store — scorecard regression guards (#124 T3)", () => {
       ]),
       "/roots/work",
     );
+    store.applyRecords(
+      "s2",
+      batch([
+        call({
+          sessionId: "s2",
+          messageId: "s2-1",
+          cwd: "/project/two",
+          gitBranch: "main",
+          model: "claude-sonnet-5",
+        }),
+      ]),
+      "/roots/other",
+    );
 
     expect(store.listScorecardCores()).toEqual([
       expect.objectContaining({
@@ -602,6 +615,16 @@ describe("Store — scorecard regression guards (#124 T3)", () => {
           models: ["claude-opus-5"],
           branch: "feature/cache",
           host: "workstation",
+        },
+      }),
+      expect.objectContaining({
+        sessionId: "s2",
+        sessionMeta: {
+          sessionId: "s2",
+          project: "/project/two",
+          models: ["claude-sonnet-5"],
+          branch: "main",
+          host: "/roots/other",
         },
       }),
     ]);

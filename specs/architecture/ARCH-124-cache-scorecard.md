@@ -492,7 +492,7 @@ Build the decomposition ledger + aggregates first (hand-calc fixture), then laye
 
 ## Task T3: Store core caching (recompute + accessors)
 
-> **Status:** in progress
+> **Status:** done
 > **Verification:** test-after
 > **Effort:** s
 > **Priority:** critical
