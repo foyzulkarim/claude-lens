@@ -1,6 +1,7 @@
 import type { SessionPageParams } from "../../../shared/sessions-contract.js";
 import type { CacheLabQuery } from "../../../shared/cache-lab-contract.js";
 import type { MetricsQuery } from "../../../shared/metrics-contract.js";
+import type { BiggestLeverParams } from "./scorecard.js";
 import type { SessionListParams } from "../../../shared/sessions-contract.js";
 
 /**
@@ -119,6 +120,22 @@ export const qk = {
    */
   searchIndex: () => ["search-index"] as const,
 
+  /**
+   * Canonical key for one session's cache scorecard (ARCH-124, T7). Lives
+   * under the shared `"scorecard"` literal segment (with `qk.biggestLever`)
+   * so `qk.prefixes.scorecard` invalidates both scorecard surfaces from one
+   * WS action, matching R9's "no scorecard data over WS, refetch by prefix"
+   * contract.
+   */
+  scorecard: (sessionId: string) => ["scorecard", "session", sessionId] as const,
+  /**
+   * Dashboard Biggest Lever key (ARCH-124, T7). Keyed on the same params
+   * `getBiggestLever` sends (range + filters) so TanStack Query's
+   * structural dedupe/refetch-on-range-change works, mirroring
+   * `qk.metrics`/`qk.gateFailures`.
+   */
+  biggestLever: (params: BiggestLeverParams) => ["scorecard", "biggest-lever", params] as const,
+
   prefixes: {
     metrics: ["metrics"] as const,
     session: ["session"] as const,
@@ -154,5 +171,13 @@ export const qk = {
      *  append (which changes dedup/malformed counters). `scan-updated`'s
      *  `all` action already covers it via the same handler. */
     health: ["health"] as const,
+    /**
+     * Matches both `qk.scorecard(sessionId)` and `qk.biggestLever(params)` —
+     * they share the leading `"scorecard"` literal segment (ARCH-124, T7).
+     * The `session-updated` WS action invalidates this one prefix so a
+     * live-appended session's own Scorecard section AND the fleet-wide
+     * Biggest Lever card both refetch (R9).
+     */
+    scorecard: ["scorecard"] as const,
   },
 };

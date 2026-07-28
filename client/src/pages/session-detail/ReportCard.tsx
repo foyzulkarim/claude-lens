@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
-import { EmptyState } from "../../components/EmptyState.js";
-import { useInView } from "../../hooks/useInView.js";
 import { getGateReport } from "../../api/gates.js";
 import { qk } from "../../api/queryKeys.js";
+import { EmptyState } from "../../components/EmptyState.js";
+import { useInView } from "../../hooks/useInView.js";
 import { ReportCardView } from "./ReportCardView.js";
 
 export interface ReportCardProps {
@@ -22,7 +22,7 @@ export interface ReportCardProps {
  * view.
  */
 export function ReportCard({ sessionId }: ReportCardProps): React.JSX.Element {
-  const { ref, inView } = useInView<HTMLDivElement>({ rootMargin: "200px" });
+  const { ref, inView } = useInView<HTMLDivElement>({ rootMargin: "200px" }, "report-card");
 
   const query = useQuery({
     queryKey: qk.gates(sessionId),

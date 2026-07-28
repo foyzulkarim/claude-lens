@@ -31,6 +31,7 @@ import type {
   SessionDetailWorkflow,
 } from "../../shared/session-detail-contract.js";
 import type { ApiCall, CompactionRecord, Session, TokenUsage, Turn } from "../../shared/types.js";
+import { classifyCacheWrite, partitionCacheStreams } from "../cache/classifier.js";
 import type { PromptTextRecord, ToolResultBytesRecord } from "../ingest/parse-transcript.js";
 import {
   aggregateLogicalTurnCost,
@@ -197,11 +198,6 @@ function buildHeader(
 // Timeline
 // ---------------------------------------------------------------------------
 
-export interface CallTimelineContext {
-  previousModel?: string;
-  seenCompaction: boolean;
-}
-
 export function buildTimeline(
   orderedCalls: ApiCall[],
   logicalTurns: LogicalTurn[],
@@ -209,10 +205,8 @@ export function buildTimeline(
   runtime: RuntimeMetadata,
 ): {
   timeline: SessionDetailTimelinePoint[];
-  compactionsAfterCall: boolean[];
 } {
   const timeline: SessionDetailTimelinePoint[] = [];
-  const compactionsAfterCall: boolean[] = [];
 
   const turnNumberByCall = new Map<ApiCall, number>();
   for (const turn of logicalTurns) {
@@ -291,41 +285,48 @@ export function buildTimeline(
       isTurnBoundary: firstOfTurn,
       isCompaction,
     });
-    compactionsAfterCall.push(isCompaction);
   }
 
-  return { timeline, compactionsAfterCall };
+  return { timeline };
 }
 
 // ---------------------------------------------------------------------------
 // Cache strip + K2-compatible cause classification
 // ---------------------------------------------------------------------------
 
-export function classifyCacheCause(
-  ctx: CallTimelineContext,
-  call: ApiCall,
-): SessionDetailCacheCause {
-  if (ctx.seenCompaction) return "compaction";
-  if (ctx.previousModel === undefined) return "first-call";
-  if (ctx.previousModel !== call.model) return "model-switch";
-  return "unexplained";
-}
-
-export function buildCacheStrip(
-  orderedCalls: ApiCall[],
-  compactionsAfterCall: boolean[],
-): SessionDetailCachePoint[] {
+/**
+ * CacheStrip's `cause` is sourced from the single shared K2 classifier
+ * (ARCH-124-cache-scorecard.md T6, R2) instead of a local
+ * `seenCompaction`/`previousModel` heuristic, so CacheStrip and the
+ * cache scorecard can never disagree about the same call. Reuses
+ * `partitionCacheStreams` so the classifier walks the same
+ * (sessionId, main | agentId) ordered streams the scorecard engine
+ * does, then `classifyCacheWrite(stream, index, { threshold: 0 })` —
+ * threshold zero so a sub-10k write still gets a real cause instead of
+ * the honest-but-uninformative default. `classifyCacheWrite` returns
+ * `null` for a non-write call (`cacheCreateTokens <= 0`); those points
+ * keep the pre-existing "unexplained" fallback, matching the wire
+ * contract's "always one of the four causes."
+ */
+export function buildCacheStrip(orderedCalls: ApiCall[]): SessionDetailCachePoint[] {
   const points: SessionDetailCachePoint[] = [];
-  let previousModel: string | undefined;
+  const streams = partitionCacheStreams(orderedCalls);
+  const positionByCall = new Map<ApiCall, { stream: ApiCall[]; index: number }>();
+  for (const stream of streams.values()) {
+    stream.forEach((streamCall, index) => {
+      positionByCall.set(streamCall, { stream, index });
+    });
+  }
 
   for (let i = 0; i < orderedCalls.length; i++) {
     const call = orderedCalls[i];
     if (!call) continue;
 
-    const cause: SessionDetailCacheCause = classifyCacheCause(
-      { previousModel, seenCompaction: compactionsAfterCall[i] === true },
-      call,
-    );
+    const position = positionByCall.get(call);
+    const classification = position
+      ? classifyCacheWrite(position.stream, position.index, { threshold: 0 })
+      : null;
+    const cause: SessionDetailCacheCause = classification?.baseCause ?? "unexplained";
 
     const eligible =
       call.usage.inputTokens + call.usage.cacheReadTokens + call.usage.cacheCreateTokens;
@@ -346,7 +347,6 @@ export function buildCacheStrip(
       cause,
       isWriteSpike,
     });
-    previousModel = call.model;
   }
 
   return points;
@@ -786,13 +786,8 @@ export function projectSessionDetail(
     return aMs - bMs;
   });
 
-  const { timeline, compactionsAfterCall } = buildTimeline(
-    snapshot.calls,
-    logicalTurns,
-    orderedCompactions,
-    runtime,
-  );
-  const cache = buildCacheStrip(snapshot.calls, compactionsAfterCall);
+  const { timeline } = buildTimeline(snapshot.calls, logicalTurns, orderedCompactions, runtime);
+  const cache = buildCacheStrip(snapshot.calls);
 
   const turns = buildTurns(logicalTurns, fleetTurnCostsSortedAsc, runtime);
 

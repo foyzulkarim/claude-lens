@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ApiCall } from "../../shared/types.js";
 import type { WsServerMessage } from "../../shared/ws-protocol.js";
 import type { ParseTranscriptResult } from "../ingest/parse-transcript.js";
+import { computeScorecard } from "../scorecard/engine.js";
 import { Store } from "./store.js";
 
 beforeEach(() => {
@@ -506,6 +507,231 @@ describe("Store — getSessionSnapshot (#P4-5 T2)", () => {
     // cost = (100 + 50) * 0.001 = 0.15 — both segments counted exactly once.
     expect(snap?.session.costComputed).toBeCloseTo(0.15);
     expect(snap?.session.maxTurnCostComputed).toBeCloseTo(0.15);
+  });
+});
+
+describe("Store — scorecard regression guards (#124 T3)", () => {
+  it("preserves existing session snapshot and aggregate read shapes", () => {
+    const { store } = makeStore();
+    store.applyRecords("s1", batch([call({ sessionId: "s1", messageId: "m1" })]));
+    vi.advanceTimersByTime(300);
+
+    expect(Object.keys(store.getSessionSnapshot("s1") ?? {}).sort()).toEqual([
+      "calls",
+      "compactions",
+      "prompts",
+      "session",
+      "toolResults",
+      "turns",
+    ]);
+    expect(store.listSessions()).toEqual([store.getSession("s1")]);
+    expect(store.listTurns()).toEqual(store.getTurns("s1"));
+    expect(store.getSession("s1")).not.toHaveProperty("scorecardCore");
+  });
+
+  it("caches a scorecard core during recompute and returns an isolated snapshot", () => {
+    const { store } = makeStore();
+    const scoredCall = call({
+      sessionId: "s1",
+      messageId: "m1",
+      usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreateTokens: 100 },
+    });
+    store.applyRecords("s1", batch([scoredCall]));
+    vi.advanceTimersByTime(300);
+
+    const expected = computeScorecard(store.getCalls("s1"), store.getTurns("s1"));
+    const first = store.getScorecardCore("s1");
+
+    expect(first).toEqual(expected);
+    expect(first).not.toBe(store.getScorecardCore("s1"));
+    first?.writes.splice(0);
+    expect(store.getScorecardCore("s1")?.writes).toHaveLength(1);
+  });
+
+  it("keeps gradeability, letters, and dollars out of Store core snapshots", () => {
+    const { store } = makeStore();
+    store.applyRecords("s1", batch([call({ sessionId: "s1", messageId: "m1" })]));
+
+    const core = store.getScorecardCore("s1");
+
+    expect(core).toBeDefined();
+    expect(core).not.toHaveProperty("grade");
+    expect(core).not.toHaveProperty("state");
+    expect(core).not.toHaveProperty("costEstimate");
+    expect(JSON.stringify(core)).not.toMatch(/cost|dollar|evaluatedAt/i);
+  });
+
+  it("recomputes only a dirty session when its core is read", () => {
+    const { store } = makeStore();
+    store.applyRecords("s1", batch([call({ sessionId: "s1", messageId: "s1-1" })]));
+    store.applyRecords("s2", batch([call({ sessionId: "s2", messageId: "s2-1" })]));
+    vi.advanceTimersByTime(300);
+    const recompute = vi.spyOn(store, "recompute");
+
+    store.applyRecords("s1", batch([call({ sessionId: "s1", messageId: "s1-2" })]));
+    expect(store.getScorecardCore("s1")?.mainThreadCalls).toBe(2);
+    expect(store.getScorecardCore("s2")?.mainThreadCalls).toBe(1);
+
+    expect(recompute.mock.calls).toEqual([["s1"]]);
+  });
+
+  it("lists every core with project, models, branch, and host metadata", () => {
+    const { store } = makeStore(300, {
+      hostLabels: new Map([["/roots/work", "workstation"]]),
+    });
+    store.applyRecords(
+      "s1",
+      batch([
+        call({
+          sessionId: "s1",
+          messageId: "s1-1",
+          cwd: "/project/one",
+          gitBranch: "feature/cache",
+          model: "claude-opus-5",
+        }),
+      ]),
+      "/roots/work",
+    );
+    store.applyRecords(
+      "s2",
+      batch([
+        call({
+          sessionId: "s2",
+          messageId: "s2-1",
+          cwd: "/project/two",
+          gitBranch: "main",
+          model: "claude-sonnet-5",
+        }),
+      ]),
+      "/roots/other",
+    );
+
+    expect(store.listScorecardCores()).toEqual([
+      expect.objectContaining({
+        sessionId: "s1",
+        sessionMeta: {
+          sessionId: "s1",
+          project: "/project/one",
+          models: ["claude-opus-5"],
+          branch: "feature/cache",
+          host: "workstation",
+        },
+      }),
+      expect.objectContaining({
+        sessionId: "s2",
+        sessionMeta: {
+          sessionId: "s2",
+          project: "/project/two",
+          models: ["claude-sonnet-5"],
+          branch: "main",
+          host: "/roots/other",
+        },
+      }),
+    ]);
+  });
+
+  it("listScorecardScores returns only sessionId/mainThreadCalls/hygieneScore, without cloning writes or sessionMeta (#124 review finding #15)", () => {
+    const { store } = makeStore();
+    store.applyRecords(
+      "s1",
+      batch([
+        call({
+          sessionId: "s1",
+          messageId: "s1-1",
+          usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreateTokens: 100 },
+        }),
+      ]),
+    );
+    vi.advanceTimersByTime(300);
+
+    expect(store.listScorecardScores()).toEqual([
+      {
+        sessionId: "s1",
+        mainThreadCalls: 1,
+        hygieneScore: store.getScorecardCore("s1")?.hygieneScore,
+      },
+    ]);
+    for (const row of store.listScorecardScores()) {
+      expect(Object.keys(row).sort()).toEqual(["hygieneScore", "mainThreadCalls", "sessionId"]);
+    }
+  });
+
+  it("listScorecardScores recomputes only a dirty session, same laziness as listScorecardCores", () => {
+    const { store } = makeStore();
+    store.applyRecords("s1", batch([call({ sessionId: "s1", messageId: "s1-1" })]));
+    store.applyRecords("s2", batch([call({ sessionId: "s2", messageId: "s2-1" })]));
+    vi.advanceTimersByTime(300);
+    const recompute = vi.spyOn(store, "recompute");
+
+    store.applyRecords("s1", batch([call({ sessionId: "s1", messageId: "s1-2" })]));
+    const scores = store.listScorecardScores();
+
+    expect(scores.find((s) => s.sessionId === "s1")?.mainThreadCalls).toBe(2);
+    expect(scores.find((s) => s.sessionId === "s2")?.mainThreadCalls).toBe(1);
+    expect(recompute.mock.calls).toEqual([["s1"]]);
+  });
+
+  it("isolates a corrupt session's recompute failure so listScorecardCores/listScorecardScores still return every other session (#124 review finding #23)", () => {
+    const { store } = makeStore();
+    store.applyRecords("s-ok", batch([call({ sessionId: "s-ok", messageId: "ok-1" })]));
+    store.applyRecords("s-bad", batch([call({ sessionId: "s-bad", messageId: "bad-1" })]));
+    vi.advanceTimersByTime(300);
+
+    // Force both sessions to re-recompute on next read, then make
+    // recompute() throw for s-bad only — mirrors the buildSearchSnapshot
+    // isolation test's technique above.
+    const storeAny = store as unknown as {
+      sessions: Map<string, { scorecardCore: unknown; session: unknown }>;
+      recompute(sessionId: string): void;
+    };
+    for (const id of ["s-ok", "s-bad"]) {
+      const state = storeAny.sessions.get(id);
+      if (state) state.scorecardCore = null;
+    }
+    const origRecompute = storeAny.recompute.bind(store);
+    storeAny.recompute = (sessionId: string) => {
+      if (sessionId === "s-bad") throw new Error("simulated computeScorecard invariant");
+      origRecompute(sessionId);
+    };
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      const cores = store.listScorecardCores();
+      expect(cores.map((c) => c.sessionId)).toEqual(["s-ok"]);
+      expect(warnSpy).toHaveBeenCalledWith(
+        "[scorecard] skipping session s-bad due to error:",
+        "simulated computeScorecard invariant",
+      );
+
+      for (const id of ["s-ok", "s-bad"]) {
+        const state = storeAny.sessions.get(id);
+        if (state) state.scorecardCore = null;
+      }
+      const scores = store.listScorecardScores();
+      expect(scores.map((s) => s.sessionId)).toEqual(["s-ok"]);
+    } finally {
+      storeAny.recompute = origRecompute;
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("returns current pricing and pricer after a live pricing update", () => {
+    const initialPricing = {
+      "claude-sonnet-5": { input: 3, output: 15, cacheRead: 0.3, cacheCreate: 3.75 },
+    };
+    const nextPricing = {
+      "claude-sonnet-5": { input: 4, output: 20, cacheRead: 0.4, cacheCreate: 5 },
+    };
+    const initialPricer = () => 1;
+    const nextPricer = () => 2;
+    const { store } = makeStore(300, { pricing: initialPricing, pricer: initialPricer });
+
+    store.updatePricing({ pricing: nextPricing, pricer: nextPricer });
+    const pricingSnapshot = store.getPricing();
+
+    expect(pricingSnapshot).toEqual(nextPricing);
+    expect(pricingSnapshot).not.toBe(nextPricing);
+    expect(store.getPricer()).toBe(nextPricer);
   });
 });
 

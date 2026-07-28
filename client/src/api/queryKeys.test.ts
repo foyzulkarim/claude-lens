@@ -126,3 +126,34 @@ describe("qk.session", () => {
     expect(qk.session("a")).not.toEqual(qk.session("b"));
   });
 });
+
+describe("qk.scorecard / qk.biggestLever (ARCH-124, T7)", () => {
+  it("both live under the shared 'scorecard' segment", () => {
+    const scorecardKey = qk.scorecard("s1");
+    const leverKey = qk.biggestLever({ from: "2026-07-01", to: "2026-07-02" });
+    expect(scorecardKey[0]).toBe("scorecard");
+    expect(leverKey[0]).toBe("scorecard");
+  });
+
+  it("match qk.prefixes.scorecard for QueryClient invalidation", () => {
+    const scorecardKey = qk.scorecard("s1");
+    const leverKey = qk.biggestLever({ from: "2026-07-01", to: "2026-07-02" });
+    expect(scorecardKey[0]).toBe(qk.prefixes.scorecard[0]);
+    expect(leverKey[0]).toBe(qk.prefixes.scorecard[0]);
+  });
+
+  it("qk.scorecard is exact-match keyed — distinct session ids produce distinct keys", () => {
+    expect(qk.scorecard("a")).not.toEqual(qk.scorecard("b"));
+  });
+
+  it("qk.biggestLever is distinct for distinct params (range change re-selects)", () => {
+    expect(qk.biggestLever({ from: "2026-07-01", to: "2026-07-02" })).not.toEqual(
+      qk.biggestLever({ from: "2026-07-02", to: "2026-07-03" }),
+    );
+  });
+
+  it("qk.scorecard and qk.biggestLever never collide (distinct second segment)", () => {
+    expect(qk.scorecard("s1")[1]).toBe("session");
+    expect(qk.biggestLever({ from: "2026-07-01", to: "2026-07-02" })[1]).toBe("biggest-lever");
+  });
+});

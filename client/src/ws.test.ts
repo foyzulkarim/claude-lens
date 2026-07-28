@@ -53,7 +53,7 @@ describe("invalidateForMessage", () => {
     expect(spy).toHaveBeenCalledWith({ queryKey: ["sessions"] });
   });
 
-  it("invalidates metrics, the session prefix, the turn-inspector prefix, the sessions prefix, the gates prefix, AND the health prefix on session-updated", () => {
+  it("invalidates metrics, the session prefix, the turn-inspector prefix, the sessions prefix, the gates prefix, the health prefix, AND the scorecard prefix on session-updated", () => {
     const queryClient = new QueryClient();
     const spy = vi.spyOn(queryClient, "invalidateQueries");
     invalidateForMessage(queryClient, { type: "session-updated", sessionId: "s1" });
@@ -68,7 +68,11 @@ describe("invalidateForMessage", () => {
     // dedup/malformed counters fleet-wide; without this the page
     // stays stale during a live session write.
     expect(spy).toHaveBeenNthCalledWith(6, { queryKey: ["health"] });
-    expect(spy).toHaveBeenCalledTimes(6);
+    // ARCH-124, T7/R9 — matches both the session's own Scorecard section
+    // (`qk.scorecard(id)`) and the fleet-wide Dashboard Biggest Lever
+    // card (`qk.biggestLever(...)`), which share the `["scorecard"]` prefix.
+    expect(spy).toHaveBeenNthCalledWith(7, { queryKey: ["scorecard"] });
+    expect(spy).toHaveBeenCalledTimes(7);
   });
 
   it("invalidates the gates prefix on session-updated so Report Card + failure feed refetch", () => {
@@ -81,6 +85,21 @@ describe("invalidateForMessage", () => {
     const spy = vi.spyOn(queryClient, "invalidateQueries");
     invalidateForMessage(queryClient, { type: "session-updated", sessionId: "s1" });
     expect(spy).toHaveBeenCalledWith({ queryKey: ["gates"] });
+  });
+
+  it("invalidates the scorecard prefix on session-updated so the Scorecard section + Biggest Lever card refetch (ARCH-124, T7/R9)", () => {
+    const queryClient = new QueryClient();
+    const spy = vi.spyOn(queryClient, "invalidateQueries");
+    invalidateForMessage(queryClient, { type: "session-updated", sessionId: "s1" });
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["scorecard"] });
+  });
+
+  it("does not invalidate the scorecard prefix on session-added or session-prompts-changed", () => {
+    const queryClient = new QueryClient();
+    const spy = vi.spyOn(queryClient, "invalidateQueries");
+    invalidateForMessage(queryClient, { type: "session-added", sessionId: "s1" });
+    invalidateForMessage(queryClient, { type: "session-prompts-changed", sessionId: "s1" });
+    expect(spy).not.toHaveBeenCalledWith({ queryKey: ["scorecard"] });
   });
 
   it("invalidates only the matching detail key when two session IDs are mounted", () => {
@@ -242,8 +261,13 @@ describe("connectWs", () => {
       ([arg]) => JSON.stringify(arg) === JSON.stringify({ queryKey: ["health"] }),
     );
     expect(healthCalls).toHaveLength(1);
-    // 1 metrics + 1 sessions + 1 gates + 1 health + 3 session detail + 3 turn-inspector = 10.
-    expect(spy).toHaveBeenCalledTimes(10);
+    // ARCH-124, T7/R9: the scorecard prefix also collapses across sessions.
+    const scorecardCalls = spy.mock.calls.filter(
+      ([arg]) => JSON.stringify(arg) === JSON.stringify({ queryKey: ["scorecard"] }),
+    );
+    expect(scorecardCalls).toHaveLength(1);
+    // 1 metrics + 1 sessions + 1 gates + 1 health + 1 scorecard + 3 session detail + 3 turn-inspector = 11.
+    expect(spy).toHaveBeenCalledTimes(11);
   });
 
   it("includes a message that arrives mid-window (after the timer is scheduled but before it fires)", () => {
@@ -297,7 +321,11 @@ describe("connectWs", () => {
     // session-updated, so it collapses to a single entry here just
     // like the other shared prefixes.
     expect(spy).toHaveBeenCalledWith({ queryKey: ["health"] });
-    expect(spy).toHaveBeenCalledTimes(6);
+    // ARCH-124, T7/R9: the scorecard action only comes from
+    // session-updated (session-added doesn't emit it), but still lands
+    // as a single entry in the collapsed set.
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["scorecard"] });
+    expect(spy).toHaveBeenCalledTimes(7);
   });
 
   it("does not apply pending batched invalidations after dispose", () => {

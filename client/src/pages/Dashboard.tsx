@@ -3,6 +3,7 @@ import { getConfig } from "../api/config.js";
 import { qk } from "../api/queryKeys.js";
 import { ChartCard } from "../charts/ChartCard.js";
 import { AnomalyFeed } from "./dashboard/AnomalyFeed.js";
+import { BiggestLeverCard } from "./dashboard/BiggestLeverCard.js";
 import { BurnRateCard } from "./dashboard/BurnRateCard.js";
 import { CaptureBanner } from "./dashboard/CaptureBanner.js";
 import { FailedWorkStat } from "./dashboard/FailedWorkStat.js";
@@ -56,6 +57,9 @@ export function Dashboard() {
         </div>
         <AnomalyFeed />
       </div>
+
+      {/* Biggest lever this week — one investigation per visit (ARCH-124) */}
+      <BiggestLeverCard />
 
       {/* 3. Burn-rate card + 5. Leaderboards */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">

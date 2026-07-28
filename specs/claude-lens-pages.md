@@ -59,6 +59,7 @@ Any dimension × any measure is a valid chart — the pages below are the curate
 | Most recent session card (trace thumb, turns, ctx %) | T+P; ctx % true value C | 🟡 | → 3 |
 | Top sessions / top projects / top models mini-leaderboards (tabbed) | T+P | 🟢 | → 3 / 5 / 6 |
 | Anomaly & gate-failure feed | T+P+fs; capture-gap items B/C | 🟡 | → 4, → 3 §Report Card, → 9 |
+| Biggest lever this week: largest cache-waste event in the active range (cause, tokens, $, session) — positive first-write-share summary when none | T | 🟢 | One event only, never a list; respects global range + filters; → 3 §Cache Scorecard; specs in `gates.md` §Cache Scorecard scoring |
 | Records strip: most expensive day/session/turn ever, longest session, biggest cache save | T+P | 🟢 | Small, fun, sticky |
 | Subscription window tracker: 5h + 7d usage bars, "resets in Xh Ym", vs historical peak; user-calibrated limit | T (trailing-window token sums) + ⚑N calibration value | 🟢 | Estimated until first observed limit event; possibly the #1 install reason for sub users |
 | Leverage ratio headline: tokens served from cache ÷ fresh-billed (e.g. "20×") | T | 🟢 | Same data as hit rate, better headline |
@@ -92,6 +93,7 @@ Any dimension × any measure is a valid chart — the pages below are the curate
 | Tool mix panel (+ tool timeline: which tools when) | T+P | 🟢 | |
 | Prompt list (per-turn user text) | T | 🟢 | |
 | Report Card (gates, session score, evidence links) | T+fs | 🟢 | Specs in `gates.md` |
+| Cache Scorecard (hygiene grade or ungraded reason, R1 metrics, one row per waste event with cause/tokens/$/deep link) | T | 🟢 | Distinct from Report Card grade (own heading + badge label prefix); specs in `gates.md` §Cache Scorecard scoring |
 | Workflow funnel: read → plan → edit → verify → commit coverage across turns | T | 🟢 | Same signals as gates V1/P3 rendered as a funnel |
 | Token funnel: context offered → served from cache → fresh-billed → output | T+P | 🟢 | Shows output is ~1% of wire |
 | Context composition: tool_result bytes by tool (Read vs Bash vs Grep…) | T | 🟢 | "My context is 80% file reads" |

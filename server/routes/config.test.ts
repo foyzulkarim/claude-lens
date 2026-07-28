@@ -157,6 +157,29 @@ describe("GET/PUT /api/config", () => {
     expect(put.statusCode).toBe(400);
   });
 
+  it("PUT persists and echoes valid scorecard thresholds alongside budget", async () => {
+    const payload = {
+      budget: 300,
+      scorecardThresholds: { floorCalls: 15, A: 96, B: 86, C: 71, D: 51 },
+    };
+    const put = await app.inject({ method: "PUT", url: "/api/config", payload });
+
+    expect(put.statusCode).toBe(200);
+    expect(put.json()).toEqual(payload);
+    expect((await app.inject({ method: "GET", url: "/api/config" })).json()).toEqual(payload);
+  });
+
+  it("PUT rejects malformed scorecard thresholds with 400", async () => {
+    const put = await app.inject({
+      method: "PUT",
+      url: "/api/config",
+      payload: { budget: 300, scorecardThresholds: { A: 80, B: 90 } },
+    });
+
+    expect(put.statusCode).toBe(400);
+    expect(put.json().error).toContain("scorecardThresholds");
+  });
+
   it("PUT accepts pricing/scanRoots/anomalyFactor alongside budget and persists them (#P4-15)", async () => {
     const put = await app.inject({
       method: "PUT",

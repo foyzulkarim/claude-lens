@@ -38,6 +38,8 @@ export const NoBudgetOrThresholds: Story = {
 };
 
 export const FullConfigRenders: Story = {
+  // ARCH-124-cache-scorecard.md T10: both threshold groups render together,
+  // clearly grouped under their own subheadings.
   decorators: [
     withFetch(() =>
       jsonResponse({
@@ -50,19 +52,28 @@ export const FullConfigRenders: Story = {
           e2MaxChars: 5_000,
           e2MaxLines: 80,
         },
+        scorecardThresholds: {
+          floorCalls: 12,
+          calibrationMinSessions: 25,
+          A: 96,
+          B: 88,
+          C: 72,
+          D: 55,
+        },
       } satisfies AppConfig),
     ),
   ],
 };
 
 export const PartialThresholdsFillFromDefaults: Story = {
-  // Only one threshold explicitly set — the rest should display the
-  // built-in defaults, not be blank.
+  // Only one threshold of each group explicitly set — the rest should
+  // display the built-in defaults, not be blank.
   decorators: [
     withFetch(() =>
       jsonResponse({
         budget: 100,
         gateThresholds: { v2Repeat: 7 },
+        scorecardThresholds: { floorCalls: 15 },
       } satisfies AppConfig),
     ),
   ],
