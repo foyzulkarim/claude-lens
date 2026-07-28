@@ -222,8 +222,39 @@ describe("ScorecardView", () => {
         })}
       />,
     );
-    const link = screen.getByRole("link", { name: /Open this session's Cache Scorecard section/i });
+    const link = screen.getByRole("link", {
+      name: /Open the Cache Scorecard section for the prefix bust event at 2026-07-20T12:04:00\.000Z/i,
+    });
     expect(link).toHaveAttribute("href", "/sessions/s1#cache-scorecard");
+  });
+
+  it("gives two null-turn events distinct accessible names instead of an identical repeated link (#124 review finding #20)", () => {
+    render(
+      <ScorecardView
+        data={gradedView({
+          events: [
+            buildEvent({
+              eventId: "m50",
+              turnNumber: null,
+              timestamp: "2026-07-20T12:04:00.000Z",
+              kind: "unattributed",
+              deepLink: "/sessions/s1#cache-scorecard",
+            }),
+            buildEvent({
+              eventId: "m51",
+              turnNumber: null,
+              timestamp: "2026-07-20T13:10:00.000Z",
+              kind: "idle-expiry",
+              deepLink: "/sessions/s1#cache-scorecard",
+            }),
+          ],
+        })}
+      />,
+    );
+    const links = screen.getAllByRole("link", { name: /Cache Scorecard section/i });
+    expect(links).toHaveLength(2);
+    const names = links.map((link) => link.getAttribute("aria-label"));
+    expect(new Set(names).size).toBe(2);
   });
 
   it("exposes the cache-scorecard anchor id for the R6/#3 fallback deep link", () => {

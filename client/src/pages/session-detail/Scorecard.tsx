@@ -222,7 +222,12 @@ function WasteEventRow({ event }: { event: WasteEventView }): React.JSX.Element 
         aria-label={
           isTurnLink
             ? `Open turn ${event.turnNumber} in Turn Inspector`
-            : "Open this session's Cache Scorecard section"
+            : // A session can have several null-turn waste events in the same
+              // list (#124 review finding #20) — key the label on kind +
+              // timestamp so a links-list screen reader hears distinct names
+              // instead of the same "Open this session's Cache Scorecard
+              // section" repeated once per event.
+              `Open the Cache Scorecard section for the ${KIND_LABEL[event.kind]} event at ${event.timestamp}`
         }
         className="text-xs font-medium text-[#96631E] dark:text-[#E8A33D]"
       >

@@ -99,6 +99,21 @@ export const UnexplainedEvent: Story = {
           turnNumber: null,
           deepLink: "/sessions/s1#cache-scorecard",
         }),
+        // A second null-turn event in the same session (#124 review finding
+        // #20) — proves the two "View scorecard →" links get distinct
+        // accessible names instead of an identical repeated announcement.
+        buildEvent({
+          eventId: "m51",
+          callId: "m51",
+          kind: "idle-expiry",
+          attribution: "ttl-lapse",
+          timestamp: "2026-07-20T13:10:00.000Z",
+          tokensRewritten: 30_000,
+          costEstimate: 0.05,
+          costBasis: "computed",
+          turnNumber: null,
+          deepLink: "/sessions/s1#cache-scorecard",
+        }),
       ],
       thresholdsUsed: THRESHOLDS,
       evaluatedAt: "2026-07-20T12:30:00.000Z",
