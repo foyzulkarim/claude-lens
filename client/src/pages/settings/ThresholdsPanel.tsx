@@ -250,6 +250,11 @@ export function ThresholdsPanel() {
 
       {!configQuery.isPending && !configQuery.isError && (
         <table className="mt-3 w-full text-xs">
+          {/* #124 review finding #22: the h3 rows below are visually-adjacent
+              section headings with no structural tie to the table itself —
+              a screen reader in table-navigation mode hears an ordinary
+              caption for the whole table instead of nothing. */}
+          <caption className="sr-only">Budget, gate, and cache scorecard thresholds</caption>
           <tbody>
             <tr className="border-t border-slate-100 dark:border-[#232B36]">
               <td className="py-1.5">

@@ -73,6 +73,14 @@ describe("ThresholdsPanel (#124 review finding #9)", () => {
     expect(bandInput("D")).toHaveValue(55);
   });
 
+  it("names the thresholds table for screen-reader table navigation (#124 review finding #22)", async () => {
+    renderPanel();
+    await screen.findByTestId("scorecard-thresholds-heading");
+    expect(
+      screen.getByRole("table", { name: "Budget, gate, and cache scorecard thresholds" }),
+    ).toBeInTheDocument();
+  });
+
   it("blocks Save and shows an alert when the scorecard bands are out of order, without calling putConfig", async () => {
     renderPanel();
     await screen.findByTestId("scorecard-thresholds-heading");
