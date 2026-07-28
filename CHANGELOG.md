@@ -2,6 +2,13 @@
 
 V2 changelog. V1 history lives in [`legacy/CHANGELOG.md`](legacy/CHANGELOG.md).
 
+## v1.2.0 — 2026-07-28
+
+### Features
+- **Cache scorecard** (#124) — a per-session hygiene grade summarizing
+  cache-friendliness, plus a "Biggest Lever" card on the dashboard
+  surfacing the single highest-impact change for the next session.
+
 ## v1.1.1 — 2026-07-26
 
 ### Fixes
