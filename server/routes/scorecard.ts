@@ -91,7 +91,7 @@ export function registerScorecardRoutes(
         const pricing = store.getPricing() ?? DEFAULT_PRICING_TABLE;
 
         const gradeableScores = store
-          .listScorecardCores()
+          .listScorecardScores()
           .filter((c) => c.mainThreadCalls >= thresholds.floorCalls && c.hygieneScore !== null)
           .map((c) => c.hygieneScore as number);
         const bands = resolveBands(gradeableScores, thresholds);

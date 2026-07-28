@@ -5,15 +5,14 @@ import type {
   ReconciliationRollup,
 } from "../../shared/health-contract.js";
 import { LOCAL_STORE_STRING_MAX } from "../../shared/local-store-contract.js";
-import type { SearchIndexResponse } from "../../shared/search-index-contract.js";
 import type {
   CacheScorecardCore,
   CacheScorecardCoreWithMeta,
 } from "../../shared/scorecard-contract.js";
+import type { SearchIndexResponse } from "../../shared/search-index-contract.js";
 import type { ScanRootConfig } from "../../shared/settings-contract.js";
 import type { ApiCall, CompactionRecord, Session, Turn } from "../../shared/types.js";
 import type { WsServerMessage } from "../../shared/ws-protocol.js";
-import type { PipelineStats } from "../pipeline-stats.js";
 import type { CostLogRow, CostSample, TurnBoundary } from "../ingest/parse-premium.js";
 import type {
   ParseTranscriptResult,
@@ -21,6 +20,7 @@ import type {
   ToolResultBytesRecord,
 } from "../ingest/parse-transcript.js";
 import type { PricingTable } from "../metrics/measures.js";
+import type { PipelineStats } from "../pipeline-stats.js";
 import { computeScorecard } from "../scorecard/engine.js";
 import { buildSearchSnapshot } from "./build-search-snapshot.js";
 import {
@@ -837,6 +837,39 @@ export class Store {
           branch: state.session.gitBranch,
           host: state.session.host,
         },
+      });
+    }
+    return result;
+  }
+
+  /**
+   * Lighter fleet accessor for band calibration (#124 review finding #15):
+   * reads `mainThreadCalls`/`hygieneScore` directly off each cached core
+   * without `structuredClone`-ing the full `writes` ledger or building a
+   * `sessionMeta` object. Calibration only ever needs these two scalars per
+   * session (`routes/scorecard.ts`'s `gradeableScores` filter), so the O(N×M)
+   * clone `listScorecardCores()` does — proportional to total cache-writes
+   * across the whole fleet — is unnecessary work on every single-session
+   * scorecard request. `listScorecardCores()` remains the right call for the
+   * biggest-lever route, which genuinely needs entry-level ledger data.
+   */
+  listScorecardScores(): Array<{
+    sessionId: string;
+    mainThreadCalls: number;
+    hygieneScore: number | null;
+  }> {
+    const result: Array<{
+      sessionId: string;
+      mainThreadCalls: number;
+      hygieneScore: number | null;
+    }> = [];
+    for (const [sessionId, state] of this.sessions) {
+      if (!state.scorecardCore) this.recompute(sessionId);
+      if (!state.scorecardCore) continue;
+      result.push({
+        sessionId,
+        mainThreadCalls: state.scorecardCore.mainThreadCalls,
+        hygieneScore: state.scorecardCore.hygieneScore,
       });
     }
     return result;

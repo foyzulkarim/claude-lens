@@ -630,6 +630,47 @@ describe("Store — scorecard regression guards (#124 T3)", () => {
     ]);
   });
 
+  it("listScorecardScores returns only sessionId/mainThreadCalls/hygieneScore, without cloning writes or sessionMeta (#124 review finding #15)", () => {
+    const { store } = makeStore();
+    store.applyRecords(
+      "s1",
+      batch([
+        call({
+          sessionId: "s1",
+          messageId: "s1-1",
+          usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreateTokens: 100 },
+        }),
+      ]),
+    );
+    vi.advanceTimersByTime(300);
+
+    expect(store.listScorecardScores()).toEqual([
+      {
+        sessionId: "s1",
+        mainThreadCalls: 1,
+        hygieneScore: store.getScorecardCore("s1")?.hygieneScore,
+      },
+    ]);
+    for (const row of store.listScorecardScores()) {
+      expect(Object.keys(row).sort()).toEqual(["hygieneScore", "mainThreadCalls", "sessionId"]);
+    }
+  });
+
+  it("listScorecardScores recomputes only a dirty session, same laziness as listScorecardCores", () => {
+    const { store } = makeStore();
+    store.applyRecords("s1", batch([call({ sessionId: "s1", messageId: "s1-1" })]));
+    store.applyRecords("s2", batch([call({ sessionId: "s2", messageId: "s2-1" })]));
+    vi.advanceTimersByTime(300);
+    const recompute = vi.spyOn(store, "recompute");
+
+    store.applyRecords("s1", batch([call({ sessionId: "s1", messageId: "s1-2" })]));
+    const scores = store.listScorecardScores();
+
+    expect(scores.find((s) => s.sessionId === "s1")?.mainThreadCalls).toBe(2);
+    expect(scores.find((s) => s.sessionId === "s2")?.mainThreadCalls).toBe(1);
+    expect(recompute.mock.calls).toEqual([["s1"]]);
+  });
+
   it("returns current pricing and pricer after a live pricing update", () => {
     const initialPricing = {
       "claude-sonnet-5": { input: 3, output: 15, cacheRead: 0.3, cacheCreate: 3.75 },
