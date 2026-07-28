@@ -5,9 +5,9 @@ import type {
   CacheScorecardCoreWithMeta,
   ScorecardSessionMeta,
   ScorecardThresholds,
+  WasteEventKind,
 } from "../../shared/scorecard-contract.js";
 import type { PricingTable } from "../metrics/measures.js";
-import type { WasteEventKind } from "../../shared/scorecard-contract.js";
 import { applyGrade, priceWasteEntry, resolveBands, selectBiggestLever } from "./fleet.js";
 
 const THRESHOLDS: ScorecardThresholds = {
@@ -152,6 +152,23 @@ describe("applyGrade", () => {
     const result = applyGrade(core({ mainThreadCalls: 11 }, 0.6), bands, THRESHOLDS);
     expect(result.state).toBe("graded");
     if (result.state === "graded") expect(result.grade).toBe("C");
+  });
+
+  it("never lowers the fixed grade even when calibrated bands would bucket it worse (#124 review finding #10)", () => {
+    // All 20 gradeable scores identical at 0.99 -> percentile bands collapse
+    // to 99 for A/B/C/D. A 0.90 session is fixed-graded "B" (>= fixed B:85),
+    // but bucketed against all-99 calibrated bands it falls through to "F"
+    // (90 < 99 everywhere). The cap must hold the result at the fixed grade,
+    // never let a high-performing calibration fleet drag another session's
+    // grade down.
+    const bands = resolveBands(
+      Array.from({ length: 20 }, () => 0.99),
+      THRESHOLDS,
+    );
+    expect(bands).toEqual({ A: 99, B: 99, C: 99, D: 99, source: "calibrated" });
+    const result = applyGrade(core({ mainThreadCalls: 11 }, 0.9), bands, THRESHOLDS);
+    expect(result.state).toBe("graded");
+    if (result.state === "graded") expect(result.grade).toBe("B");
   });
 });
 
@@ -339,6 +356,114 @@ describe("selectBiggestLever", () => {
       { project: ["/synthetic/project"] },
       PRICING,
     );
+    expect(result.state).toBe("event");
+    if (result.state === "event") expect(result.tokensRewritten).toBe(42);
+  });
+
+  it("excludes an event whose model does not match the model filter (#124 review finding #11)", () => {
+    const wrongModel = withMeta(
+      core({
+        sessionId: "s1",
+        writes: [
+          entry({
+            timestamp: "2026-07-01T01:00:00.000Z",
+            model: "claude-opus-5",
+            rewrittenTokens: 9999,
+            kind: "prefix-bust",
+          }),
+        ],
+      }),
+      { sessionId: "s1" },
+    );
+    const inScope = withMeta(
+      core({
+        sessionId: "s2",
+        writes: [
+          entry({
+            timestamp: "2026-07-01T01:00:00.000Z",
+            model: "claude-sonnet-5",
+            rewrittenTokens: 42,
+            kind: "prefix-bust",
+          }),
+        ],
+      }),
+      { sessionId: "s2" },
+    );
+
+    const result = selectBiggestLever(
+      [wrongModel, inScope],
+      range,
+      { model: ["claude-sonnet-5"] },
+      PRICING,
+    );
+    expect(result.state).toBe("event");
+    if (result.state === "event") expect(result.tokensRewritten).toBe(42);
+  });
+
+  it("excludes an event whose branch does not match the branch filter (#124 review finding #11)", () => {
+    const wrongBranch = withMeta(
+      core({
+        sessionId: "s1",
+        writes: [
+          entry({
+            timestamp: "2026-07-01T01:00:00.000Z",
+            branch: "feature/other",
+            rewrittenTokens: 9999,
+            kind: "prefix-bust",
+          }),
+        ],
+      }),
+      { sessionId: "s1" },
+    );
+    const inScope = withMeta(
+      core({
+        sessionId: "s2",
+        writes: [
+          entry({
+            timestamp: "2026-07-01T01:00:00.000Z",
+            branch: "main",
+            rewrittenTokens: 42,
+            kind: "prefix-bust",
+          }),
+        ],
+      }),
+      { sessionId: "s2" },
+    );
+
+    const result = selectBiggestLever([wrongBranch, inScope], range, { branch: ["main"] }, PRICING);
+    expect(result.state).toBe("event");
+    if (result.state === "event") expect(result.tokensRewritten).toBe(42);
+  });
+
+  it("excludes an event whose session host does not match the host filter (#124 review finding #11)", () => {
+    const wrongHost = withMeta(
+      core({
+        sessionId: "s1",
+        writes: [
+          entry({
+            timestamp: "2026-07-01T01:00:00.000Z",
+            rewrittenTokens: 9999,
+            kind: "prefix-bust",
+          }),
+        ],
+      }),
+      { sessionId: "s1", host: "other-host" },
+    );
+    const inScope = withMeta(
+      core({
+        sessionId: "s2",
+        writes: [
+          entry({
+            timestamp: "2026-07-01T01:00:00.000Z",
+            rewrittenTokens: 42,
+            kind: "prefix-bust",
+          }),
+        ],
+      }),
+      { sessionId: "s2", host: "host-1" },
+    );
+
+    const result = selectBiggestLever([wrongHost, inScope], range, { host: ["host-1"] }, PRICING);
     expect(result.state).toBe("event");
     if (result.state === "event") expect(result.tokensRewritten).toBe(42);
   });
