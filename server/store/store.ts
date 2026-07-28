@@ -826,18 +826,31 @@ export class Store {
   listScorecardCores(): CacheScorecardCoreWithMeta[] {
     const result: CacheScorecardCoreWithMeta[] = [];
     for (const [sessionId, state] of this.sessions) {
-      if (!state.scorecardCore || !state.session) this.recompute(sessionId);
-      if (!state.scorecardCore || !state.session) continue;
-      result.push({
-        ...structuredClone(state.scorecardCore),
-        sessionMeta: {
-          sessionId,
-          project: state.session.project,
-          models: state.session.models.slice(),
-          branch: state.session.gitBranch,
-          host: state.session.host,
-        },
-      });
+      // Per-session try/catch (#124 review finding #23) — mirrors the
+      // `buildSearchSnapshot`/health-rollup precedent above: a single
+      // corrupt session's `recompute()` throwing must not blank the
+      // fleet-wide Biggest Lever card for every other session. The next
+      // `session-updated` for this session will re-attempt.
+      try {
+        if (!state.scorecardCore || !state.session) this.recompute(sessionId);
+        if (!state.scorecardCore || !state.session) continue;
+        result.push({
+          ...structuredClone(state.scorecardCore),
+          sessionMeta: {
+            sessionId,
+            project: state.session.project,
+            models: state.session.models.slice(),
+            branch: state.session.gitBranch,
+            host: state.session.host,
+          },
+        });
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[scorecard] skipping session ${sessionId} due to error:`,
+          err instanceof Error ? err.message : String(err),
+        );
+      }
     }
     return result;
   }
@@ -864,13 +877,24 @@ export class Store {
       hygieneScore: number | null;
     }> = [];
     for (const [sessionId, state] of this.sessions) {
-      if (!state.scorecardCore) this.recompute(sessionId);
-      if (!state.scorecardCore) continue;
-      result.push({
-        sessionId,
-        mainThreadCalls: state.scorecardCore.mainThreadCalls,
-        hygieneScore: state.scorecardCore.hygieneScore,
-      });
+      // Same per-session isolation as `listScorecardCores` above (#124
+      // review finding #23) — one corrupt session must not 500 the
+      // single-session scorecard route's calibration for every session.
+      try {
+        if (!state.scorecardCore) this.recompute(sessionId);
+        if (!state.scorecardCore) continue;
+        result.push({
+          sessionId,
+          mainThreadCalls: state.scorecardCore.mainThreadCalls,
+          hygieneScore: state.scorecardCore.hygieneScore,
+        });
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[scorecard] skipping session ${sessionId} due to error:`,
+          err instanceof Error ? err.message : String(err),
+        );
+      }
     }
     return result;
   }
