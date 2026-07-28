@@ -14,6 +14,22 @@ Cypress.on("uncaught:exception", (err) => {
   if (err.message.includes("ResizeObserver loop completed")) return false;
 });
 
+// Mirrors steel-thread.cy.ts's setDateInput: React tracks direct property
+// writes on controlled `type="date"` inputs, so a plain `.type()` interaction
+// isn't reliable here — the native setter + bubbling input event is
+// equivalent to a user editing the visible control.
+function setDateInput(index: number, value: string): void {
+  cy.get('input[type="date"]')
+    .eq(index)
+    .then(($input) => {
+      const input = $input[0] as HTMLInputElement;
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      if (!setter) throw new Error("The browser does not expose a date-input value setter");
+      setter.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+}
+
 /**
  * Dashboard smoke spec (ARCH-dashboard-page.md T15): loads the Dashboard
  * route over the fixture range, asserts every section renders with real
@@ -149,6 +165,64 @@ describe("dashboard smoke", () => {
     // 12. Capture banner — filter-independent (section-level lock), so it
     // renders regardless of which filters are active.
     cy.contains(/capture/i).should("be.visible");
+
+    // 13. Biggest Lever (ARCH-124-cache-scorecard.md T9): renders one of
+    // the three discriminated states with real content — never a bare
+    // loading/error placeholder — over the fixture range.
+    cy.get('[data-testid="biggest-lever-card"]')
+      .should("be.visible")
+      .within(() => {
+        cy.contains("h2", "Biggest lever this week").should("be.visible");
+        cy.get(
+          '[data-testid="biggest-lever-event"], [data-testid="biggest-lever-healthy"], [data-testid="biggest-lever-no-activity"]',
+        ).should("exist");
+      });
+  });
+
+  it("re-selects the Biggest Lever event when the active date range changes (R7)", () => {
+    const juneEvent = {
+      state: "event",
+      eventId: "e2e-june",
+      callId: "e2e-june",
+      promptId: null,
+      turnNumber: 3,
+      timestamp: "2026-06-15T10:16:00.000Z",
+      model: "claude-fable-5",
+      project: "/Users/demo/projects/alpha",
+      branch: "main",
+      kind: "prefix-bust",
+      baseCause: "unexplained",
+      attribution: "prefix-change",
+      tokensRewritten: 25_000,
+      costEstimate: 0.09,
+      costBasis: "computed",
+      deepLink: "/sessions/55555555-5555-4555-8555-555555555555#cache-scorecard",
+      sessionId: "55555555-5555-4555-8555-555555555555",
+      sessionProject: "/Users/demo/projects/alpha",
+      evaluatedAt: "2026-06-15T10:20:00.000Z",
+    };
+    const julyEvent = { ...juneEvent, eventId: "e2e-july", tokensRewritten: 90_000 };
+
+    cy.intercept("GET", "/api/dashboard/biggest-lever*", (request) => {
+      const url = new URL(request.url);
+      const from = url.searchParams.get("from") ?? "";
+      request.reply(from.startsWith("2026-06") ? juneEvent : julyEvent);
+    }).as("biggestLever");
+
+    cy.visit(`/${FIXTURE_RANGE}`);
+    cy.wait("@biggestLever");
+    cy.get('[data-testid="biggest-lever-event"]').should("contain.text", "90K rewritten");
+
+    cy.contains("button", "Custom").click();
+    setDateInput(0, "2026-06-01");
+    setDateInput(1, "2026-06-30");
+    // Retrying assertion (not a second `cy.wait`) since typing two date
+    // fields independently may trigger more than one intermediate request
+    // before the range settles on the final June-only value.
+    cy.get('[data-testid="biggest-lever-event"]', { timeout: 10000 }).should(
+      "contain.text",
+      "25K rewritten",
+    );
   });
 
   it("drills from the Sessions stat card to a filtered Sessions view", () => {
