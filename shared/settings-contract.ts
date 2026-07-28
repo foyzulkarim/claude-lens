@@ -79,6 +79,17 @@ export function isValidGateThresholds(value: unknown): value is Partial<GateThre
   return true;
 }
 
+/**
+ * Mirrors `server/scorecard/thresholds.ts`'s `DEFAULT_SCORECARD_THRESHOLDS`
+ * band values only (not the whole object — `shared/` must not import from
+ * `server/`, matching the module-direction rule; the client keeps its own
+ * separate display-only copy of the full default set for the same reason).
+ * Needed so this validator can check a partial band patch against the
+ * *effective* config it would produce once merged onto defaults, not just
+ * the fields the caller happened to include (#124 review finding #4).
+ */
+const DEFAULT_SCORECARD_BANDS = { A: 95, B: 85, C: 70, D: 50 } as const;
+
 export function isValidScorecardThresholds(value: unknown): value is Partial<ScorecardThresholds> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
   const knownFields = ["floorCalls", "calibrationMinSessions", "A", "B", "C", "D"] as const;
@@ -105,12 +116,21 @@ export function isValidScorecardThresholds(value: unknown): value is Partial<Sco
       return false;
     }
   }
+  // Order-check the *effective* band set (patch fields merged onto the
+  // defaults), not just whichever fields the caller included — a lone
+  // `{ A: 40 }` passes a present-fields-only check (nothing else present to
+  // compare against) but would resolve to an out-of-order {A:40, B:85(default),
+  // C:70, D:50} once applied, which `getScorecardThresholds` can only react
+  // to by silently reverting all four bands to defaults with no error.
   const bands = ["A", "B", "C", "D"] as const;
+  const effective: Record<(typeof bands)[number], number> = { ...DEFAULT_SCORECARD_BANDS };
+  for (const band of bands) {
+    const fieldValue = record[band];
+    if (typeof fieldValue === "number") effective[band] = fieldValue;
+  }
   for (let leftIndex = 0; leftIndex < bands.length; leftIndex += 1) {
     for (let rightIndex = leftIndex + 1; rightIndex < bands.length; rightIndex += 1) {
-      const left = record[bands[leftIndex] as keyof typeof record];
-      const right = record[bands[rightIndex] as keyof typeof record];
-      if (typeof left === "number" && typeof right === "number" && left <= right) return false;
+      if (effective[bands[leftIndex]] <= effective[bands[rightIndex]]) return false;
     }
   }
   return true;
