@@ -46,18 +46,37 @@ function splitFilterValue(value: string): string[] {
     .filter((v) => v.length > 0);
 }
 
+/**
+ * Normalizes one querystring field into its CSV-split values. The client
+ * always sends a single comma-joined string per key (`client/src/api/
+ * scorecard.ts`'s `buildBiggestLeverQueryString`), but Fastify's default
+ * querystring parser hands back a `string[]` for a *repeated* key
+ * (`?project=a&project=b`) instead of the declared `string` type — an
+ * unchecked cast on that shape previously threw inside `.split(",")`
+ * (#124 review finding #17). Flatten either shape the same way.
+ */
+function normalizeFilterValue(value: string | string[] | undefined): string[] {
+  if (value === undefined) return [];
+  const values = Array.isArray(value) ? value : [value];
+  return values.flatMap(splitFilterValue);
+}
+
 /** Comma-separated querystring values, e.g. `?project=/a,/b`, into `ScorecardFilters`. */
 function parseFilters(query: {
-  project?: string;
-  model?: string;
-  branch?: string;
-  host?: string;
+  project?: string | string[];
+  model?: string | string[];
+  branch?: string | string[];
+  host?: string | string[];
 }): ScorecardFilters {
   const filters: ScorecardFilters = {};
-  if (query.project) filters.project = splitFilterValue(query.project);
-  if (query.model) filters.model = splitFilterValue(query.model);
-  if (query.branch) filters.branch = splitFilterValue(query.branch);
-  if (query.host) filters.host = splitFilterValue(query.host);
+  const project = normalizeFilterValue(query.project);
+  const model = normalizeFilterValue(query.model);
+  const branch = normalizeFilterValue(query.branch);
+  const host = normalizeFilterValue(query.host);
+  if (project.length > 0) filters.project = project;
+  if (model.length > 0) filters.model = model;
+  if (branch.length > 0) filters.branch = branch;
+  if (host.length > 0) filters.host = host;
   return filters;
 }
 
@@ -121,10 +140,10 @@ export function registerScorecardRoutes(
     Querystring: {
       from?: string;
       to?: string;
-      project?: string;
-      model?: string;
-      branch?: string;
-      host?: string;
+      project?: string | string[];
+      model?: string | string[];
+      branch?: string | string[];
+      host?: string | string[];
     };
   }>(
     "/api/dashboard/biggest-lever",

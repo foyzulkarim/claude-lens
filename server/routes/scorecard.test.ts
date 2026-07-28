@@ -322,6 +322,24 @@ describe("GET /api/dashboard/biggest-lever", () => {
     expect(body.sessionId).toBe(inScope);
   });
 
+  it("accepts a repeated query key (Fastify parses it as an array) instead of 500ing (#124 review finding #17)", async () => {
+    const inScope = "in-scope-session";
+    const otherProject = "other-project-session";
+    store.applyRecords(inScope, record(bustSession(inScope, 0)));
+    store.applyRecords(
+      otherProject,
+      record(bustSession(otherProject, 0).map((c) => ({ ...c, cwd: "/repo/gamma" }))),
+    );
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/dashboard/biggest-lever?${range(iso(2026, 6, 14), iso(2026, 6, 15))}&project=/repo/alpha&project=/repo/gamma`,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().state).toBe("event");
+  });
+
   it("returns the healthy variant when the period has creation but no waste", async () => {
     const sessionId = "healthy-session";
     store.applyRecords(sessionId, record(bustSession(sessionId, 0, 0).slice(0, 2)));
