@@ -231,6 +231,30 @@ describe("selectBiggestLever", () => {
     if (result.state === "event") expect(result.eventId).toBe("e-big");
   });
 
+  it("deep-links to the session's scorecard section, never Turn Inspector, even when the winning event's turn resolves (R7)", () => {
+    const withResolvableTurn = withMeta(
+      core({
+        sessionId: "s-turn",
+        writes: [
+          entry({
+            eventId: "e-turn",
+            turnNumber: 4,
+            timestamp: "2026-07-01T01:00:00.000Z",
+            rewrittenTokens: 500,
+            kind: "prefix-bust",
+          }),
+        ],
+      }),
+      { sessionId: "s-turn" },
+    );
+
+    const result = selectBiggestLever([withResolvableTurn], range, {}, PRICING);
+    expect(result.state).toBe("event");
+    if (result.state === "event") {
+      expect(result.deepLink).toBe("/sessions/s-turn#cache-scorecard");
+    }
+  });
+
   it("resolves ties by timestamp desc, then sessionId asc, then callId asc", () => {
     const a = withMeta(
       core({

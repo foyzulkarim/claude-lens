@@ -233,6 +233,12 @@ export function selectBiggestLever(
     const view = priceWasteEntry(best.entry, best.sessionId, pricing);
     return {
       ...view,
+      // R7/T9: the Biggest Lever card always deep-links to the session's
+      // scorecard section, never Turn Inspector — unlike T8's per-event rows,
+      // which use `priceWasteEntry`'s turn-aware `deepLink` as-is. Override it
+      // here rather than branching `priceWasteEntry` itself, since that
+      // function's turn-aware behavior is exactly what T8 needs.
+      deepLink: `/sessions/${best.sessionId}#cache-scorecard`,
       state: "event",
       sessionId: best.sessionId,
       sessionProject: best.sessionProject,
