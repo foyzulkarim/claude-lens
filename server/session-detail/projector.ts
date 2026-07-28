@@ -205,10 +205,8 @@ export function buildTimeline(
   runtime: RuntimeMetadata,
 ): {
   timeline: SessionDetailTimelinePoint[];
-  compactionsAfterCall: boolean[];
 } {
   const timeline: SessionDetailTimelinePoint[] = [];
-  const compactionsAfterCall: boolean[] = [];
 
   const turnNumberByCall = new Map<ApiCall, number>();
   for (const turn of logicalTurns) {
@@ -287,10 +285,9 @@ export function buildTimeline(
       isTurnBoundary: firstOfTurn,
       isCompaction,
     });
-    compactionsAfterCall.push(isCompaction);
   }
 
-  return { timeline, compactionsAfterCall };
+  return { timeline };
 }
 
 // ---------------------------------------------------------------------------
