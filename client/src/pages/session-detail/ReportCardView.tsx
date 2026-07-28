@@ -1,7 +1,14 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { Link } from "wouter";
-import type { GateEvidence, GateReport, GateResult } from "../../../../shared/gates-contract.js";
+import type {
+  GateEvidence,
+  GateReport,
+  GateResult,
+  GateThresholds,
+} from "../../../../shared/gates-contract.js";
 import { GateStatusBadge } from "../../components/GateStatusBadge.js";
+import { InfoButton } from "../../components/InfoButton.js";
+import { describeThreshold, GATE_GLOSSARY, SCORE_EXPLANATION } from "../../content/gateGlossary.js";
 
 export interface ReportCardViewProps {
   data: GateReport;
@@ -58,16 +65,24 @@ export function ReportCardView({ data }: ReportCardViewProps): ReactNode {
     >
       <header className="flex flex-wrap items-baseline justify-between gap-3">
         <h2 className="text-sm font-semibold text-slate-900 dark:text-[#E8EDF2]">Report Card</h2>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <GateStatusBadge letter={data.scoreLetter} />
           <span className="font-mono text-xs text-slate-500 dark:text-[#8A96A5]">
             {data.score.toFixed(2)} / 6 checks
           </span>
+          <InfoButton label="What does this score mean?" title="Report Card score">
+            <p className="whitespace-pre-line">{SCORE_EXPLANATION}</p>
+          </InfoButton>
         </div>
       </header>
       <ul className="flex flex-col gap-2" aria-label="Gate results">
         {data.gates.map((gate) => (
-          <GateRow key={gate.gateId} gate={gate} sessionId={data.sessionId} />
+          <GateRow
+            key={gate.gateId}
+            gate={gate}
+            sessionId={data.sessionId}
+            thresholds={data.thresholdsUsed}
+          />
         ))}
       </ul>
       <p className="text-xs text-slate-500 dark:text-[#8A96A5]">Evaluated at {data.evaluatedAt}</p>
@@ -78,10 +93,13 @@ export function ReportCardView({ data }: ReportCardViewProps): ReactNode {
 interface GateRowProps {
   gate: GateResult;
   sessionId: string;
+  thresholds: GateThresholds;
 }
 
-function GateRow({ gate, sessionId }: GateRowProps): ReactNode {
+function GateRow({ gate, sessionId, thresholds }: GateRowProps): ReactNode {
   const isTurnKeyed = gate.evidence.length > 0 && gate.evidence[0]?.turnN !== undefined;
+  const glossary = GATE_GLOSSARY[gate.gateId];
+  const thresholdNote = describeThreshold(gate.gateId, thresholds);
   return (
     <li
       data-testid={`gate-row-${gate.gateId}`}
@@ -90,9 +108,20 @@ function GateRow({ gate, sessionId }: GateRowProps): ReactNode {
       className="flex flex-col gap-1 border-b border-slate-100 pb-2 last:border-b-0 dark:border-[#232B36]"
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="font-mono text-xs font-semibold text-slate-900 dark:text-[#E8EDF2]">
-          {gate.gateId}
-        </span>
+        <div className="flex items-center gap-1.5">
+          <span className="font-mono text-xs font-semibold text-slate-900 dark:text-[#E8EDF2]">
+            {gate.gateId}
+          </span>
+          <span className="text-xs text-slate-500 dark:text-[#8A96A5]">· {glossary.label}</span>
+          <InfoButton
+            label={`What does ${gate.gateId} check?`}
+            title={`${gate.gateId} · ${glossary.label}`}
+          >
+            <p>{glossary.whatItChecks}</p>
+            <p className="mt-2">{glossary.whyItMatters}</p>
+            {thresholdNote !== null ? <p className="mt-2 italic">{thresholdNote}</p> : null}
+          </InfoButton>
+        </div>
         <GateStatusBadge status={gate.status} />
       </div>
       {gate.evidence.length > 0 ? (
