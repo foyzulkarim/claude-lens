@@ -47,6 +47,107 @@ function stabilizeTimestampTies(stream: ApiCall[]): void {
   }
 }
 
+/**
+ * Epoch high-water-mark bookkeeping threaded across the main-stream fold
+ * (#124 review finding #5 — extracted so `computeScorecard` reads as a
+ * thin fold over `classifyCall`'s per-call results instead of a single
+ * 115-line loop body). `established`/`epoch` are read-and-written by every
+ * call (including read-only ones); `warmupByPromptModel` backs the
+ * duplicated-warmup detector (A11) across epochs.
+ */
+interface DecompositionState {
+  established: number;
+  epoch: number;
+  warmupByPromptModel: Map<string, { epoch: number; tokens: number }>;
+}
+
+function createDecompositionState(): DecompositionState {
+  return { established: 0, epoch: 0, warmupByPromptModel: new Map() };
+}
+
+/**
+ * Classifies and decomposes one call in the ordered main stream, mutating
+ * `state`'s epoch/high-water-mark bookkeeping in place. Returns the ledger
+ * entry for a positive write, or `null` for a read-only call (`create <= 0`)
+ * — only the high-water mark advances for those, per A2.
+ */
+function classifyCall(
+  stream: ApiCall[],
+  index: number,
+  current: ApiCall,
+  turnNumberByCall: Map<string, number>,
+  state: DecompositionState,
+): CacheCreationEntry | null {
+  const previous = stream[index - 1];
+  const create = current.usage.cacheCreateTokens;
+  const read = current.usage.cacheReadTokens;
+  const footprint = read + create;
+
+  if (create <= 0) {
+    if (previous && current.model !== previous.model) {
+      state.epoch += 1;
+      state.established = footprint;
+    } else {
+      state.established = Math.max(state.established, footprint);
+    }
+    return null;
+  }
+
+  const classification = classifyCacheWrite(stream, index, { threshold: 0 });
+  const baseCause = classification?.baseCause ?? "unexplained";
+  const attribution = classification
+    ? attributeCacheMiss(classification, current, previous)
+    : "unknown";
+  let warmupTokens = 0;
+  let incrementalTokens = 0;
+  let rewrittenTokens = 0;
+
+  if (baseCause === "first-call" || baseCause === "model-switch" || baseCause === "compaction") {
+    state.epoch += 1;
+    warmupTokens = create;
+    state.established = footprint;
+  } else {
+    incrementalTokens = Math.min(create, Math.max(0, footprint - state.established));
+    rewrittenTokens = create - incrementalTokens;
+    state.established = Math.max(state.established, footprint);
+  }
+
+  const promptModelKey = `${current.promptId ?? ""}\u0000${current.model}`;
+  const priorWarmup = state.warmupByPromptModel.get(promptModelKey);
+  const duplicatedWarmup =
+    rewrittenTokens > 0 &&
+    current.promptId !== undefined &&
+    read === 0 &&
+    priorWarmup !== undefined &&
+    priorWarmup.epoch < state.epoch &&
+    rewrittenTokens >= priorWarmup.tokens;
+  if (warmupTokens > 0 && current.promptId !== undefined) {
+    state.warmupByPromptModel.set(promptModelKey, { epoch: state.epoch, tokens: warmupTokens });
+  }
+
+  return {
+    eventId: current.messageId,
+    callId: current.messageId,
+    promptId: current.promptId ?? null,
+    turnNumber: turnNumberByCall.get(current.messageId) ?? null,
+    timestamp: current.timestamp,
+    model: current.model,
+    project: current.cwd,
+    branch: current.gitBranch,
+    warmupTokens,
+    incrementalTokens,
+    rewrittenTokens,
+    baseCause,
+    attribution,
+    kind:
+      rewrittenTokens > 0
+        ? duplicatedWarmup
+          ? "duplicated-warmup"
+          : eventKind(attribution)
+        : null,
+  };
+}
+
 export function computeScorecard(calls: ApiCall[], turns: Turn[]): CacheScorecardCore {
   const mainCalls = calls.filter((call) => !call.isSidechain);
   const sessionId = mainCalls[0]?.sessionId ?? turns[0]?.sessionId ?? "";
@@ -55,89 +156,27 @@ export function computeScorecard(calls: ApiCall[], turns: Turn[]): CacheScorecar
   stabilizeTimestampTies(stream);
   const turnNumberByCall = buildTurnNumberByCall(turns);
 
-  let established = 0;
   let warmup = 0;
   let incremental = 0;
   let rewritten = 0;
   let cacheReadTokens = 0;
   let inputTokens = 0;
-  let epoch = 0;
-  const warmupByPromptModel = new Map<string, { epoch: number; tokens: number }>();
+  const state = createDecompositionState();
   const writes: CacheCreationEntry[] = [];
 
   for (let index = 0; index < stream.length; index += 1) {
     const current = stream[index];
     if (!current) continue;
-    const previous = stream[index - 1];
-    const create = current.usage.cacheCreateTokens;
-    const read = current.usage.cacheReadTokens;
-    const footprint = read + create;
-    cacheReadTokens += read;
+    cacheReadTokens += current.usage.cacheReadTokens;
     inputTokens += current.usage.inputTokens;
 
-    if (create <= 0) {
-      if (previous && current.model !== previous.model) {
-        epoch += 1;
-        established = footprint;
-      } else established = Math.max(established, footprint);
-      continue;
-    }
+    const entry = classifyCall(stream, index, current, turnNumberByCall, state);
+    if (!entry) continue;
 
-    const classification = classifyCacheWrite(stream, index, { threshold: 0 });
-    const baseCause = classification?.baseCause ?? "unexplained";
-    const attribution = classification
-      ? attributeCacheMiss(classification, current, previous)
-      : "unknown";
-    let warmupTokens = 0;
-    let incrementalTokens = 0;
-    let rewrittenTokens = 0;
-
-    if (baseCause === "first-call" || baseCause === "model-switch" || baseCause === "compaction") {
-      epoch += 1;
-      warmupTokens = create;
-      established = footprint;
-    } else {
-      incrementalTokens = Math.min(create, Math.max(0, footprint - established));
-      rewrittenTokens = create - incrementalTokens;
-      established = Math.max(established, footprint);
-    }
-
-    warmup += warmupTokens;
-    incremental += incrementalTokens;
-    rewritten += rewrittenTokens;
-    const promptModelKey = `${current.promptId ?? ""}\u0000${current.model}`;
-    const priorWarmup = warmupByPromptModel.get(promptModelKey);
-    const duplicatedWarmup =
-      rewrittenTokens > 0 &&
-      current.promptId !== undefined &&
-      read === 0 &&
-      priorWarmup !== undefined &&
-      priorWarmup.epoch < epoch &&
-      rewrittenTokens >= priorWarmup.tokens;
-    if (warmupTokens > 0 && current.promptId !== undefined) {
-      warmupByPromptModel.set(promptModelKey, { epoch, tokens: warmupTokens });
-    }
-    writes.push({
-      eventId: current.messageId,
-      callId: current.messageId,
-      promptId: current.promptId ?? null,
-      turnNumber: turnNumberByCall.get(current.messageId) ?? null,
-      timestamp: current.timestamp,
-      model: current.model,
-      project: current.cwd,
-      branch: current.gitBranch,
-      warmupTokens,
-      incrementalTokens,
-      rewrittenTokens,
-      baseCause,
-      attribution,
-      kind:
-        rewrittenTokens > 0
-          ? duplicatedWarmup
-            ? "duplicated-warmup"
-            : eventKind(attribution)
-          : null,
-    });
+    warmup += entry.warmupTokens;
+    incremental += entry.incrementalTokens;
+    rewritten += entry.rewrittenTokens;
+    writes.push(entry);
   }
 
   const totalCreation = warmup + incremental + rewritten;
