@@ -130,7 +130,10 @@ describe("ScorecardView", () => {
   it("renders a grade badge for a graded session", () => {
     render(<ScorecardView data={gradedView()} />);
     expect(screen.getByText("Hygiene B")).toBeInTheDocument();
-    expect(screen.getByRole("img", { name: /Score: B/i })).toBeInTheDocument();
+    // #124 review finding #21: the aria-label is prefixed with the badge's
+    // own label ("Hygiene B"), not the generic "Score: B" ReportCard's
+    // badge uses, so the two grades stay distinguishable on the same page.
+    expect(screen.getByRole("img", { name: /Hygiene B: B/i })).toBeInTheDocument();
   });
 
   it.each([

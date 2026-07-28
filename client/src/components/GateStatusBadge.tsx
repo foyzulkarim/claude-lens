@@ -74,8 +74,15 @@ export function GateStatusBadge({ status, letter, label, className }: GateStatus
   // letter-by-letter with no context. When the consumer is the
   // Report Card overall score, surface an explicit announcement that
   // ties the letter to the status ("Score: F, Gate status: fail").
+  //
+  // `#124 review finding #21`: a custom `label` (e.g. Scorecard's
+  // "Hygiene B") previously changed only the visible text, not this
+  // announcement — two badges on the same page (Report Card's overall
+  // score + Scorecard's hygiene grade) both said the identical generic
+  // "Score: B, Gate status: pass" despite being visually distinct. Fold
+  // `label` into the prefix so each caller's badge stays distinguishable.
   const ariaLabel = letter
-    ? `Score: ${letter}, Gate status: ${statusForLetter(letter)}`
+    ? `${label ?? "Score"}: ${letter}, Gate status: ${statusForLetter(letter)}`
     : undefined;
   return (
     <span className={clsx("inline-flex", className)}>
