@@ -63,7 +63,17 @@ function isBiggestLeverView(value: unknown): value is BiggestLeverView {
 }
 
 async function readErrorMessage(response: Response): Promise<string | null> {
-  const body = (await response.json().catch(() => null)) as { error?: unknown } | null;
+  // A blanket `.catch(() => null)` would also swallow a genuine AbortError —
+  // fetch ties the passed `signal` to the body-stream read, not just header
+  // resolution, so an in-flight abort (unmount, param change) can reject
+  // this exact `.json()` call. TanStack Query relies on recognizing
+  // AbortError to silently discard a cancelled queryFn; re-throw it here so
+  // it propagates like it already does on the 2xx path (#124 review finding
+  // #25), instead of surfacing as a normal ScorecardApiError.
+  const body = (await response.json().catch((err: unknown) => {
+    if (err instanceof DOMException && err.name === "AbortError") throw err;
+    return null;
+  })) as { error?: unknown } | null;
   return body && typeof body.error === "string" ? body.error : null;
 }
 

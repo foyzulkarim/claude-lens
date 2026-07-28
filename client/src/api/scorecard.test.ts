@@ -126,6 +126,17 @@ describe("getSessionScorecard", () => {
     await expect(getSessionScorecard("missing")).rejects.toThrow(/session not found/);
   });
 
+  it("re-throws an AbortError from reading the error body instead of swallowing it into ScorecardApiError (#124 review finding #25)", async () => {
+    const abortError = new DOMException("The user aborted a request.", "AbortError");
+    const response = new Response(null, { status: 404 });
+    vi.spyOn(response, "json").mockRejectedValue(abortError);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => response),
+    );
+    await expect(getSessionScorecard("s1")).rejects.toBe(abortError);
+  });
+
   it("throws ScorecardApiError on a malformed 2xx body instead of rendering undefined", async () => {
     vi.stubGlobal(
       "fetch",
