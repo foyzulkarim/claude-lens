@@ -1,9 +1,15 @@
+import { useQuery } from "@tanstack/react-query";
 import clsx from "clsx";
 import type { ReactNode } from "react";
 import { Link, useLocation, useSearch } from "wouter";
+import { qk } from "../api/queryKeys.js";
+import { fetchVersion } from "../api/version.js";
+import { Badge } from "../components/Badge.js";
 import { FilterBar } from "../filters/FilterBar.js";
 import { navRoutes } from "../routes.js";
 import { GlobalActionsBar } from "./GlobalActionsBar.js";
+
+const VERSION_CHECK_STALE_MS = 30 * 60 * 1000;
 
 // Minimal nav chrome — deliberately unstyled beyond Tailwind base. The real
 // primitives (stat-card, data-table, etc.) land in #P4-1; this just proves
@@ -15,12 +21,32 @@ export function AppShell({ children }: { children: ReactNode }) {
   // filter bar's "filters persist across page navigation" requirement
   // (#P3-3 acceptance criterion) the moment a user clicks a sidebar link.
   const search = useSearch();
+  // `retry: false` — a failed npm-registry check has nothing useful to
+  // retry against; on error/loading, rendering no badge is the correct
+  // "don't know" state, same "never show a misleading value" discipline
+  // as the tier system (architecture §4).
+  const { data: version } = useQuery({
+    queryKey: qk.version(),
+    queryFn: ({ signal }) => fetchVersion(signal),
+    staleTime: VERSION_CHECK_STALE_MS,
+    retry: false,
+  });
 
   return (
     <div className="flex min-h-screen bg-white text-slate-900 dark:bg-[#0B0F14] dark:text-[#E8EDF2]">
       <nav className="w-56 shrink-0 border-r border-slate-200 p-4 dark:border-[#232B36]">
-        <div className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-[#5A6675]">
-          Claude Lens
+        <div className="mb-4 flex items-baseline justify-between text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-[#5A6675]">
+          <span>Claude Lens</span>
+          <span className="flex items-center gap-1.5">
+            <span className="text-xs font-normal normal-case text-slate-400 dark:text-[#5A6675]">
+              v{__APP_VERSION__}
+            </span>
+            {version?.updateAvailable && (
+              <Badge variant="warn" aria-label={`Update available: v${version.latestVersion}`}>
+                update available
+              </Badge>
+            )}
+          </span>
         </div>
         <ul className="flex flex-col gap-1">
           {navRoutes.map((route) => (

@@ -177,6 +177,9 @@ async function main() {
     // ARCH-119 R4: the event-loop lag monitor runs in the production process
     // (off by default for the test suite).
     enableEventLoopMonitor: true,
+    // Same rationale: the npm-registry version checker runs in the
+    // production process only (off by default for the test suite).
+    enableVersionCheck: true,
   });
 
   // Ingest now holds real poller/tailer timers and open file handles; tear it

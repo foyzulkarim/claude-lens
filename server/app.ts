@@ -21,10 +21,12 @@ import { registerSessionDetailRoute } from "./routes/session-detail.js";
 import { registerSessionsRoute } from "./routes/sessions.js";
 import { registerTagsRoute } from "./routes/tags.js";
 import { registerTurnInspectorRoute } from "./routes/turn-inspector.js";
+import { registerVersionRoute } from "./routes/version.js";
 import { registerViewsRoute } from "./routes/views.js";
 import type { RuntimeMetadata } from "./runtime.js";
 import { readConfig } from "./settings.js";
 import type { Store } from "./store/store.js";
+import { CURRENT_VERSION, startVersionChecker, type VersionChecker } from "./version-check.js";
 import { type Broadcaster, createBroadcaster } from "./ws/broadcaster.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -131,6 +133,15 @@ export interface BuildAppOptions {
    * process (or a test worker) alive.
    */
   enableEventLoopMonitor?: boolean;
+  /**
+   * Start the background npm-registry version checker (so `GET /api/version`
+   * can report `updateAvailable`). Off by default so the test suite never
+   * makes a real network call; production (`cli.ts`) passes `true`. Mirrors
+   * `enableEventLoopMonitor`'s lifecycle exactly: started on `onReady`,
+   * stopped via an `onClose` hook, its interval `unref`'d so it can never
+   * keep a process (or a test worker) alive.
+   */
+  enableVersionCheck?: boolean;
 }
 
 export function buildApp({
@@ -145,6 +156,7 @@ export function buildApp({
   pipeline,
   captureDir,
   enableEventLoopMonitor = false,
+  enableVersionCheck = false,
 }: BuildAppOptions): FastifyInstance {
   const app = Fastify({
     logger: logger ?? {
@@ -171,6 +183,17 @@ export function buildApp({
       monitor = startEventLoopMonitor(app.log);
     });
     app.addHook("onClose", async () => monitor?.stop());
+  }
+
+  // Same onReady/onClose symmetry as the event-loop monitor above, and for
+  // the same reason: a build that throws after this point must not leave an
+  // owner-less checker running.
+  let versionChecker: VersionChecker | null = null;
+  if (enableVersionCheck) {
+    app.addHook("onReady", async () => {
+      versionChecker = startVersionChecker(app.log);
+    });
+    app.addHook("onClose", async () => versionChecker?.stop());
   }
 
   // ARCH-p4-12 §Cross-Cutting: the gates cache is the only per-session
@@ -224,6 +247,20 @@ export function buildApp({
   registerHealthRoute(app, store, {
     ...(metadata?.scanRoots ? { scanRoots: metadata.scanRoots } : {}),
     ...(pipeline ? { pipelineStats: pipeline.getStats } : {}),
+  });
+
+  // GET /api/version — surfaces the version-checker's cached snapshot. When
+  // `enableVersionCheck` is off (every test, unless a test opts in), this
+  // falls back to a valid "no update known" shape rather than `undefined`,
+  // so the route never needs its own error path.
+  registerVersionRoute(app, {
+    getSnapshot: () =>
+      versionChecker?.getSnapshot() ?? {
+        currentVersion: CURRENT_VERSION,
+        latestVersion: null,
+        updateAvailable: false,
+        lastCheckedAt: null,
+      },
   });
 
   registerMetricsRoute(

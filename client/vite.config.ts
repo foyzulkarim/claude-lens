@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig, loadEnv } from "vite";
@@ -6,12 +7,19 @@ import { resolveLanePorts } from "../scripts/ports.js";
 const clientRoot = fileURLToPath(new URL(".", import.meta.url));
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 
+const { version: appVersion } = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf-8"),
+) as { version: string };
+
 export default defineConfig(({ mode }) => {
   const env = { ...loadEnv(mode, repoRoot, ""), ...process.env };
   const ports = resolveLanePorts(env);
   return {
     root: clientRoot,
     plugins: [tailwindcss()],
+    define: {
+      __APP_VERSION__: JSON.stringify(appVersion),
+    },
     server: {
       port: ports.vite,
       strictPort: true,

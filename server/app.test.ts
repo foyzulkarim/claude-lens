@@ -10,6 +10,7 @@ import type { IngestPipeline } from "./ingest/pipeline.js";
 import { startIngest } from "./ingest/pipeline.js";
 import * as observability from "./observability.js";
 import { Store } from "./store/store.js";
+import * as versionCheck from "./version-check.js";
 import { createBroadcaster } from "./ws/broadcaster.js";
 
 // End-to-end acceptance for #P3-1: an append to a watched transcript file must
@@ -259,5 +260,61 @@ describe("buildApp — event-loop monitor lifecycle", () => {
   it("is enabled by cli.ts in production", async () => {
     const source = await readFile(new URL("./cli.ts", import.meta.url), "utf8");
     expect(source).toMatch(/enableEventLoopMonitor:\s*true/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// npm-registry version checker lifecycle. Off by default (no network call in
+// the test suite); started + stopped via onClose when enabled — same
+// onReady/onClose symmetry as the event-loop monitor above.
+// ---------------------------------------------------------------------------
+
+describe("buildApp — version checker lifecycle", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("starts the checker on ready (with the app's own logger) and stops it on close", async () => {
+    const stop = vi.fn();
+    const spy = vi.spyOn(versionCheck, "startVersionChecker").mockReturnValue({
+      stop,
+      getSnapshot: () => ({
+        currentVersion: versionCheck.CURRENT_VERSION,
+        latestVersion: null,
+        updateAvailable: false,
+        lastCheckedAt: null,
+      }),
+    });
+    const store = new Store({ onInvalidate: () => {} });
+    stores.push(store);
+
+    const app = buildApp({ store, logger: false, enableVersionCheck: true });
+    // Deferred to `onReady`: a build that throws must not leave a checker
+    // running with no owner, since `app.close()` is unreachable then.
+    expect(spy).not.toHaveBeenCalled();
+
+    await app.ready();
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenCalledWith(app.log);
+
+    await app.close();
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not start the checker by default", async () => {
+    const spy = vi.spyOn(versionCheck, "startVersionChecker");
+    const store = new Store({ onInvalidate: () => {} });
+    stores.push(store);
+
+    const app = buildApp({ store, logger: false });
+    apps.push(app);
+    await app.ready();
+
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("is enabled by cli.ts in production", async () => {
+    const source = await readFile(new URL("./cli.ts", import.meta.url), "utf8");
+    expect(source).toMatch(/enableVersionCheck:\s*true/);
   });
 });
