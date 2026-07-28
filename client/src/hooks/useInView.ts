@@ -24,13 +24,28 @@ import { useEffect, useRef, useState } from "react";
  * first render, every `enabled: inView` query would fire on mount,
  * defeating the point. Tests that want eager visibility should
  * pre-trigger via a real IO shim, not by relying on the fallback.
+ *
+ * `anchorId` (#124 review finding #19): when the current
+ * `window.location.hash` already matches `#${anchorId}` at mount time,
+ * `inView` starts `true` immediately instead of waiting on the
+ * `IntersectionObserver`. A hash deep-link (e.g. a Biggest Lever card's
+ * "Investigate →" link, or a null-turn waste event's fallback) can target
+ * a section that starts below the fold with no user scroll to trigger
+ * the observer — without this, the section's id never exists in the DOM,
+ * the browser's native fragment-scroll finds nothing, and the deep link
+ * silently does nothing.
  */
 export function useInView<T extends HTMLElement>(
   options: IntersectionObserverInit = {},
-  _fallbackInView = false,
+  anchorId?: string,
 ): { ref: React.RefObject<T | null>; inView: boolean } {
   const ref = useRef<T | null>(null);
-  const [inView, setInView] = useState(false);
+  const [inView, setInView] = useState(
+    () =>
+      anchorId !== undefined &&
+      typeof window !== "undefined" &&
+      window.location.hash === `#${anchorId}`,
+  );
 
   useEffect(() => {
     const node = ref.current;

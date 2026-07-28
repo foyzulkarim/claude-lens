@@ -1,13 +1,13 @@
-import { useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
 import { Link } from "wouter";
 import type {
   SessionScorecardView,
   WasteEventKind,
   WasteEventView,
 } from "../../../../shared/scorecard-contract.js";
-import { getSessionScorecard } from "../../api/scorecard.js";
 import { qk } from "../../api/queryKeys.js";
+import { getSessionScorecard } from "../../api/scorecard.js";
 import { EmptyState } from "../../components/EmptyState.js";
 import { GateStatusBadge } from "../../components/GateStatusBadge.js";
 import { useInView } from "../../hooks/useInView.js";
@@ -30,7 +30,7 @@ export interface ScorecardProps {
  * Report Card grade in the same page area (#3, high-risk callout).
  */
 export function Scorecard({ sessionId }: ScorecardProps): React.JSX.Element {
-  const { ref, inView } = useInView<HTMLDivElement>({ rootMargin: "200px" });
+  const { ref, inView } = useInView<HTMLDivElement>({ rootMargin: "200px" }, "cache-scorecard");
 
   const query = useQuery({
     queryKey: qk.scorecard(sessionId),
