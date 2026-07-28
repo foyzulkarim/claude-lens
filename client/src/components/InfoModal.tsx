@@ -30,6 +30,11 @@ export function InfoModal({ open, onClose, title, children }: InfoModalProps) {
     if (!open) return;
     closeButtonRef.current?.focus();
 
+    // Prevent the backdrop's scroll region from also scrolling the page
+    // behind it while the dialog is open.
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
     function handleKeyDown(e: KeyboardEvent): void {
       if (e.key === "Escape") {
         onClose();
@@ -52,7 +57,10 @@ export function InfoModal({ open, onClose, title, children }: InfoModalProps) {
     }
 
     document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
   }, [open, onClose]);
 
   if (!open) return null;

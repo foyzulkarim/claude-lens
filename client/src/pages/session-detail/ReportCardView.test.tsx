@@ -119,6 +119,15 @@ describe("ReportCardView", () => {
     within(dialog).getByText(/5\+ times/);
   });
 
+  it("does not show a threshold line for a threshold-free gate", async () => {
+    const user = userEvent.setup();
+    render(<ReportCardView data={buildReport()} />);
+    const v1Row = screen.getByTestId("gate-row-V1");
+    await user.click(within(v1Row).getByRole("button", { name: "What does V1 check?" }));
+    const dialog = screen.getByRole("dialog", { name: "V1 · Edit-without-verify" });
+    expect(within(dialog).queryByText(/Currently:/)).toBeNull();
+  });
+
   it("opens the score's info modal explaining the formula and letter bands", async () => {
     const user = userEvent.setup();
     render(<ReportCardView data={buildReport()} />);

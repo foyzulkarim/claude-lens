@@ -67,4 +67,21 @@ describe("InfoModal", () => {
     await user.tab();
     expect(closeButton).toHaveFocus();
   });
+
+  it("self-wraps Tab focus on the close button when the panel has no other focusable content", async () => {
+    const user = userEvent.setup();
+    render(
+      <InfoModal open={true} onClose={vi.fn()} title="V1">
+        <p>Plain text with no links or buttons.</p>
+      </InfoModal>,
+    );
+    const closeButton = screen.getByRole("button", { name: "Close" });
+    expect(closeButton).toHaveFocus();
+
+    await user.tab({ shift: true });
+    expect(closeButton).toHaveFocus();
+
+    await user.tab();
+    expect(closeButton).toHaveFocus();
+  });
 });

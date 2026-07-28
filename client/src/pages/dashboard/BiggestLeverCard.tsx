@@ -1,10 +1,11 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { Link } from "wouter";
-import type { BiggestLeverView, WasteEventKind } from "../../../../shared/scorecard-contract.js";
+import type { BiggestLeverView } from "../../../../shared/scorecard-contract.js";
 import { getBiggestLever, type BiggestLeverParams } from "../../api/scorecard.js";
 import { qk } from "../../api/queryKeys.js";
 import { formatUnitValue } from "../../charts/units.js";
+import { KIND_LABEL } from "../../content/scorecardGlossary.js";
 import { resolveRange } from "../../filters/state.js";
 import { useFilters } from "../../filters/useFilters.js";
 import { useStableNow } from "./useStableNow.js";
@@ -13,13 +14,6 @@ export interface BiggestLeverCardProps {
   /** Injection seam for stories/tests; defaults to the real current time. */
   now?: Date;
 }
-
-const KIND_LABEL: Record<WasteEventKind, string> = {
-  "prefix-bust": "prefix bust",
-  "duplicated-warmup": "duplicated warmup",
-  "idle-expiry": "idle expiry",
-  unattributed: "unexplained",
-};
 
 function shortId(sessionId: string): string {
   return sessionId.slice(0, 8);

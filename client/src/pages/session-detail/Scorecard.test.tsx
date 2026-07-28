@@ -293,6 +293,12 @@ describe("ScorecardView", () => {
     expect(screen.queryByRole("button", { name: 'What does "cache reads" mean?' })).toBeNull();
   });
 
+  it("does not offer a per-row info button on individual waste events (only the shared heading one)", () => {
+    render(<ScorecardView data={gradedView()} />);
+    const row = screen.getByTestId("waste-event-m42");
+    expect(within(row).queryByRole("button")).toBeNull();
+  });
+
   it("opens one shared info modal explaining all waste event kinds", async () => {
     const user = userEvent.setup();
     render(<ScorecardView data={gradedView()} />);

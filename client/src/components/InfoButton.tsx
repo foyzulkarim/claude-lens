@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { useRef, useState, type ReactNode } from "react";
+import { useCallback, useRef, useState, type ReactNode } from "react";
 import { InfoModal } from "./InfoModal.js";
 
 export interface InfoButtonProps {
@@ -21,12 +21,15 @@ export function InfoButton({ label, title, children, className }: InfoButtonProp
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
 
-  function handleClose(): void {
+  // Stable identity: InfoModal lists this in its effect deps, so a fresh
+  // closure here would re-run that effect (and re-focus Close) on every
+  // re-render of whatever renders this InfoButton while open.
+  const handleClose = useCallback((): void => {
     setOpen(false);
     // WAI-ARIA dialog pattern: focus returns to the trigger on close.
     // `InfoModal` doesn't know what opened it, so this lives here.
     triggerRef.current?.focus();
-  }
+  }, []);
 
   return (
     <>
