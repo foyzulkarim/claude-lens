@@ -1,8 +1,7 @@
-import type { SessionPageParams } from "../../../shared/sessions-contract.js";
 import type { CacheLabQuery } from "../../../shared/cache-lab-contract.js";
 import type { MetricsQuery } from "../../../shared/metrics-contract.js";
+import type { SessionListParams, SessionPageParams } from "../../../shared/sessions-contract.js";
 import type { BiggestLeverParams } from "./scorecard.js";
-import type { SessionListParams } from "../../../shared/sessions-contract.js";
 
 /**
  * Single source of truth for TanStack Query keys (architecture §11: "keys
@@ -89,6 +88,13 @@ export const qk = {
    * nothing invalidates it while the server is running.
    */
   captureAssets: () => ["capture-assets"] as const,
+
+  /**
+   * `GET /api/version` key. Bare literal-array key — the sidebar's
+   * "update available" badge is a single global cache entry, never
+   * invalidated (nothing in this session changes the answer).
+   */
+  version: () => ["version"] as const,
 
   /** `GET /api/views` key (#P4-15). Bare literal-array key — invalidated wholesale after create/delete. */
   views: () => ["views"] as const,

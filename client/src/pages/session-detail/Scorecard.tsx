@@ -1,16 +1,24 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import { Link } from "wouter";
+import { WASTE_EVENT_KINDS } from "../../../../shared/scorecard-contract.js";
 import type {
   SessionScorecardView,
-  WasteEventKind,
   WasteEventView,
 } from "../../../../shared/scorecard-contract.js";
 import { qk } from "../../api/queryKeys.js";
 import { getSessionScorecard } from "../../api/scorecard.js";
 import { EmptyState } from "../../components/EmptyState.js";
 import { GateStatusBadge } from "../../components/GateStatusBadge.js";
+import { InfoButton } from "../../components/InfoButton.js";
 import { useInView } from "../../hooks/useInView.js";
+import {
+  describeGradeBands,
+  HYGIENE_SCORE_EXPLANATION,
+  KIND_LABEL,
+  METRIC_GLOSSARY,
+  WASTE_EVENT_KIND_GLOSSARY,
+} from "../../content/scorecardGlossary.js";
 import { formatCost, formatPercent, formatTokens } from "./format.js";
 
 export interface ScorecardProps {
@@ -68,22 +76,21 @@ export function Scorecard({ sessionId }: ScorecardProps): React.JSX.Element {
   );
 }
 
-const KIND_LABEL: Record<WasteEventKind, string> = {
-  "prefix-bust": "prefix bust",
-  "duplicated-warmup": "duplicated warmup",
-  "idle-expiry": "idle expiry",
-  unattributed: "unexplained",
-};
-
 function GradeBadge({ data }: { data: SessionScorecardView }): React.JSX.Element {
   switch (data.state) {
     case "graded":
       return (
-        <GateStatusBadge
-          letter={data.grade}
-          label={`Hygiene ${data.grade}`}
-          className="scorecard-grade-badge"
-        />
+        <span className="flex items-center gap-2">
+          <GateStatusBadge
+            letter={data.grade}
+            label={`Hygiene ${data.grade}`}
+            className="scorecard-grade-badge"
+          />
+          <InfoButton label="What does this grade mean?" title="Cache Hygiene grade">
+            <p>{HYGIENE_SCORE_EXPLANATION}</p>
+            <p className="mt-2">{describeGradeBands(data.bands)}</p>
+          </InfoButton>
+        </span>
       );
     case "too-short":
       return (
@@ -161,15 +168,46 @@ export function ScorecardView({ data }: ScorecardViewProps): React.JSX.Element {
         aria-label="Scorecard metrics"
       >
         <Metric label="cache reads" value={formatTokens(core.cacheReadTokens)} />
-        <Metric label="warmup" value={formatTokens(core.decomposition.warmup)} />
-        <Metric label="incremental" value={formatTokens(core.decomposition.incremental)} />
-        <Metric label="rewritten" value={formatTokens(core.decomposition.rewritten)} />
-        <Metric label="waste ratio" value={formatPercent(core.wasteRatio)} />
-        <Metric label="hit ratio" value={formatPercent(core.hitRatio)} />
+        <Metric
+          label="warmup"
+          value={formatTokens(core.decomposition.warmup)}
+          description={METRIC_GLOSSARY.warmup}
+        />
+        <Metric
+          label="incremental"
+          value={formatTokens(core.decomposition.incremental)}
+          description={METRIC_GLOSSARY.incremental}
+        />
+        <Metric
+          label="rewritten"
+          value={formatTokens(core.decomposition.rewritten)}
+          description={METRIC_GLOSSARY.rewritten}
+        />
+        <Metric
+          label="waste ratio"
+          value={formatPercent(core.wasteRatio)}
+          description={METRIC_GLOSSARY.wasteRatio}
+        />
+        <Metric
+          label="hit ratio"
+          value={formatPercent(core.hitRatio)}
+          description={METRIC_GLOSSARY.hitRatio}
+        />
       </dl>
 
       <div>
-        <h3 className="text-xs font-semibold text-slate-700 dark:text-[#B8C3CC]">Waste events</h3>
+        <div className="flex items-center gap-1.5">
+          <h3 className="text-xs font-semibold text-slate-700 dark:text-[#B8C3CC]">Waste events</h3>
+          <InfoButton label="What do waste event kinds mean?" title="Waste event kinds">
+            {WASTE_EVENT_KINDS.map((kind) => (
+              <p key={kind} className="mt-2 first:mt-0">
+                <span className="font-mono font-semibold">{KIND_LABEL[kind]}</span>
+                {" — "}
+                {WASTE_EVENT_KIND_GLOSSARY[kind]}
+              </p>
+            ))}
+          </InfoButton>
+        </div>
         {data.events.length === 0 ? (
           <p className="mt-2 text-xs text-slate-500 dark:text-[#8A96A5]">No waste events.</p>
         ) : (
@@ -186,11 +224,24 @@ export function ScorecardView({ data }: ScorecardViewProps): React.JSX.Element {
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }): React.JSX.Element {
+function Metric({
+  label,
+  value,
+  description,
+}: {
+  label: string;
+  value: string;
+  description?: string;
+}): React.JSX.Element {
   return (
     <div className="flex flex-col">
-      <dt className="text-[10px] uppercase tracking-wide text-slate-500 dark:text-[#8A96A5]">
+      <dt className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-slate-500 dark:text-[#8A96A5]">
         {label}
+        {description !== undefined ? (
+          <InfoButton label={`What does "${label}" mean?`} title={label}>
+            <p>{description}</p>
+          </InfoButton>
+        ) : null}
       </dt>
       <dd className="font-mono text-slate-900 dark:text-[#E8EDF2]">{value}</dd>
     </div>

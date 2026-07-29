@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { userEvent } from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   CacheScorecardCore,
@@ -263,5 +264,47 @@ describe("ScorecardView", () => {
   it("exposes the cache-scorecard anchor id for the R6/#3 fallback deep link", () => {
     render(<ScorecardView data={gradedView()} />);
     expect(screen.getByTestId("cache-scorecard")).toHaveAttribute("id", "cache-scorecard");
+  });
+
+  it("opens the grade's info modal with the hygiene formula and this session's band cutoffs", async () => {
+    const user = userEvent.setup();
+    render(
+      <ScorecardView
+        data={gradedView({ bands: { A: 96, B: 88, C: 72, D: 55, source: "calibrated" } })}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "What does this grade mean?" }));
+    const dialog = screen.getByRole("dialog", { name: "Cache Hygiene grade" });
+    within(dialog).getByText(/1 − confirmedFixableWaste/);
+    within(dialog).getByText(/A ≥ 96%/);
+    within(dialog).getByText(/calibrated against your fleet/);
+  });
+
+  it("opens a metric's info modal with its description", async () => {
+    const user = userEvent.setup();
+    render(<ScorecardView data={gradedView()} />);
+    await user.click(screen.getByRole("button", { name: 'What does "waste ratio" mean?' }));
+    const dialog = screen.getByRole("dialog", { name: "waste ratio" });
+    within(dialog).getByText(/rewritten instead of reused/);
+  });
+
+  it("does not offer an info button for the self-explanatory cache reads metric", () => {
+    render(<ScorecardView data={gradedView()} />);
+    expect(screen.queryByRole("button", { name: 'What does "cache reads" mean?' })).toBeNull();
+  });
+
+  it("does not offer a per-row info button on individual waste events (only the shared heading one)", () => {
+    render(<ScorecardView data={gradedView()} />);
+    const row = screen.getByTestId("waste-event-m42");
+    expect(within(row).queryByRole("button")).toBeNull();
+  });
+
+  it("opens one shared info modal explaining all waste event kinds", async () => {
+    const user = userEvent.setup();
+    render(<ScorecardView data={gradedView()} />);
+    await user.click(screen.getByRole("button", { name: "What do waste event kinds mean?" }));
+    const dialog = screen.getByRole("dialog", { name: "Waste event kinds" });
+    within(dialog).getByText(/idle expiry/);
+    within(dialog).getByText(/unexplained/);
   });
 });
