@@ -19,9 +19,12 @@ Phase 4  Pages & features             (11 pages, gates, premium tier, explore)
 Phase 5  Finalize & publish           (perf, package hygiene, docs, npm)
 Phase 6  Comprehension, differentiation & distribution  (explainability, evidence-linking, recommendation cards, premium polish, chart export, relaunch)
 Phase 7  Conversational delivery      (MCP data surface + opinion layer)
+Phase 8  Growth                       (efficiency engine, distribution surfaces, org adoption)
 ```
 
-Phases 6–7 are a second, post-v1 roadmap layered on top of the build plan above — not a continuation of the "ship v1" sequence Phases 0–5 encode. They reuse the phase-label/milestone mechanism (`phase-6`, `phase-7` labels + milestones need creating before filing, same #P0-6 precedent) purely for tracking continuity; there is no code-level dependency from Phase 5 onto Phase 6.
+Phases 6–8 are a second, post-v1 roadmap layered on top of the build plan above — not a continuation of the "ship v1" sequence Phases 0–5 encode. They reuse the phase-label/milestone mechanism (`phase-6`, `phase-7`, `phase-8` labels + milestones need creating before filing, same #P0-6 precedent) purely for tracking continuity; there is no code-level dependency from Phase 5 onto Phase 6.
+
+**Phases 6–8 interleave — they are not run one after the other.** Phase 8 exists because the growth thesis (below) reorders and extends the Phase 6/7 roadmap rather than following it; the single execution order across all three is in "Phases 6–8 execution sequence" after Phase 8's task list. Read that section, not the phase numbering, to know what comes next.
 
 Phases 0–3 are strictly sequential **at the code level** (each phase's tasks assume the prior phase's deliverables exist) — but a phase label doesn't mean every task in it is a hard gate on the next phase; see the 2026-07-10 decisions-log row for the per-consumer gate audit that let Phase 1 start with #P0-3/4 still open. Within Phase 4, tasks run **in parallel** after the #P4-1→#P4-19→#P4-2 spine — `claude-lens-phase4-parallelization.md` is the single execution companion, with conservative orchestration by default and maximum-throughput relaxations only by explicit choice.
 
@@ -251,10 +254,11 @@ Post-v1 roadmap, not a continuation of the "ship v1" build plan in Phases 0–5 
 
 `phase-6` label + milestone need creating before filing (#P0-6 precedent).
 
-- [ ] **#P6-1 — Release cut with premium-tier C/B/L parsers (#109)**
+- [x] **#P6-1 — Release cut with premium-tier C/B/L parsers (#109)** — *superseded 2026-08-04; remaining scope is #P8-10. Not filed.*
   Tag and publish a release that actually includes #109's merged cost/API-latency/lines-changed parsers — `origin/main` shipped `v1.0.1` *before* #109 merged, so the published `npx claude-lens` package is currently missing them. Clears the shipped-vs-published gap before new work lands on top.
   *Acceptance:* `npx claude-lens@latest` includes #109's premium-tier parsers; version bumped past `1.0.1`; release/tag recorded.
   *Dependencies:* supersedes/reconciles the stale #P5-4 (#54) — see its note above; resolve which issue owns this before filing both.
+  **Status:** the premise is false as of 2026-08-04 — #109 (`7b956c8`) is an ancestor of the `v1.1.1` release commit and npm's `latest` is `1.2.0`, so the published package has carried the premium parsers since `1.1.0`. The acceptance line is met. What remains is the *GitHub* tag/release gap (releases stop at `v1.1.1`), which #P8-10 owns. See the 2026-08-04 decisions-log row.
 
 - [ ] **#P6-2 — Inline per-metric explainability**
   A "why this number / why it matters" affordance on each metric and chart (spend, total tokens, cache hit %, avg $/session, anomalies) — opinionated teaching copy shown at the metric itself, not behind a help page. Becomes the substrate #P6-5 and #P7-2 reuse.
@@ -317,6 +321,97 @@ A genuinely separate concern from Phase 6, not a further theme-split of it: diff
 
 ---
 
+## Phase 8 — Growth: efficiency engine, distribution surfaces, org adoption
+
+Added 2026-08-04 after the v1.2.0 growth review (`@foyzulkarim/claude-lens` at ~800 npm downloads in its first two weeks). Phase 6 was written to make the product *legible and differentiated*; Phase 8 is written to make it *spread and stick*, and it reorders parts of Phase 6/7 to do so.
+
+`phase-8` label + milestone need creating before filing (#P0-6 precedent).
+
+**The growth thesis this phase encodes.** A local-first dashboard's npm download count is approximately *curious humans × 1* — nobody `npx`es a dashboard twice a day, so discovery-driven installs have a low ceiling no matter how good the product gets. There are exactly two ways past it: more humans (marketing — already covered by #P6-7/#P6-8), or **non-human invocations**. MCP servers, CI jobs, and Claude Code hooks run `npx -y <pkg>` per session, per PR, per cron tick. That is a change in the *shape* of the download curve rather than a spike in it, and it is also — not coincidentally — the cheapest path to the AI features and to org-level adoption. Hence three consequences baked into the tasks below:
+
+1. **Phase 7 (MCP) moves early, not last.** It is the download multiplier, the AI delivery surface, and the org on-ramp simultaneously.
+2. **The "AI features" ship without an LLM dependency in the server.** The user's own Claude Code is the model. Shipping an in-process LLM client with a BYO API key would contradict the README's headline promise ("nothing leaves your machine"), add a billing story, and buy nothing MCP does not already give. The deterministic engine (#P8-1) does the analysis; the LLM only phrases it.
+3. **Org adoption arrives without a server, auth, or database.** Redacted file exports plus a merge mode, not a hosted multi-tenant product — anything else contradicts `AGENTS.md`'s standing constraints (no DB, no native modules, loopback only).
+
+- [ ] **#P8-1 — Token efficiency engine**
+  A deterministic `efficiency(calls, turns, sessions) → Lever[]` engine under `server/efficiency/`, taking plain arrays like `server/metrics/engine.ts` does (per the 2026-07-14 decisions-log row) and independent of the Store. Each lever is a named waste pattern with an evidence set, a token cost, and a computed $ cost, ranked by size. Initial detector set, all transcript-only (🟢) and all built from signals the codebase already derives: repeated `Read` of the same path within a session (context duplication), model-switch cache busts (reuses the K2 classifier), TTL-lapse busts from idle gaps, CLAUDE.md/system baseline bloat (reuses Cache Lab's baseline-weight trend), failed tool calls and error `tool_result`s, sidechain cost share, and compaction-triggered re-reads. No LLM, no network.
+  *Acceptance:* `efficiency()` returns a ranked `Lever[]` from plain arrays with per-lever token + computed-$ attribution and turn-keyed evidence for every lever; each detector has unit tests over `test/fixtures/`; the engine imports nothing from `server/store/`.
+  *Dependencies:* none blocking — reuses shipped gate/cache/metrics primitives. Unblocks #P8-2, #P8-3, #P6-5, #P7-2.
+
+- [ ] **#P8-2 — Efficiency surfaces (Dashboard + Session Detail)**
+  Render #P8-1's levers as preset layouts over the engine, matching the "pages are deliberately cheap" rule: a fleet-level ranked lever panel on the Dashboard (extending the shipped "Biggest lever this week" card from one event to a ranked set) and a per-session efficiency report on Session Detail beside the existing Cache Scorecard. Every lever row deep-links to its evidence turn.
+  *Acceptance:* both surfaces render from real `efficiency()` output with per-lever token/$ attribution and a working deep link into Turn Inspector; no page-level aggregation of raw records.
+  *Dependencies:* depends on #P8-1 and #P6-3 (evidence links). Feeds #P6-5 — recommendation cards consume levers rather than re-deriving them.
+
+- [ ] **#P8-3 — Headless report command (`claude-lens report`)**
+  A no-browser, no-port subcommand printing a period summary plus #P8-1's top levers to stdout, with `--format text|md|json` and a range flag. This is what makes claude-lens pipeable into a Claude Code session, cron-able, and CI-able — and it is the artifact people paste into Slack.
+  *Acceptance:* `npx @foyzulkarim/claude-lens report --last 7d --format md` prints a summary + ranked levers and exits 0 without binding a port or opening a browser; all three formats covered by tests; exit code is non-zero on unreadable roots.
+  *Dependencies:* depends on #P8-1. Unblocks #P8-9.
+
+- [ ] **#P8-4 — `claude-lens install-capture` subcommand**
+  Promote `capture/install.sh` to a first-class subcommand wrapping the same idempotent installer already vendored into `dist/capture/`. Today an `npx` user must copy a resolved path out of the Settings page's capture guide (`/api/capture-assets`) and run a shell script from it — the tier-upgrade funnel's narrowest point, and the reason most installs never leave 🟡.
+  *Acceptance:* `npx @foyzulkarim/claude-lens install-capture` performs the same install as `bash capture/install.sh` including idempotency, the `settings.json` backup, and the already-configured no-op path; the Settings guide and README point at the subcommand; the shell script keeps working unchanged.
+  *Dependencies:* none blocking. Feeds #P8-5.
+
+- [ ] **#P8-5 — Claude Code plugin package**
+  Ship claude-lens as an installable Claude Code plugin bundling three things it already has or will have: the MCP server (#P7-1/#P7-2), a `/lens` skill wrapping the common questions, and the capture hooks (#P8-4). Converts install-once-per-human into invoke-per-session, and makes the capture tier the default rather than an opt-in chore.
+  *Acceptance:* installing the plugin registers the MCP server, the skill, and the capture statusline/Stop hooks in one step; a fresh Claude Code session can query claude-lens without a manual `~/.claude/settings.json` edit; uninstall is clean.
+  *Dependencies:* depends on #P7-1 and #P8-4. Strongest single download lever in this phase.
+
+- [ ] **#P8-6 — Redacted aggregate export**
+  An export mode producing metrics only — per day × project × model — with no prompt text, no `cwd` paths, and project identifiers hashed. The privacy gate every org-level use case sits behind: transcripts contain prompts, so no team roll-up is adoptable until there is an export that provably carries none.
+  *Acceptance:* the redacted export contains no prompt text, no absolute paths, and no raw project identifiers, verified by a test asserting against the fixture corpus; the schema is versioned; the existing CSV/JSON session export (#P4-17) is unchanged.
+  *Dependencies:* none blocking. Unblocks #P8-7.
+
+- [ ] **#P8-7 — Team roll-up mode**
+  Point claude-lens at a directory of #P8-6 exports and get a fleet view across contributors — one extra ingest source, no server, no auth, no database. Contributor becomes a dimension alongside project/model/branch.
+  *Acceptance:* a directory of redacted exports loads into a roll-up view with contributor as a filterable dimension; mixed schema versions are handled or rejected with a clear error; the single-user path is unaffected when no roll-up directory is configured.
+  *Dependencies:* depends on #P8-6.
+
+- [ ] **#P8-8 — Project-committed config (`.claude-lens.json`)**
+  Let a repo commit its pricing table, budget, gate thresholds, and anomaly thresholds so a team standardizes settings instead of each developer configuring locally. Layers under the existing local config (repo file as base, local store as override) rather than replacing it.
+  *Acceptance:* a `.claude-lens.json` in a scanned project root supplies pricing/budget/gate/anomaly settings; local config still overrides it; a malformed file is reported in Data Health and never crashes ingest (per the untrusted-input rule in `AGENTS.md`).
+  *Dependencies:* extends #P4-10/#P4-15's config store.
+
+- [ ] **#P8-9 — GitHub Action: per-PR token cost comment**
+  A published action wrapping #P8-3 that comments a branch's token/cost summary and top levers on a PR. Org-visible, recurring, and it runs `npx` on every pull request.
+  *Acceptance:* the action runs on a PR and posts a summary comment sourced from `claude-lens report --format md`; re-runs update the existing comment rather than stacking; it no-ops cleanly when no transcripts are present.
+  *Dependencies:* depends on #P8-3.
+
+- [ ] **#P8-10 — Discovery & release hygiene**
+  Close the gap between what ships and what is discoverable. `v1.2.0` is live on npm while GitHub releases stop at `v1.1.1`, so the Cache Scorecard (#124) and the Report Card/Scorecard glossary modals (#127) shipped with no tag and no release notes. Also covers npm keywords, README restructuring around the `npx` one-liner, and a screenshot/GIF above the fold.
+  *Acceptance:* every published npm version has a matching GitHub tag + release notes; npm keywords and README lead with the one-line install; the release process is written down so this does not drift again.
+  *Dependencies:* none. Should run first — #P6-8's relaunch needs a release page to point at.
+
+**Exit criteria:** #P8-1 through #P8-6 shipped; #P8-7 through #P8-9 shipped or explicitly deferred; #P8-10 done before any outreach task (#P6-8) runs.
+
+---
+
+## Phases 6–8 execution sequence
+
+The single ordering across all three post-v1 phases. Phase numbers are tracking labels, not execution order — this table is the execution order. Stages are dependency gates; tasks within a stage may run in parallel lanes per the Phase 4 worktree mechanics.
+
+| Stage | Tasks | Why here |
+|---|---|---|
+| 0 | `chore` labels/milestones · **#P8-10** | Nothing files without `phase-6/7/8` labels; the release gap is a credibility fix that gates outreach |
+| 1 | **#P8-1** · **#P6-2** · **#P6-6** | The efficiency engine, the explainability copy, and the premium-tier polish have no dependencies on each other |
+| 2 | **#P6-3** · **#P6-4** | Evidence links and the gate audit — both feed the card format |
+| 3 | **#P8-2** · **#P6-5** | Surfaces and recommendation cards, both consuming #P8-1's levers |
+| 4 | **#P7-1** · **#P8-4** | MCP data surface and the capture subcommand — the two plugin prerequisites |
+| 5 | **#P7-2** · **#P8-5** | The opinion layer over MCP, then the plugin that ships it |
+| 6 | **#P8-3** · **#P6-7** | Headless report and branded chart export — the two shareable artifacts |
+| 7 | **#P8-6** · **#P8-8** · **#P8-9** | Org on-ramp: redacted export, committed config, PR action |
+| 8 | **#P8-7** · **#P6-8** | Roll-up view, then the stargazer relaunch once there is something to relaunch with |
+
+**Changes to Phase 6/7 as originally written:**
+
+- **#P6-1 is materially complete and reduces to #P8-10.** Its premise — that the published package lacked #109's premium parsers — no longer holds: #109 (`7b956c8`, 2026-07-21) is an ancestor of the `v1.1.1` release commit, and npm now serves `1.2.0`. What actually remains is the GitHub tag/release gap, which is #P8-10's scope. File #P8-10, not #P6-1.
+- **#P7-1/#P7-2 move from last to stages 4–5.** They are the download multiplier and the AI delivery surface, not an epilogue.
+- **#P6-5 consumes #P8-1's levers** instead of deriving recommendations directly from gate/anomaly output, so the same ranked analysis serves the cards, the MCP opinion layer, the headless report, and the PR action.
+- **#P6-7's unresolved scope stays unresolved** — the plan's existing note (no matching issue found for the claimed prior scoping) is unchanged; scope it fresh at stage 6.
+
+---
+
 ## Benchmark log (filled in by checkpoint tasks)
 
 | Date | Task | Cold boot | Warm boot | RSS | Data size | Notes |
@@ -367,3 +462,5 @@ Current as of the dated rows; re-scan at each phase exit and prune rows that hav
 | 2026-07-22 | **Phases 6–7 added: post-v1 product roadmap, layered on top of the v1 build plan, not a continuation of it.** Source: a user-provided sequenced roadmap doc (10 tickets, dependency-ordered: release cut → explainability → evidence-linking → gate finalization → recommendation cards → premium polish → chart export → relaunch → MCP data surface → MCP opinion layer). Collapsed into two phases rather than four-plus, matching the existing Phase-4 precedent (many tasks, one milestone, ordered by dependency, not split into a phase per theme) — the only task with a genuine cross-phase dependency is #P7-2 (needs #P6-5), so it's the one split that's load-bearing. Checked every ticket against ground truth first: ticket 1 (#109 release) is **not** done — `v1.0.1` shipped *before* #109 merged, so it's real work (#P6-1), superseding the stale #P5-4/#54 (still targets "v0.1.0" despite the repo already being past that). Ticket 4 (gate finalization) restates already-shipped work — `gates.md` already states all six gates are transcript-only and #P4-11/#P4-12 are closed — so it's narrowed to #P6-4, an audit rather than a build. Ticket 7's claimed "already scoped in a separate issue" could not be verified — no matching open or closed issue found by search; flagged unresolved rather than assumed. Also fixed in the same pass: #P4-13 and #P4-18 checkboxes were still `[ ]` despite both issues (#45, #50) being closed 2026-07-21 — drift fixed to `[x]`. | #P6-1..#P6-8, #P7-1, #P7-2, #P4-13, #P4-18, #P5-4 |
 | 2026-07-19 | **#P4-20 partially implemented: invalidation coalescing + stable query key shipped, chart-merge change deferred.** `client/src/ws.ts` now batches inbound WS messages over a 200ms window (`INVALIDATION_COALESCE_MS`) and dedupes their invalidation actions before applying them, so N concurrently-flushing sessions produce one shared `metrics`/`sessions` prefix invalidation instead of N (each session's own `session:<id>` detail invalidation is preserved). `SubscriptionWindow.tsx`'s `extentTo` is now floored to the enclosing minute before it enters the metrics query key/range, bounding key churn to at most once/minute instead of on every WS-driven refetch. The third proposed fix (`Chart.tsx`'s `notMerge: true` → partial-merge on live updates) is left for a follow-up — it's a shared-component boundary change (ARCH A9) needing an audit of every `Chart` consumer for `notMerge`-dependent behavior first, disproportionate to bundle with the other two. Checkbox stays `[~]` (in progress, not `[x]`) until that's done. | #P4-20, `client/src/ws.ts`, `SubscriptionWindow.tsx` |
 | 2026-07-23 | **#P4-21 added — promotes issue #112 (filed and closed as an explicitly unphased enhancement) into a tracked Phase 4 plan task.** #112 completes #P4-13's premium tier: #P4-13 shipped the C/B/L parser/consumer side, but the producer scripts that write those sidecar files were never vendored into the repo, leaving `CostCaptureGuide.tsx` pointing at phantom files. #112's own body says "not a plan task — no #P ID," but its scope (closing #P4-13's tier system end-to-end) is squarely Phase 4 work — same reasoning as #P4-20/#98 (a closed, unphased issue whose scope belongs to an already-tracked phase gets a retroactive plan-task ID rather than staying permanently invisible to `plan.md`'s exit criteria). Shipped via PR #115, closed 2026-07-23. | #P4-21, #112, #P4-13, #P4-20 |
+| 2026-08-04 | **Phase 8 added — growth phase; Phases 6–8 interleave rather than run in sequence.** Trigger: v1.2.0 shipped and `@foyzulkarim/claude-lens` took ~800 npm downloads in two weeks, raising "what accelerates this" as a planning question. Recorded thesis: a local-first dashboard's download count is ≈ curious-humans × 1, so the ceiling moves only via **non-human invocations** (MCP per session, CI per PR, hooks per session) — which is also the cheapest route to the requested AI features and to org adoption, since the user's own Claude Code supplies the model. Three constraints baked in: no LLM client in the server (a BYO-key call to a model API would contradict the README's "nothing leaves your machine" claim and add a billing story MCP makes unnecessary); org adoption via redacted file exports + a merge mode, never a hosted/auth'd/DB-backed service (`AGENTS.md` standing constraints); the analysis stays deterministic (#P8-1) with the LLM only phrasing it. Consequences for the existing roadmap: Phase 7 moves from last to stages 4–5; #P6-5 consumes #P8-1's levers instead of re-deriving recommendations; a new "Phases 6–8 execution sequence" table supersedes phase numbering as the ordering authority. | #P8-1..#P8-10, #P6-5, #P7-1, #P7-2, execution-sequence table |
+| 2026-08-04 | **#P6-1 found materially complete; its remaining scope becomes #P8-10.** #P6-1 was filed-in-plan on the premise that the published npm package predated #109's premium C/B/L parsers. Verified false: `git merge-base --is-ancestor` confirms #109 (`7b956c8`, 2026-07-21) is an ancestor of the `v1.1.1` release commit (`e6de120`, 2026-07-26), and npm's `latest` is now `1.2.0` — so `npx @foyzulkarim/claude-lens@latest` has shipped the parsers since `1.1.0`. What is actually missing is the **GitHub** side: releases stop at `v1.1.1` while npm serves `1.2.0`, leaving #124 (Cache Scorecard) and #127 (glossary modals) with no tag and no release notes. That gap is #P8-10's scope. **#P6-1 is not filed**; the stale #P5-4/#54 reconciliation question it inherited is moot for the same reason. | #P6-1, #P8-10, #P5-4 |
