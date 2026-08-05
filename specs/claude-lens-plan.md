@@ -251,9 +251,9 @@ Post-v1 roadmap, not a continuation of the "ship v1" build plan in Phases 0–5 
 
 `phase-6` label + milestone need creating before filing (#P0-6 precedent).
 
-- [ ] **#P6-1 — Release cut with premium-tier C/B/L parsers (#109)**
+- [x] **#P6-1 — Release cut with premium-tier C/B/L parsers (#109)** *(closed 2026-08-05 via #129 — no PR; recording the already-shipped `v1.3.0`)*
   Tag and publish a release that actually includes #109's merged cost/API-latency/lines-changed parsers — `origin/main` shipped `v1.0.1` *before* #109 merged, so the published `npx claude-lens` package is currently missing them. Clears the shipped-vs-published gap before new work lands on top.
-  *Acceptance:* `npx claude-lens@latest` includes #109's premium-tier parsers; version bumped past `1.0.1`; release/tag recorded.
+  *Acceptance:* `npx claude-lens@latest` includes #109's premium-tier parsers; version bumped past `1.0.1`; release/tag recorded. Met by `v1.3.0` (npm registry + GitHub release + `v1.3.0` tag, 2026-08-05) — well past `1.0.1`, includes #109 plus every release since.
   *Dependencies:* supersedes/reconciles the stale #P5-4 (#54) — see its note above; resolve which issue owns this before filing both.
 
 - [ ] **#P6-2 — Inline per-metric explainability**
