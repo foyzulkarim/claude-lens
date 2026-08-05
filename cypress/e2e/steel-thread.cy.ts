@@ -71,7 +71,7 @@ describe("steel-thread smoke", () => {
     // FIXTURE_RANGE for the interior July 3 fixture data used by this test.
     cy.get('[role="img"][aria-label^="Cost over time chart;"]')
       .invoke("attr", "aria-label")
-      .then((label) => {
+      .should((label) => {
         expect(totalFromLabel(label)).to.equal(initialTotal);
       });
 
