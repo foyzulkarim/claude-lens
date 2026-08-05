@@ -2,6 +2,19 @@
 
 V2 changelog. V1 history lives in [`legacy/CHANGELOG.md`](legacy/CHANGELOG.md).
 
+## v1.3.0 — 2026-08-05
+
+### Features
+- **Report Card / Cache Scorecard glossary** (#127) — gate rows now
+  show an inline human-readable label next to each bare code (e.g.
+  "V1 · Edit-without-verify"), plus a "?" info button explaining what
+  the gate checks, why it matters, and the session's actual configured
+  threshold. The overall score badge, the Cache Scorecard's hygiene
+  grade badge, its decomposition metrics (warmup/incremental/
+  rewritten/waste ratio/hit ratio), and the four waste-event kinds get
+  the same treatment via a new, dependency-free, reusable
+  `InfoModal`/`InfoButton` component pair.
+
 ## v1.2.0 — 2026-07-28
 
 ### Features

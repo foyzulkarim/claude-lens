@@ -254,11 +254,10 @@ Post-v1 roadmap, not a continuation of the "ship v1" build plan in Phases 0–5 
 
 `phase-6` label + milestone need creating before filing (#P0-6 precedent).
 
-- [x] **#P6-1 — Release cut with premium-tier C/B/L parsers (#109)** — *superseded 2026-08-04; remaining scope is #P8-10. Not filed.*
+- [x] **#P6-1 — Release cut with premium-tier C/B/L parsers (#109)** *(closed 2026-08-05 via #129 — no PR; recording the already-shipped `v1.3.0`)*
   Tag and publish a release that actually includes #109's merged cost/API-latency/lines-changed parsers — `origin/main` shipped `v1.0.1` *before* #109 merged, so the published `npx claude-lens` package is currently missing them. Clears the shipped-vs-published gap before new work lands on top.
-  *Acceptance:* `npx claude-lens@latest` includes #109's premium-tier parsers; version bumped past `1.0.1`; release/tag recorded.
+  *Acceptance:* `npx claude-lens@latest` includes #109's premium-tier parsers; version bumped past `1.0.1`; release/tag recorded. Met by `v1.3.0` (npm registry + GitHub release + `v1.3.0` tag, 2026-08-05) — well past `1.0.1`, includes #109 plus every release since.
   *Dependencies:* supersedes/reconciles the stale #P5-4 (#54) — see its note above; resolve which issue owns this before filing both.
-  **Status:** the premise is false as of 2026-08-04 — #109 (`7b956c8`) is an ancestor of the `v1.1.1` release commit and npm's `latest` is `1.2.0`, so the published package has carried the premium parsers since `1.1.0`. The acceptance line is met. What remains is the *GitHub* tag/release gap (releases stop at `v1.1.1`), which #P8-10 owns. See the 2026-08-04 decisions-log row.
 
 - [ ] **#P6-2 — Inline per-metric explainability**
   A "why this number / why it matters" affordance on each metric and chart (spend, total tokens, cache hit %, avg $/session, anomalies) — opinionated teaching copy shown at the metric itself, not behind a help page. Becomes the substrate #P6-5 and #P7-2 reuse.
@@ -379,7 +378,7 @@ Added 2026-08-04 after the v1.2.0 growth review (`@foyzulkarim/claude-lens` at ~
   *Dependencies:* depends on #P8-3.
 
 - [ ] **#P8-10 — Discovery & release hygiene**
-  Close the gap between what ships and what is discoverable. `v1.2.0` is live on npm while GitHub releases stop at `v1.1.1`, so the Cache Scorecard (#124) and the Report Card/Scorecard glossary modals (#127) shipped with no tag and no release notes. Also covers npm keywords, README restructuring around the `npx` one-liner, and a screenshot/GIF above the fold.
+  Keep what ships discoverable. `v1.3.0` restored npm/GitHub release parity and documented the Cache Scorecard (#124) plus Report Card/Scorecard glossary modals (#127); the remaining work is npm keywords, README restructuring around the `npx` one-liner, a screenshot/GIF above the fold, and a documented release process that prevents future drift.
   *Acceptance:* every published npm version has a matching GitHub tag + release notes; npm keywords and README lead with the one-line install; the release process is written down so this does not drift again.
   *Dependencies:* none. Should run first — #P6-8's relaunch needs a release page to point at.
 
@@ -393,7 +392,7 @@ The single ordering across all three post-v1 phases. Phase numbers are tracking 
 
 | Stage | Tasks | Why here |
 |---|---|---|
-| 0 | `chore` labels/milestones · **#P8-10** | Nothing files without `phase-6/7/8` labels; the release gap is a credibility fix that gates outreach |
+| 0 | `chore` labels/milestones · **#P8-10** | Nothing files without `phase-6/7/8` labels; discovery and release hygiene gate outreach |
 | 1 | **#P8-1** · **#P6-2** · **#P6-6** | The efficiency engine, the explainability copy, and the premium-tier polish have no dependencies on each other |
 | 2 | **#P6-3** · **#P6-4** | Evidence links and the gate audit — both feed the card format |
 | 3 | **#P8-2** · **#P6-5** | Surfaces and recommendation cards, both consuming #P8-1's levers |
@@ -405,7 +404,7 @@ The single ordering across all three post-v1 phases. Phase numbers are tracking 
 
 **Changes to Phase 6/7 as originally written:**
 
-- **#P6-1 is materially complete and reduces to #P8-10.** Its premise — that the published package lacked #109's premium parsers — no longer holds: #109 (`7b956c8`, 2026-07-21) is an ancestor of the `v1.1.1` release commit, and npm now serves `1.2.0`. What actually remains is the GitHub tag/release gap, which is #P8-10's scope. File #P8-10, not #P6-1.
+- **#P6-1 is closed via #129 and `v1.3.0`.** Its premise — that the published package lacked #109's premium parsers — no longer holds, and `v1.3.0` restored npm/GitHub release parity. #P8-10 retains the forward-looking discovery and release-process work; it no longer absorbs a release gap from #P6-1.
 - **#P7-1/#P7-2 move from last to stages 4–5.** They are the download multiplier and the AI delivery surface, not an epilogue.
 - **#P6-5 consumes #P8-1's levers** instead of deriving recommendations directly from gate/anomaly output, so the same ranked analysis serves the cards, the MCP opinion layer, the headless report, and the PR action.
 - **#P6-7's unresolved scope stays unresolved** — the plan's existing note (no matching issue found for the claimed prior scoping) is unchanged; scope it fresh at stage 6.
